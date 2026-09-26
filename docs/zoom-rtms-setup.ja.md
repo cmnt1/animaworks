@@ -280,7 +280,7 @@ curl -s https://<あなたのサーバー>/api/system/health | jq '.zoom_gateway
 | `server/routes/system.py` | health 応答への `zoom_gateway` 追加 |
 | `core/config/schemas.py` | `ZoomRTMSConfig`（`external_messaging.zoom`） |
 | `core/schemas.py` | `EXTERNAL_PLATFORM_SOURCES`（`"zoom"`） |
-| `core/messenger.py` | `receive_external()` — inbox 配置・source_message_id dedup |
+| `core/messaging/messenger.py` | `receive_external()` — inbox 配置・source_message_id dedup |
 
 ## 参照
 

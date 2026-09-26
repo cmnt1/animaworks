@@ -63,7 +63,7 @@ class TestFanoutAllExcludesStoppedAnimas:
     @pytest.fixture(autouse=True)
     def _bypass_acl(self):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     def test_fanout_all_excludes_stopped_animas(self, tmp_path):
@@ -118,7 +118,7 @@ class TestFanoutNamedExcludesStoppedAnimas:
     @pytest.fixture(autouse=True)
     def _bypass_acl(self):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     def test_fanout_named_excludes_stopped_animas(self, tmp_path):
@@ -166,7 +166,7 @@ class TestStreamingCommentUpdated:
 
     def test_streaming_comment_updated(self):
         """agent.py should reference 'S / A / all modes', not just 'A1 Agent SDK'."""
-        agent_path = Path(__file__).resolve().parents[2] / "core" / "agent.py"
+        agent_path = Path(__file__).resolve().parents[2] / "core" / "agent" / "agent_core.py"
         content = agent_path.read_text(encoding="utf-8")
         assert "S / A / all modes" in content, "agent.py streaming section comment should say 'S / A / all modes'"
 

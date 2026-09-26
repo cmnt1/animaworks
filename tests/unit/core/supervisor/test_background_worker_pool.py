@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.anima import BackgroundWorkerSlot, DigitalAnima
+from core.anima.digital_anima import BackgroundWorkerSlot, DigitalAnima
 from core.platform.processing_lease import processing_lease_path, write_processing_lease
 from core.tasks.board.tasks import process_identity
 from core.tasks.dispatch import publish_tasks

@@ -1,4 +1,4 @@
-"""Unit tests for core/anima_factory.py — anima creation factory."""
+"""Unit tests for core/anima/factory.py — anima creation factory."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.anima_factory import (
+from core.anima.factory import (
     _RUNTIME_SUBDIRS,
     _apply_defaults_from_sheet,
     _create_status_json,
@@ -31,7 +31,6 @@ from core.anima_factory import (
     validate_anima_name,
 )
 from core.config.models import AnimaWorksConfig, CredentialConfig
-
 
 # ── validate_anima_name ──────────────────────────────────
 
@@ -101,12 +100,7 @@ class TestExtractNameFromMd:
 
     def test_table_takes_priority_over_heading(self):
         """Table row is checked before heading fallback."""
-        content = (
-            "# Character: WrongName\n\n"
-            "## 基本情報\n\n"
-            "| 項目 | 設定 |\n|------|------|\n"
-            "| 英名 | correctname |\n"
-        )
+        content = "# Character: WrongName\n\n## 基本情報\n\n| 項目 | 設定 |\n|------|------|\n| 英名 | correctname |\n"
         assert _extract_name_from_md(content) == "correctname"
 
     def test_heading_only_matches_ascii_start(self):
@@ -188,10 +182,7 @@ class TestShouldCreateBootstrap:
         """Bootstrap NOT needed when identity.md is fully defined."""
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
-        (anima_dir / "identity.md").write_text(
-            "# Anima Identity\n\nName: Alice\nRole: Developer",
-            encoding="utf-8"
-        )
+        (anima_dir / "identity.md").write_text("# Anima Identity\n\nName: Alice\nRole: Developer", encoding="utf-8")
         assert _should_create_bootstrap(anima_dir) is False
 
 
@@ -205,7 +196,7 @@ class TestPlaceBootstrap:
         anima_dir.mkdir()
         bootstrap = tmp_path / "bootstrap.md"
         bootstrap.write_text("Bootstrap content", encoding="utf-8")
-        with patch("core.anima_factory.BOOTSTRAP_TEMPLATE", bootstrap):
+        with patch("core.anima.factory.BOOTSTRAP_TEMPLATE", bootstrap):
             _place_bootstrap(anima_dir)
         assert (anima_dir / "bootstrap.md").exists()
         assert (anima_dir / "bootstrap.md").read_text(encoding="utf-8") == "Bootstrap content"
@@ -214,7 +205,7 @@ class TestPlaceBootstrap:
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
         fake = tmp_path / "nonexistent_bootstrap.md"
-        with patch("core.anima_factory.BOOTSTRAP_TEMPLATE", fake):
+        with patch("core.anima.factory.BOOTSTRAP_TEMPLATE", fake):
             _place_bootstrap(anima_dir)
         assert not (anima_dir / "bootstrap.md").exists()
 
@@ -222,13 +213,10 @@ class TestPlaceBootstrap:
         """Bootstrap is NOT copied when identity.md is fully defined."""
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
-        (anima_dir / "identity.md").write_text(
-            "# Fully Defined\n\nName: Alice\nRole: Dev",
-            encoding="utf-8"
-        )
+        (anima_dir / "identity.md").write_text("# Fully Defined\n\nName: Alice\nRole: Dev", encoding="utf-8")
         bootstrap = tmp_path / "bootstrap.md"
         bootstrap.write_text("Bootstrap content", encoding="utf-8")
-        with patch("core.anima_factory.BOOTSTRAP_TEMPLATE", bootstrap):
+        with patch("core.anima.factory.BOOTSTRAP_TEMPLATE", bootstrap):
             _place_bootstrap(anima_dir)
         assert not (anima_dir / "bootstrap.md").exists()
 
@@ -238,7 +226,7 @@ class TestPlaceBootstrap:
 
 class TestListAnimaTemplates:
     def test_no_templates_dir(self, tmp_path):
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tmp_path / "no"):
+        with patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tmp_path / "no"):
             assert list_anima_templates() == []
 
     def test_lists_non_underscore_dirs(self, tmp_path):
@@ -248,7 +236,7 @@ class TestListAnimaTemplates:
         (tpl_dir / "dev").mkdir()
         (tpl_dir / "sales").mkdir()
         (tpl_dir / "not_a_dir.txt").write_text("file", encoding="utf-8")
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir):
+        with patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tpl_dir):
             result = list_anima_templates()
             assert "dev" in result
             assert "sales" in result
@@ -269,8 +257,10 @@ class TestCreateFromTemplate:
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
 
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tpl_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_template(animas_dir, "dev")
             assert anima_dir.exists()
             assert (anima_dir / "identity.md").read_text(encoding="utf-8") == "I am dev"
@@ -282,18 +272,16 @@ class TestCreateFromTemplate:
         tpl_dir.mkdir()
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir):
-            with pytest.raises(FileNotFoundError):
-                create_from_template(animas_dir, "nonexistent")
+        with patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tpl_dir), pytest.raises(FileNotFoundError):
+            create_from_template(animas_dir, "nonexistent")
 
     def test_raises_for_existing_anima(self, tmp_path):
         tpl_dir = tmp_path / "tpl"
         (tpl_dir / "dev").mkdir(parents=True)
         animas_dir = tmp_path / "animas"
         (animas_dir / "dev").mkdir(parents=True)
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir):
-            with pytest.raises(FileExistsError):
-                create_from_template(animas_dir, "dev")
+        with patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tpl_dir), pytest.raises(FileExistsError):
+            create_from_template(animas_dir, "dev")
 
     def test_custom_name(self, tmp_path):
         tpl_dir = tmp_path / "tpl"
@@ -301,8 +289,10 @@ class TestCreateFromTemplate:
         (tpl_dir / "dev" / "identity.md").write_text("dev id", encoding="utf-8")
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tpl_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_template(animas_dir, "dev", anima_name="alice")
             assert anima_dir.name == "alice"
 
@@ -313,8 +303,10 @@ class TestCreateFromTemplate:
         (tpl_dir / "dev" / "identity.md").write_text("dev id", encoding="utf-8")
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
-        with patch("core.anima_factory.ANIMA_TEMPLATES_DIR", tpl_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.ANIMA_TEMPLATES_DIR", tpl_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_template(animas_dir, "dev")
             status_path = anima_dir / "status.json"
             assert status_path.exists()
@@ -329,8 +321,10 @@ class TestCreateBlank:
     def test_creates_blank_anima(self, tmp_path):
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_blank(animas_dir, "alice")
             assert anima_dir.exists()
             assert (anima_dir / "episodes").is_dir()
@@ -343,8 +337,10 @@ class TestCreateBlank:
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", blank_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", blank_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_blank(animas_dir, "bob")
             content = (anima_dir / "identity.md").read_text(encoding="utf-8")
             assert content == "I am bob"
@@ -359,8 +355,10 @@ class TestCreateBlank:
         """create_blank() creates status.json with enabled=true."""
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_blank(animas_dir, "alice")
             status_path = anima_dir / "status.json"
             assert status_path.exists()
@@ -386,8 +384,10 @@ class TestCreateFromMd:
         md_file = tmp_path / "char.md"
         md_file.write_text(self._VALID_SHEET, encoding="utf-8")
 
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_md(animas_dir, md_file)
             assert anima_dir.name == "alice"
             assert (anima_dir / "character_sheet.md").exists()
@@ -399,8 +399,10 @@ class TestCreateFromMd:
         md_file = tmp_path / "char.md"
         md_file.write_text(self._VALID_SHEET, encoding="utf-8")
 
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_md(animas_dir, md_file, name="bob")
             assert anima_dir.name == "bob"
 
@@ -423,8 +425,10 @@ class TestCreateFromMd:
             encoding="utf-8",
         )
 
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             with pytest.raises(ValueError, match="Could not extract"):
                 create_from_md(animas_dir, md_file)
 
@@ -433,8 +437,10 @@ class TestCreateFromMd:
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
 
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_md(animas_dir, content=self._VALID_SHEET)
             assert anima_dir.name == "alice"
             assert (anima_dir / "character_sheet.md").exists()
@@ -446,8 +452,10 @@ class TestCreateFromMd:
         md_file = tmp_path / "char.md"
         md_file.write_text("invalid content", encoding="utf-8")
 
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_from_md(animas_dir, md_file, content=self._VALID_SHEET)
             assert anima_dir.name == "alice"
 
@@ -471,14 +479,12 @@ class TestCreateFromMd:
             "## 人格\n\nDetails\n\n"
             "## 役割・行動方針\n\nRole\n"
         )
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
-            anima_dir = create_from_md(
-                animas_dir, content=sheet_with_supervisor, supervisor="rin"
-            )
-            status = json.loads(
-                (anima_dir / "status.json").read_text(encoding="utf-8")
-            )
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
+            anima_dir = create_from_md(animas_dir, content=sheet_with_supervisor, supervisor="rin")
+            status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
             assert status["supervisor"] == "rin"
 
     def test_supervisor_from_sheet_when_no_override(self, tmp_path):
@@ -494,14 +500,12 @@ class TestCreateFromMd:
             "## 人格\n\nDetails\n\n"
             "## 役割・行動方針\n\nRole\n"
         )
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
-            anima_dir = create_from_md(
-                animas_dir, content=sheet_with_supervisor
-            )
-            status = json.loads(
-                (anima_dir / "status.json").read_text(encoding="utf-8")
-            )
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
+            anima_dir = create_from_md(animas_dir, content=sheet_with_supervisor)
+            status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
             assert status["supervisor"] == "tanaka"
 
 
@@ -706,7 +710,7 @@ class TestCreateStatusJson:
         config.anima_defaults.credential = "ollama"
 
         with (
-            patch("core.anima_factory.SHARED_ROLES_DIR", roles_root),
+            patch("core.anima.factory.SHARED_ROLES_DIR", roles_root),
             patch("core.config.models.load_config", return_value=config),
         ):
             _create_status_json(anima_dir, {}, role="engineer")
@@ -749,7 +753,8 @@ class TestEnsureStatusJson:
         anima_dir.mkdir()
         existing = {"enabled": False}
         (anima_dir / "status.json").write_text(
-            json.dumps(existing) + "\n", encoding="utf-8",
+            json.dumps(existing) + "\n",
+            encoding="utf-8",
         )
         _ensure_status_json(anima_dir)
         data = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
@@ -905,14 +910,16 @@ Development.
             encoding="utf-8",
         )
 
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"), \
-             patch(
-                 "core.anima_factory._apply_defaults_from_sheet",
-                 side_effect=RuntimeError("simulated failure"),
-             ):
-            with pytest.raises(RuntimeError, match="simulated failure"):
-                create_from_md(animas_dir, md_file)
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", tmp_path / "no_blank"),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+            patch(
+                "core.anima.factory._apply_defaults_from_sheet",
+                side_effect=RuntimeError("simulated failure"),
+            ),
+            pytest.raises(RuntimeError, match="simulated failure"),
+        ):
+            create_from_md(animas_dir, md_file)
 
         # Directory should be cleaned up after rollback
         assert not (animas_dir / "sakura").exists()

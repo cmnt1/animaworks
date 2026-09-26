@@ -223,8 +223,7 @@ def test_ragignore_archive_patterns_appends_missing_patterns(tmp_path: Path) -> 
     assert result.changed == 1
     assert ragignore.read_text(encoding="utf-8") == (
         "00_index.md\n\n"
-        "# Archived memory files (unified)\n"
-        + "".join(f"{pattern}\n" for pattern in SCOPED_ARCHIVE_PATTERNS)
+        "# Archived memory files (unified)\n" + "".join(f"{pattern}\n" for pattern in SCOPED_ARCHIVE_PATTERNS)
     )
 
 
@@ -280,7 +279,7 @@ def test_ragignore_archive_patterns_dry_run_is_read_only(tmp_path: Path) -> None
 
 
 def test_default_ragignore_contains_unified_and_legacy_archive_patterns(tmp_path: Path) -> None:
-    from core.init import _ensure_runtime_only_dirs
+    from core.infra.runtime_init import _ensure_runtime_only_dirs
 
     _ensure_runtime_only_dirs(tmp_path)
 

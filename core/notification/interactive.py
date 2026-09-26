@@ -10,7 +10,7 @@ from __future__ import annotations
 """Interactive approval routing for call_human and related flows.
 
 Persists pending approval requests, validates tokens, and delivers outcomes
-to Anima inboxes via :meth:`core.messenger.Messenger.receive_external`.
+to Anima inboxes via :meth:`core.messaging.messenger.Messenger.receive_external`.
 """
 
 import asyncio
@@ -323,7 +323,7 @@ class InteractionRouter:
             lines.append(t("interactive.blocker_close_instruction"))
         content = "\n".join(lines)
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(get_shared_dir(), req.anima_name)
         messenger.receive_external(

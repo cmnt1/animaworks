@@ -326,12 +326,12 @@ class GrokCLIExecutor(BaseExecutor):
         if (self._model_config.extra_keys or {}).get("grok_sandbox") == "off":
             return False
 
-        from core.config.models import load_permissions
-        from core.file_access_policy import (
+        from core.config.file_access_policy import (
             effective_write_roots,
             resolve_effective_denied_roots,
             shared_tool_cache_write_root,
         )
+        from core.config.models import load_permissions
 
         permissions_config = load_permissions(self._anima_dir)
         write_roots = effective_write_roots(

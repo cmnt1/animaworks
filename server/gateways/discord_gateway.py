@@ -27,7 +27,7 @@ from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.i18n import t
 from core.integrations._base import get_credential
 from core.integrations._discord_markdown import clean_discord_markup
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.paths import get_data_dir, get_shared_dir
 
 logger = logging.getLogger("animaworks.discord_gateway")
@@ -634,7 +634,7 @@ class DiscordGatewayManager:
         # 1. Thread reply mapping — route replies to the Anima that sent the parent
         if reference_id:
             try:
-                from core.discord_webhooks import get_webhook_manager
+                from core.messaging.discord_webhooks import get_webhook_manager
 
                 thread_anima = get_webhook_manager().lookup_thread_anima(reference_id)
                 if thread_anima:

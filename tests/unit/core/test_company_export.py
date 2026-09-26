@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from core.company import CompanyError, ExportResult, export_company, split_companies
+from core.org.company import CompanyError, ExportResult, export_company, split_companies
 
 PRIMARY_COMPANY = "primaryco"
 SECONDARY_COMPANY = "secondaryco"

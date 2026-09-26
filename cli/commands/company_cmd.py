@@ -113,7 +113,7 @@ def register_company_command(subparsers: argparse._SubParsersAction) -> None:
 
 def _run_company_action(action: Callable[[], Any]) -> Any:
     """Run a core action and render the shared company error contract."""
-    from core.company import CompanyError
+    from core.org.company import CompanyError
 
     try:
         return action()
@@ -124,7 +124,7 @@ def _run_company_action(action: Callable[[], Any]) -> Any:
 
 def cmd_company_create(args: argparse.Namespace) -> None:
     """Create or complete a company workspace."""
-    from core.company import create_company
+    from core.org.company import create_company
     from core.paths import get_data_dir
 
     created = _run_company_action(
@@ -136,7 +136,7 @@ def cmd_company_create(args: argparse.Namespace) -> None:
 
 def cmd_company_list(args: argparse.Namespace) -> None:
     """Print company membership summaries."""
-    from core.company import list_companies
+    from core.org.company import list_companies
     from core.paths import get_data_dir
 
     companies, unassigned = _run_company_action(lambda: list_companies(data_dir=get_data_dir()))
@@ -157,7 +157,7 @@ def cmd_company_list(args: argparse.Namespace) -> None:
 
 def cmd_company_assign(args: argparse.Namespace) -> None:
     """Assign or unassign one or more animas."""
-    from core.company import assign_animas
+    from core.org.company import assign_animas
     from core.paths import get_data_dir
 
     lines = _run_company_action(
@@ -173,7 +173,7 @@ def cmd_company_assign(args: argparse.Namespace) -> None:
 
 def cmd_company_adopt(args: argparse.Namespace) -> None:
     """Adopt assets into a company workspace."""
-    from core.company import adopt_assets
+    from core.org.company import adopt_assets
     from core.paths import get_data_dir
 
     results = _run_company_action(
@@ -194,7 +194,7 @@ def cmd_company_adopt(args: argparse.Namespace) -> None:
 
 def cmd_company_split(args: argparse.Namespace) -> None:
     """Plan or execute a company split manifest."""
-    from core.company import CompanyError, SplitExecutionError, split_companies
+    from core.org.company import CompanyError, SplitExecutionError, split_companies
     from core.paths import get_data_dir
 
     try:
@@ -211,7 +211,7 @@ def cmd_company_split(args: argparse.Namespace) -> None:
 
 def cmd_company_export(args: argparse.Namespace) -> None:
     """Export one company into a portable migration bundle."""
-    from core.company import export_company
+    from core.org.company import export_company
     from core.paths import get_data_dir
 
     result = _run_company_action(lambda: export_company(args.name, args.out, data_dir=get_data_dir()))

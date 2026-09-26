@@ -57,17 +57,17 @@ def _build_agent(tmp_path: Path, config_dict: dict | None = None) -> AgentCore:
     memory.anima_dir = tmp_path
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor"),
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor"),
         patch("core.integrations.TOOL_MODULES", _FAKE_TOOL_MODULES),
         patch("core.integrations.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
         # chatwork/slack default to enabled=False in config; suppress so tests
         # exercise the permissions logic in isolation from live config values
         patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
     ):
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(tmp_path, memory, mc)
     return agent
@@ -133,15 +133,15 @@ class TestToolPermissionsDefaultAll:
         mc = ModelConfig(model="claude-sonnet-4-6", api_key="test-key")
 
         with (
-            patch("core.agent.ToolHandler"),
-            patch("core.agent.AgentCore._check_sdk", return_value=False),
-            patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-            patch("core.agent.AgentCore._create_executor"),
+            patch("core.agent.agent_core.ToolHandler"),
+            patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+            patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+            patch("core.agent.agent_core.AgentCore._create_executor"),
             patch("core.integrations.TOOL_MODULES", _FAKE_TOOL_MODULES),
             patch("core.integrations.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
-            from core.agent import AgentCore
+            from core.agent.agent_core import AgentCore
 
             agent = AgentCore(tmp_path, None, mc)  # type: ignore[arg-type]
         assert agent._tool_registry == _ALL_TOOLS_SORTED

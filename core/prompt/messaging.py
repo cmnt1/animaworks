@@ -58,7 +58,7 @@ def _collect_accessible_board_channels(anima_dir: Path) -> tuple[list[str], list
     if not channels_dir.is_dir():
         return [], []
 
-    from core.messenger import is_channel_member, load_channel_meta
+    from core.messaging.messenger import is_channel_member, load_channel_meta
 
     restricted: list[str] = []
     open_channels: list[str] = []

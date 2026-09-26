@@ -30,10 +30,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from core import startup_progress
 from core.auth.manager import find_user, load_auth, validate_session
 from core.config import load_config
 from core.i18n import t
+from core.infra import startup_progress
 from core.supervisor import ProcessSupervisor
 from server.localhost import _is_safe_localhost_request
 from server.routes import create_router
@@ -393,7 +393,7 @@ def _request_accepts_html(request: Request) -> bool:
 async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
     """Background task: generate missing anima assets after startup."""
     try:
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
         from core.config.models import load_config
 
         enable_3d = True
@@ -427,7 +427,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         def _on_anima_added(name: str) -> None:
             if name not in app.state.anima_names:
                 app.state.anima_names.append(name)
-                from core.org_sync import sync_org_structure
+                from core.org.org_sync import sync_org_structure
 
                 sync_org_structure(app.state.animas_dir)
                 logger.info("Anima added via reconciliation: %s", name)
@@ -503,7 +503,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         # ── Ensure infrastructure services (Neo4j, etc.) ──────────
         try:
-            from core.infra import ensure_infra_services
+            from core.infra.services import ensure_infra_services
             from core.paths import PROJECT_DIR
 
             await ensure_infra_services(app.state.animas_dir, _names_to_start, PROJECT_DIR)
@@ -515,7 +515,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         # Sync org structure from identity.md/status.json → config.json
         try:
-            from core.org_sync import sync_org_structure
+            from core.org.org_sync import sync_org_structure
 
             sync_org_structure(app.state.animas_dir)
         except Exception:
@@ -817,7 +817,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     msg_log_scheduler = AsyncIOScheduler(timezone=get_app_timezone())
 
     # ── Orphan anima detection ───────────────────────
-    from core.org_sync import detect_orphan_animas
+    from core.org.org_sync import detect_orphan_animas
 
     def _detect_orphans_task() -> None:
         try:
@@ -834,7 +834,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     )
 
     # ── Asset reconciliation (periodic) ───────────────
-    from core.asset_reconciler import reconcile_all_assets
+    from core.anima.asset_reconciler import reconcile_all_assets
 
     async def _reconcile_assets_periodic() -> None:
         try:
@@ -867,7 +867,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     )
 
     # ── Claude CLI / SDK auto-update ─────────────────
-    from core.auto_updater import run_update_check
+    from core.infra.auto_updater import run_update_check
 
     async def _auto_update_claude() -> None:
         try:

@@ -195,7 +195,7 @@ Anima の役割は、`supervisor` フィールドと部下の有無で自動的�
 Anima 作成時に `--role` で専門ロールを指定できるのは、**MD キャラシート経由**のみである。
 
 - 適用コマンド例: `animaworks anima create --from-md PATH [--role ROLE]`（非推奨の `create-anima` でも同様）
-- `create_from_template`（`--template`）および `create_blank`（`--name` のみ）では、`_shared/roles/<role>/defaults.json` のマージも、`templates/{locale}/roles/<role>/` からの `permissions.json` / `specialty_prompt.md` の上書きコピーも**行われない**。前者は `anima_templates/{名前}`、後者は `_blank` をそのままコピーするだけである。いずれも、コピー後に `status.json` が無ければ `_ensure_status_json` で `{"enabled": true}` の最小ファイルが追加される（現行テンプレートツリーには `status.json` を同梱していない）（`core/anima_factory.py`）。
+- `create_from_template`（`--template`）および `create_blank`（`--name` のみ）では、`_shared/roles/<role>/defaults.json` のマージも、`templates/{locale}/roles/<role>/` からの `permissions.json` / `specialty_prompt.md` の上書きコピーも**行われない**。前者は `anima_templates/{名前}`、後者は `_blank` をそのままコピーするだけである。いずれも、コピー後に `status.json` が無ければ `_ensure_status_json` で `{"enabled": true}` の最小ファイルが追加される（現行テンプレートツリーには `status.json` を同梱していない）（`core/anima/factory.py`）。
 
 ### キャラシート見出しのエイリアス（正規化）
 
@@ -217,7 +217,7 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
 | `templates/{locale}/roles/{role}/specialty_prompt.md` | ロール固有の行動指針 | ja / en |
 
 `locale` は `config.json` の `locale` またはデフォルト `ja` で解決される。
-`_get_roles_dir()`（`core/anima_factory.py`）は `templates/{locale}/roles` を探し、
+`_get_roles_dir()`（`core/anima/factory.py`）は `templates/{locale}/roles` を探し、
 **存在しなければ `en`、それも無ければ `ja`** の順にフォールバックする。
 
 `defaults.json` は `templates/_shared/roles/<role>/defaults.json` にあり、全ロケール共通。定義フィールドは次のとおり:
@@ -267,7 +267,7 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
 1. **作成時**（`create_from_md`）の順序は次のとおり:
    - `_apply_defaults_from_sheet()` … キャラシートから `identity.md` / `injection.md` /（権限セクションがあれば）`permissions.md` → `permissions.json` へマイグレーション
    - `_apply_role_defaults()` … ロールの `permissions.json` と `specialty_prompt.md` を **上書きコピー**（キャラシート由来の `permissions.json` はロール側で上書きされる）
-   - `_create_status_json()` … `SHARED_ROLES_DIR`（`_shared/roles/<role>/defaults.json`）から上表のキーをすべて読み、キャラシートの「モデル」「credential」があればそれで上書きして `status.json` を書く。キャラシートの「実行モード」に値があるときだけ `execution_mode` を書き込む；未指定ならキー自体を省略し、`models.json` 等のパターン解決に任せる（`core/anima_factory.py` の `_create_status_json`）。
+   - `_create_status_json()` … `SHARED_ROLES_DIR`（`_shared/roles/<role>/defaults.json`）から上表のキーをすべて読み、キャラシートの「モデル」「credential」があればそれで上書きして `status.json` を書く。キャラシートの「実行モード」に値があるときだけ `execution_mode` を書き込む；未指定ならキー自体を省略し、`models.json` 等のパターン解決に任せる（`core/anima/factory.py` の `_create_status_json`）。
 2. **ロール変更時**（`animaworks anima set-role`）: `_apply_role_defaults()` で `permissions.json` と `specialty_prompt.md` を再コピー。`status.json` には `model`, `context_threshold`, `max_turns`, `max_chains`, `conversation_history_threshold` のみ `defaults.json` からマージされる。`background_model` と `max_outbound_*` は **set-role では更新されない**（必要なら手動で `status.json` を編集する）。`--status-only` は `role` フィールドと上記数値キーのみ更新しテンプレートファイルは触れない。`--no-restart` で API 経由の自動再起動をスキップできる。CLI の成功メッセージに `permissions.md` と出るが、実際に上書きされるのは **`permissions.json`**（`cli/commands/anima_mgmt.py` の `cmd_anima_set_role`）。
 
 ### プロンプト注入

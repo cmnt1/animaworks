@@ -9,7 +9,7 @@ description: >-
 
 ### cron（定時タスク）
 
-cron の**パース**は `core/schedule_parser.py`（`parse_cron_md` / `parse_schedule`）、**登録・実行・リロード**は `core/supervisor/scheduler_manager.py`（APScheduler、`AsyncIOScheduler(timezone=get_app_timezone())`）が担当する。
+cron の**パース**は `core/supervisor/schedule_parser.py`（`parse_cron_md` / `parse_schedule`）、**登録・実行・リロード**は `core/supervisor/scheduler_manager.py`（APScheduler、`AsyncIOScheduler(timezone=get_app_timezone())`）が担当する。
 
 ### `core/tasks/background.py`（cron とは別系統）
 
@@ -367,7 +367,7 @@ cron.mdを更新する前に、以下を**必ず**確認すること:
 ```bash
 # プロジェクトルートで実行。ANIMAWORKS_ANIMA_DIR 未設定時は ~/.animaworks/animas/default を使用
 python -c "
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
 import os
 from pathlib import Path
 

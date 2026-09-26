@@ -23,7 +23,7 @@ On first setup, run `animaworks init` to initialize from templates.
 
 ### Directories Created on Initialization
 
-`ensure_runtime_dir` (`core/init.py`) creates the following:
+`ensure_runtime_dir` (`core/infra/runtime_init.py`) creates the following:
 
 - `animas/` — Anima directories
 - `shared/inbox/` — Incoming message queue

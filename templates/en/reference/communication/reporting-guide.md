@@ -22,7 +22,7 @@ Use the `send_message` tool for reporting. Observe the following constraints:
 - **Recipients**: see “Recipient resolution” below (Anima name, human alias, direct `slack:` / `chatwork:`, etc.)
 - **Note**: During a chat session with a human, `send_message` cannot target the human; reply with plain text directly
 
-### Recipient resolution and external delivery (`core/outbound.py`)
+### Recipient resolution and external delivery (`core/messaging/outbound.py`)
 
 The `to` field of `send_message` is resolved to an internal inbox or external delivery (Slack / Chatwork) in the following **priority order**. An empty string cannot be resolved and results in an error.
 

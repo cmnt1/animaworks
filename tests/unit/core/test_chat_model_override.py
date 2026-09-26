@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._anima_messaging import _apply_chat_model_override
+from core.anima.messaging import _apply_chat_model_override
 from core.schemas import CycleResult, ModelConfig
 from server.routes.chat_models import ChatRequest
 
@@ -176,9 +176,9 @@ class TestProcessMessageModelOverride:
         (d / "dm_logs").mkdir()
         return d
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.MemoryManager")
-    @patch("core.anima.Messenger")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.MemoryManager")
+    @patch("core.anima.digital_anima.Messenger")
     async def test_model_override_reaches_run_cycle(
         self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
     ):
@@ -188,14 +188,14 @@ class TestProcessMessageModelOverride:
         mock_mm_cls.return_value.read_model_config.return_value = base
         mock_agent_cls.return_value = _agent()
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir, shared_dir)
         config = MagicMock()
 
         with (
-            patch("core._anima_messaging.resolve_effective_model_config", return_value=base),
-            patch("core._anima_messaging.log_model_fallback", return_value=None),
+            patch("core.anima.messaging.resolve_effective_model_config", return_value=base),
+            patch("core.anima.messaging.log_model_fallback", return_value=None),
             patch("core.config.io.load_config", return_value=config),
             patch(
                 "core.config.model_mode.parse_fallback_entry",
@@ -212,9 +212,9 @@ class TestProcessMessageModelOverride:
         assert call is not None
         assert call.kwargs["model_config_override"] is override
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.MemoryManager")
-    @patch("core.anima.Messenger")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.MemoryManager")
+    @patch("core.anima.digital_anima.Messenger")
     async def test_invalid_model_continues_with_default(
         self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
     ):
@@ -223,14 +223,14 @@ class TestProcessMessageModelOverride:
         mock_mm_cls.return_value.read_model_config.return_value = base
         mock_agent_cls.return_value = _agent()
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir, shared_dir)
         config = MagicMock()
 
         with (
-            patch("core._anima_messaging.resolve_effective_model_config", return_value=base),
-            patch("core._anima_messaging.log_model_fallback", return_value=None),
+            patch("core.anima.messaging.resolve_effective_model_config", return_value=base),
+            patch("core.anima.messaging.log_model_fallback", return_value=None),
             patch("core.config.io.load_config", return_value=config),
             patch("core.config.model_mode.parse_fallback_entry", return_value=None),
         ):

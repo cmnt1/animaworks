@@ -116,7 +116,7 @@ def test_summarize_curator_report_counts_and_breakdown() -> None:
 
 
 def test_heartbeat_part_injected_when_unreviewed(tmp_path: Path) -> None:
-    from core._anima_heartbeat import _build_curator_review_part
+    from core.anima.heartbeat import _build_curator_review_part
 
     anima_dir = tmp_path / "alice"
     _write_report(anima_dir, suggestions=[_SUGGESTION])
@@ -127,7 +127,7 @@ def test_heartbeat_part_injected_when_unreviewed(tmp_path: Path) -> None:
 
 
 def test_heartbeat_part_absent_after_ack(tmp_path: Path) -> None:
-    from core._anima_heartbeat import _build_curator_review_part
+    from core.anima.heartbeat import _build_curator_review_part
     from core.tooling.handler_skills import SkillsToolsMixin
 
     anima_dir = tmp_path / "alice"
@@ -144,7 +144,7 @@ def test_heartbeat_part_absent_after_ack(tmp_path: Path) -> None:
 
 
 def test_heartbeat_part_absent_with_zero_proposals(tmp_path: Path) -> None:
-    from core._anima_heartbeat import _build_curator_review_part
+    from core.anima.heartbeat import _build_curator_review_part
 
     anima_dir = tmp_path / "alice"
     _write_report(anima_dir, suggestions=[])
@@ -152,7 +152,7 @@ def test_heartbeat_part_absent_with_zero_proposals(tmp_path: Path) -> None:
 
 
 def test_heartbeat_part_absent_on_corrupt_report(tmp_path: Path) -> None:
-    from core._anima_heartbeat import _build_curator_review_part
+    from core.anima.heartbeat import _build_curator_review_part
 
     anima_dir = tmp_path / "alice"
     (_report_dir(anima_dir) / "report-2026-07-03.json").write_text("broken", encoding="utf-8")

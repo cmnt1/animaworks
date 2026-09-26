@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from core.anima_roster import load_anima_names
+from core.anima.roster import load_anima_names
 from core.paths import get_data_dir
 
 logger = logging.getLogger("animaworks.migrate_shared_users_cleanup")

@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.cascade_limiter import ConversationDepthLimiter
-from core.messenger import Messenger
+from core.messaging.cascade_limiter import ConversationDepthLimiter
+from core.messaging.messenger import Messenger
 from core.tasks.background import _rotate_dm_logs_sync
 from core.time_utils import now_jst
 
@@ -53,7 +53,7 @@ def _write_dm_sent_entry(log_path: Path, ts: str, to: str = "bob") -> None:
 
 def _make_limiter(max_per_hour: int = 5, max_per_day: int = 10, max_depth: int = 6) -> ConversationDepthLimiter:
     """Create a limiter with explicit limits (bypasses load_config)."""
-    with patch("core.cascade_limiter.load_config") as mock_cfg:
+    with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
         mock_cfg.return_value = MagicMock()
         mock_cfg.return_value.heartbeat.depth_window_s = 600
         mock_cfg.return_value.heartbeat.max_depth = max_depth
@@ -93,7 +93,7 @@ def test_global_hourly_limit_blocks_excess_messages(workspace: Path) -> None:
 
     with (
         patch("core.paths.get_animas_dir", return_value=animas_dir),
-        patch("core.cascade_limiter.get_depth_limiter", return_value=limiter),
+        patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter),
     ):
         result = messenger.send("bob", "should be blocked")
 
@@ -131,7 +131,7 @@ def test_global_daily_limit_blocks_excess_messages(workspace: Path) -> None:
 
     with (
         patch("core.paths.get_animas_dir", return_value=animas_dir),
-        patch("core.cascade_limiter.get_depth_limiter", return_value=limiter),
+        patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter),
     ):
         result = messenger.send("bob", "should be blocked by daily limit")
 
@@ -230,7 +230,7 @@ def test_ack_messages_bypass_all_limits(workspace: Path) -> None:
 
     with (
         patch("core.paths.get_animas_dir", return_value=animas_dir),
-        patch("core.cascade_limiter.get_depth_limiter", return_value=limiter),
+        patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter),
     ):
         result = messenger.send(
             "bob",

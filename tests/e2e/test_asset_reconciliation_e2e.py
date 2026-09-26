@@ -26,7 +26,7 @@ def _create_anima_with_assets(
     complete: bool = True,
 ) -> Path:
     """Create an anima directory, optionally with all required assets."""
-    from core.asset_reconciler import REALISTIC_REQUIRED_ASSETS, REQUIRED_ASSETS
+    from core.anima.asset_reconciler import REALISTIC_REQUIRED_ASSETS, REQUIRED_ASSETS
 
     anima_dir = animas_dir / name
     anima_dir.mkdir(parents=True)
@@ -73,7 +73,7 @@ class TestStartupReconciliation:
         """Startup reconciliation detects animas with missing assets and
         triggers generation for each one sequentially.
         """
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
 
         animas_dir = data_dir / "animas"
 
@@ -111,7 +111,7 @@ class TestStartupReconciliation:
         data_dir: Path,
     ) -> None:
         """Startup is a no-op when all animas have complete assets."""
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
 
         animas_dir = data_dir / "animas"
         _create_anima_with_assets(animas_dir, "sakura", complete=True)
@@ -135,7 +135,7 @@ class TestPeriodicReconciliation:
         """Periodic reconciliation picks up assets that become missing
         after startup (e.g., bootstrap that just ran and failed).
         """
-        from core.asset_reconciler import (
+        from core.anima.asset_reconciler import (
             find_animas_with_missing_assets,
         )
 
@@ -168,7 +168,7 @@ class TestPeriodicReconciliation:
         data_dir: Path,
     ) -> None:
         """If one anima's generation fails, the next anima still runs."""
-        from core.asset_reconciler import reconcile_all_assets
+        from core.anima.asset_reconciler import reconcile_all_assets
 
         animas_dir = data_dir / "animas"
         _create_anima_with_assets(animas_dir, "aoi", complete=False)
@@ -214,7 +214,7 @@ class TestLockMechanism:
         """Two concurrent reconcile calls for the same anima:
         one runs, the other is skipped.
         """
-        from core.asset_reconciler import _anima_locks, reconcile_anima_assets
+        from core.anima.asset_reconciler import _anima_locks, reconcile_anima_assets
 
         animas_dir = data_dir / "animas"
         anima_dir = _create_anima_with_assets(
@@ -268,7 +268,7 @@ class TestLockMechanism:
         data_dir: Path,
     ) -> None:
         """Different animas use different locks and can run independently."""
-        from core.asset_reconciler import _anima_locks, reconcile_anima_assets
+        from core.anima.asset_reconciler import _anima_locks, reconcile_anima_assets
 
         animas_dir = data_dir / "animas"
         anima_a = _create_anima_with_assets(
@@ -313,7 +313,7 @@ class TestDifferentialGeneration:
     @pytest.mark.asyncio
     async def test_skip_existing_passed(self, data_dir: Path) -> None:
         """Pipeline is called with skip_existing=True for differential gen."""
-        from core.asset_reconciler import reconcile_anima_assets
+        from core.anima.asset_reconciler import reconcile_anima_assets
 
         animas_dir = data_dir / "animas"
         anima_dir = _create_anima_with_assets(

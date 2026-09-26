@@ -6,10 +6,10 @@
 These tests exercise the full stack: build_system_prompt with real
 MemoryManager, detect_orphan_animas with filesystem I/O, etc.
 """
+
 from __future__ import annotations
 
 import json
-
 
 from core.memory.manager import MemoryManager
 from core.prompt.builder import build_system_prompt
@@ -88,15 +88,11 @@ class TestOrphanDetectionE2E:
         orphan_dir = data_dir / "animas" / "rie"
         orphan_dir.mkdir()
         (orphan_dir / "state").mkdir()
-        (orphan_dir / "status.json").write_text(
-            json.dumps({"supervisor": "rin"}), encoding="utf-8"
-        )
+        (orphan_dir / "status.json").write_text(json.dumps({"supervisor": "rin"}), encoding="utf-8")
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
-        orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0
-        )
+        orphans = detect_orphan_animas(data_dir / "animas", data_dir / "shared", age_threshold_s=0)
 
         assert len(orphans) == 1
         assert orphans[0]["name"] == "rie"
@@ -109,9 +105,7 @@ class TestOrphanDetectionE2E:
         assert (archives[0] / "state").is_dir()
 
         # Second run — orphan already gone, nothing to do
-        orphans2 = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0
-        )
+        orphans2 = detect_orphan_animas(data_dir / "animas", data_dir / "shared", age_threshold_s=0)
         assert orphans2 == []
 
     def test_no_inbox_message_sent(self, data_dir, make_anima):
@@ -122,15 +116,11 @@ class TestOrphanDetectionE2E:
         orphan_dir = data_dir / "animas" / "rie"
         orphan_dir.mkdir()
         (orphan_dir / "state").mkdir()
-        (orphan_dir / "status.json").write_text(
-            json.dumps({"supervisor": "rin"}), encoding="utf-8"
-        )
+        (orphan_dir / "status.json").write_text(json.dumps({"supervisor": "rin"}), encoding="utf-8")
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
-        detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0
-        )
+        detect_orphan_animas(data_dir / "animas", data_dir / "shared", age_threshold_s=0)
 
         inbox = data_dir / "shared" / "inbox" / "rin"
         messages = list(inbox.glob("*.json")) if inbox.exists() else []
@@ -143,11 +133,9 @@ class TestOrphanDetectionE2E:
         orphan_dir = data_dir / "animas" / "rie"
         orphan_dir.mkdir()
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
-        orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0
-        )
+        orphans = detect_orphan_animas(data_dir / "animas", data_dir / "shared", age_threshold_s=0)
 
         assert len(orphans) == 1
         assert orphans[0]["name"] == "rie"
@@ -174,11 +162,9 @@ class TestOrphanDetectionE2E:
         orphan_dir.mkdir()
         (orphan_dir / "vectordb").mkdir()
 
-        from core.org_sync import detect_orphan_animas
+        from core.org.org_sync import detect_orphan_animas
 
-        orphans = detect_orphan_animas(
-            data_dir / "animas", data_dir / "shared", age_threshold_s=0
-        )
+        orphans = detect_orphan_animas(data_dir / "animas", data_dir / "shared", age_threshold_s=0)
 
         assert len(orphans) == 1
         assert orphans[0]["action"] == "auto_removed"
@@ -209,7 +195,7 @@ class TestSyncOrgPruneE2E:
         save_config(config, data_dir / "config.json")
         invalidate_cache()
 
-        from core.org_sync import sync_org_structure
+        from core.org.org_sync import sync_org_structure
 
         sync_org_structure(data_dir / "animas", data_dir / "config.json")
 
@@ -237,7 +223,7 @@ class TestSyncOrgPruneE2E:
         save_config(config, data_dir / "config.json")
         invalidate_cache()
 
-        from core.org_sync import sync_org_structure
+        from core.org.org_sync import sync_org_structure
 
         sync_org_structure(data_dir / "animas", data_dir / "config.json")
 
@@ -257,9 +243,10 @@ class TestSyncOrgPruneE2E:
         assert "temp" in config_before.animas
 
         import shutil
+
         shutil.rmtree(data_dir / "animas" / "temp")
 
-        from core.org_sync import sync_org_structure
+        from core.org.org_sync import sync_org_structure
 
         sync_org_structure(data_dir / "animas", data_dir / "config.json")
 

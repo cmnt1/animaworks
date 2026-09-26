@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.response_normalize import normalize_user_facing_response_text
+from core.anima.response_normalize import normalize_user_facing_response_text
 
 
 def test_extracts_post_channel_text() -> None:

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """LifecycleMixin -- heartbeat orchestration, consolidation, cron execution.
 
-Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
+Extracted from ``core.anima.digital_anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 

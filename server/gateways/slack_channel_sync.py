@@ -31,7 +31,7 @@ from typing import Any
 
 import httpx
 
-from core.messenger import ChannelMeta, load_channel_meta, save_channel_meta
+from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta
 from core.paths import get_shared_dir
 
 logger = logging.getLogger("animaworks.slack_channel_sync")

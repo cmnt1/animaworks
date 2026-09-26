@@ -224,7 +224,7 @@ async def reconcile_anima_assets(
     # A blank first-run Anima has no appearance yet. This is waiting for
     # user input, not an image-generation failure worth an hour-long cooldown.
     if prompt is None:
-        from core.bootstrap_state import get_bootstrap_status
+        from core.anima.bootstrap_state import get_bootstrap_status
 
         if get_bootstrap_status(anima_dir).get("needs_user_input"):
             return {"anima": anima_name, "skipped": True, "reason": "awaiting_profile"}

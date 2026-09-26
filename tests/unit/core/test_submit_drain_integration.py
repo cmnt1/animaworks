@@ -69,7 +69,7 @@ class TestSubmitDrainIntegration:
 
         # Now drain using the actual method
         # We need to bypass __init__ like existing tests do
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = object.__new__(DigitalAnima)
         mock_agent = MagicMock()
@@ -90,7 +90,7 @@ class TestSubmitDrainIntegration:
 
     async def test_on_complete_then_drain_roundtrip(self, tmp_path: Path) -> None:
         """Full roundtrip: _on_background_task_complete writes, drain reads."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)

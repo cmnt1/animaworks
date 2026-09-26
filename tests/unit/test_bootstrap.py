@@ -14,7 +14,6 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,15 +22,15 @@ from httpx import ASGITransport, AsyncClient
 
 from core.schemas import CycleResult
 from core.supervisor.ipc import IPCResponse
-from core.tooling.handler import active_session_type
 from core.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
 from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.time_utils import now_jst
+from core.tooling.handler import active_session_type
 from server.stream_registry import StreamRegistry
-
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -42,17 +41,19 @@ def _make_anima_dir(tmp_path: Path, *, with_bootstrap: bool = True) -> Path:
     anima_dir.mkdir(parents=True)
     (anima_dir / "identity.md").write_text("# Test Anima", encoding="utf-8")
     if with_bootstrap:
-        (anima_dir / "bootstrap.md").write_text(
-            "# Bootstrap instructions", encoding="utf-8"
-        )
+        (anima_dir / "bootstrap.md").write_text("# Bootstrap instructions", encoding="utf-8")
     for sub in [
-        "episodes", "knowledge", "procedures", "skills",
-        "state", "shortterm", "shortterm/archive", "transcripts",
+        "episodes",
+        "knowledge",
+        "procedures",
+        "skills",
+        "state",
+        "shortterm",
+        "shortterm/archive",
+        "transcripts",
     ]:
         (anima_dir / sub).mkdir(parents=True, exist_ok=True)
-    (anima_dir / "state" / "current_state.md").write_text(
-        "status: idle\n", encoding="utf-8"
-    )
+    (anima_dir / "state" / "current_state.md").write_text("status: idle\n", encoding="utf-8")
     (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
     return anima_dir
 
@@ -68,15 +69,15 @@ def _make_shared_dir(tmp_path: Path, anima_name: str = "test-anima") -> Path:
 
 def _make_digital_anima(tmp_path: Path, *, with_bootstrap: bool = True):
     """Create a DigitalAnima with mocked heavy dependencies."""
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
 
     anima_dir = _make_anima_dir(tmp_path, with_bootstrap=with_bootstrap)
     shared_dir = _make_shared_dir(tmp_path)
 
     with (
-        patch("core.anima.MemoryManager"),
-        patch("core.anima.AgentCore"),
-        patch("core.anima.Messenger"),
+        patch("core.anima.digital_anima.MemoryManager"),
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.Messenger"),
     ):
         dp = DigitalAnima(anima_dir, shared_dir)
 
@@ -162,7 +163,7 @@ class TestDigitalAnimaRunBootstrap:
 
         dp.agent.run_cycle = mock_run_cycle
 
-        with patch("core._anima_messaging.ConversationMemory") as mock_conv_cls:
+        with patch("core.anima.messaging.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
             mock_conv.build_chat_prompt = MagicMock(return_value="prompt")
             mock_conv_cls.return_value = mock_conv
@@ -185,7 +186,7 @@ class TestDigitalAnimaRunBootstrap:
             )
         )
 
-        with patch("core._anima_messaging.ConversationMemory") as mock_conv_cls:
+        with patch("core.anima.messaging.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
             mock_conv.build_chat_prompt = MagicMock(return_value="prompt")
             mock_conv_cls.return_value = mock_conv
@@ -200,11 +201,9 @@ class TestDigitalAnimaRunBootstrap:
         """Even if agent.run_cycle raises, status should be reset to 'idle'."""
         dp = _make_digital_anima(tmp_path, with_bootstrap=True)
 
-        dp.agent.run_cycle = AsyncMock(
-            side_effect=RuntimeError("LLM API error")
-        )
+        dp.agent.run_cycle = AsyncMock(side_effect=RuntimeError("LLM API error"))
 
-        with patch("core._anima_messaging.ConversationMemory") as mock_conv_cls:
+        with patch("core.anima.messaging.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
             mock_conv.build_chat_prompt = MagicMock(return_value="prompt")
             mock_conv_cls.return_value = mock_conv
@@ -362,10 +361,7 @@ class TestSupervisorBootstrap:
 
         # Check that broadcast was called with "started"
         calls = ws_manager.broadcast.call_args_list
-        started_calls = [
-            c for c in calls
-            if c[0][0].get("data", {}).get("status") == "started"
-        ]
+        started_calls = [c for c in calls if c[0][0].get("data", {}).get("status") == "started"]
         assert len(started_calls) >= 1
         started_data = started_calls[0][0][0]
         assert started_data["type"] == "anima.bootstrap"
@@ -391,19 +387,14 @@ class TestSupervisorBootstrap:
 
         # Check completed broadcast
         calls = ws_manager.broadcast.call_args_list
-        completed_calls = [
-            c for c in calls
-            if c[0][0].get("data", {}).get("status") == "completed"
-        ]
+        completed_calls = [c for c in calls if c[0][0].get("data", {}).get("status") == "completed"]
         assert len(completed_calls) >= 1
         completed_data = completed_calls[0][0][0]
         assert completed_data["type"] == "anima.bootstrap"
         assert completed_data["data"]["name"] == "alice"
 
     @pytest.mark.asyncio
-    async def test_supervisor_run_bootstrap_broadcasts_failed_on_error(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_run_bootstrap_broadcasts_failed_on_error(self, tmp_path: Path):
         """On error, _run_bootstrap broadcasts a 'failed' event."""
         ws_manager = MagicMock()
         ws_manager.broadcast = AsyncMock()
@@ -422,19 +413,14 @@ class TestSupervisorBootstrap:
 
         # Check failed broadcast
         calls = ws_manager.broadcast.call_args_list
-        failed_calls = [
-            c for c in calls
-            if c[0][0].get("data", {}).get("status") == "failed"
-        ]
+        failed_calls = [c for c in calls if c[0][0].get("data", {}).get("status") == "failed"]
         assert len(failed_calls) >= 1
         failed_data = failed_calls[0][0][0]
         assert failed_data["type"] == "anima.bootstrap"
         assert failed_data["data"]["name"] == "alice"
 
     @pytest.mark.asyncio
-    async def test_supervisor_run_bootstrap_broadcasts_failed_on_exception(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_run_bootstrap_broadcasts_failed_on_exception(self, tmp_path: Path):
         """When send_request raises an exception, broadcasts 'failed'."""
         ws_manager = MagicMock()
         ws_manager.broadcast = AsyncMock()
@@ -447,16 +433,11 @@ class TestSupervisorBootstrap:
         await supervisor._run_bootstrap("alice")
 
         calls = ws_manager.broadcast.call_args_list
-        failed_calls = [
-            c for c in calls
-            if c[0][0].get("data", {}).get("status") == "failed"
-        ]
+        failed_calls = [c for c in calls if c[0][0].get("data", {}).get("status") == "failed"]
         assert len(failed_calls) >= 1
 
     @pytest.mark.asyncio
-    async def test_supervisor_run_bootstrap_removes_from_set_on_success(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_run_bootstrap_removes_from_set_on_success(self, tmp_path: Path):
         """After successful completion, anima is removed from _bootstrapping set."""
         supervisor = _make_supervisor(tmp_path)
 
@@ -474,9 +455,7 @@ class TestSupervisorBootstrap:
         assert "alice" not in supervisor._bootstrapping
 
     @pytest.mark.asyncio
-    async def test_supervisor_run_bootstrap_removes_from_set_on_failure(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_run_bootstrap_removes_from_set_on_failure(self, tmp_path: Path):
         """After failure, anima is removed from _bootstrapping set."""
         supervisor = _make_supervisor(tmp_path)
 
@@ -494,9 +473,7 @@ class TestSupervisorBootstrap:
         assert "alice" not in supervisor._bootstrapping
 
     @pytest.mark.asyncio
-    async def test_supervisor_run_bootstrap_removes_from_set_on_exception(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_run_bootstrap_removes_from_set_on_exception(self, tmp_path: Path):
         """After exception, anima is removed from _bootstrapping set."""
         supervisor = _make_supervisor(tmp_path)
 
@@ -509,9 +486,7 @@ class TestSupervisorBootstrap:
         assert "alice" not in supervisor._bootstrapping
 
     @pytest.mark.asyncio
-    async def test_supervisor_process_status_shows_bootstrapping(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_process_status_shows_bootstrapping(self, tmp_path: Path):
         """get_process_status returns 'bootstrapping' when anima is bootstrapping."""
         supervisor = _make_supervisor(tmp_path)
 
@@ -524,9 +499,7 @@ class TestSupervisorBootstrap:
         assert status["status"] == "bootstrapping"
 
     @pytest.mark.asyncio
-    async def test_supervisor_process_status_includes_bootstrapping_flag(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_process_status_includes_bootstrapping_flag(self, tmp_path: Path):
         """get_process_status includes bootstrapping: True/False flag."""
         supervisor = _make_supervisor(tmp_path)
 
@@ -543,9 +516,7 @@ class TestSupervisorBootstrap:
         assert status_boot["bootstrapping"] is True
 
     @pytest.mark.asyncio
-    async def test_supervisor_process_status_not_bootstrapping_shows_running(
-        self, tmp_path: Path
-    ):
+    async def test_supervisor_process_status_not_bootstrapping_shows_running(self, tmp_path: Path):
         """When not bootstrapping, status shows the handle's actual state."""
         supervisor = _make_supervisor(tmp_path)
 
@@ -567,6 +538,7 @@ class TestSupervisorBootstrap:
 def _make_test_app(*, is_bootstrapping: bool = False):
     """Create a minimal FastAPI test app with mocked supervisor."""
     from fastapi import FastAPI
+
     from server.routes.chat import create_chat_router
 
     app = FastAPI()

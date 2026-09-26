@@ -73,13 +73,11 @@ class TestAnimaMergeRuntimeRefs:
         app.state.discord_gateway_manager = MagicMock()
         app.state.github_gateway_manager = MagicMock()
         reload_manager = MagicMock()
-        reload_manager.reload_all = AsyncMock(
-            return_value={"config": {"status": "ok"}, "zoom": {"status": "ok"}}
-        )
+        reload_manager.reload_all = AsyncMock(return_value={"config": {"status": "ok"}, "zoom": {"status": "ok"}})
         app.state.reload_manager = reload_manager
 
         transport = ASGITransport(app=app)
-        with patch("core.discord_webhooks.get_webhook_manager", return_value=webhook_manager):
+        with patch("core.messaging.discord_webhooks.get_webhook_manager", return_value=webhook_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/api/system/anima-merge/rewrite-runtime-refs",

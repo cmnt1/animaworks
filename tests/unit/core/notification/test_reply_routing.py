@@ -295,7 +295,7 @@ class TestRouteThreadReply:
 
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
-        with patch("core.messenger.Messenger", return_value=messenger_mock):
+        with patch("core.messaging.messenger.Messenger", return_value=messenger_mock):
             result = await route_thread_reply(event, shared_dir)
 
         assert result is True
@@ -329,7 +329,7 @@ class TestRouteThreadReply:
 
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
-        with patch("core.messenger.Messenger", return_value=messenger_mock):
+        with patch("core.messaging.messenger.Messenger", return_value=messenger_mock):
             result = await route_thread_reply(event, shared_dir)
 
         assert result is True
@@ -363,7 +363,7 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with (
-            patch("core.messenger.Messenger", return_value=messenger_mock),
+            patch("core.messaging.messenger.Messenger", return_value=messenger_mock),
             patch(
                 "core.notification.reply_routing._fetch_thread_context_for_reply",
                 return_value=thread_ctx,
@@ -432,7 +432,7 @@ class TestRouteThreadReply:
 
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
-        with patch("core.messenger.Messenger", return_value=messenger_mock):
+        with patch("core.messaging.messenger.Messenger", return_value=messenger_mock):
             result = await route_thread_reply(event, shared_dir)
 
         assert result is True
@@ -483,7 +483,7 @@ class TestRouteThreadReply:
         shared_dir = routing_dir / "shared"
         messenger_mock = MagicMock()
         with (
-            patch("core.messenger.Messenger", return_value=messenger_mock),
+            patch("core.messaging.messenger.Messenger", return_value=messenger_mock),
             patch("core.notification.slack_names.get_cached_user_name", return_value="Human"),
         ):
             result = await route_thread_reply(event, shared_dir, slack_token="")

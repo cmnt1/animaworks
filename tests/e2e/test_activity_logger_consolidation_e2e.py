@@ -28,7 +28,7 @@ class TestAnimaActivityLogging:
     @staticmethod
     def _make_anima(anima_dir: Path):
         """Create a minimal DigitalAnima bypassing heavy __init__."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = object.__new__(DigitalAnima)
         anima.anima_dir = anima_dir
@@ -295,7 +295,7 @@ class TestCrossComponentConsistency:
 
     def test_anima_and_handler_write_to_same_directory(self, tmp_path):
         """Both DigitalAnima and ToolHandler _activity instances share the same log dir."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
         from core.tooling.handler import ToolHandler
 
         anima_dir = tmp_path / "animas" / "test"

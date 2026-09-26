@@ -454,21 +454,21 @@ class TestBackgroundTaskWSNotification:
 
         # Build DigitalAnima with mocked dependencies
         with (
-            patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-            patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-            patch("core.agent.AgentCore._check_sdk", return_value=False),
-            patch("core.agent.AgentCore._build_human_notifier", return_value=None),
+            patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+            patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+            patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+            patch("core.agent.agent_core.AgentCore._build_human_notifier", return_value=None),
             patch(
-                "core.agent.AgentCore._build_background_manager",
+                "core.agent.agent_core.AgentCore._build_background_manager",
                 return_value=BackgroundTaskManager(
                     anima_dir,
                     anima_name="ws-test",
                     eligible_tools={"slow_tool": 5},
                 ),
             ),
-            patch("core.agent.AgentCore._create_executor"),
+            patch("core.agent.agent_core.AgentCore._create_executor"),
         ):
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.set_ws_broadcast(mock_broadcast)
@@ -517,21 +517,21 @@ class TestBackgroundTaskWSNotification:
             broadcast_payloads.append(payload)
 
         with (
-            patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-            patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-            patch("core.agent.AgentCore._check_sdk", return_value=False),
-            patch("core.agent.AgentCore._build_human_notifier", return_value=None),
+            patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+            patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+            patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+            patch("core.agent.agent_core.AgentCore._build_human_notifier", return_value=None),
             patch(
-                "core.agent.AgentCore._build_background_manager",
+                "core.agent.agent_core.AgentCore._build_background_manager",
                 return_value=BackgroundTaskManager(
                     anima_dir,
                     anima_name="ws-fail",
                     eligible_tools={"bad_tool": 5},
                 ),
             ),
-            patch("core.agent.AgentCore._create_executor"),
+            patch("core.agent.agent_core.AgentCore._create_executor"),
         ):
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.set_ws_broadcast(mock_broadcast)

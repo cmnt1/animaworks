@@ -1,13 +1,14 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for heartbeat history loading in core/anima.py.
+"""Unit tests for heartbeat history loading in core/anima/digital_anima.py.
 
 Note: _save_heartbeat_history and _purge_old_heartbeat_logs were removed
 as part of the unified activity log migration.  Writing is now handled by
 ActivityLogger.  Only the read-side (_load_heartbeat_history) remains for
 backward compatibility with existing heartbeat_history/ files.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,17 +20,19 @@ import pytest
 
 from core.time_utils import now_jst
 
-
 # ── Helpers ───────────────────────────────────────────────
 
 
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with all heavy deps mocked."""
-    with patch("core.anima.AgentCore"), \
-         patch("core.anima.MemoryManager") as MockMM, \
-         patch("core.anima.Messenger"):
+    with (
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
+    ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
+
         return DigitalAnima(anima_dir, shared_dir)
 
 
@@ -70,7 +73,8 @@ class TestHeartbeatHistoryLoad:
         for date_str, entries in entries_by_date.items():
             lines = [json.dumps(e, ensure_ascii=False) for e in entries]
             (log_dir / f"{date_str}.jsonl").write_text(
-                "\n".join(lines) + "\n", encoding="utf-8",
+                "\n".join(lines) + "\n",
+                encoding="utf-8",
             )
 
     def test_load_from_activity_log(self, dp, anima_dir):
@@ -78,11 +82,13 @@ class TestHeartbeatHistoryLoad:
         today = now_jst().strftime("%Y-%m-%d")
         entries = []
         for i in range(5):
-            entries.append({
-                "ts": f"{today}T{10 + i:02d}:00:00",
-                "type": "heartbeat_end",
-                "summary": f"Entry {i}",
-            })
+            entries.append(
+                {
+                    "ts": f"{today}T{10 + i:02d}:00:00",
+                    "type": "heartbeat_end",
+                    "summary": f"Entry {i}",
+                }
+            )
         self._write_activity_entries(anima_dir, {today: entries})
 
         text = dp._load_heartbeat_history()
@@ -123,11 +129,13 @@ class TestHeartbeatHistoryLoad:
         for days_ago in range(2):
             file_date = now_jst().date() - timedelta(days=days_ago)
             date_str = file_date.isoformat()
-            entries_by_date[date_str] = [{
-                "ts": f"{date_str}T10:00:00",
-                "type": "heartbeat_end",
-                "summary": f"Day {days_ago} ago",
-            }]
+            entries_by_date[date_str] = [
+                {
+                    "ts": f"{date_str}T10:00:00",
+                    "type": "heartbeat_end",
+                    "summary": f"Day {days_ago} ago",
+                }
+            ]
         self._write_activity_entries(anima_dir, entries_by_date)
 
         text = dp._load_heartbeat_history()

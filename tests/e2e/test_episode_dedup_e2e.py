@@ -28,10 +28,9 @@ class TestFireAndForgetRemoved:
         # Check both facade and messaging mixin where process_message lives
         core_dir = Path(__file__).resolve().parents[2] / "core"
         content = ""
-        for fname in ("anima.py", "_anima_messaging.py"):
+        for fname in ("anima/digital_anima.py", "anima/messaging.py"):
             p = core_dir / fname
-            if p.exists():
-                content += p.read_text(encoding="utf-8")
+            content += p.read_text(encoding="utf-8")
 
         # Find the process_message method
         in_process_message = False
@@ -65,9 +64,11 @@ class TestFireAndForgetRemoved:
         the agent cycle cannot skip it.
         """
         core_dir = Path(__file__).resolve().parents[2] / "core"
-        lifecycle = (core_dir / "_anima_lifecycle.py").read_text(encoding="utf-8")
+        lifecycle = (core_dir / "anima" / "lifecycle.py").read_text(encoding="utf-8")
 
-        assert "finalize_if_session_ended" in lifecycle, "finalize_if_session_ended() not found in _anima_lifecycle.py"
+        assert "finalize_if_session_ended" in lifecycle, (
+            "finalize_if_session_ended() not found in core/anima/lifecycle.py"
+        )
 
         run_hb_idx = lifecycle.find("async def run_heartbeat")
         assert run_hb_idx >= 0, "run_heartbeat() not found"

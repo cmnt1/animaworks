@@ -45,7 +45,7 @@ class TestSubmitTasksWorkspace:
         resolved_path = tmp_path / "myproject"
         resolved_path.mkdir()
 
-        with patch("core.workspace.resolve_workspace", return_value=Path(resolved_path)):
+        with patch("core.org.workspace.resolve_workspace", return_value=Path(resolved_path)):
             result = handler.handle(
                 "submit_tasks",
                 {
@@ -72,7 +72,7 @@ class TestSubmitTasksWorkspace:
     def test_invalid_workspace_returns_error(self, handler) -> None:
         """Invalid workspace returns error result."""
         with patch(
-            "core.workspace.resolve_workspace",
+            "core.org.workspace.resolve_workspace",
             side_effect=ValueError("Workspace 'bad' not found"),
         ):
             result = handler.handle(
@@ -95,7 +95,7 @@ class TestSubmitTasksWorkspace:
 
     def test_task_without_workspace_has_empty_working_directory(self, handler, tmp_path: Path) -> None:
         """Task without workspace field has working_directory empty string."""
-        with patch("core.workspace.resolve_workspace"):
+        with patch("core.org.workspace.resolve_workspace"):
             result = handler.handle(
                 "submit_tasks",
                 {
@@ -127,7 +127,7 @@ class TestSubmitTasksWorkspace:
                 return Path(resolved_path)
             raise ValueError(f"Unknown: {alias}")
 
-        with patch("core.workspace.resolve_workspace", side_effect=resolve):
+        with patch("core.org.workspace.resolve_workspace", side_effect=resolve):
             result = handler.handle(
                 "submit_tasks",
                 {
@@ -203,7 +203,7 @@ class TestDelegateTaskWorkspace:
             patch("core.config.models.load_config", return_value=cfg),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch("core.workspace.resolve_workspace", return_value=Path(resolved_path)),
+            patch("core.org.workspace.resolve_workspace", return_value=Path(resolved_path)),
         ):
             result = handler.handle(
                 "delegate_task",
@@ -226,7 +226,7 @@ class TestDelegateTaskWorkspace:
     def test_delegate_task_invalid_workspace_returns_error(self, handler) -> None:
         """delegate_task with invalid workspace returns error."""
         with patch(
-            "core.workspace.resolve_workspace",
+            "core.org.workspace.resolve_workspace",
             side_effect=ValueError("Workspace 'nonexistent' not found"),
         ):
             result = handler.handle(

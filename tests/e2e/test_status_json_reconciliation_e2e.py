@@ -9,20 +9,19 @@ Verifies the complete flow:
 3. Animas with identity.md but no status.json are protected (on_disk_incomplete)
 4. Animas truly removed from disk are still killed
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-from core.anima_factory import create_blank
+from core.anima.factory import create_blank
 from core.supervisor.manager import (
+    HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
-    HealthConfig,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -32,7 +31,8 @@ def _make_blank_template(tmp_path: Path) -> Path:
     blank_dir = tmp_path / "_blank_template"
     blank_dir.mkdir()
     (blank_dir / "identity.md").write_text(
-        "# {name}\n\nBlank identity for {name}.\n", encoding="utf-8",
+        "# {name}\n\nBlank identity for {name}.\n",
+        encoding="utf-8",
     )
     return blank_dir
 
@@ -48,11 +48,15 @@ def _make_supervisor(animas_dir: Path, tmp_path: Path) -> ProcessSupervisor:
         shared_dir=shared_dir,
         run_dir=run_dir,
         restart_policy=RestartPolicy(
-            max_retries=3, backoff_base_sec=0.1, backoff_max_sec=1.0,
+            max_retries=3,
+            backoff_base_sec=0.1,
+            backoff_max_sec=1.0,
         ),
         health_config=HealthConfig(
-            ping_interval_sec=0.5, ping_timeout_sec=0.2,
-            max_missed_pings=2, startup_grace_sec=0.5,
+            ping_interval_sec=0.5,
+            ping_timeout_sec=0.2,
+            max_missed_pings=2,
+            startup_grace_sec=0.5,
         ),
     )
 
@@ -68,8 +72,10 @@ class TestCreateBlankReconciliationE2E:
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
         blank_dir = _make_blank_template(tmp_path)
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", blank_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", blank_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_blank(animas_dir, "sakura")
 
         status_path = anima_dir / "status.json"
@@ -82,8 +88,10 @@ class TestCreateBlankReconciliationE2E:
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
         blank_dir = _make_blank_template(tmp_path)
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", blank_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", blank_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             anima_dir = create_blank(animas_dir, "sakura")
 
         sup = _make_supervisor(animas_dir, tmp_path)
@@ -101,8 +109,10 @@ class TestCreateBlankReconciliationE2E:
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
         blank_dir = _make_blank_template(tmp_path)
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", blank_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", blank_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             create_blank(animas_dir, "sakura")
 
         sup = _make_supervisor(animas_dir, tmp_path)
@@ -162,8 +172,10 @@ class TestIncompleteAnimaReconciliationE2E:
 
         # 1. sakura: created via create_blank → has status.json, running → KEEP
         blank_dir = _make_blank_template(tmp_path)
-        with patch("core.anima_factory.BLANK_TEMPLATE_DIR", blank_dir), \
-             patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"):
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", blank_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        ):
             create_blank(animas_dir, "sakura")
 
         # 2. kotoha: legacy, identity.md only, running → PROTECT (on_disk_incomplete)
@@ -176,7 +188,8 @@ class TestIncompleteAnimaReconciliationE2E:
         hinata_dir.mkdir()
         (hinata_dir / "identity.md").write_text("# hinata\n", encoding="utf-8")
         (hinata_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8",
+            json.dumps({"enabled": True}),
+            encoding="utf-8",
         )
 
         # 4. ghost: NO directory, running → KILL

@@ -25,15 +25,15 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from core.notification.notifier import HumanNotifier
 
-from core._agent_cycle import CycleMixin
+from core.agent.cycle import CycleMixin
 
 # ── Mixin imports ───────────────────────────────────────────────
-from core._agent_executor import ExecutorFactoryMixin
-from core._agent_priming import PrimingMixin
+from core.agent.executor_factory import ExecutorFactoryMixin
+from core.agent.priming import PrimingMixin
 
 # ── Re-exports for backward compatibility ───────────────────────
-# Tests and other modules import these symbols from ``core.agent``.
-from core._agent_prompt_log import (  # noqa: F401
+# Tests and other modules import these symbols from ``core.agent.agent_core``.
+from core.agent.prompt_log import (  # noqa: F401
     _PROMPT_HARD_LIMIT_BYTES,
     _PROMPT_LOG_RETENTION_DAYS,
     _PROMPT_SOFT_LIMIT_BYTES,
@@ -43,7 +43,7 @@ from core._agent_prompt_log import (  # noqa: F401
 )
 from core.exceptions import AnimaWorksError  # noqa: F401
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import ModelConfig
 from core.tasks.background import BackgroundTaskManager
 from core.tooling.handler import ToolHandler

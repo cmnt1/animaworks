@@ -36,7 +36,7 @@ class TestMessengerSendOriginChain:
 
     @pytest.fixture
     def messenger(self, tmp_path: Path) -> Any:
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         shared.mkdir(parents=True)
@@ -94,7 +94,7 @@ class TestMessengerSendOriginChain:
 
     def test_origin_chain_roundtrip_receive(self, messenger: Any) -> None:
         """Message sent with origin_chain can be received with chain intact."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         chain = ["external_platform", "anima"]
         messenger.send(
@@ -184,7 +184,7 @@ class TestSendMessageOriginPropagation:
         shared = tmp_path / "shared"
         shared.mkdir(parents=True)
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(shared, "sender")
         memory = MemoryManager(anima_dir)
@@ -217,7 +217,7 @@ class TestSendMessageOriginPropagation:
         handler.set_session_origin(ORIGIN_HUMAN)
 
         with (
-            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.messaging.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
             patch("core.config.models.load_config", return_value=self._mock_config()),
         ):
             result = handler._handle_send_message(
@@ -243,7 +243,7 @@ class TestSendMessageOriginPropagation:
         )
 
         with (
-            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.messaging.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
             patch("core.config.models.load_config", return_value=self._mock_config()),
         ):
             result = handler._handle_send_message(
@@ -267,7 +267,7 @@ class TestSendMessageOriginPropagation:
         handler.set_session_origin(ORIGIN_SYSTEM)
 
         with (
-            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.messaging.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
             patch("core.config.models.load_config", return_value=self._mock_config()),
         ):
             result = handler._handle_send_message(
@@ -293,7 +293,7 @@ class TestSendMessageOriginPropagation:
         )
 
         with (
-            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.messaging.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
             patch("core.config.models.load_config", return_value=self._mock_config()),
         ):
             result = handler._handle_send_message(
@@ -319,7 +319,7 @@ class TestSendMessageOriginPropagation:
         handler.set_session_origin(ORIGIN_ANIMA, long_chain)
 
         with (
-            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.messaging.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
             patch("core.config.models.load_config", return_value=self._mock_config()),
         ):
             handler._handle_send_message(
@@ -340,7 +340,7 @@ class TestSendMessageOriginPropagation:
         handler = setup["handler"]
 
         with (
-            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.messaging.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
             patch("core.config.models.load_config", return_value=self._mock_config()),
         ):
             handler._handle_send_message(
@@ -383,7 +383,7 @@ class TestDelegateTaskOriginPropagation:
         shared = tmp_path / "shared"
         shared.mkdir(parents=True)
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(shared, "supervisor")
         memory = MemoryManager(anima_dir)
@@ -429,12 +429,12 @@ class TestInboxOriginResolution:
     """_SOURCE_TO_ORIGIN mapping and inbox origin computation."""
 
     def test_source_to_origin_slack(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["slack"] == ORIGIN_EXTERNAL_PLATFORM
 
     def test_source_to_origin_anima(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["anima"] == ORIGIN_ANIMA
 
@@ -467,7 +467,7 @@ class TestE2EOriginChainScenarios:
         shared_dir: Path,
     ) -> None:
         """Slack → Anima A (inbox) → send_message → Anima B: external_platform preserved."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         # Step 1: External message arrives at Anima A
         messenger_a = Messenger(shared_dir, "anima-a")
@@ -498,7 +498,7 @@ class TestE2EOriginChainScenarios:
         shared_dir: Path,
     ) -> None:
         """Chat API → Anima A → send_message → Anima B: origin_chain=['human', 'anima']."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(shared_dir, "anima-a")
         messenger.send(
@@ -515,7 +515,7 @@ class TestE2EOriginChainScenarios:
 
     def test_three_hop_relay_chain_grows(self, shared_dir: Path) -> None:
         """A→B→C: chain accumulates correctly."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         # A sends to B (originated from external)
         Messenger(shared_dir, "anima-a").send(
@@ -553,7 +553,7 @@ class TestE2EOriginChainScenarios:
 
     def test_origin_chain_truncated_at_max(self, shared_dir: Path) -> None:
         """Chain longer than MAX_ORIGIN_CHAIN_LENGTH is truncated."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         long_chain = [f"hop_{i}" for i in range(MAX_ORIGIN_CHAIN_LENGTH + 5)]
         msg = Messenger(shared_dir, "anima-a").send(
@@ -586,7 +586,7 @@ class TestE2EOriginChainScenarios:
             encoding="utf-8",
         )
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(shared_dir, "anima-x")
         messages = messenger.receive()

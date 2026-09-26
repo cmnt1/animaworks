@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.anima_factory import validate_anima_name
+from core.anima.factory import validate_anima_name
 from core.memory._io import atomic_write_text
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import ensure_aware, now_local
@@ -434,7 +434,7 @@ class AnimaMergeFinalizeService:
         return result, changed
 
     def _verify_removal(self, archive_path: Path) -> dict[str, Any]:
-        from core.org_sync import sync_org_structure
+        from core.org.org_sync import sync_org_structure
 
         config_path = self.data_dir / "config.json"
         discovered = sync_org_structure(self.animas_dir, config_path=config_path)

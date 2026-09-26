@@ -567,7 +567,7 @@ class TestRegenerateAssetStep:
 
         app = _make_test_app(animas_dir=tmp_path)
         transport = ASGITransport(app=app)
-        with patch("core.asset_reconciler._resolve_prompt", return_value=""):
+        with patch("core.anima.asset_reconciler._resolve_prompt", return_value=""):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/animas/alice/assets/regenerate-step",

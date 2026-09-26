@@ -119,7 +119,7 @@ def _run(args: argparse.Namespace) -> None:
     # ── Resolve prompt (style-aware) ──
     prompt = args.prompt
     if prompt is None:
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         prompt = _resolve_prompt(target_dir, style=image_style)
         if not prompt:

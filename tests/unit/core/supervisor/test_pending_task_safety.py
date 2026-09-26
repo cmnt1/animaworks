@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.platform.processing_lease import (
     is_processing_lease_live,
     processing_lease_path,

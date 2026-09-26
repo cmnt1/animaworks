@@ -29,7 +29,7 @@
 
 ### Fix 1: `run_cron_command()` にアクティビティログ追加
 
-**対象:** `core/anima.py:942-1040`
+**対象:** `core/anima/digital_anima.py:942-1040`
 
 **変更内容:** `run_cron_task()` (line 920-925) と同じパターンで `cron_executed` を記録する。
 
@@ -75,11 +75,11 @@ except Exception:
 
 | # | 場所 | Phase | 既存ロジック |
 |---|------|-------|-------------|
-| 1 | `core/anima.py:371-372` | `process_message` | `logger.exception()` のみ |
-| 2 | `core/anima.py:525-538` | `process_message_stream` | エラー分類済み (`TOOL_ERROR`/`LLM_ERROR`/`STREAM_ERROR`) |
-| 3 | `core/anima.py:880-881` | `run_heartbeat` | `logger.exception()` のみ |
-| 4 | `core/anima.py:932-935` | `run_cron_task` | `logger.exception()` のみ |
-| 5 | `core/anima.py:1002-1007` | `run_cron_command` | `stderr` に例外情報記録済み |
+| 1 | `core/anima/digital_anima.py:371-372` | `process_message` | `logger.exception()` のみ |
+| 2 | `core/anima/digital_anima.py:525-538` | `process_message_stream` | エラー分類済み (`TOOL_ERROR`/`LLM_ERROR`/`STREAM_ERROR`) |
+| 3 | `core/anima/digital_anima.py:880-881` | `run_heartbeat` | `logger.exception()` のみ |
+| 4 | `core/anima/digital_anima.py:932-935` | `run_cron_task` | `logger.exception()` のみ |
+| 5 | `core/anima/digital_anima.py:1002-1007` | `run_cron_command` | `stderr` に例外情報記録済み |
 
 各箇所に以下のパターンを追加:
 ```python
@@ -152,7 +152,7 @@ ACKメッセージ等のツールハンドラ非経由パスは低重要度。�
 
 #### 5a: `_append_dm_log` 削除
 
-**対象:** `core/messenger.py:204-219`
+**対象:** `core/messaging/messenger.py:204-219`
 
 メソッド本体を削除。呼び出し元はゼロ（grep確認済み）。
 
@@ -172,7 +172,7 @@ ACKメッセージ等のツールハンドラ非経由パスは低重要度。�
 
 ### Fix 6: `_load_heartbeat_history()` を ActivityLogger に置換
 
-**対象:** `core/anima.py:211-239`
+**対象:** `core/anima/digital_anima.py:211-239`
 
 #### 変更内容
 

@@ -21,14 +21,13 @@ import pytest
 import core.execution._sanitize  # noqa: F401
 from core.tooling.handler_base import _validate_skill_format
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
 def _build_handler(tmp_path: Path):
     """Build a minimal MemoryToolsMixin-like object for write testing."""
     from core.memory import MemoryManager
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.tooling.handler import ToolHandler
 
     shared_dir = tmp_path / "shared"
@@ -68,10 +67,13 @@ class TestCommonSkillsWriteRedirect:
         content = "---\nname: test-skill\ndescription: >-\n  test 「test」\n---\n\n# test\n\n## Procedure\n\n1. step\n"
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            result = handler.handle("write_memory_file", {
-                "path": "common_skills/test-skill/SKILL.md",
-                "content": content,
-            })
+            result = handler.handle(
+                "write_memory_file",
+                {
+                    "path": "common_skills/test-skill/SKILL.md",
+                    "content": content,
+                },
+            )
 
         target = cs_dir / "test-skill" / "SKILL.md"
         assert target.exists(), f"Expected {target} to be created"
@@ -84,10 +86,13 @@ class TestCommonSkillsWriteRedirect:
         handler, _ = _build_handler(tmp_path)
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            result = handler.handle("write_memory_file", {
-                "path": "common_skills/../../etc/passwd",
-                "content": "malicious",
-            })
+            result = handler.handle(
+                "write_memory_file",
+                {
+                    "path": "common_skills/../../etc/passwd",
+                    "content": "malicious",
+                },
+            )
 
         assert "PermissionDenied" in result or "denied" in result.lower()
         assert not (cs_dir / ".." / ".." / "etc" / "passwd").exists()
@@ -101,10 +106,13 @@ class TestCommonSkillsWriteRedirect:
         content = "---\nname: flat\ndescription: >-\n  flat 「flat」\n---\n\n# flat\n"
 
         with patch("core.paths.get_common_skills_dir", return_value=cs_dir):
-            result = handler.handle("write_memory_file", {
-                "path": "common_skills/flat.md",
-                "content": content,
-            })
+            result = handler.handle(
+                "write_memory_file",
+                {
+                    "path": "common_skills/flat.md",
+                    "content": content,
+                },
+            )
 
         assert (cs_dir / "flat.md").exists()
 
@@ -134,13 +142,7 @@ class TestValidateSkillFormat:
         assert result == ""
 
     def test_tags_field_accepted(self) -> None:
-        content = (
-            "---\n"
-            "name: test\n"
-            'description: "test 「test」"\n'
-            "tags: [search, web]\n"
-            "---\n\n# test\n"
-        )
+        content = '---\nname: test\ndescription: "test 「test」"\ntags: [search, web]\n---\n\n# test\n'
         result = _validate_skill_format(content)
         assert result == ""
 
@@ -187,10 +189,7 @@ class TestEnglishTemplateDirectoryStructure:
         if not en_skills.exists():
             pytest.skip("English templates not present")
 
-        flat_files = [
-            f.name for f in en_skills.iterdir()
-            if f.is_file() and f.suffix == ".md"
-        ]
+        flat_files = [f.name for f in en_skills.iterdir() if f.is_file() and f.suffix == ".md"]
         assert flat_files == [], (
             f"Flat .md files found in templates/en/common_skills/: {flat_files}. "
             "All skills should be in {name}/SKILL.md format."
@@ -206,9 +205,7 @@ class TestEnglishTemplateDirectoryStructure:
             if d.is_dir():
                 if not (d / "SKILL.md").exists():
                     missing.append(d.name)
-        assert missing == [], (
-            f"Directories missing SKILL.md: {missing}"
-        )
+        assert missing == [], f"Directories missing SKILL.md: {missing}"
 
     def test_converted_skills_have_name_field(self) -> None:
         """Verify converted skills have matching name in frontmatter."""
@@ -219,8 +216,12 @@ class TestEnglishTemplateDirectoryStructure:
             pytest.skip("English templates not present")
 
         converted = [
-            "skill-creator", "image-posting", "animaworks-guide",
-            "subordinate-management", "tool-creator", "subagent-cli",
+            "skill-creator",
+            "image-posting",
+            "animaworks-guide",
+            "subordinate-management",
+            "tool-creator",
+            "subagent-cli",
             "cron-management",
         ]
         for name in converted:
@@ -230,9 +231,7 @@ class TestEnglishTemplateDirectoryStructure:
             assert content.startswith("---"), f"{name}/SKILL.md missing frontmatter"
             end = content.find("---", 3)
             fm = yaml.safe_load(content[3:end])
-            assert fm.get("name") == name, (
-                f"{name}/SKILL.md frontmatter name is '{fm.get('name')}', expected '{name}'"
-            )
+            assert fm.get("name") == name, f"{name}/SKILL.md frontmatter name is '{fm.get('name')}', expected '{name}'"
 
 
 class TestJapaneseSkillCreatorContent:

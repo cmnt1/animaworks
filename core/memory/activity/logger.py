@@ -199,7 +199,7 @@ class ActivityLogger(
         if not (self.anima_dir / "state" / "event_export_spool").is_dir():
             return
         try:
-            from core.event_export import get_event_exporter
+            from core.infra.event_export import get_event_exporter
 
             get_event_exporter(self.anima_dir)
         except Exception:
@@ -322,7 +322,7 @@ class ActivityLogger(
         """Best-effort export after the local activity write succeeds."""
         try:
             from core.config import load_config
-            from core.event_export import get_event_exporter
+            from core.infra.event_export import get_event_exporter
 
             config = load_config().event_export
             exporter = get_event_exporter(self.anima_dir, config)

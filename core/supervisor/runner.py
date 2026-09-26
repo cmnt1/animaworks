@@ -28,7 +28,7 @@ from typing import Any
 
 import psutil
 
-from core.anima import DigitalAnima
+from core.anima.digital_anima import DigitalAnima
 from core.config.resolver import resolve_process_model_config
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
 from core.i18n import t
@@ -1145,7 +1145,7 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
 
-        from core.session_compactor import run_idle_compaction
+        from core.agent.session_compactor import run_idle_compaction
         from core.skills.activation_state import validate_thread_id
 
         thread_id = validate_thread_id(params.get("thread_id", "default"))
@@ -1232,7 +1232,7 @@ class AnimaRunner:
 
 def setup_logging(anima_name: str, log_dir: Path, redaction_enabled: bool = True) -> None:
     """Setup logging for child process with anima-specific log files."""
-    from core.logging_config import setup_anima_logging
+    from core.infra.logging_config import setup_anima_logging
 
     setup_anima_logging(
         anima_name=anima_name,

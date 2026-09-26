@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for _build_reply_instruction() in core._anima_inbox.
+"""Tests for _build_reply_instruction() in core.anima.inbox.
 
 Covers:
 - Slack: full metadata (channel, ts, user_id)
@@ -18,7 +18,7 @@ Covers:
 from dataclasses import dataclass
 from unittest.mock import patch
 
-from core._anima_inbox import _build_reply_instruction
+from core.anima.inbox import _build_reply_instruction
 
 
 @dataclass
@@ -32,8 +32,8 @@ class _FakeMsg:
     external_thread_ts: str = ""
 
 
-_MOCK_AUTO_OFF = patch("core._anima_inbox._is_auto_response_enabled", return_value=False)
-_MOCK_AUTO_ON = patch("core._anima_inbox._is_auto_response_enabled", return_value=True)
+_MOCK_AUTO_OFF = patch("core.anima.inbox._is_auto_response_enabled", return_value=False)
+_MOCK_AUTO_ON = patch("core.anima.inbox._is_auto_response_enabled", return_value=True)
 
 
 class TestBuildReplyInstructionSlack:

@@ -22,7 +22,7 @@ from typing import Any
 from core.config.models import load_config
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential, get_credential
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.notification.slack_names import (
     cache_user_name,
     get_cached_user_name,

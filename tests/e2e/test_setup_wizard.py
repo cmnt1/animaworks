@@ -1007,7 +1007,7 @@ async def test_setup_activates_runtime_without_restart(data_dir, monkeypatch):
     """First-run setup starts shared services before launching workers."""
     import asyncio
 
-    from core import startup_progress
+    from core.infra import startup_progress
     from server.app import lifespan
 
     _write_config(data_dir, external_tasks={"enabled": False})

@@ -709,7 +709,7 @@ def create_animas_router() -> APIRouter:
                 return {"status": "partial", "name": name, "detail": str(exc)}
 
         try:
-            from core.anima_roster import refresh_anima_roster
+            from core.anima.roster import refresh_anima_roster
 
             refresh_anima_roster()
         except Exception:
@@ -882,7 +882,7 @@ def create_animas_router() -> APIRouter:
 
         companies_meta: dict[str, dict] = {}
         try:
-            from core.company import list_companies
+            from core.org.company import list_companies
 
             summaries, _ = list_companies(data_dir=animas_dir.parent)
             companies_meta = {s.name: {"display_name": s.display_name} for s in summaries}

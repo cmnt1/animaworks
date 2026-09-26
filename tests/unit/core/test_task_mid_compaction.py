@@ -26,10 +26,10 @@ def task_cycle(tmp_path):
     agent._executor.supports_streaming = True
     agent._executor.compact_session_by_id = AsyncMock(return_value=True)
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt="system")),
-        patch("core._agent_cycle._save_prompt_log"),
-        patch("core._agent_cycle._save_prompt_log_end"),
-        patch("core._agent_cycle._log_session_token_usage"),
+        patch("core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt="system")),
+        patch("core.agent.cycle._save_prompt_log"),
+        patch("core.agent.cycle._save_prompt_log_end"),
+        patch("core.agent.cycle._log_session_token_usage"),
     ):
         yield agent
 

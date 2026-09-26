@@ -72,7 +72,7 @@ class TestToolHandlerDepthLimitError:
         with (
             patch("core.config.models.load_config", return_value=mock_config),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-            patch("core.outbound.resolve_recipient", return_value=None),
+            patch("core.messaging.outbound.resolve_recipient", return_value=None),
         ):
             result = handler._handle_send_message({"to": "bob", "content": "hello", "intent": "report"})
 
@@ -101,7 +101,7 @@ class TestToolHandlerDepthLimitError:
             with (
                 patch("core.config.models.load_config", return_value=mock_config),
                 patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-                patch("core.outbound.resolve_recipient", return_value=None),
+                patch("core.messaging.outbound.resolve_recipient", return_value=None),
             ):
                 handler._handle_send_message({"to": "bob", "content": "hello", "intent": "report"})
 
@@ -131,7 +131,7 @@ class TestToolHandlerDepthLimitError:
             with (
                 patch("core.config.models.load_config", return_value=mock_config),
                 patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-                patch("core.outbound.resolve_recipient", return_value=None),
+                patch("core.messaging.outbound.resolve_recipient", return_value=None),
             ):
                 result = handler._handle_send_message({"to": "bob", "content": "hello", "intent": "report"})
 

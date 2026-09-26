@@ -23,7 +23,7 @@ AnimaWorks의 설정 구조와 Anima 추가 절차에 대한 레퍼런스입니�
 
 ### 초기화 시 생성되는 디렉토리
 
-`ensure_runtime_dir` (`core/init.py`)에 의해 다음이 생성됩니다:
+`ensure_runtime_dir` (`core/infra/runtime_init.py`)에 의해 다음이 생성됩니다:
 
 - `animas/` — Anima 디렉토리
 - `shared/inbox/` — 수신 메시지 큐

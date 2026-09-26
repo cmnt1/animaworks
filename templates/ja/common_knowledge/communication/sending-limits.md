@@ -7,14 +7,14 @@
 
 | 役割 | モジュール |
 |------|------------|
-| 宛先解決・Slack/Chatwork への外部配信 | `core/outbound.py`（`resolve_recipient`, `send_external`） |
-| グローバル予算・会話深度（activity_log ベース） | `core/cascade_limiter.py`（`ConversationDepthLimiter`） |
-| 内部 DM の配送とログ | `core/messenger.py`（`Messenger.send`） |
+| 宛先解決・Slack/Chatwork への外部配信 | `core/messaging/outbound.py`（`resolve_recipient`, `send_external`） |
+| グローバル予算・会話深度（activity_log ベース） | `core/messaging/cascade_limiter.py`（`ConversationDepthLimiter`） |
+| 内部 DM の配送とログ | `core/messaging/messenger.py`（`Messenger.send`） |
 | `send_message` / `post_channel` の per-run 制限・外部ルーティング入口 | `core/tooling/handler_comms.py` |
 | メッセ起動 heartbeat のクールダウン・カスケード検知 | `core/supervisor/inbox_rate_limiter.py`（`InboxRateLimiter`）、`core/lifecycle/inbox_watcher.py` |
 | 直近送信のプロンプト注入（行動認知） | `core/memory/priming/outbound.py`（`collect_recent_outbound`） |
 
-### `core/outbound.py`（宛先解決と外部配信）
+### `core/messaging/outbound.py`（宛先解決と外部配信）
 
 `send_message` は `handler_comms` から `resolve_recipient()` で宛先を解決し、内部 Anima なら `Messenger.send`、それ以外なら `send_external()` で Slack / Chatwork に配信する。既知 Anima 集合は `~/.animaworks/animas/` のディレクトリ名から構築される。
 

@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from core.anima import DigitalAnima
+from core.anima.digital_anima import DigitalAnima
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
 from core.schemas import CronTask
@@ -822,7 +822,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
 
 def _setup_logging(anima_name: str) -> None:
     from core.config import load_config
-    from core.logging_config import setup_anima_logging
+    from core.infra.logging_config import setup_anima_logging
 
     try:
         redaction_enabled = load_config().logging.redaction_enabled

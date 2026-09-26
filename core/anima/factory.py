@@ -741,7 +741,7 @@ def _place_bootstrap(anima_dir: Path) -> None:
     if not _should_create_bootstrap(anima_dir):
         logger.debug("Skipping bootstrap for %s (identity already defined)", anima_dir)
         try:
-            from core.bootstrap_state import initialize_bootstrap_state
+            from core.anima.bootstrap_state import initialize_bootstrap_state
 
             initialize_bootstrap_state(anima_dir)
         except Exception:
@@ -753,7 +753,7 @@ def _place_bootstrap(anima_dir: Path) -> None:
         shutil.copy2(bootstrap_tpl, anima_dir / "bootstrap.md")
         logger.debug("Placed bootstrap.md in %s", anima_dir)
     try:
-        from core.bootstrap_state import initialize_bootstrap_state
+        from core.anima.bootstrap_state import initialize_bootstrap_state
 
         initialize_bootstrap_state(anima_dir)
     except Exception:

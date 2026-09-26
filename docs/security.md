@@ -240,7 +240,7 @@ Recent outbound messages (last 2 hours, max 3) are injected into the system prom
 - **Inbox rate limiter**: Cooldown, cascade detection, per-sender rate limit
 - **Fail-closed**: Returns `False` on activity log read failure
 
-**Key files**: `core/tooling/handler_comms.py`, `core/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
+**Key files**: `core/tooling/handler_comms.py`, `core/messaging/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
 
 ---
 
@@ -374,7 +374,7 @@ Per-tool trust and `min_trust_seen` persistence integrate with `_SDK_TOOL_TRUST`
 5. Case-insensitive agent name match
 6. **Unknown recipients → RecipientNotFoundError** (fail-closed)
 
-**Key files**: `core/outbound.py`
+**Key files**: `core/messaging/outbound.py`
 
 ---
 
@@ -400,7 +400,7 @@ Inbox directories are created with `0o700` permissions.
 
 Channel posts are limited to `max_length=10000` via Pydantic.
 
-**Key files**: `core/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
+**Key files**: `core/messaging/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
 
 ---
 

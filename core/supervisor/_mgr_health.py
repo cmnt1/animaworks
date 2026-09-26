@@ -230,7 +230,7 @@ class HealthMixin:
     def _health_warmup_reason(self, anima_name: str, handle: ProcessHandle) -> str | None:
         """Return a reason to suppress unresponsive-runner restarts, if any."""
         try:
-            from core import startup_progress
+            from core.infra import startup_progress
 
             snapshot = startup_progress.snapshot()
             if snapshot.get("status") == "starting":

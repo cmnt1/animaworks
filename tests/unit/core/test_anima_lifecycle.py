@@ -16,7 +16,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_project_daily_consolidation_skips_phase_a_and_scopes_prompt() -> None:
-    from core._anima_lifecycle import LifecycleMixin
+    from core.anima.lifecycle import LifecycleMixin
     from core.schemas import CycleResult, ModelConfig
 
     owner = SimpleNamespace(
@@ -45,9 +45,9 @@ async def test_project_daily_consolidation_skips_phase_a_and_scopes_prompt() -> 
     )
     with (
         patch("core.config.load_config", return_value=cfg),
-        patch("core._anima_lifecycle.load_prompt", return_value="base prompt"),
+        patch("core.anima.lifecycle.load_prompt", return_value="base prompt"),
         patch(
-            "core._anima_lifecycle._consolidation_model_config",
+            "core.anima.lifecycle._consolidation_model_config",
             return_value=ModelConfig(model="test-model"),
         ),
     ):
@@ -66,7 +66,7 @@ class TestRunCronCommandZombieReap:
 
     def _make_anima_stub(self):
         """Build a minimal LifecycleMixin-compatible stub."""
-        from core._anima_lifecycle import LifecycleMixin
+        from core.anima.lifecycle import LifecycleMixin
 
         stub = MagicMock(spec=LifecycleMixin)
         stub.name = "test-anima"
@@ -105,7 +105,7 @@ class TestRunCronCommandZombieReap:
             patch("core.tooling.handler.active_session_type") as mock_ast,
         ):
             mock_ast.reset = MagicMock()
-            from core._anima_lifecycle import LifecycleMixin
+            from core.anima.lifecycle import LifecycleMixin
 
             try:
                 await LifecycleMixin.run_cron_command(
@@ -133,7 +133,7 @@ class TestRunCronCommandZombieReap:
             patch("core.tooling.handler.active_session_type") as mock_ast,
         ):
             mock_ast.reset = MagicMock()
-            from core._anima_lifecycle import LifecycleMixin
+            from core.anima.lifecycle import LifecycleMixin
 
             result = await LifecycleMixin.run_cron_command(
                 stub,

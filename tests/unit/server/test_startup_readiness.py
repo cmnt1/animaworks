@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core import startup_progress
 from core.auth.models import AuthConfig
+from core.infra import startup_progress
 
 _LOCAL_TRUST_AUTH = AuthConfig(auth_mode="local_trust")
 

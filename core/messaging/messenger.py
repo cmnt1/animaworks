@@ -213,7 +213,7 @@ class Messenger:
             animas_dir = self.shared_dir.parent / "animas"
             is_internal = (animas_dir / to).is_dir() if animas_dir.exists() else False
             if is_internal:
-                from core.cascade_limiter import get_depth_limiter
+                from core.messaging.cascade_limiter import get_depth_limiter
 
                 sender_dir = animas_dir / self.anima_name
                 limiter = get_depth_limiter()

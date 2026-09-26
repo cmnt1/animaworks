@@ -15,8 +15,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from core.config.file_access_policy import effective_write_roots
 from core.execution._sanitize import ORIGIN_HUMAN
-from core.file_access_policy import effective_write_roots
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import resolve_anima_name
 
@@ -68,8 +68,8 @@ class WorkspaceToolsMixin:
 
         try:
             from core.config.models import load_config, save_config
+            from core.org.workspace import qualified_alias
             from core.paths import get_animas_dir
-            from core.workspace import qualified_alias
 
             config = load_config()
         except Exception as exc:

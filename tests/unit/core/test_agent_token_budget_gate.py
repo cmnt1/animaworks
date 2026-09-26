@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._agent_cycle import CycleMixin
-from core._anima_inbox import InboxMixin, InboxResult
-from core.messenger import InboxItem
+from core.agent.cycle import CycleMixin
+from core.anima.inbox import InboxMixin, InboxResult
+from core.messaging.messenger import InboxItem
 from core.schemas import CycleResult, Message, ModelConfig
 from core.usage.token_budget import calculate_token_budget_status
 
@@ -203,7 +203,7 @@ async def test_budget_blocked_inbox_preprocessing_has_no_persistent_side_effects
     inbox.messenger.has_unread.return_value = True
     inbox.messenger.receive_with_paths.return_value = [item]
 
-    with patch("core.memory.dedup.MessageDeduplicator.overflow_to_files") as overflow:
+    with patch("core.anima.inbox_overflow.MessageDeduplicator.overflow_to_files") as overflow:
         result = await inbox._process_inbox_messages(track_retries=False)
 
     assert result.inbox_items == [item]

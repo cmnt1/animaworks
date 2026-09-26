@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── BaseExecutor interrupt_event ─────────────────────────
+
 
 class TestBaseExecutorInterrupt:
     """Test interrupt_event on BaseExecutor."""
@@ -67,6 +67,7 @@ class TestBaseExecutorInterrupt:
 
 # ── DigitalAnima interrupt ───────────────────────────────
 
+
 class TestDigitalAnimaInterrupt:
     """Test DigitalAnima.interrupt() and _interrupt_events lifecycle."""
 
@@ -102,12 +103,10 @@ class TestDigitalAnimaInterrupt:
         (d / "dm_logs").mkdir()
         return d
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.MemoryManager")
-    @patch("core.anima.Messenger")
-    async def test_interrupt_sets_event(
-        self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
-    ):
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.MemoryManager")
+    @patch("core.anima.digital_anima.Messenger")
+    async def test_interrupt_sets_event(self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir):
         """interrupt() should set all _interrupt_events."""
         mock_mm_cls.return_value.read_model_config.return_value = MagicMock()
         mock_agent_cls.return_value = MagicMock()
@@ -117,7 +116,8 @@ class TestDigitalAnimaInterrupt:
         mock_agent_cls.return_value.background_manager = None
         mock_agent_cls.return_value._tool_handler = MagicMock()
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
+
         anima = DigitalAnima(anima_dir, shared_dir)
 
         evt = anima._get_interrupt_event("default")
@@ -126,9 +126,9 @@ class TestDigitalAnimaInterrupt:
         assert evt.is_set()
         assert result["status"] == "interrupted"
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.MemoryManager")
-    @patch("core.anima.Messenger")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.MemoryManager")
+    @patch("core.anima.digital_anima.Messenger")
     async def test_interrupt_event_cleared_on_process_message(
         self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
     ):
@@ -143,13 +143,18 @@ class TestDigitalAnimaInterrupt:
         mock_agent.execution_mode = "a"
         mock_agent.run_cycle = AsyncMock(
             return_value=MagicMock(
-                text="hello", emotion="neutral", summary="test",
-                tool_call_records=[], duration_ms=1, thinking_text=None,
+                text="hello",
+                emotion="neutral",
+                summary="test",
+                tool_call_records=[],
+                duration_ms=1,
+                thinking_text=None,
             )
         )
         mock_agent_cls.return_value = mock_agent
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
+
         anima = DigitalAnima(anima_dir, shared_dir)
 
         evt = anima._get_interrupt_event("default")
@@ -168,11 +173,12 @@ class TestDigitalAnimaInterrupt:
 
 # ── AgentCore interrupt_event propagation ────────────────
 
+
 class TestAgentCoreInterruptPropagation:
     """Test that AgentCore propagates interrupt_event to executors."""
 
     def test_set_interrupt_event(self):
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = MagicMock(spec=AgentCore)
         agent._interrupt_event = None

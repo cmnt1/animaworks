@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory.activity.logger import ActivityLogger
-from core.messenger import InboxItem
+from core.messaging.messenger import InboxItem
 from core.schemas import CycleResult
 from core.time_utils import now_jst
 from core.tooling.handler import active_session_type
@@ -61,11 +61,11 @@ class TestHeartbeatStartSummary:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger") as MockMsger,
-            patch("core._anima_heartbeat.ConversationMemory") as MockConvMem,
-            patch("core._anima_heartbeat.StreamingJournal") as MockJournal,
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsger,
+            patch("core.anima.heartbeat.ConversationMemory") as MockConvMem,
+            patch("core.anima.heartbeat.StreamingJournal") as MockJournal,
         ):
             # Setup mocks
             MockMM.return_value.read_model_config.return_value = MagicMock()
@@ -107,7 +107,7 @@ class TestHeartbeatStartSummary:
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
@@ -137,10 +137,10 @@ class TestMessageReceivedSummary:
         test_content = "こんにちは、テストメッセージです。"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger") as MockMsger,
-            patch("core._anima_messaging.ConversationMemory") as MockConvMem,
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsger,
+            patch("core.anima.messaging.ConversationMemory") as MockConvMem,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMsger.return_value.unread_count.return_value = 0
@@ -157,7 +157,7 @@ class TestMessageReceivedSummary:
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
@@ -190,11 +190,11 @@ class TestDmReceivedSummary:
         dm_content = "緊急の報告です。システムに問題が発生しています。"
 
         with (
-            patch("core.anima.AgentCore") as MockAgent,
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger") as MockMsger,
-            patch("core._anima_heartbeat.ConversationMemory") as MockConvMem,
-            patch("core._anima_inbox.StreamingJournal") as MockJournal,
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsger,
+            patch("core.anima.heartbeat.ConversationMemory") as MockConvMem,
+            patch("core.anima.inbox.StreamingJournal") as MockJournal,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "チェック項目"
@@ -248,7 +248,7 @@ class TestDmReceivedSummary:
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)

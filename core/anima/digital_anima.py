@@ -27,7 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.agent import AgentCore
+from core.agent.agent_core import AgentCore
+from core.agent.session_compactor import SessionCompactor
 from core.exceptions import (  # noqa: F401
     AnimaWorksError,
     ExecutionError,
@@ -38,9 +39,8 @@ from core.exceptions import (  # noqa: F401
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity.logger import ActivityLogger
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import AnimaStatus, ModelConfig
-from core.session_compactor import SessionCompactor
 from core.tasks.background import BackgroundTask
 from core.time_utils import now_local
 
@@ -58,7 +58,7 @@ class BackgroundWorkerSlot:
 
 
 # ── Mixin imports ───────────────────────────────────────────────
-from core._anima_heartbeat import (  # noqa: F401
+from core.anima.heartbeat import (  # noqa: F401
     _MIN_REFLECTION_LENGTH,
     _RE_REFLECTION,
     HeartbeatMixin,
@@ -66,13 +66,13 @@ from core._anima_heartbeat import (  # noqa: F401
 )
 
 # ── Re-exports for backward compatibility ───────────────────────
-# Tests and other modules import these symbols from ``core.anima``.
-from core._anima_inbox import (
+# Tests and other modules import these symbols from ``core.anima.digital_anima``.
+from core.anima.inbox import (
     InboxMixin,
     InboxResult,  # noqa: F401
 )
-from core._anima_lifecycle import LifecycleMixin
-from core._anima_messaging import MessagingMixin
+from core.anima.lifecycle import LifecycleMixin
+from core.anima.messaging import MessagingMixin
 
 
 class DigitalAnima(
@@ -646,14 +646,14 @@ class DigitalAnima(
     @property
     def needs_bootstrap(self) -> bool:
         """True if this anima has not completed the first-run bootstrap."""
-        from core.bootstrap_state import get_bootstrap_status
+        from core.anima.bootstrap_state import get_bootstrap_status
 
         return bool(get_bootstrap_status(self.anima_dir).get("needs_bootstrap"))
 
     @property
     def bootstrap_state(self) -> dict[str, Any]:
         """Return state-aware first-run bootstrap lifecycle information."""
-        from core.bootstrap_state import get_bootstrap_status
+        from core.anima.bootstrap_state import get_bootstrap_status
 
         return get_bootstrap_status(self.anima_dir)
 

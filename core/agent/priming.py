@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """PrimingMixin -- priming, context-window control, prompt size checking.
 
-Extracted from ``core.agent.AgentCore`` as a Mixin.  All ``self`` references
+Extracted from ``core.agent.agent_core.AgentCore`` as a Mixin.  All ``self`` references
 are resolved at runtime via MRO when mixed into ``AgentCore``.
 """
 
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from core.memory.conversation.memory import ConversationMemory
 
-from core._agent_prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
+from core.agent.prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 from core.prompt.builder import build_system_prompt
 from core.prompt.tokens import estimate_tokens
 

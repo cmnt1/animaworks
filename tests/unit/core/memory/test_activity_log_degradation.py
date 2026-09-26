@@ -295,7 +295,7 @@ class TestMessengerSendActivityLog:
 
     def test_send_creates_dm_sent_entry(self, tmp_path: Path):
         """Verify that send() creates a message_sent entry in activity_log/{date}.jsonl."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         # Setup directory structure: shared/inbox/sender/ and animas/sender/activity_log/
         shared = tmp_path / "shared"
@@ -336,7 +336,7 @@ class TestMessengerSendDmLogs:
 
     def test_send_appends_to_dm_logs(self, tmp_path: Path):
         """Verify that send() does NOT write to shared/dm_logs/ (dm_logs abolished)."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -367,7 +367,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         from unittest.mock import patch
 
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     def test_mentions_sent_to_stopped_animas(self, tmp_path: Path):
@@ -521,7 +521,7 @@ class TestAnimaDmReceiveLimit:
         """Verify the source code uses [:50] for DM recording, not [:10]."""
         import inspect
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         # After decomposition, inbox message processing moved to
         # _process_inbox_messages (called from run_heartbeat).
@@ -606,7 +606,7 @@ class TestReadDmHistoryTypeFilter:
 
     def test_only_requests_dm_types(self, tmp_path: Path):
         """Verify read_dm_history queries message_sent and message_received types."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -630,7 +630,7 @@ class TestReadDmHistoryTypeFilter:
 
     def test_read_dm_history_days_30(self, tmp_path: Path):
         """Verify read_dm_history uses days=30 for broader history."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -806,7 +806,7 @@ class TestMessengerSendIntegration:
 
     def test_send_writes_both_activity_and_dm_logs(self, tmp_path: Path):
         """Verify send() writes only to activity log (dm_logs abolished)."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -831,7 +831,7 @@ class TestMessengerSendIntegration:
 
     def test_send_does_not_fail_if_anima_dir_missing(self, tmp_path: Path):
         """Verify send() succeeds even if animas/ directory doesn't exist."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)
@@ -845,7 +845,7 @@ class TestMessengerSendIntegration:
 
     def test_send_inbox_file_created(self, tmp_path: Path):
         """Verify send() creates the inbox JSON file for the recipient."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         (shared / "inbox" / "alice").mkdir(parents=True)

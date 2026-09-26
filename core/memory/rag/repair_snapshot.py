@@ -65,7 +65,7 @@ def _fingerprint(root: Path) -> dict:
 
 @contextmanager
 def snapshot_inputs(anima_dir: Path, *, include_shared: bool) -> Iterator[RebuildInputs]:
-    from core.company_resources import get_company_resources
+    from core.org.company_resources import get_company_resources
     from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_data_dir
 
     base = get_data_dir()

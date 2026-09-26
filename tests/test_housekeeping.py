@@ -190,7 +190,7 @@ class TestRotateAllPromptLogs:
     """Test the rotate_all_prompt_logs function."""
 
     def test_deletes_old_logs(self, tmp_path: Path):
-        from core._agent_prompt_log import rotate_all_prompt_logs
+        from core.agent.prompt_log import rotate_all_prompt_logs
 
         anima_dir = tmp_path / "alice"
         log_dir = anima_dir / "prompt_logs"
@@ -208,21 +208,21 @@ class TestRotateAllPromptLogs:
         assert (log_dir / f"{today}.jsonl").exists()
 
     def test_skips_non_directories(self, tmp_path: Path):
-        from core._agent_prompt_log import rotate_all_prompt_logs
+        from core.agent.prompt_log import rotate_all_prompt_logs
 
         (tmp_path / "not_a_dir.txt").write_text("hello")
         result = rotate_all_prompt_logs(tmp_path, retention_days=3)
         assert result == {}
 
     def test_skips_anima_without_prompt_logs(self, tmp_path: Path):
-        from core._agent_prompt_log import rotate_all_prompt_logs
+        from core.agent.prompt_log import rotate_all_prompt_logs
 
         (tmp_path / "bob").mkdir()
         result = rotate_all_prompt_logs(tmp_path, retention_days=3)
         assert result == {}
 
     def test_no_old_files(self, tmp_path: Path):
-        from core._agent_prompt_log import rotate_all_prompt_logs
+        from core.agent.prompt_log import rotate_all_prompt_logs
 
         anima_dir = tmp_path / "charlie"
         log_dir = anima_dir / "prompt_logs"
@@ -234,7 +234,7 @@ class TestRotateAllPromptLogs:
         assert result == {}
 
     def test_multiple_animas(self, tmp_path: Path):
-        from core._agent_prompt_log import rotate_all_prompt_logs
+        from core.agent.prompt_log import rotate_all_prompt_logs
 
         old_date = (today_local() - timedelta(days=10)).isoformat()
 

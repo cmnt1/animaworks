@@ -45,7 +45,7 @@ This tool updates the shared workspace registry, adds the path to the target Ani
 
 ### List
 
-Use `core.workspace.list_workspaces()` to inspect the shared registry. Do not use `read_memory_file(path="config.json")`.
+Use `core.org.workspace.list_workspaces()` to inspect the shared registry. Do not use `read_memory_file(path="config.json")`.
 
 ### Remove
 

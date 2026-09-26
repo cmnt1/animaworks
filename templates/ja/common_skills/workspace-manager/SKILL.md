@@ -45,7 +45,7 @@ Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
 
 ### 一覧
 
-組織共有レジストリの一覧は `core.workspace.list_workspaces()` で確認する。`read_memory_file(path="config.json")` は使わない。
+組織共有レジストリの一覧は `core.org.workspace.list_workspaces()` で確認する。`read_memory_file(path="config.json")` は使わない。
 
 ### 削除
 

@@ -64,7 +64,7 @@ Anima のワーキングメモリ。「今まさに何をしているか」「�
 
 ### ロック制御
 
-`core/anima.py` の `_state_file_lock`（`asyncio.Lock`）が `current_state.md` への並行書き込みを防止する。
+`core/anima/digital_anima.py` の `_state_file_lock`（`asyncio.Lock`）が `current_state.md` への並行書き込みを防止する。
 
 `_is_state_file(path)` は `state/current_state.md` のみに `True` を返す。`write_memory_file` 経由の書き込みでは、このファイルに対してロックが自動取得される。
 

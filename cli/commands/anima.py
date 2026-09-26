@@ -16,13 +16,13 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
     from pathlib import Path
 
     from cli.commands.init_cmd import _register_anima_in_config
-    from core.anima_factory import (
+    from core.anima.factory import (
         create_blank,
         create_from_md,
         create_from_template,
         validate_anima_name,
     )
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
     from core.paths import get_animas_dir, get_data_dir
 
     ensure_runtime_dir(skip_animas=True)
@@ -106,8 +106,8 @@ def cmd_chat(args: argparse.Namespace) -> None:
             DeprecationWarning,
             stacklevel=2,
         )
-        from core.anima import DigitalAnima
-        from core.init import ensure_runtime_dir
+        from core.anima.digital_anima import DigitalAnima
+        from core.infra.runtime_init import ensure_runtime_dir
         from core.paths import get_animas_dir, get_shared_dir
 
         ensure_runtime_dir()
@@ -189,8 +189,8 @@ def cmd_heartbeat(args: argparse.Namespace) -> None:
             DeprecationWarning,
             stacklevel=2,
         )
-        from core.anima import DigitalAnima
-        from core.init import ensure_runtime_dir
+        from core.anima.digital_anima import DigitalAnima
+        from core.infra.runtime_init import ensure_runtime_dir
         from core.paths import get_animas_dir, get_shared_dir
 
         ensure_runtime_dir()

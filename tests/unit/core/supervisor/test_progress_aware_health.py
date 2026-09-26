@@ -68,7 +68,7 @@ class TestProgressAwareBusyHang:
     @pytest.mark.asyncio
     async def test_global_startup_ready_warmup_suppresses_ping(self, tmp_path: Path):
         """Health checks should not ping/restart during ready+warmup."""
-        from core import startup_progress
+        from core.infra import startup_progress
 
         startup_progress._reset_for_testing()
         startup_progress.begin_startup("booting")

@@ -4,7 +4,7 @@
 """Unit tests for the system-reference-documents feature.
 
 Tests cover:
-1. core/init.py — _INFRASTRUCTURE_DIRS includes "common_knowledge",
+1. core/infra/runtime_init.py — _INFRASTRUCTURE_DIRS includes "common_knowledge",
    _copy_infrastructure / merge_templates / _ensure_runtime_only_dirs
 2. core/prompt/builder.py — build_system_prompt includes/excludes
    the common_knowledge reference hint section
@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # ════════════════════════════════════════════════════════════════════
-# 1. Init tests (core/init.py)
+# 1. Init tests (core/infra/runtime_init.py)
 # ════════════════════════════════════════════════════════════════════
 
 
@@ -29,17 +29,17 @@ class TestInfrastructureDirsContainsCommonKnowledge:
     """Verify _INFRASTRUCTURE_DIRS includes the common_knowledge entry."""
 
     def test_common_knowledge_in_infrastructure_dirs(self):
-        from core.init import _INFRASTRUCTURE_DIRS
+        from core.infra.runtime_init import _INFRASTRUCTURE_DIRS
 
         assert "common_knowledge" in _INFRASTRUCTURE_DIRS
 
     def test_infrastructure_dirs_is_set(self):
-        from core.init import _INFRASTRUCTURE_DIRS
+        from core.infra.runtime_init import _INFRASTRUCTURE_DIRS
 
         assert isinstance(_INFRASTRUCTURE_DIRS, set)
 
     def test_other_expected_dirs_present(self):
-        from core.init import _INFRASTRUCTURE_DIRS
+        from core.infra.runtime_init import _INFRASTRUCTURE_DIRS
 
         for name in ("prompts", "company", "common_skills", "common_knowledge", "reference"):
             assert name in _INFRASTRUCTURE_DIRS, f"{name} missing"
@@ -49,7 +49,7 @@ class TestCopyInfrastructure:
     """Verify _copy_infrastructure copies common_knowledge/ to data_dir."""
 
     def test_copies_common_knowledge_directory(self, tmp_path: Path):
-        from core.init import _copy_infrastructure
+        from core.infra.runtime_init import _copy_infrastructure
 
         # Set up a fake templates directory with locale-specific common_knowledge
         templates = tmp_path / "templates"
@@ -64,14 +64,17 @@ class TestCopyInfrastructure:
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="ja"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ja"),
+        ):
             _copy_infrastructure(data_dir)
 
         assert (data_dir / "common_knowledge" / "00_index.md").exists()
         assert (data_dir / "common_knowledge" / "organization" / "structure.md").exists()
 
     def test_does_not_copy_anima_templates(self, tmp_path: Path):
-        from core.init import _copy_infrastructure
+        from core.infra.runtime_init import _copy_infrastructure
 
         templates = tmp_path / "templates"
         ja_dir = templates / "ja"
@@ -84,14 +87,17 @@ class TestCopyInfrastructure:
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="ja"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ja"),
+        ):
             _copy_infrastructure(data_dir)
 
         assert not (data_dir / "anima_templates").exists()
 
     def test_copytree_dirs_exist_ok(self, tmp_path: Path):
         """Copying when destination already exists should succeed (dirs_exist_ok)."""
-        from core.init import _copy_infrastructure
+        from core.infra.runtime_init import _copy_infrastructure
 
         templates = tmp_path / "templates"
         ja_dir = templates / "ja"
@@ -105,7 +111,10 @@ class TestCopyInfrastructure:
         ck_dst.mkdir(parents=True)
         (ck_dst / "00_index.md").write_text("# Old Index", encoding="utf-8")
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="ja"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ja"),
+        ):
             _copy_infrastructure(data_dir)
 
         content = (ck_dst / "00_index.md").read_text(encoding="utf-8")
@@ -113,7 +122,7 @@ class TestCopyInfrastructure:
 
     def test_copies_en_locale_templates(self, tmp_path: Path):
         """_copy_infrastructure uses en templates when locale is en."""
-        from core.init import _copy_infrastructure
+        from core.infra.runtime_init import _copy_infrastructure
 
         templates = tmp_path / "templates"
         en_dir = templates / "en"
@@ -128,7 +137,10 @@ class TestCopyInfrastructure:
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="en"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="en"),
+        ):
             _copy_infrastructure(data_dir)
 
         content = (data_dir / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
@@ -136,7 +148,7 @@ class TestCopyInfrastructure:
 
     def test_unknown_locale_falls_back_to_en(self, tmp_path: Path):
         """_copy_infrastructure falls back to en when unknown locale (e.g. fr) is requested."""
-        from core.init import _copy_infrastructure
+        from core.infra.runtime_init import _copy_infrastructure
 
         templates = tmp_path / "templates"
         en_dir = templates / "en"
@@ -147,7 +159,10 @@ class TestCopyInfrastructure:
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="fr"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="fr"),
+        ):
             _copy_infrastructure(data_dir)
 
         content = (data_dir / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
@@ -155,7 +170,7 @@ class TestCopyInfrastructure:
 
     def test_unknown_locale_falls_back_to_ja_when_no_en(self, tmp_path: Path):
         """Falls back to ja when neither requested locale nor en exists."""
-        from core.init import _copy_infrastructure
+        from core.infra.runtime_init import _copy_infrastructure
 
         templates = tmp_path / "templates"
         ja_dir = templates / "ja"
@@ -166,7 +181,10 @@ class TestCopyInfrastructure:
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="fr"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="fr"),
+        ):
             _copy_infrastructure(data_dir)
 
         content = (data_dir / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
@@ -177,7 +195,7 @@ class TestMergeTemplates:
     """Verify merge_templates copies missing common_knowledge files."""
 
     def test_copies_missing_common_knowledge_files(self, tmp_path: Path):
-        from core.init import merge_templates
+        from core.infra.runtime_init import merge_templates
 
         templates = tmp_path / "templates"
         ja_dir = templates / "ja"
@@ -193,7 +211,10 @@ class TestMergeTemplates:
         # Create common_knowledge dir but leave it empty
         (data_dir / "common_knowledge").mkdir(parents=True)
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="ja"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ja"),
+        ):
             added = merge_templates(data_dir)
 
         assert "common_knowledge/00_index.md" in added
@@ -201,7 +222,7 @@ class TestMergeTemplates:
         assert (data_dir / "common_knowledge" / "00_index.md").exists()
 
     def test_does_not_overwrite_existing_files(self, tmp_path: Path):
-        from core.init import merge_templates
+        from core.infra.runtime_init import merge_templates
 
         templates = tmp_path / "templates"
         ja_dir = templates / "ja"
@@ -213,7 +234,10 @@ class TestMergeTemplates:
         (data_dir / "common_knowledge").mkdir(parents=True)
         (data_dir / "common_knowledge" / "00_index.md").write_text("# User-customized version", encoding="utf-8")
 
-        with patch("core.init.TEMPLATES_DIR", templates), patch("core.paths._get_locale", return_value="ja"):
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ja"),
+        ):
             added = merge_templates(data_dir)
 
         # File already existed, should not be overwritten or listed
@@ -226,7 +250,7 @@ class TestEnsureRuntimeOnlyDirs:
     """Verify _ensure_runtime_only_dirs creates common_knowledge dir."""
 
     def test_creates_common_knowledge_dir(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -236,7 +260,7 @@ class TestEnsureRuntimeOnlyDirs:
         assert (data_dir / "common_knowledge").is_dir()
 
     def test_creates_all_runtime_dirs(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -256,7 +280,7 @@ class TestEnsureRuntimeOnlyDirs:
             assert (data_dir / rel).is_dir(), f"{rel} not created"
 
     def test_idempotent(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -1003,7 +1027,6 @@ class TestIndexFileReferences:
         "security/prompt-injection-awareness.md",
         "anatomy/what-is-anima.md",
         "operations/task-board-guide.md",
-
     ]
 
     _EXPECTED_REFERENCE_LINKS = [
@@ -1026,7 +1049,6 @@ class TestIndexFileReferences:
         "reference/troubleshooting/common-issues.md",
         "reference/troubleshooting/escalation-flowchart.md",
         "reference/usecases/usecase-overview.md",
-
     ]
 
     @pytest.mark.parametrize("rel_path", _EXPECTED_REFERENCED_FILES)

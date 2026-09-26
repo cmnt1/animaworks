@@ -71,7 +71,7 @@ class TestPerThreadAgentLock:
     """AgentCore._get_agent_lock returns independent locks per thread."""
 
     def test_same_thread_returns_same_lock(self) -> None:
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = MagicMock(spec=AgentCore)
         agent._agent_locks = {}
@@ -82,7 +82,7 @@ class TestPerThreadAgentLock:
         assert lock1 is lock2
 
     def test_different_threads_return_different_locks(self) -> None:
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = MagicMock(spec=AgentCore)
         agent._agent_locks = {}
@@ -93,7 +93,7 @@ class TestPerThreadAgentLock:
         assert lock_a is not lock_b
 
     def test_lru_eviction_when_max_reached(self) -> None:
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = MagicMock(spec=AgentCore)
         agent._agent_locks = {}
@@ -113,7 +113,7 @@ class TestPerThreadInterruptEvent:
     """DigitalAnima._get_interrupt_event and interrupt() per-thread behavior."""
 
     def _make_anima_mock(self):
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = MagicMock(spec=DigitalAnima)
         anima._interrupt_events = {}
@@ -121,7 +121,7 @@ class TestPerThreadInterruptEvent:
         return anima
 
     def test_same_thread_returns_same_event(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = self._make_anima_mock()
         e1 = DigitalAnima._get_interrupt_event(anima, "t1")
@@ -129,7 +129,7 @@ class TestPerThreadInterruptEvent:
         assert e1 is e2
 
     def test_different_threads_return_different_events(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = self._make_anima_mock()
         e_a = DigitalAnima._get_interrupt_event(anima, "a")
@@ -138,7 +138,7 @@ class TestPerThreadInterruptEvent:
 
     @pytest.mark.asyncio
     async def test_interrupt_all_threads(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = self._make_anima_mock()
         e_a = DigitalAnima._get_interrupt_event(anima, "a")
@@ -153,7 +153,7 @@ class TestPerThreadInterruptEvent:
 
     @pytest.mark.asyncio
     async def test_interrupt_specific_thread(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = self._make_anima_mock()
         e_a = DigitalAnima._get_interrupt_event(anima, "a")
@@ -167,11 +167,11 @@ class TestPerThreadInterruptEvent:
 class TestStatusSlotsCompoundKey:
     """_status_slots uses conversation:{thread_id} compound keys."""
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.Messenger")
-    @patch("core.anima.MemoryManager")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.Messenger")
+    @patch("core.anima.digital_anima.MemoryManager")
     def test_primary_status_from_conversation_slots(self, mock_mm, mock_msg, mock_agent, tmp_path: Path) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         mock_mm.return_value.read_model_config.return_value = MagicMock()
         mock_agent.return_value = MagicMock()
@@ -200,11 +200,11 @@ class TestStatusSlotsCompoundKey:
         dp._status_slots["conversation:t1"] = "idle"
         assert dp.primary_status == "idle"
 
-    @patch("core.anima.AgentCore")
-    @patch("core.anima.Messenger")
-    @patch("core.anima.MemoryManager")
+    @patch("core.anima.digital_anima.AgentCore")
+    @patch("core.anima.digital_anima.Messenger")
+    @patch("core.anima.digital_anima.MemoryManager")
     def test_primary_task_from_conversation_slots(self, mock_mm, mock_msg, mock_agent, tmp_path: Path) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         mock_mm.return_value.read_model_config.return_value = MagicMock()
         mock_agent.return_value = MagicMock()

@@ -171,7 +171,7 @@ def register_anima_in_config(
             supervisor,
         )
         try:
-            from core.anima_roster import refresh_anima_roster
+            from core.anima.roster import refresh_anima_roster
 
             refresh_anima_roster()
         except Exception:
@@ -217,7 +217,7 @@ def unregister_anima_from_config(
     save_config(config, config_path)
     logger.debug("Unregistered anima '%s' from config", anima_name)
     try:
-        from core.anima_roster import refresh_anima_roster
+        from core.anima.roster import refresh_anima_roster
 
         refresh_anima_roster()
     except Exception:

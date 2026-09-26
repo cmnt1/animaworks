@@ -11,7 +11,7 @@ import sys
 import time
 
 from core.i18n import t
-from core.tmp_cleanup import (
+from core.infra.tmp_cleanup import (
     clean_tmp_dir,
     format_size,
     parse_size,

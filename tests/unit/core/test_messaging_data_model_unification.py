@@ -295,7 +295,7 @@ class TestMessengerSendUnified:
         shared_dir: Path,
         anima_dir: Path,
     ) -> None:
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         m = Messenger(shared_dir, "alice")
         m.send("bob", "Hello Bob!")
@@ -311,7 +311,7 @@ class TestMessengerSendUnified:
         shared_dir: Path,
         anima_dir: Path,
     ) -> None:
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         m = Messenger(shared_dir, "alice")
         m.send("bob", "Hello Bob!")
@@ -328,7 +328,7 @@ class TestMessengerSendUnified:
         shared_dir: Path,
         anima_dir: Path,
     ) -> None:
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         m = Messenger(shared_dir, "alice")
         m.send("bob", "Report", intent="report")
@@ -359,7 +359,7 @@ class TestCascadeLimiterEventNames:
         for _ in range(3):
             activity.log("dm_received", content="hi", from_person="bob")
 
-        from core.cascade_limiter import ConversationDepthLimiter
+        from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
         depth = limiter.current_depth("alice", "bob", anima_dir)
@@ -372,7 +372,7 @@ class TestCascadeLimiterEventNames:
         for _ in range(3):
             activity.log("message_received", content="hi", from_person="bob", meta={"from_type": "anima"})
 
-        from core.cascade_limiter import ConversationDepthLimiter
+        from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
         depth = limiter.current_depth("alice", "bob", anima_dir)
@@ -385,7 +385,7 @@ class TestCascadeLimiterEventNames:
         activity.log("dm_received", content="old", from_person="bob")
         activity.log("message_received", content="new", from_person="bob", meta={"from_type": "anima"})
 
-        from core.cascade_limiter import ConversationDepthLimiter
+        from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
         depth = limiter.current_depth("alice", "bob", anima_dir)

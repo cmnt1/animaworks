@@ -182,7 +182,7 @@ def test_iter_entries_reads_and_filters(log_dir: Path):
 
 def test_compaction_extraction_golden(log_dir: Path):
     """The migrated compaction path must yield identical structure."""
-    from core.session_compactor import _extract_recent_chat_context
+    from core.agent.session_compactor import _extract_recent_chat_context
 
     _write_entries(
         log_dir,

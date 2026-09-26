@@ -25,8 +25,8 @@ from apscheduler.triggers.cron import CronTrigger
 from core.config.models import ActivityScheduleEntry, load_config, save_config
 from core.config.resolver import resolve_process_model_config
 from core.i18n import t
-from core.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.schemas import CronTask
+from core.supervisor.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 from core.time_utils import get_app_timezone, now_local
 
@@ -41,7 +41,7 @@ _CRON_RUN_HISTORY_LIMIT = 10
 _CRON_WARNING_SUPPRESS_HOURS = 24
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
 
 logger = logging.getLogger(__name__)
 
@@ -909,7 +909,7 @@ class SchedulerManager:
 
     def _awaiting_initial_setup(self) -> bool:
         """Keep periodic work out of the user's initial profile conversation."""
-        from core.bootstrap_state import get_bootstrap_status
+        from core.anima.bootstrap_state import get_bootstrap_status
 
         return bool(get_bootstrap_status(self._anima_dir).get("needs_bootstrap"))
 

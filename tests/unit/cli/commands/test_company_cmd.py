@@ -118,7 +118,7 @@ def test_company_export_calls_core_and_prints_summary(
 
     with (
         patch("core.paths.get_data_dir", return_value=data_dir),
-        patch("core.company.export_company", return_value=result) as export_company,
+        patch("core.org.company.export_company", return_value=result) as export_company,
     ):
         _run(parser, ["company", "export", "alpha", "--out", str(output_dir)])
 

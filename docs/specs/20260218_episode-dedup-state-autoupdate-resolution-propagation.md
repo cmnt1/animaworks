@@ -23,7 +23,7 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 
 ### Root Cause
 
-1. **per-message fire-and-forget `finalize_session()`** — `core/anima.py:355`, `core/anima.py:537`
+1. **per-message fire-and-forget `finalize_session()`** — `core/anima/digital_anima.py:355`, `core/anima/digital_anima.py:537`
    - メッセージ応答のたびに `asyncio.create_task(conv_memory.finalize_session(min_turns=3))` が呼ばれる
    - `finalize_session()` は**全蓄積ターン**を毎回 LLM で再要約する（`conversation.py:381-439`）
    - `append_episode()` は重複チェックなしで追記するだけ（`manager.py:730-745`）
@@ -44,7 +44,7 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 | Component | Impact | Description |
 |-----------|--------|-------------|
 | `core/memory/conversation/memory.py` | Direct | finalize_session の大改修 |
-| `core/anima.py` | Direct | fire-and-forget 呼び出し削除、heartbeat に finalize 統合 |
+| `core/anima/digital_anima.py` | Direct | fire-and-forget 呼び出し削除、heartbeat に finalize 統合 |
 | `core/memory/activity/logger.py` | Direct | `issue_resolved` イベントタイプ + ASCII ラベル追加 |
 | `core/memory/maintenance/consolidation.py` | Direct | 解決イベント収集 + プロンプト注入 |
 | `core/prompt/builder.py` | Direct | 解決レジストリセクション追加 |
@@ -84,7 +84,7 @@ Priming Issue（`20260218_priming-format-redesign.md`）が先行実装される
 | Module | Change Type | Description |
 |--------|------------|-------------|
 | `core/memory/conversation/memory.py` | Modify | `ConversationState` に `last_finalized_turn_index` 追加、`finalize_session()` を差分要約+ステート抽出+ターン圧縮に改修、`finalize_if_session_ended()` 新設、`_parse_session_summary()` 新設、`_update_state_from_summary()` 新設 |
-| `core/anima.py` | Modify | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除（2箇所）。heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 |
+| `core/anima/digital_anima.py` | Modify | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除（2箇所）。heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 |
 | `core/memory/activity/logger.py` | Modify | type_map に `"issue_resolved": "RSLV"` 追加（Priming Issue で ASCII 化済みの前提） |
 | `core/memory/maintenance/consolidation.py` | Modify | `daily_consolidate()` に解決イベント収集 + プロンプト注入を追加 |
 | `core/prompt/builder.py` | Modify | `build_system_prompt()` に解決レジストリ注入セクション追加（Priming セクション直前） |
@@ -375,7 +375,7 @@ async def finalize_if_session_ended(self) -> bool:
 
 #### Change 8: fire-and-forget 削除 + heartbeat 統合
 
-**Target**: `core/anima.py:354-355`, `core/anima.py:535-538`
+**Target**: `core/anima/digital_anima.py:354-355`, `core/anima/digital_anima.py:535-538`
 
 ```python
 # Before (process_message, L355):
@@ -391,7 +391,7 @@ asyncio.create_task(
 # After: 削除（3行ごと削除）
 ```
 
-**Target**: `core/anima.py` heartbeat 処理（L875 付近、heartbeat_end activity.log の直後に追加）
+**Target**: `core/anima/digital_anima.py` heartbeat 処理（L875 付近、heartbeat_end activity.log の直後に追加）
 
 ```python
 # heartbeat episode 記録（既存パス3）の後に追加:
@@ -534,8 +534,8 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 | 1-1 | `ConversationState` に `last_finalized_turn_index` フィールド追加、`save()` / `load()` 更新 | `core/memory/conversation/memory.py` |
 | 1-2 | `finalize_session()` を差分要約に改修（`turns[last_finalized_turn_index:]` のみ要約）| `core/memory/conversation/memory.py` |
 | 1-3 | `finalize_if_session_ended()` メソッド新設（10分アイドル検出） | `core/memory/conversation/memory.py` |
-| 1-4 | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除 | `core/anima.py` |
-| 1-5 | heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 | `core/anima.py` |
+| 1-4 | `process_message()` L355 と `process_message_streaming()` L537 の fire-and-forget 削除 | `core/anima/digital_anima.py` |
+| 1-5 | heartbeat 処理に `finalize_if_session_ended()` 呼び出し追加 | `core/anima/digital_anima.py` |
 | 1-6 | finalize 後の記録済みターンを `compressed_summary` に統合する処理追加 | `core/memory/conversation/memory.py` |
 
 **テスト**:
@@ -652,10 +652,10 @@ def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
 ## References
 
 - `core/memory/conversation/memory.py:381-439` — 現在の finalize_session 実装
-- `core/anima.py:355` — fire-and-forget 呼び出し箇所（process_message）
-- `core/anima.py:537` — fire-and-forget 呼び出し箇所（process_message_streaming）
-- `core/anima.py:876-889` — heartbeat エピソード記録（パス3、変更なし）
-- `core/anima.py:784-796` — DM 受信エピソード記録（パス2、変更なし）
+- `core/anima/digital_anima.py:355` — fire-and-forget 呼び出し箇所（process_message）
+- `core/anima/digital_anima.py:537` — fire-and-forget 呼び出し箇所（process_message_streaming）
+- `core/anima/digital_anima.py:876-889` — heartbeat エピソード記録（パス3、変更なし）
+- `core/anima/digital_anima.py:784-796` — DM 受信エピソード記録（パス2、変更なし）
 - `core/memory/manager.py:730-745` — append_episode（重複チェックなし）
 - `core/memory/manager.py:747-751` — update_state / update_pending（呼び出し元なし）
 - `core/memory/maintenance/consolidation.py:209-217` — dedup_key（先頭200文字判定）

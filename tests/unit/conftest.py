@@ -48,7 +48,7 @@ def _reset_config_caches_for_unit_tests(
 ) -> None:
     """Isolate runtime config and event exporters from the developer machine."""
     from core.config import invalidate_cache, invalidate_vault_cache
-    from core.event_export import reset_event_exporters
+    from core.infra.event_export import reset_event_exporters
 
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "_runtime"))
     reset_event_exporters()
@@ -110,6 +110,8 @@ import core.config.resolver as _resolver_module
 from core.config.resolver import resolve_process_model_config as _real_resolve_pm
 from core.config.schemas import (
     ResolvedProcessModelConfig as _RPMC,
+)
+from core.config.schemas import (
     TaskProcessIsolationConfig as _TPIC,
 )
 

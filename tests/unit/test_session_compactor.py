@@ -13,12 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.config.models import HeartbeatConfig
-from core.execution._sdk_session import _load_session_id
-from core.execution.codex_sdk import CodexSDKExecutor
-from core.memory.conversation.compression import CompressionResult
-from core.schemas import ModelConfig
-from core.session_compactor import (
+from core.agent.session_compactor import (
     SessionCompactor,
     _compact_mode_a,
     _compact_mode_b,
@@ -27,6 +22,11 @@ from core.session_compactor import (
     _extract_recent_chat_context,
     run_idle_compaction,
 )
+from core.config.models import HeartbeatConfig
+from core.execution._sdk_session import _load_session_id
+from core.execution.codex_sdk import CodexSDKExecutor
+from core.memory.conversation.compression import CompressionResult
+from core.schemas import ModelConfig
 
 # ── SessionCompactor ──────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ class TestSessionCompactor:
     @pytest.mark.asyncio
     async def test_lru_eviction(self) -> None:
         """When _MAX_TIMERS exceeded, oldest timer is evicted."""
-        with patch("core.session_compactor._MAX_TIMERS", 3):
+        with patch("core.agent.session_compactor._MAX_TIMERS", 3):
             compactor = SessionCompactor(idle_minutes=5.0)
             callback = MagicMock()
 
@@ -494,7 +494,7 @@ class TestModeSpecificCompaction:
     @pytest.mark.asyncio
     async def test_compact_mode_b_delegates_to_mode_a(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """_compact_mode_b delegates to _compact_mode_a."""
-        with patch("core.session_compactor._compact_mode_a", new_callable=AsyncMock) as mock_a:
+        with patch("core.agent.session_compactor._compact_mode_a", new_callable=AsyncMock) as mock_a:
             mock_a.return_value = {"compression_performed": False}
 
             anima = MagicMock()
@@ -1152,7 +1152,7 @@ class TestRunIdleCompaction:
         anima._get_thread_lock = MagicMock(return_value=mock_lock)
 
         with patch(
-            "core.session_compactor._compact_mode_a",
+            "core.agent.session_compactor._compact_mode_a",
             new_callable=AsyncMock,
         ) as mock_compact:
             mock_compact.return_value = {"compression_performed": False}
@@ -1176,12 +1176,12 @@ class TestRunIdleCompaction:
 
         with (
             patch(
-                "core.session_compactor._compact_mode_s",
+                "core.agent.session_compactor._compact_mode_s",
                 new_callable=AsyncMock,
                 return_value=False,
             ) as mock_s,
             patch(
-                "core.session_compactor._compact_mode_a",
+                "core.agent.session_compactor._compact_mode_a",
                 new_callable=AsyncMock,
             ) as mock_a,
         ):
@@ -1205,7 +1205,7 @@ class TestRunIdleCompaction:
 
         with (
             patch(
-                "core.session_compactor._compact_mode_a",
+                "core.agent.session_compactor._compact_mode_a",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("compaction failed"),
             ),
@@ -1301,8 +1301,8 @@ class TestAnimaIntegration:
         )
 
         with (
-            patch("core.anima.AgentCore") as mock_agent_cls,
-            patch("core.anima.MemoryManager"),
+            patch("core.anima.digital_anima.AgentCore") as mock_agent_cls,
+            patch("core.anima.digital_anima.MemoryManager"),
             patch("core.config.models.load_config") as mock_load_config,
         ):
             mock_agent = MagicMock()
@@ -1314,7 +1314,7 @@ class TestAnimaIntegration:
             mock_config.heartbeat.idle_compaction_minutes = 15.0
             mock_load_config.return_value = mock_config
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
 

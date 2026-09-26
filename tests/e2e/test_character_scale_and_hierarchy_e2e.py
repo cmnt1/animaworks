@@ -11,6 +11,7 @@ Bug 2: Validates /api/animas returns correct 3-level hierarchy with the
        sakura (root) -> kotoha -> chatwork_checker
        sakura (root) -> rin -> aoi
 """
+
 from __future__ import annotations
 
 import json
@@ -88,18 +89,21 @@ def _create_app_with_config(
 
     # Persist auth mock beyond the with-block for request-time middleware
     import server.app as _sa
+
     _auth = MagicMock()
     _auth.auth_mode = "local_trust"
     _sa.load_auth = lambda: _auth
 
     app.state.anima_names = anima_names
 
-    from core.config.models import invalidate_cache, load_config as real_load_config
+    from core.config.models import invalidate_cache
+    from core.config.models import load_config as real_load_config
 
     invalidate_cache()
     real_config = real_load_config(config_path)
 
     import server.routes.animas as animas_module
+
     animas_module.load_config = lambda *a, **kw: real_config
 
     return app
@@ -133,15 +137,9 @@ class TestCharacterScaleFix:
 
         content = resp.text
 
-        assert "getWorldPosition" in content, (
-            "character-loader.js must use bone.getWorldPosition() for bounding box"
-        )
-        assert "isSkinnedMesh" in content, (
-            "character-loader.js must check isSkinnedMesh before bone traversal"
-        )
-        assert "expandByPoint" in content, (
-            "character-loader.js must use box.expandByPoint() with bone positions"
-        )
+        assert "getWorldPosition" in content, "character-loader.js must use bone.getWorldPosition() for bounding box"
+        assert "isSkinnedMesh" in content, "character-loader.js must check isSkinnedMesh before bone traversal"
+        assert "expandByPoint" in content, "character-loader.js must use box.expandByPoint() with bone positions"
 
         assert "new THREE.Box3().setFromObject(model)" not in content, (
             "character-loader.js must not use Box3().setFromObject(model) directly"
@@ -177,24 +175,14 @@ class TestAnimationFirstScaleFix:
         box_idx = content.find("new THREE.Box3()")
         assert mixer_idx != -1, "character-loader.js must create AnimationMixer"
         assert box_idx != -1, "character-loader.js must create Box3"
-        assert mixer_idx < box_idx, (
-            "AnimationMixer must be created before Box3 for animation-first scaling"
-        )
+        assert mixer_idx < box_idx, "AnimationMixer must be created before Box3 for animation-first scaling"
 
         set_time_idx = content.find("mixer.setTime(0)")
-        assert set_time_idx != -1, (
-            "character-loader.js must call mixer.setTime(0) to apply idle frame"
-        )
-        assert set_time_idx < box_idx, (
-            "mixer.setTime(0) must be called before Box3 computation"
-        )
+        assert set_time_idx != -1, "character-loader.js must call mixer.setTime(0) to apply idle frame"
+        assert set_time_idx < box_idx, "mixer.setTime(0) must be called before Box3 computation"
 
-        assert "maxHeight" in content, (
-            "character-loader.js must define maxHeight sanity cap"
-        )
-        assert "maxHeight = 0.8" in content, (
-            "maxHeight must be 0.8 to cap oversized characters"
-        )
+        assert "maxHeight" in content, "character-loader.js must define maxHeight sanity cap"
+        assert "maxHeight = 0.8" in content, "maxHeight must be 0.8 to cap oversized characters"
 
 
 # ── Bug 2: Organization hierarchy ────────────────────────────
@@ -208,9 +196,11 @@ class TestOrganizationHierarchyFix:
     def _cleanup(self):
         yield
         from core.config.models import invalidate_cache
+
         invalidate_cache()
         import server.routes.animas as animas_module
         from core.config.models import load_config
+
         animas_module.load_config = load_config
 
     async def test_full_animaworks_hierarchy(self, tmp_path: Path) -> None:
@@ -305,17 +295,12 @@ class TestOrganizationHierarchyFix:
                 parent["children"].append(node)
 
         # Exactly 1 root: sakura
-        assert len(roots) == 1, (
-            f"Expected 1 root, got {len(roots)}: "
-            f"{[r['name'] for r in roots]}"
-        )
+        assert len(roots) == 1, f"Expected 1 root, got {len(roots)}: {[r['name'] for r in roots]}"
         assert roots[0]["name"] == "sakura"
 
         # sakura has 2 direct children: kotoha and rin
         sakura_children = sorted(c["name"] for c in roots[0]["children"])
-        assert sakura_children == ["kotoha", "rin"], (
-            f"sakura children should be [kotoha, rin], got {sakura_children}"
-        )
+        assert sakura_children == ["kotoha", "rin"], f"sakura children should be [kotoha, rin], got {sakura_children}"
 
         # kotoha has 1 child: chatwork_checker
         kotoha_node = node_map["kotoha"]
@@ -332,7 +317,8 @@ class TestOrganizationHierarchyFix:
         assert len(node_map["aoi"]["children"]) == 0
 
     async def test_connector_lines_for_full_hierarchy(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Simulate buildConnectors from office3d.js.
 
@@ -370,9 +356,7 @@ class TestOrganizationHierarchyFix:
                 connectors.append((p["supervisor"], p["name"]))
 
         connectors.sort()
-        assert len(connectors) == 4, (
-            f"Expected 4 connector lines, got {len(connectors)}: {connectors}"
-        )
+        assert len(connectors) == 4, f"Expected 4 connector lines, got {len(connectors)}: {connectors}"
         assert ("kotoha", "chatwork_checker") in connectors
         assert ("rin", "aoi") in connectors
         assert ("sakura", "kotoha") in connectors
@@ -391,13 +375,13 @@ class TestSupervisorDataRepair:
         added as data repair, and org-sync picks it up correctly.
         """
         from core.config.models import (
-            AnimaWorksConfig,
             AnimaModelConfig,
+            AnimaWorksConfig,
             invalidate_cache,
             load_config,
             save_config,
         )
-        from core.org_sync import sync_org_structure
+        from core.org.org_sync import sync_org_structure
 
         data_dir = tmp_path / "animaworks"
         data_dir.mkdir()
@@ -456,13 +440,9 @@ class TestSupervisorDataRepair:
         result = sync_org_structure(animas_dir, config_path)
 
         # rin's supervisor should now be resolved to "sakura"
-        assert result["rin"] == "sakura", (
-            f"Expected rin supervisor='sakura', got '{result['rin']}'"
-        )
+        assert result["rin"] == "sakura", f"Expected rin supervisor='sakura', got '{result['rin']}'"
         # aoi's supervisor should now be resolved to "rin"
-        assert result["aoi"] == "rin", (
-            f"Expected aoi supervisor='rin', got '{result['aoi']}'"
-        )
+        assert result["aoi"] == "rin", f"Expected aoi supervisor='rin', got '{result['aoi']}'"
 
         # Verify config.json was updated
         invalidate_cache()

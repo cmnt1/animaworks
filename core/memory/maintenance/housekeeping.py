@@ -688,7 +688,7 @@ def _rotate_prompt_logs_all(
     retention_days: int,
 ) -> dict[str, Any]:
     """Rotate prompt logs for all Animas."""
-    from core._agent_prompt_log import rotate_all_prompt_logs
+    from core.agent.prompt_log import rotate_all_prompt_logs
 
     if not animas_dir.exists():
         return {"skipped": True}
@@ -996,7 +996,7 @@ def _cleanup_shared_inbox(
     if not inbox_root.exists():
         return {"skipped": True}
 
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     shared_dir = inbox_root.parent
     totals: dict[str, Any] = {

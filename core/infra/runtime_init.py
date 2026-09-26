@@ -175,7 +175,7 @@ def _copy_infrastructure(data_dir: Path) -> None:
 
 def _legacy_copy_default_anima(data_dir: Path) -> None:
     """Legacy fallback: create a blank anima when auto-initialising for server."""
-    from core.anima_factory import create_blank
+    from core.anima.factory import create_blank
 
     default_name = "default"
     animas_dir = data_dir / "animas"

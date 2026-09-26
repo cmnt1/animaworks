@@ -292,7 +292,7 @@ def create_setup_router() -> APIRouter:
 
         # Create anima if specified
         if body.anima:
-            from core.anima_factory import create_blank
+            from core.anima.factory import create_blank
 
             animas_dir = get_animas_dir()
             anima_name = body.anima.name

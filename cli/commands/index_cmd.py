@@ -196,13 +196,13 @@ def _index_shared_collections(
 
     Returns total chunks indexed across all animas.
     """
-    from core.company_resources import get_company_resources_for_company
     from core.config.models import read_anima_company_checked
     from core.memory.rag import MemoryIndexer
     from core.memory.rag.repair import is_repair_locked
     from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
     from core.memory.rag.singleton import get_vector_store
     from core.memory.retrieval.rag_search import _compute_dir_hash
+    from core.org.company_resources import get_company_resources_for_company
 
     ck_dir = base_dir / "common_knowledge"
     cs_dir = base_dir / "common_skills"

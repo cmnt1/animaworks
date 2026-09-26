@@ -304,7 +304,7 @@ cron.md를 업데이트하기 전에 다음을 **반드시** 확인하세요:
 
 ```bash
 python -c "
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
 import pathlib
 
 content = pathlib.Path('$ANIMAWORKS_ANIMA_DIR/cron.md').read_text()

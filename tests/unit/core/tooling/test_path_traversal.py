@@ -281,7 +281,7 @@ class TestCreateAnimaPathTraversal:
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
             patch("core.paths.get_data_dir", return_value=data_dir),
-            patch("core.anima_factory.create_from_md") as mock_create,
+            patch("core.anima.factory.create_from_md") as mock_create,
             patch("cli.commands.init_cmd._register_anima_in_config"),
         ):
             mock_create.return_value = animas_dir / "testchild"

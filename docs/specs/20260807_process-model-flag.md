@@ -65,7 +65,7 @@ Phase 3のlane割当はchat/greet/bootstrap→`chat`、inbox→`cron`、consolid
 2. `core/config/resolver.py:23-75` と同じstatus loaderを使う `resolve_process_model_config(anima_dir)` を追加し、§1のdefault/validation/統合規則を一箇所で適用する。manager、root、UIがJSONを個別解釈してはならない。
 3. process spawn/reconcile側はresolverのtyped結果だけを参照する。field変更を現runner内のmodel reloadだけで適用しない。
 
-既存 `/api/animas/{name}/reload` は `server/routes/animas.py:633-671` からrunner `core/supervisor/runner.py:953-957`、`core/anima.py:498-507`、`core/memory/config_reader.py:27-80` へ進み、ModelConfigをhot reloadする経路である。このAPIはprocess topologyやDB ownershipを切り替えない。
+既存 `/api/animas/{name}/reload` は `server/routes/animas.py:633-671` からrunner `core/supervisor/runner.py:953-957`、`core/anima/digital_anima.py:498-507`、`core/memory/config_reader.py:27-80` へ進み、ModelConfigをhot reloadする経路である。このAPIはprocess topologyやDB ownershipを切り替えない。
 
 ## 3. 反映とrestart契約
 
@@ -118,7 +118,7 @@ read pathはwrite flagを立てないため変更しない。回帰testは `test
 | supervisorの汎用file toolによる配下anima status | descendant management fileとしてwrite許可が先に評価される（`core/tooling/handler.py:204-215`, `core/tooling/handler_perms.py:281-284`, `core/execution/_sdk_security.py:121-125`）。本PRの「animaが自分で書換える穴」とは別 |
 | 専用subordinate management tool | enable/disable/model等の固定fieldを意図的にwriteする `core/tooling/handler_subordinate_control.py:35-64,104-134,260-286`。汎用file toolではなく管理API |
 | human-origin workspace grant | 明示human origin gate後に`default_workspace`を更新する `core/tooling/handler_workspace.py:47-139,241-255` |
-| trusted host/server/CLI/factory/migration/reconcile | management planeとして正当にwriteする。例: `core/anima_factory.py:468-570`, `server/routes/animas.py:427-470`, `core/config/cli.py:168-193,320-344`, `core/supervisor/_mgr_reconcile.py:101-125` |
+| trusted host/server/CLI/factory/migration/reconcile | management planeとして正当にwriteする。例: `core/anima/factory.py:468-570`, `server/routes/animas.py:427-470`, `core/config/cli.py:168-193,320-344`, `core/supervisor/_mgr_reconcile.py:101-125` |
 
 残存shell経路があるため、本PRの保護は「全filesystem writeをsecurity boundaryとして防ぐ」ものではない。process flagの実運用writeは認証済みmanagement API/CLIに限定し、shell経路のread-only mount化は別Issueで扱う。
 

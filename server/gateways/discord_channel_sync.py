@@ -32,7 +32,7 @@ from typing import Any
 from core.config.models import load_config, save_config
 from core.integrations._base import get_credential
 from core.integrations._discord_client import DiscordAPIError, DiscordClient
-from core.messenger import ChannelMeta, load_channel_meta, save_channel_meta
+from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta
 from core.paths import get_shared_dir
 
 logger = logging.getLogger("animaworks.discord_channel_sync")

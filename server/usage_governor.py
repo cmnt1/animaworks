@@ -674,7 +674,7 @@ class UsageGovernor:
                     sup_enabled = sup_data.get("enabled", False)
 
                 if sup_enabled:
-                    from core.messenger import Messenger
+                    from core.messaging.messenger import Messenger
                     from core.paths import get_shared_dir
 
                     messenger = Messenger(get_shared_dir(), "system")

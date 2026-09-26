@@ -4,10 +4,10 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Prompt-log constants and helpers extracted from ``core.agent``.
+"""Prompt-log constants and helpers extracted from ``core.agent.agent_core``.
 
-Pure module-level functions (no class).  ``core.agent`` re-exports every
-public symbol so existing ``from core.agent import _save_prompt_log``
+Pure module-level functions (no class).  ``core.agent.agent_core`` re-exports every
+public symbol so existing ``from core.agent.agent_core import _save_prompt_log``
 continues to work.
 """
 

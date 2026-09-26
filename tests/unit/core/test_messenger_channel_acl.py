@@ -1,4 +1,4 @@
-"""Unit tests for Board channel ACL in core/messenger.py."""
+"""Unit tests for Board channel ACL in core/messaging/messenger.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
-from core.messenger import (
+from core.messaging.messenger import (
     ChannelMeta,
     Messenger,
     is_channel_member,
@@ -80,10 +80,12 @@ class TestLoadChannelMeta:
     def test_description_field(self, shared_dir: Path):
         meta_path = shared_dir / "channels" / "team.meta.json"
         meta_path.write_text(
-            json.dumps({
-                "members": ["alice"],
-                "description": "Team discussion",
-            }),
+            json.dumps(
+                {
+                    "members": ["alice"],
+                    "description": "Team discussion",
+                }
+            ),
             encoding="utf-8",
         )
         result = load_channel_meta(shared_dir, "team")
@@ -93,11 +95,13 @@ class TestLoadChannelMeta:
     def test_loads_slack_sync_tombstone_fields(self, shared_dir: Path):
         meta_path = shared_dir / "channels" / "team.meta.json"
         meta_path.write_text(
-            json.dumps({
-                "members": ["alice"],
-                "slack_sync_disabled": True,
-                "slack_deleted_at": "2026-04-02T01:02:03+00:00",
-            }),
+            json.dumps(
+                {
+                    "members": ["alice"],
+                    "slack_sync_disabled": True,
+                    "slack_deleted_at": "2026-04-02T01:02:03+00:00",
+                }
+            ),
             encoding="utf-8",
         )
         result = load_channel_meta(shared_dir, "team")

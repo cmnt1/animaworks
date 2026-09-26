@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.integrations._async_compat import run_sync
 
 logger = logging.getLogger("animaworks.priming")

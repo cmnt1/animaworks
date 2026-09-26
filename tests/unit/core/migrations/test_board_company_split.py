@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.messenger import is_channel_member
+from core.messaging.messenger import is_channel_member
 from core.migrations.registry import MigrationRunner
 from core.migrations.steps import register_all_steps, step_split_board_by_company
 
