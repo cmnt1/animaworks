@@ -138,3 +138,52 @@ def test_owner_note_does_not_notify_delegator(runtime) -> None:
     with patch("core.taskboard.board_actions._send_task_notice", return_value=None) as send:
         run_board_action(actor="worker", action="note", task_id="t2", text="progress")
     send.assert_not_called()
+
+
+def test_bulk_triage_sends_one_digest_per_recipient(runtime) -> None:
+    from core.taskboard.board_actions import run_board_action
+    from core.taskboard.notices import flush_task_notices
+
+    for i in range(8):
+        runtime.add_task(
+            source="anima",
+            original_instruction="v",
+            assignee="worker",
+            summary="v",
+            task_id=f"b{i}",
+            relay_chain=["boss"],
+        )
+        run_board_action(actor="boss", action="claim", task_id=f"b{i}", ttl_seconds=600)
+        run_board_action(actor="boss", action="cancel", task_id=f"b{i}", text=f"merged into weekly {i}")
+
+    with patch("core.taskboard.notices._send_digest", return_value=True) as send:
+        assert flush_task_notices(quiet_seconds=3600) == 0
+        assert flush_task_notices(quiet_seconds=0) == 1
+    actor, to, records = send.call_args.args
+    assert (actor, to) == ("boss", "worker")
+    assert [r["target"] for r in records] == [f"b{i}" for i in range(8)]
+    with patch("core.taskboard.notices._send_digest", return_value=True) as send:
+        assert flush_task_notices(quiet_seconds=0) == 0
+
+
+def test_failed_digest_is_retried(runtime) -> None:
+    from core.taskboard.notices import flush_task_notices, queue_task_notice
+
+    queue_task_notice("worker", "boss", "t2", "cancel", "blocked", owner="worker")
+    with patch("core.taskboard.notices._send_digest", return_value=False):
+        assert flush_task_notices(quiet_seconds=0) == 0
+    with patch("core.taskboard.notices._send_digest", return_value=True) as send:
+        assert flush_task_notices(quiet_seconds=0) == 1
+    assert send.call_args.args[2][0]["target"] == "worker/t2"
+
+
+def test_digest_reaches_recipient_inbox(runtime) -> None:
+    from core.paths import get_shared_dir
+    from core.taskboard.notices import flush_task_notices, queue_task_notice
+
+    for i in range(10):
+        queue_task_notice("boss", "worker", f"x{i}", "cancel", "superseded")
+    assert flush_task_notices(quiet_seconds=0) == 1
+    inbox = [p for p in (get_shared_dir() / "inbox" / "worker").glob("*.json")]
+    assert len(inbox) == 1
+    assert "boss changed 10 task(s)" in inbox[0].read_text(encoding="utf-8")

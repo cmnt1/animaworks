@@ -113,23 +113,9 @@ def notify_task_delegator(
 def _send_task_notice(
     actor: str, to: str, task_id: str, action: str, detail: str, *, owner: str | None = None
 ) -> str | None:
-    target = f"{owner}/{task_id}" if owner else task_id
-    try:
-        from cli.commands.messaging import _resolve_sender_source
-        from core.messenger import Messenger
-        from core.paths import get_shared_dir
+    from core.taskboard.notices import queue_task_notice
 
-        message = Messenger(get_shared_dir(), actor).send(
-            to=to,
-            content=f"{actor} {action} task {target}: {detail[:180]}",
-            source=_resolve_sender_source(actor),
-        )
-        if message.type == "error":
-            return f"task changed, but notification to {to} failed: {message.content}"
-    except Exception as exc:
-        # Task state is authoritative; notification delivery must not roll it back.
-        return f"task changed, but notification to {to} failed: {exc}"
-    return None
+    return queue_task_notice(actor, to, task_id, action, detail, owner=owner)
 
 
 def run_board_action(

@@ -27,12 +27,22 @@ class ReconcileMixin:
             try:
                 await asyncio.sleep(self.reconciliation_config.interval_sec)
                 await self._reconcile()
+                await self._flush_task_notices()
             except asyncio.CancelledError:
                 break
             except Exception:
                 logger.exception("Reconciliation failed")
 
         logger.info("Reconciliation loop stopped")
+
+    async def _flush_task_notices(self) -> None:
+        """Send batched task board notices whose actor has gone quiet."""
+        from core.taskboard.notices import flush_task_notices
+
+        try:
+            await asyncio.to_thread(flush_task_notices)
+        except Exception:
+            logger.exception("Task notice flush failed")
 
     async def _reconcile(self) -> None:
         """Scan animas_dir and sync desired state with actual process state."""
