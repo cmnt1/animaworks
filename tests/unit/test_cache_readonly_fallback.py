@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core.tools._cache import BaseMessageCache
+from core.integrations._cache import BaseMessageCache
 
 SCHEMA = "CREATE TABLE IF NOT EXISTS msgs (id TEXT PRIMARY KEY, body TEXT);"
 

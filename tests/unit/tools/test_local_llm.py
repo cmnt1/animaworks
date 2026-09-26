@@ -1,4 +1,4 @@
-"""Tests for core/tools/local_llm.py — Ollama LLM client."""
+"""Tests for core/integrations/local_llm.py — Ollama LLM client."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -9,13 +9,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools.local_llm import (
+from core.integrations.local_llm import (
     DEFAULT_SERVERS,
     OllamaClient,
     OllamaServer,
     get_tool_schemas,
 )
-
 
 # ── OllamaServer ─────────────────────────────────────────────────
 
@@ -104,7 +103,7 @@ class TestSelectServer:
                 resp.elapsed.total_seconds.return_value = 0.1
             return resp
 
-        with patch("core.tools.local_llm.httpx.get", side_effect=mock_get):
+        with patch("core.integrations.local_llm.httpx.get", side_effect=mock_get):
             server = client.select_server()
         assert server.name == "server-a"
 
@@ -127,7 +126,7 @@ class TestSelectServer:
             resp.elapsed.total_seconds.return_value = 0.1
             return resp
 
-        with patch("core.tools.local_llm.httpx.get", side_effect=mock_get):
+        with patch("core.integrations.local_llm.httpx.get", side_effect=mock_get):
             server = client.select_server()
         assert server.name == "server-b"
 
@@ -146,9 +145,7 @@ class TestResolveModel:
         client = OllamaClient(server="local")
 
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "models": [{"name": "qwen:14b"}, {"name": "llama3:70b"}]
-        }
+        mock_resp.json.return_value = {"models": [{"name": "qwen:14b"}, {"name": "llama3:70b"}]}
         mock_resp.raise_for_status = MagicMock()
 
         with patch.object(client._client, "get", return_value=mock_resp):
@@ -160,9 +157,7 @@ class TestResolveModel:
         client = OllamaClient(server="local", hint="llama")
 
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "models": [{"name": "qwen:14b"}, {"name": "llama3:70b"}]
-        }
+        mock_resp.json.return_value = {"models": [{"name": "qwen:14b"}, {"name": "llama3:70b"}]}
         mock_resp.raise_for_status = MagicMock()
 
         with patch.object(client._client, "get", return_value=mock_resp):
@@ -191,9 +186,7 @@ class TestListModels:
         client = OllamaClient(server="local")
 
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "models": [{"name": "model-a"}, {"name": "model-b"}]
-        }
+        mock_resp.json.return_value = {"models": [{"name": "model-a"}, {"name": "model-b"}]}
         mock_resp.raise_for_status = MagicMock()
 
         with patch.object(client._client, "get", return_value=mock_resp):
@@ -214,7 +207,7 @@ class TestServerStatus:
             resp.json.return_value = {"models": []}
             return resp
 
-        with patch("core.tools.local_llm.httpx.get", side_effect=mock_get):
+        with patch("core.integrations.local_llm.httpx.get", side_effect=mock_get):
             status = client.server_status()
         assert "local" in status
 
@@ -230,7 +223,7 @@ class TestServerStatus:
             resp.json.return_value = {"models": []}
             return resp
 
-        with patch("core.tools.local_llm.httpx.get", side_effect=mock_get):
+        with patch("core.integrations.local_llm.httpx.get", side_effect=mock_get):
             status = client.server_status()
         assert "server-a" in status
         assert "server-b" in status
@@ -242,7 +235,7 @@ class TestServerStatus:
         def mock_get(url, **kwargs):
             raise Exception("down")
 
-        with patch("core.tools.local_llm.httpx.get", side_effect=mock_get):
+        with patch("core.integrations.local_llm.httpx.get", side_effect=mock_get):
             status = client.server_status()
         for name, info in status.items():
             assert "error" in info

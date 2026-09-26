@@ -414,7 +414,7 @@ def _fetch_thread_context_for_reply(
     if not token or not thread_ts:
         return ""
     try:
-        from core.tools.slack import SlackClient
+        from core.integrations.slack import SlackClient
 
         client = SlackClient(token=token)
         replies = client.thread_replies(channel_id, thread_ts)
@@ -457,7 +457,7 @@ def sanitize_slack_reply(text: str, max_length: int = _MAX_REPLY_LENGTH) -> str:
 
         text = resolve_slack_mentions(text, "")
     except Exception:
-        from core.tools._slack_markdown import clean_slack_markup
+        from core.integrations._slack_markdown import clean_slack_markup
 
         text = clean_slack_markup(text)
     # Bold *text* → text, italic _text_ → text, strike ~text~ → text

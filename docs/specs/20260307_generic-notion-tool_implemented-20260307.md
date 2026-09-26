@@ -6,7 +6,7 @@ gh_issue: 15
 
 ## Overview
 
-AnimaWorks の外部ツールとして汎用 Notion API クライアントを追加する。PR #2（`feat: Notion FB一覧DB作成 + URLバグ修正`）の `NotionClient` コアを抽出・クリーンアップし、ドメイン固有コードを除去した上で、既存の Slack/Chatwork/Gmail ツールと同じパターンで `core/tools/notion.py` を実装する。
+AnimaWorks の外部ツールとして汎用 Notion API クライアントを追加する。PR #2（`feat: Notion FB一覧DB作成 + URLバグ修正`）の `NotionClient` コアを抽出・クリーンアップし、ドメイン固有コードを除去した上で、既存の Slack/Chatwork/Gmail ツールと同じパターンで `core/integrations/notion.py` を実装する。
 
 ## Problem / Background
 
@@ -18,7 +18,7 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 
 ### Root Cause
 
-1. PR #2 が特定組織のワークフローに密結合 — `core/tools/notion.py` に `FB_DB_SCHEMA`、`STATUS_CATEGORIES` 等がハードコード
+1. PR #2 が特定組織のワークフローに密結合 — `core/integrations/notion.py` に `FB_DB_SCHEMA`、`STATUS_CATEGORIES` 等がハードコード
 2. `get_credential` の引数順序バグ — `get_credential("notion", "integration_token", ...)` は `tool_name` に `"integration_token"` を渡している
 3. i18n 未対応 — ユーザー向け文字列がハードコード日本語
 
@@ -26,7 +26,7 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/tools/notion.py` | Direct | 新規作成 |
+| `core/integrations/notion.py` | Direct | 新規作成 |
 | `core/i18n.py` | Direct | Notion ツール用 i18n 文字列追加 |
 | `tests/unit/core/tools/test_notion.py` | Direct | 新規テスト |
 | 既存ツール | No change | 影響なし（独立モジュール） |
@@ -57,7 +57,7 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/tools/notion.py` | New | NotionClient + 8 サブコマンド + CLI + dispatch |
+| `core/integrations/notion.py` | New | NotionClient + 8 サブコマンド + CLI + dispatch |
 | `core/i18n.py` | Modify | `notion.*` キーで i18n 文字列追加 |
 | `tests/unit/core/tools/test_notion.py` | New | 全サブコマンド + NotionClient のユニットテスト |
 
@@ -80,13 +80,13 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 
 | # | Task | Target |
 |---|------|--------|
-| 1-1 | NotionClient クラス作成（httpx、認証、ヘッダー） | `core/tools/notion.py` |
-| 1-2 | 例外階層（NotionAPIError, RateLimitError, ServerError） | `core/tools/notion.py` |
-| 1-3 | `_request()` メソッド（リトライ統合、ペイロード検証） | `core/tools/notion.py` |
-| 1-4 | CRUD メソッド（create_page, get_page, update_page, query_database, get_database） | `core/tools/notion.py` |
-| 1-5 | create_database メソッド | `core/tools/notion.py` |
-| 1-6 | search メソッド | `core/tools/notion.py` |
-| 1-7 | blocks → Markdown 変換（get_page_content） | `core/tools/notion.py` |
+| 1-1 | NotionClient クラス作成（httpx、認証、ヘッダー） | `core/integrations/notion.py` |
+| 1-2 | 例外階層（NotionAPIError, RateLimitError, ServerError） | `core/integrations/notion.py` |
+| 1-3 | `_request()` メソッド（リトライ統合、ペイロード検証） | `core/integrations/notion.py` |
+| 1-4 | CRUD メソッド（create_page, get_page, update_page, query_database, get_database） | `core/integrations/notion.py` |
+| 1-5 | create_database メソッド | `core/integrations/notion.py` |
+| 1-6 | search メソッド | `core/integrations/notion.py` |
+| 1-7 | blocks → Markdown 変換（get_page_content） | `core/integrations/notion.py` |
 
 **Completion condition**: NotionClient の全メソッドが httpx モックで正しく動作する
 
@@ -94,11 +94,11 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 
 | # | Task | Target |
 |---|------|--------|
-| 2-1 | EXECUTION_PROFILE 定義 | `core/tools/notion.py` |
-| 2-2 | dispatch() ルーティング（8 サブコマンド） | `core/tools/notion.py` |
-| 2-3 | get_tool_schemas() / get_cli_guide() | `core/tools/notion.py` |
-| 2-4 | cli_main() argparse CLI | `core/tools/notion.py` |
-| 2-5 | build_page_url() ユーティリティ | `core/tools/notion.py` |
+| 2-1 | EXECUTION_PROFILE 定義 | `core/integrations/notion.py` |
+| 2-2 | dispatch() ルーティング（8 サブコマンド） | `core/integrations/notion.py` |
+| 2-3 | get_tool_schemas() / get_cli_guide() | `core/integrations/notion.py` |
+| 2-4 | cli_main() argparse CLI | `core/integrations/notion.py` |
+| 2-5 | build_page_url() ユーティリティ | `core/integrations/notion.py` |
 
 **Completion condition**: `animaworks-tool notion --help` が正しく表示され、dispatch が全サブコマンドをルーティング
 
@@ -147,7 +147,7 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 
 ## Acceptance Criteria
 
-- [ ] `core/tools/notion.py` が自動検出され `animaworks-tool notion` で CLI 利用可能
+- [ ] `core/integrations/notion.py` が自動検出され `animaworks-tool notion` で CLI 利用可能
 - [ ] 8 サブコマンド（search, get_page, get_page_content, get_database, query, create_page, update_page, create_database）が動作
 - [ ] `get_page_content` が Markdown 形式で返す
 - [ ] レート制限リトライが正しく動作（429 → Retry-After 尊重）
@@ -161,7 +161,7 @@ AnimaWorks の外部ツールとして汎用 Notion API クライアントを追
 ## References
 
 - PR #2 diff: `gh pr diff 2 --repo xuiltul/animaworks` — ベースコード
-- `core/tools/slack.py` — 外部ツールパターンの参照実装
-- `core/tools/_base.py` — `get_credential()`, `ToolResult`, `logger`
-- `core/tools/_retry.py` — `retry_on_rate_limit()`
+- `core/integrations/slack.py` — 外部ツールパターンの参照実装
+- `core/integrations/_base.py` — `get_credential()`, `ToolResult`, `logger`
+- `core/integrations/_retry.py` — `retry_on_rate_limit()`
 - Notion API docs: https://developers.notion.com/reference

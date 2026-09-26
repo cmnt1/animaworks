@@ -1,20 +1,19 @@
-"""Tests for core/tools/aws_collector.py — AWS ECS/CloudWatch integration."""
+"""Tests for core/integrations/aws_collector.py — AWS ECS/CloudWatch integration."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from botocore.exceptions import ClientError as BotoClientError
 
-from core.tools.aws_collector import (
-    AWSCollector,
+from core.integrations.aws_collector import (
     DEFAULT_ERROR_PATTERNS,
+    AWSCollector,
     get_tool_schemas,
 )
 
@@ -37,7 +36,7 @@ def mock_boto3():
     mock_logs = MagicMock()
     mock_cw = MagicMock()
 
-    with patch("core.tools.aws_collector.boto3") as mock_b3:
+    with patch("core.integrations.aws_collector.boto3") as mock_b3:
         mock_b3.client.side_effect = lambda svc, **kwargs: {
             "ecs": mock_ecs,
             "logs": mock_logs,
@@ -65,9 +64,8 @@ class TestAWSCollectorInit:
         assert collector.region == "eu-west-1"
 
     def test_init_without_boto3(self, monkeypatch: pytest.MonkeyPatch):
-        with patch("core.tools.aws_collector.boto3", None):
-            with pytest.raises(ImportError, match="boto3"):
-                AWSCollector()
+        with patch("core.integrations.aws_collector.boto3", None), pytest.raises(ImportError, match="boto3"):
+            AWSCollector()
 
 
 # ── get_ecs_status ────────────────────────────────────────────────
@@ -122,7 +120,7 @@ class TestGetEcsEvents:
                 {
                     "events": [
                         {
-                            "createdAt": datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc),
+                            "createdAt": datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC),
                             "message": "service reached steady state",
                         },
                         {
@@ -191,9 +189,7 @@ class TestGetErrorLogs:
         assert logs == []
 
     def test_missing_timestamp(self, mock_boto3):
-        mock_boto3["logs"].filter_log_events.return_value = {
-            "events": [{"timestamp": 0, "message": "test"}]
-        }
+        mock_boto3["logs"].filter_log_events.return_value = {"events": [{"timestamp": 0, "message": "test"}]}
         collector = AWSCollector()
         logs = collector.get_error_logs("/ecs/svc")
         assert logs[0]["datetime"] is None
@@ -207,13 +203,13 @@ class TestGetMetrics:
         mock_boto3["cloudwatch"].get_metric_statistics.return_value = {
             "Datapoints": [
                 {
-                    "Timestamp": datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc),
+                    "Timestamp": datetime(2026, 1, 15, 12, 0, tzinfo=UTC),
                     "Average": 25.5,
                     "Maximum": 40.0,
                     "Unit": "Percent",
                 },
                 {
-                    "Timestamp": datetime(2026, 1, 15, 12, 5, tzinfo=timezone.utc),
+                    "Timestamp": datetime(2026, 1, 15, 12, 5, tzinfo=UTC),
                     "Average": 30.0,
                     "Maximum": 45.0,
                     "Unit": "Percent",

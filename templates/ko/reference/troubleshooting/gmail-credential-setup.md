@@ -99,4 +99,4 @@ token.json에 포함된 `client_id`는 해당 토큰을 최초로 생성한 OAut
 | `~/.animaworks/credentials/gmail/token.json` | OAuth 인증 토큰 (필수) |
 | `~/.animaworks/credentials/gmail/credentials.json` | OAuth 클라이언트 정보 (새 플로우 시에만) |
 | `~/.animaworks/shared/credentials.json` | 환경 변수 설정 (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`) |
-| `core/tools/gmail.py` | Gmail tool 구현 |
+| `core/integrations/gmail.py` | Gmail tool 구현 |

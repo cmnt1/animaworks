@@ -2055,11 +2055,11 @@ class TestRefreshTools:
     ):
         with (
             patch(
-                "core.tools.discover_personal_tools",
+                "core.integrations.discover_personal_tools",
                 return_value={},
             ),
             patch(
-                "core.tools.discover_common_tools",
+                "core.integrations.discover_common_tools",
                 return_value={},
             ),
         ):
@@ -2074,11 +2074,11 @@ class TestRefreshTools:
     ):
         with (
             patch(
-                "core.tools.discover_personal_tools",
+                "core.integrations.discover_personal_tools",
                 return_value={"my_tool": "/path/to/my_tool.py"},
             ),
             patch(
-                "core.tools.discover_common_tools",
+                "core.integrations.discover_common_tools",
                 return_value={"shared_util": "/path/to/shared_util.py"},
             ),
         ):
@@ -2092,11 +2092,11 @@ class TestRefreshTools:
         handler._external = mock_external
         with (
             patch(
-                "core.tools.discover_personal_tools",
+                "core.integrations.discover_personal_tools",
                 return_value={"tool_a": "/a.py"},
             ),
             patch(
-                "core.tools.discover_common_tools",
+                "core.integrations.discover_common_tools",
                 return_value={"tool_b": "/b.py"},
             ),
         ):

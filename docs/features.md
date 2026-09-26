@@ -185,7 +185,7 @@ In **Mode S (Claude Agent SDK)**, besides Claude Code built-in tools, tools in t
 
 ### External Tools
 
-Besides Slack, Chatwork, Gmail, GitHub, AWS, web search, X search, and image generation, `core/tools/` includes modules for **Discord**, **Notion**, **Google Calendar**, **Google Tasks**, and more. The **`machine`** tool provides a path to launch **external agent CLIs** in an environment decoupled from AnimaWorks memory and messaging—by analogy, industrial machinery such as CNC rather than in-app tools.
+Besides Slack, Chatwork, Gmail, GitHub, AWS, web search, X search, and image generation, `core/integrations/` includes modules for **Discord**, **Notion**, **Google Calendar**, **Google Tasks**, and more. The **`machine`** tool provides a path to launch **external agent CLIs** in an environment decoupled from AnimaWorks memory and messaging—by analogy, industrial machinery such as CNC rather than in-app tools.
 
 Per-Anima allowance is controlled in `permissions.md`. Long-running tools (e.g. image generation) run asynchronously; results are confirmed on later priming or heartbeat via `state/background_notifications/` and **task_results**.
 

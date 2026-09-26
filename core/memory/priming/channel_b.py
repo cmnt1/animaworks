@@ -16,9 +16,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from core.file_access_policy import find_denied_root, load_denied_roots
+from core.integrations._async_compat import run_sync
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.time_utils import ensure_aware, now_local, today_local
-from core.tools._async_compat import run_sync
 
 logger = logging.getLogger("animaworks.priming")
 

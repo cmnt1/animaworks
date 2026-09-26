@@ -100,12 +100,12 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # Japanese field names in schema descriptions (上司, 基本情報)
     "core/tooling/schemas/admin.py": 2,
     # user-facing message (バックグラウンドタスク投入)
-    "core/tools/__init__.py": 1,
+    "core/integrations/__init__.py": 1,
     # tool guide with Japanese content
-    "core/tools/_image_schemas.py": 1,
-    "core/tools/aws_collector.py": 1,
-    "core/tools/github.py": 1,
-    "core/tools/_slack_cli.py": 1,
+    "core/integrations/_image_schemas.py": 1,
+    "core/integrations/aws_collector.py": 1,
+    "core/integrations/github.py": 1,
+    "core/integrations/_slack_cli.py": 1,
     # mock task data with Japanese titles
     "server/routes/animas.py": 0,
     # dummy Japanese text fed to the embedder/reranker at warmup (NLP input, never shown)

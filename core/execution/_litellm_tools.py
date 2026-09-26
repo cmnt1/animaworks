@@ -186,8 +186,8 @@ class ToolProcessingMixin:
 
     def _refresh_tools_inline(self, tools: list[dict[str, Any]]) -> str:
         """Re-discover personal/common tools and update the tools list in-place."""
+        from core.integrations import discover_common_tools, discover_personal_tools
         from core.tooling.schemas import load_personal_tool_schemas
-        from core.tools import discover_common_tools, discover_personal_tools
 
         personal = discover_personal_tools(self._anima_dir)
         common = discover_common_tools()

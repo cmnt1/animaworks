@@ -88,7 +88,7 @@ def check_missing_slack_tokens() -> list[str]:
     except Exception:
         return []
 
-    from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
+    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 
     missing: list[str] = []
     for anima_name in sorted(config.animas):

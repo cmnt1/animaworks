@@ -83,7 +83,7 @@ def test_apply_default_owner_copy_idempotent(tmp_path: Path) -> None:
     mock_client.me.return_value = {"account_id": 4242}
 
     with patch(
-        "core.tools._chatwork_client.ChatworkClient",
+        "core.integrations._chatwork_client.ChatworkClient",
         return_value=mock_client,
     ):
         rc = run_migration(
@@ -313,7 +313,7 @@ def test_cache_migrate_skips_when_api_fails(tmp_path: Path) -> None:
     mock_client.me.side_effect = RuntimeError("network down")
 
     with patch(
-        "core.tools._chatwork_client.ChatworkClient",
+        "core.integrations._chatwork_client.ChatworkClient",
         return_value=mock_client,
     ):
         rc = run_migration(

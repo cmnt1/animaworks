@@ -270,8 +270,8 @@ def _build_background_manager(anima_dir: Path) -> Any:
             return None
 
         from core.background import BackgroundTaskManager
-        from core.tools import TOOL_MODULES
-        from core.tools._base import load_execution_profiles
+        from core.integrations import TOOL_MODULES
+        from core.integrations._base import load_execution_profiles
 
         profiles = load_execution_profiles(TOOL_MODULES)
         config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
@@ -467,7 +467,7 @@ def _get_tool_handler() -> Any:
         tool_registry: list[str] = []
         personal_tools: dict[str, str] = {}
         try:
-            from core.tools import (
+            from core.integrations import (
                 discover_common_tools,
                 discover_personal_tools,
             )

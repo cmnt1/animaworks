@@ -25,9 +25,9 @@ from fastapi.responses import HTMLResponse
 
 from core.config.models import load_config
 from core.i18n import t
+from core.integrations._base import ToolConfigError, get_credential
 from core.messenger import Messenger
 from core.paths import get_data_dir
-from core.tools._base import ToolConfigError, get_credential
 
 logger = logging.getLogger("animaworks.webhooks")
 
@@ -102,7 +102,7 @@ def create_webhooks_router() -> APIRouter:
 
     def _resolve_per_anima_signing_secret(anima_name: str) -> str | None:
         """Resolve per-Anima signing secret from vault/shared credentials."""
-        from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
+        from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 
         key = f"SLACK_SIGNING_SECRET__{anima_name}"
         secret = _lookup_vault_credential(key)

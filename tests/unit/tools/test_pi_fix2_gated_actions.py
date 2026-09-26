@@ -24,27 +24,27 @@ class TestExecutionProfileGatedFlags:
     """Newly gated actions must advertise gated=True."""
 
     def test_chatwork_send_gated(self) -> None:
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["send"].get("gated") is True
 
     def test_discord_send_gated(self) -> None:
-        from core.tools.discord import EXECUTION_PROFILE
+        from core.integrations.discord import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["send"].get("gated") is True
 
     def test_discord_channel_post_still_gated(self) -> None:
-        from core.tools.discord import EXECUTION_PROFILE
+        from core.integrations.discord import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["channel_post"].get("gated") is True
 
     def test_github_create_issue_gated(self) -> None:
-        from core.tools.github import EXECUTION_PROFILE
+        from core.integrations.github import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["create-issue"].get("gated") is True
 
     def test_github_create_pr_gated(self) -> None:
-        from core.tools.github import EXECUTION_PROFILE
+        from core.integrations.github import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["create-pr"].get("gated") is True
 
@@ -110,19 +110,19 @@ class TestGatedAllowedWithExplicitAllow:
 
 class TestReadActionsRemainOpen:
     def test_github_issues_not_gated(self) -> None:
-        from core.tools.github import EXECUTION_PROFILE
+        from core.integrations.github import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["issues"].get("gated") is not True
         assert is_action_gated("github", "issues", {"github"}) is False
 
     def test_discord_messages_not_gated(self) -> None:
-        from core.tools.discord import EXECUTION_PROFILE
+        from core.integrations.discord import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["messages"].get("gated") is not True
         assert is_action_gated("discord", "messages", {"discord"}) is False
 
     def test_chatwork_rooms_not_gated(self) -> None:
-        from core.tools.chatwork import EXECUTION_PROFILE
+        from core.integrations.chatwork import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["rooms"].get("gated") is not True
         assert is_action_gated("chatwork", "rooms", {"chatwork"}) is False

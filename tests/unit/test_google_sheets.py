@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools.google_sheets import (
+from core.integrations.google_sheets import (
     GoogleSheetsClient,
     _credentials_dir,
     cli_main,
@@ -80,9 +80,8 @@ def test_write_values_api_error() -> None:
     service, _values = _mock_values_service(
         execute_side_effect=RuntimeError("Sheets API 403: The caller does not have permission"),
     )
-    with patch.object(client, "_build_service", return_value=service):
-        with pytest.raises(RuntimeError, match="403"):
-            client.write_values("spreadsheet123", "Sheet1!A1", [["x"]])
+    with patch.object(client, "_build_service", return_value=service), pytest.raises(RuntimeError, match="403"):
+        client.write_values("spreadsheet123", "Sheet1!A1", [["x"]])
 
 
 def test_append_values_success() -> None:
@@ -122,7 +121,7 @@ def test_append_values_api_error() -> None:
 
 
 def test_cli_write_and_append_route_to_client(capsys) -> None:
-    with patch("core.tools.google_sheets.GoogleSheetsClient") as cls:
+    with patch("core.integrations.google_sheets.GoogleSheetsClient") as cls:
         client = cls.return_value
         client.write_values.return_value = {"updated_range": "S!A1:B2", "updated_cells": 4}
         client.append_values.return_value = {"updated_range": "S!A3:B3", "updated_cells": 2}
@@ -131,12 +130,9 @@ def test_cli_write_and_append_route_to_client(capsys) -> None:
             "SHEET_ID", "S!A1:B2", [["a", 1], ["b", 2]], value_input_option="USER_ENTERED"
         )
         cli_main(["append", "SHEET_ID", "S!A:B", '[["c",3]]', "--raw"])
-        client.append_values.assert_called_once_with(
-            "SHEET_ID", "S!A:B", [["c", 3]], value_input_option="RAW"
-        )
+        client.append_values.assert_called_once_with("SHEET_ID", "S!A:B", [["c", 3]], value_input_option="RAW")
 
 
 def test_cli_write_rejects_non_2d_values() -> None:
-    with patch("core.tools.google_sheets.GoogleSheetsClient"):
-        with pytest.raises(SystemExit):
-            cli_main(["write", "SHEET_ID", "S!A1", '"not-a-list"'])
+    with patch("core.integrations.google_sheets.GoogleSheetsClient"), pytest.raises(SystemExit):
+        cli_main(["write", "SHEET_ID", "S!A1", '"not-a-list"'])

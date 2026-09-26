@@ -42,7 +42,7 @@ class SkillsToolsMixin:
 
     def _handle_refresh_tools(self, args: dict[str, Any]) -> str:
         """Re-discover personal and common tools, update dispatcher."""
-        from core.tools import discover_common_tools, discover_personal_tools
+        from core.integrations import discover_common_tools, discover_personal_tools
 
         personal = discover_personal_tools(self._anima_dir)
         common = discover_common_tools()

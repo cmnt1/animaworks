@@ -12,6 +12,7 @@ Tests the complete remake flow:
 All external API calls (NovelAI, fal.ai, Meshy) are mocked via
 ``unittest.mock.patch`` on ``ImageGenPipeline.generate_all``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from core.config.models import ImageGenConfig
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -86,7 +86,8 @@ def _setup_anima_with_assets(
     anima_dir = animas_dir / name
     anima_dir.mkdir(parents=True, exist_ok=True)
     (anima_dir / "identity.md").write_text(
-        f"# {name}\nA test anima.\n", encoding="utf-8",
+        f"# {name}\nA test anima.\n",
+        encoding="utf-8",
     )
     assets_dir = anima_dir / "assets"
     assets_dir.mkdir(exist_ok=True)
@@ -106,9 +107,11 @@ def _setup_anima_with_assets(
 class TestRemakePreview:
     """E2E tests for POST /api/animas/{name}/assets/remake-preview."""
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_remake_preview_returns_preview_url(
-        self, mock_pipeline_cls, tmp_path,
+        self,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         """Successful preview returns preview_url, seed_used, and backup_id."""
         animas_dir = tmp_path / "animas"
@@ -116,11 +119,16 @@ class TestRemakePreview:
 
         # Target anima (assets to remake)
         target_dir = _setup_anima_with_assets(
-            animas_dir, "target", with_prompt=True, with_fullbody=True,
+            animas_dir,
+            "target",
+            with_prompt=True,
+            with_fullbody=True,
         )
         # Style-from anima (reference)
         _setup_anima_with_assets(
-            animas_dir, "style-ref", with_fullbody=True,
+            animas_dir,
+            "style-ref",
+            with_fullbody=True,
         )
 
         # Mock pipeline
@@ -161,16 +169,22 @@ class TestRemakePreview:
         assert call_kwargs["vibe_strength"] == 0.7
         assert call_kwargs["vibe_image"] is not None  # style-ref bytes loaded
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     @patch("core.config.models.load_config")
     async def test_remake_preview_uses_global_image_backend(
-        self, mock_load_config, mock_pipeline_cls, tmp_path,
+        self,
+        mock_load_config,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
 
         target_dir = _setup_anima_with_assets(
-            animas_dir, "target", with_prompt=True, with_fullbody=True,
+            animas_dir,
+            "target",
+            with_prompt=True,
+            with_fullbody=True,
         )
 
         mock_result = _make_pipeline_result(fullbody_path=target_dir / "assets" / "avatar_fullbody_realistic.png")
@@ -198,9 +212,11 @@ class TestRemakePreview:
         assert config.backend == "diffusers"
         assert config.image_style == "realistic"
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_remake_preview_creates_backup(
-        self, mock_pipeline_cls, tmp_path,
+        self,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         """Preview endpoint creates a backup directory of existing assets."""
         animas_dir = tmp_path / "animas"
@@ -269,7 +285,9 @@ class TestRemakePreview:
         _setup_anima_with_assets(animas_dir, "target")
         # Style-ref exists but has NO fullbody
         _setup_anima_with_assets(
-            animas_dir, "style-ref", with_fullbody=False,
+            animas_dir,
+            "style-ref",
+            with_fullbody=False,
         )
 
         app = _make_test_app(animas_dir)
@@ -300,9 +318,11 @@ class TestRemakePreview:
         assert resp.status_code == 404
         assert "ghost" in resp.json()["detail"]
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_remake_preview_emits_websocket_event(
-        self, mock_pipeline_cls, tmp_path,
+        self,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         """Preview broadcasts anima.remake_preview_ready via WebSocket."""
         animas_dir = tmp_path / "animas"
@@ -334,10 +354,7 @@ class TestRemakePreview:
         preview_events = []
         for call in ws.broadcast.call_args_list:
             payload = call[0][0] if call[0] else {}
-            if (
-                isinstance(payload, dict)
-                and payload.get("type") == "anima.remake_preview_ready"
-            ):
+            if isinstance(payload, dict) and payload.get("type") == "anima.remake_preview_ready":
                 preview_events.append(payload)
 
         assert len(preview_events) == 1
@@ -346,9 +363,11 @@ class TestRemakePreview:
         assert "preview_url" in event_data
         assert "backup_id" in event_data
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_remake_preview_restores_backup_on_failure(
-        self, mock_pipeline_cls, tmp_path,
+        self,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         """On generation failure, assets are restored from backup."""
         animas_dir = tmp_path / "animas"
@@ -388,9 +407,11 @@ class TestRemakePreview:
         backup_dirs = list(target_dir.glob("assets_backup_*"))
         assert len(backup_dirs) == 0
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_remake_preview_no_orphan_backups_on_pipeline_error(
-        self, mock_pipeline_cls, tmp_path,
+        self,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         """Multiple failed attempts should not leave orphaned backup directories."""
         animas_dir = tmp_path / "animas"
@@ -433,9 +454,11 @@ class TestRemakePreview:
 class TestRemakeConfirm:
     """E2E tests for POST /api/animas/{name}/assets/remake-confirm."""
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_remake_confirm_starts_cascade(
-        self, mock_pipeline_cls, tmp_path,
+        self,
+        mock_pipeline_cls,
+        tmp_path,
     ):
         """Confirm returns started status with remaining steps list."""
         animas_dir = tmp_path / "animas"
@@ -498,7 +521,9 @@ class TestRemakeConfirm:
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
         target_dir = _setup_anima_with_assets(
-            animas_dir, "target", with_fullbody=False,
+            animas_dir,
+            "target",
+            with_fullbody=False,
         )
 
         # Create backup dir but no fullbody in assets
@@ -535,7 +560,8 @@ class TestCancelRemakePreview:
 
         # Write different content to the original backup to mark it
         (backup_dir / "prompt.txt").write_text(
-            "original prompt from backup", encoding="utf-8",
+            "original prompt from backup",
+            encoding="utf-8",
         )
 
         # Now overwrite the current assets to simulate preview having changed them
@@ -626,7 +652,8 @@ class TestCLIDryRun:
         assets_dir = target_dir / "assets"
         assets_dir.mkdir(exist_ok=True)
         (assets_dir / "prompt.txt").write_text(
-            "1girl, test character", encoding="utf-8",
+            "1girl, test character",
+            encoding="utf-8",
         )
         (assets_dir / "avatar_fullbody.png").write_bytes(_FAKE_PNG)
 
@@ -636,10 +663,10 @@ class TestCLIDryRun:
         style_assets.mkdir(exist_ok=True)
         (style_assets / "avatar_fullbody.png").write_bytes(_FAKE_PNG)
 
-        from cli.commands.remake_cmd import _run
-
         # Build a namespace that mirrors CLI args
         import argparse
+
+        from cli.commands.remake_cmd import _run
 
         args = argparse.Namespace(
             anima="cli-target",
@@ -668,9 +695,9 @@ class TestCLIDryRun:
         """Dry-run exits early if style-from anima does not exist."""
         make_anima("cli-target")
 
-        from cli.commands.remake_cmd import _run
-
         import argparse
+
+        from cli.commands.remake_cmd import _run
 
         args = argparse.Namespace(
             anima="cli-target",
@@ -704,9 +731,9 @@ class TestCLIDryRun:
         style_assets.mkdir(exist_ok=True)
         (style_assets / "avatar_fullbody.png").write_bytes(_FAKE_PNG)
 
-        from cli.commands.remake_cmd import _run
-
         import argparse
+
+        from cli.commands.remake_cmd import _run
 
         args = argparse.Namespace(
             anima="cli-target2",

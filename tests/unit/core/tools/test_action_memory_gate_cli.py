@@ -16,15 +16,15 @@ class FakeRule:
 
 
 def _install_fake_gmail(monkeypatch: pytest.MonkeyPatch) -> list:
-    """Install a fake core.tools.gmail module so cli_dispatch can run it inline."""
+    """Install a fake core.integrations.gmail module so cli_dispatch can run it inline."""
     called: list = []
-    fake_mod = types.ModuleType("core.tools.gmail")
+    fake_mod = types.ModuleType("core.integrations.gmail")
 
     def fake_cli_main(_argv):
         called.append(_argv)
 
     fake_mod.cli_main = fake_cli_main
-    monkeypatch.setitem(sys.modules, "core.tools.gmail", fake_mod)
+    monkeypatch.setitem(sys.modules, "core.integrations.gmail", fake_mod)
     return called
 
 
@@ -33,8 +33,8 @@ def test_cli_prints_action_rules_to_stderr_and_executes(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    from core.integrations import cli_dispatch
     from core.memory import action_gate
-    from core.tools import cli_dispatch
 
     anima_dir = tmp_path / "animas" / "mei"
     (anima_dir / "knowledge").mkdir(parents=True)
@@ -62,8 +62,8 @@ def test_cli_without_rules_still_executes(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    from core.integrations import cli_dispatch
     from core.memory import action_gate
-    from core.tools import cli_dispatch
 
     anima_dir = tmp_path / "animas" / "mei"
     (anima_dir / "knowledge").mkdir(parents=True)

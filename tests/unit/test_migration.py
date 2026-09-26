@@ -745,10 +745,18 @@ class TestRegisterAllSteps:
             < ids.index("update_version")
         )
 
-    def test_step_v0144_tool_guide_dedup_registered_last(self, tmp_path: Path) -> None:
+    def test_step_v0144_tool_guide_dedup_registered_before_tools_rename(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
-        assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("update_version") - 1
+        assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("rename_core_tools_to_integrations") - 1
+
+    def test_step_rename_core_tools_registered_last(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert ids.index("rename_core_tools_to_integrations") == ids.index("update_version") - 1

@@ -55,13 +55,13 @@ def resolve_slack_mentions(text: str, token: str) -> str:
     unknown = {uid for uid in user_ids if get_cached_user_name(uid) is None}
     if unknown and token:
         try:
-            from core.tools.slack import SlackClient
+            from core.integrations.slack import SlackClient
 
             client = SlackClient(token=token)
             for uid in unknown:
                 cache_user_name(uid, client.resolve_user_name(uid))
         except Exception:
             logger.debug("Failed to resolve Slack user mentions", exc_info=True)
-    from core.tools._slack_markdown import clean_slack_markup
+    from core.integrations._slack_markdown import clean_slack_markup
 
     return clean_slack_markup(text, cache=user_name_snapshot())

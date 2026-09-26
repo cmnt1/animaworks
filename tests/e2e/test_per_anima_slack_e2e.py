@@ -6,6 +6,7 @@ Tests the full flow of per-Anima token resolution across:
 - Webhook routing (api_app_id → anima_name)
 - Config backward compatibility (app_id_mapping)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -25,8 +26,8 @@ from core.config.models import (
     ExternalMessagingConfig,
     save_config,
 )
+from core.integrations.slack import dispatch
 from core.outbound import ResolvedRecipient, send_external
-from core.tools.slack import dispatch
 from server.routes.webhooks import create_webhooks_router
 
 SIGNING_SECRET = "e2e_per_anima_slack_secret"
@@ -65,14 +66,14 @@ def webhook_client(webhook_app):
 class TestSlackToolDispatchPerAnimaToken:
     def test_dispatch_uses_per_anima_token_when_configured(self):
         """Set up per-Anima token in vault mock; verify SlackClient gets it."""
-        with patch("core.tools.slack.SlackClient") as mock_cls:
+        with patch("core.integrations.slack.SlackClient") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
             mock_client.resolve_channel.return_value = "C123"
             mock_client.post_message.return_value = {"ts": "1234", "channel": "C123"}
 
             with patch(
-                "core.tools.slack._resolve_slack_token",
+                "core.integrations.slack._resolve_slack_token",
             ) as mock_resolve:
                 mock_resolve.return_value = "xoxb-per-anima-token"
 
@@ -100,14 +101,14 @@ class TestSlackToolDispatchPerAnimaToken:
 class TestSlackToolDispatchSharedTokenFallback:
     def test_dispatch_uses_none_token_when_no_per_anima(self):
         """No per-Anima token; SlackClient created with None (shared fallback)."""
-        with patch("core.tools.slack.SlackClient") as mock_cls:
+        with patch("core.integrations.slack.SlackClient") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
             mock_client.resolve_channel.return_value = "C123"
             mock_client.post_message.return_value = {"ts": "5678", "channel": "C123"}
 
             with patch(
-                "core.tools.slack._resolve_slack_token",
+                "core.integrations.slack._resolve_slack_token",
             ) as mock_resolve:
                 mock_resolve.return_value = None
 
@@ -137,17 +138,20 @@ class TestOutboundPerAnimaSkipsPrefix:
             slack_user_id="U0TEST000001",
         )
 
-        with patch("core.tools.slack.SlackClient") as mock_cls:
+        with patch("core.integrations.slack.SlackClient") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
             mock_client.post_message.return_value = {"ts": "1", "channel": "D1"}
 
-            with patch(
-                "core.tools._base._lookup_vault_credential",
-                return_value="xoxb-per-anima-token",
-            ), patch(
-                "core.tools._base._lookup_shared_credentials",
-                return_value=None,
+            with (
+                patch(
+                    "core.integrations._base._lookup_vault_credential",
+                    return_value="xoxb-per-anima-token",
+                ),
+                patch(
+                    "core.integrations._base._lookup_shared_credentials",
+                    return_value=None,
+                ),
             ):
                 result = send_external(
                     resolved,
@@ -178,17 +182,20 @@ class TestOutboundSharedTokenIncludesPrefix:
             slack_user_id="U0TEST000001",
         )
 
-        with patch("core.tools.slack.SlackClient") as mock_cls:
+        with patch("core.integrations.slack.SlackClient") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
             mock_client.post_message.return_value = {"ts": "1", "channel": "D1"}
 
-            with patch(
-                "core.tools._base._lookup_vault_credential",
-                return_value=None,
-            ), patch(
-                "core.tools._base._lookup_shared_credentials",
-                return_value=None,
+            with (
+                patch(
+                    "core.integrations._base._lookup_vault_credential",
+                    return_value=None,
+                ),
+                patch(
+                    "core.integrations._base._lookup_shared_credentials",
+                    return_value=None,
+                ),
             ):
                 result = send_external(
                     resolved,
@@ -237,30 +244,40 @@ class TestWebhookPerAnimaAppIdRouting:
                 return per_secret
             return None
 
-        payload = json.dumps({
-            "type": "event_callback",
-            "api_app_id": "A0PERANIMA123",
-            "event": {
-                "type": "message",
-                "channel": "C_E2E",
-                "user": "U_E2E_USER",
-                "text": "Webhook test for sumire",
-                "ts": "9999999999.000001",
-            },
-        })
+        payload = json.dumps(
+            {
+                "type": "event_callback",
+                "api_app_id": "A0PERANIMA123",
+                "event": {
+                    "type": "message",
+                    "channel": "C_E2E",
+                    "user": "U_E2E_USER",
+                    "text": "Webhook test for sumire",
+                    "ts": "9999999999.000001",
+                },
+            }
+        )
         body = payload.encode("utf-8")
         ts = str(int(time.time()))
         sig_base = f"v0:{ts}:{body.decode('utf-8')}"
-        sig = "v0=" + hmac.new(
-            per_secret.encode(), sig_base.encode(), hashlib.sha256,
-        ).hexdigest()
+        sig = (
+            "v0="
+            + hmac.new(
+                per_secret.encode(),
+                sig_base.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+        )
 
-        with patch(
-            "core.tools._base._lookup_vault_credential",
-            side_effect=_mock_vault,
-        ), patch(
-            "core.tools._base._lookup_shared_credentials",
-            return_value=None,
+        with (
+            patch(
+                "core.integrations._base._lookup_vault_credential",
+                side_effect=_mock_vault,
+            ),
+            patch(
+                "core.integrations._base._lookup_shared_credentials",
+                return_value=None,
+            ),
         ):
             resp = webhook_client.post(
                 "/api/webhooks/slack/events",

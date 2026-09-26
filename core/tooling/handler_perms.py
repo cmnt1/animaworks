@@ -64,7 +64,7 @@ class PermissionsMixin:
         external_enabled: list[str] = []
         external_available: list[str] = []
         try:
-            from core.tools import TOOL_MODULES
+            from core.integrations import TOOL_MODULES
 
             all_categories = sorted(TOOL_MODULES.keys())
             for cat in all_categories:

@@ -439,6 +439,53 @@ def step_ragignore_archive_patterns(data_dir: Path, dry_run: bool, verbose: bool
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+_TOOLS_RENAME_RE = re.compile(r"(?<![\w.])core([./])tools(?![\w])")
+_TOOLS_RENAME_GLOBS = (
+    "common_tools/*.py",
+    "animas/*/tools/*.py",
+    "common_skills/**/*.md",
+    "animas/*/skills/**/*.md",
+    "common_knowledge/**/*.md",
+    "reference/**/*.md",
+)
+
+
+def step_rename_core_tools_to_integrations(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Rewrite ``core.tools`` references in runtime tools and skills to ``core.integrations``.
+
+    The ``core.tools`` alias keeps old files working; this keeps the runtime copies on the canonical name.
+    Originals are copied to ``backups/<timestamp>_tools_rename/`` before rewriting.
+    """
+    del verbose
+    try:
+        targets: list[Path] = []
+        for pattern in _TOOLS_RENAME_GLOBS:
+            for path in sorted(data_dir.glob(pattern)):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                if _TOOLS_RENAME_RE.search(path.read_text(encoding="utf-8", errors="replace")):
+                    targets.append(path)
+        if not targets:
+            return StepResult(changed=0, skipped=1, details=["No core.tools references found"])
+        details = [str(path.relative_to(data_dir)) for path in targets]
+        if dry_run:
+            return StepResult(changed=len(targets), skipped=0, details=[f"Would rewrite: {d}" for d in details])
+        backup_root = data_dir / "backups" / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_tools_rename"
+        for path, rel in zip(targets, details, strict=True):
+            backup = backup_root / rel
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+            text = path.read_text(encoding="utf-8")
+            path.write_text(
+                _TOOLS_RENAME_RE.sub(lambda m: f"core{m.group(1)}integrations", text),
+                encoding="utf-8",
+            )
+        return StepResult(changed=len(targets), skipped=0, details=[f"Rewrote: {d}" for d in details])
+    except Exception as exc:
+        logger.exception("step_rename_core_tools_to_integrations failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_split_board_by_company(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Split the legacy ``board`` channel into company-scoped channels.
 
@@ -1751,6 +1798,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.4: Resync prompts (dedupe tool guide background-command block)",
             "template_sync",
             step_v0144_tool_guide_dedup_resync,
+        ),
+        MigrationStep(
+            "rename_core_tools_to_integrations",
+            "Rewrite core.tools references in runtime tools/skills to core.integrations",
+            "structural",
+            step_rename_core_tools_to_integrations,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

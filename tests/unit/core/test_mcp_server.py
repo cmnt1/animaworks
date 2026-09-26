@@ -697,9 +697,9 @@ class TestGetToolHandler:
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.tools.TOOL_MODULES", {"web_search": None}),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.integrations.TOOL_MODULES", {"web_search": None}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             # HumanNotifier with no channels -> None
             mock_hn_inst = MagicMock()
@@ -747,9 +747,9 @@ class TestGetToolHandler:
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.tools.TOOL_MODULES", {}),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.integrations.TOOL_MODULES", {}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             mock_hn_cls.from_config.return_value = mock_hn_inst
 
@@ -783,9 +783,9 @@ class TestGetToolHandler:
             patch("core.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config", side_effect=RuntimeError("no config")),
-            patch("core.tools.TOOL_MODULES", {}),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.integrations.TOOL_MODULES", {}),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             result = mcp_mod._get_tool_handler()
 
@@ -818,9 +818,9 @@ class TestGetToolHandler:
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.tools.TOOL_MODULES", side_effect=ImportError("no tools")),
-            patch("core.tools.discover_common_tools", return_value={}),
-            patch("core.tools.discover_personal_tools", return_value={}),
+            patch("core.integrations.TOOL_MODULES", side_effect=ImportError("no tools")),
+            patch("core.integrations.discover_common_tools", return_value={}),
+            patch("core.integrations.discover_personal_tools", return_value={}),
         ):
             mock_hn_inst = MagicMock()
             mock_hn_inst.channel_count = 0
@@ -845,7 +845,10 @@ class TestLoadPermittedCategories:
         from core.mcp.server import _load_permitted_categories
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "core.tools.chatwork", "slack": "core.tools.slack"}),
+            patch(
+                "core.integrations.TOOL_MODULES",
+                {"chatwork": "core.integrations.chatwork", "slack": "core.integrations.slack"},
+            ),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -859,7 +862,7 @@ class TestLoadPermittedCategories:
         perms.write_text("## 実行できるコマンド\n- git: OK\n", encoding="utf-8")
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x"}),
+            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -876,7 +879,7 @@ class TestLoadPermittedCategories:
         )
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -891,7 +894,7 @@ class TestLoadPermittedCategories:
         perms.write_text("## 外部ツール\n- all: yes\n", encoding="utf-8")
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -905,7 +908,7 @@ class TestLoadPermittedCategories:
         perms.write_text("## 外部ツール\n- all: yes\n- gmail: no\n", encoding="utf-8")
 
         with (
-            patch("core.tools.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)

@@ -185,7 +185,7 @@ TaskBoard は、タスク、処理中、保留、抑制、バックグラウン�
 
 ### 外部ツール
 
-Slack、Chatwork、Gmail、GitHub、AWS、Web検索、X検索、画像生成に加え、**Discord**、**Notion**、**Google Calendar**、**Google Tasks** などのモジュールが `core/tools/` に含まれる。さらに **`machine`** ツールは、AnimaWorks の記憶・メッセージングから切り離した環境で **外部エージェント CLI**（CNC のような「工作機械」）を起動するための経路を提供する。
+Slack、Chatwork、Gmail、GitHub、AWS、Web検索、X検索、画像生成に加え、**Discord**、**Notion**、**Google Calendar**、**Google Tasks** などのモジュールが `core/integrations/` に含まれる。さらに **`machine`** ツールは、AnimaWorks の記憶・メッセージングから切り離した環境で **外部エージェント CLI**（CNC のような「工作機械」）を起動するための経路を提供する。
 
 各 Anima の `permissions.md` で許可を制御する。長時間かかるツール（画像生成等）は非同期で実行され、結果は `state/background_notifications/` や **task_results** 経由で次回以降のプライミング・ハートビートで確認される。
 

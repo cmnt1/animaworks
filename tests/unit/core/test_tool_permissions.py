@@ -20,21 +20,20 @@ from unittest.mock import MagicMock, patch
 
 from core.schemas import ModelConfig
 
-
 # ── Helpers ───────────────────────────────────────────────
 
 
 _FAKE_TOOL_MODULES: dict[str, str] = {
-    "aws_collector": "core.tools.aws_collector",
-    "chatwork": "core.tools.chatwork",
-    "github": "core.tools.github",
-    "gmail": "core.tools.gmail",
-    "image_gen": "core.tools.image_gen",
-    "local_llm": "core.tools.local_llm",
-    "slack": "core.tools.slack",
-    "transcribe": "core.tools.transcribe",
-    "web_search": "core.tools.web_search",
-    "x_search": "core.tools.x_search",
+    "aws_collector": "core.integrations.aws_collector",
+    "chatwork": "core.integrations.chatwork",
+    "github": "core.integrations.github",
+    "gmail": "core.integrations.gmail",
+    "image_gen": "core.integrations.image_gen",
+    "local_llm": "core.integrations.local_llm",
+    "slack": "core.integrations.slack",
+    "transcribe": "core.integrations.transcribe",
+    "web_search": "core.integrations.web_search",
+    "x_search": "core.integrations.x_search",
 }
 
 _ALL_TOOLS_SORTED = sorted(_FAKE_TOOL_MODULES.keys())
@@ -49,7 +48,7 @@ def _write_permissions(tmp_path: Path, config_dict: dict | None) -> None:
         )
 
 
-def _build_agent(tmp_path: Path, config_dict: dict | None = None) -> "AgentCore":
+def _build_agent(tmp_path: Path, config_dict: dict | None = None) -> AgentCore:
     """Construct AgentCore with optional permissions.json in tmp_path."""
     _write_permissions(tmp_path, config_dict)
 
@@ -62,8 +61,8 @@ def _build_agent(tmp_path: Path, config_dict: dict | None = None) -> "AgentCore"
         patch("core.agent.AgentCore._check_sdk", return_value=False),
         patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
         patch("core.agent.AgentCore._create_executor"),
-        patch("core.tools.TOOL_MODULES", _FAKE_TOOL_MODULES),
-        patch("core.tools.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
+        patch("core.integrations.TOOL_MODULES", _FAKE_TOOL_MODULES),
+        patch("core.integrations.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
         # chatwork/slack default to enabled=False in config; suppress so tests
         # exercise the permissions logic in isolation from live config values
         patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
@@ -138,8 +137,8 @@ class TestToolPermissionsDefaultAll:
             patch("core.agent.AgentCore._check_sdk", return_value=False),
             patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
             patch("core.agent.AgentCore._create_executor"),
-            patch("core.tools.TOOL_MODULES", _FAKE_TOOL_MODULES),
-            patch("core.tools.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
+            patch("core.integrations.TOOL_MODULES", _FAKE_TOOL_MODULES),
+            patch("core.integrations.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             from core.agent import AgentCore

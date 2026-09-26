@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 def _generate_shared_asset(directory: str, ready, results) -> None:
     from core.config.models import ImageGenConfig
-    from core.tools._image_pipeline import ImageGenPipeline
+    from core.integrations._image_pipeline import ImageGenPipeline
 
     root = Path(directory)
 
@@ -23,7 +23,7 @@ def _generate_shared_asset(directory: str, ready, results) -> None:
     client = MagicMock()
     client.generate_fullbody.side_effect = generate
     pipe = ImageGenPipeline(root, config=ImageGenConfig(image_style="realistic"))
-    with patch("core.tools.image_gen._build_fullbody_client", return_value=client):
+    with patch("core.integrations.image_gen._build_fullbody_client", return_value=client):
         ready.wait(timeout=15)
         result = pipe.generate_all("portrait", steps=["fullbody"])
         results.put((result.errors, result.fullbody_path is not None))

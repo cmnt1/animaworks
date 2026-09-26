@@ -208,7 +208,7 @@ def _run(args: argparse.Namespace) -> None:
 
     # ── Run pipeline ──
     from core.config.models import ImageGenConfig, load_config
-    from core.tools.image_gen import ImageGenPipeline
+    from core.integrations.image_gen import ImageGenPipeline
 
     try:
         image_config = load_config().image_gen.model_copy(update={"image_style": image_style})
