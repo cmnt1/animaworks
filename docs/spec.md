@@ -58,110 +58,67 @@ Digital Anima is the minimal unit that encapsulates an AI agent as "a single per
 ```
 animaworks/
 ├── core/
-│   ├── anima.py               # DigitalAnima class
-│   ├── agent.py               # AgentCore (execution mode selection, cycle management)
-│   ├── anima_factory.py       # Anima creation (template/blank/MD)
-│   ├── init.py                # Runtime initialization
-│   ├── schemas.py             # Data models (Message, CycleResult, etc.)
-│   ├── paths.py               # Path resolution
-│   ├── messenger.py           # Inter-Anima message send/receive
-│   ├── lifecycle/             # Heartbeat, cron, Inbox (package, APScheduler)
-│   │   ├── __init__.py        #   LifecycleManager compatibility and mixin re-exports
-│   │   ├── scheduler.py       #   Schedule registration
-│   │   ├── inbox_watcher.py   #   Inbox monitoring
-│   │   ├── rate_limiter.py    #   Message chaining and cooldown
-│   │   └── system_consolidation.py # System consolidation handlers used by ProcessSupervisor
-│   ├── outbound.py            # Unified outbound routing (Slack/Chatwork/internal auto-detection)
-│   ├── background.py          # Background task management
-│   ├── asset_reconciler.py    # Automatic asset generation
-│   ├── org_sync.py            # Organization structure sync (status.json → config.json)
-│   ├── schedule_parser.py     # cron.md/heartbeat.md parser
-│   ├── logging_config.py      # Log configuration
+│   ├── paths.py, exceptions.py, schemas.py, time_utils.py  # Foundations used by every layer
+│   ├── anima/                 # DigitalAnima
+│   │   ├── digital_anima.py   #   DigitalAnima facade
+│   │   ├── lifecycle.py, messaging.py, inbox.py, heartbeat.py  # Mixins
+│   │   ├── factory.py, roster.py, bootstrap_state.py         # Creation and discovery
+│   │   └── asset_reconciler.py, image_artifacts.py, emotion_tag.py, inbox_overflow.py, …
+│   ├── agent/                 # AgentCore
+│   │   ├── agent_core.py      #   Execution mode selection, prompt building entry
+│   │   ├── cycle.py           #   Agent cycle (streaming / blocking)
+│   │   ├── priming.py, executor_factory.py, prompt_log.py
+│   │   └── session_compactor.py
+│   ├── execution/             # Execution engines
+│   │   ├── base.py            #   BaseExecutor / ExecutionResult
+│   │   ├── events.py          #   L0: stream event contract
+│   │   ├── session_store.py, process_runner.py, watchdog.py, tool_evidence.py  # L1 shared parts
+│   │   ├── cli_stream.py      #   L2: CLIStreamExecutor (G/D/X and the Codex CLI path)
+│   │   ├── error_classifier.py, rate_guard.py, backoff.py, loop_guards.py, …
+│   │   └── engines/
+│   │       ├── claude/        #   Mode S: Claude Agent SDK
+│   │       ├── codex/         #   Mode C: Codex SDK / CLI
+│   │       ├── litellm/       #   Mode A: LiteLLM + tool_use
+│   │       ├── grok/          #   Mode X: Grok Build CLI (ACP stdio)
+│   │       ├── cursor/        #   Mode D: Cursor Agent CLI
+│   │       └── gemini/        #   Mode G: Gemini CLI
+│   ├── messaging/             # Messenger, outbound routing, cascade limiter, meeting rooms
+│   ├── org/                   # Companies, org sync (status.json → config.json), workspaces
+│   ├── infra/                 # Logging, runtime init, GPU, tmp cleanup, auto-update, startup progress
+│   ├── lifecycle/             # Heartbeat, cron, Inbox (APScheduler)
+│   ├── tasks/                 # Task queue, task board, pending/background execution
+│   │   ├── queue.py, dispatch.py, background.py, pending_executor.py
+│   │   ├── board/             #   Task board store, notices, housekeeping
+│   │   └── external/          #   External task sources
+│   ├── usage/                 # Token usage and budgets
 │   ├── memory/                # Memory subsystem (see memory.md for details)
 │   │   ├── manager.py         #   Archive-based memory search/write
-│   │   ├── conversation.py    #   Conversation memory (entries)
-│   │   ├── conversation_*.py  #   Compression, commit, model, prompts, etc. (split modules)
-│   │   ├── shortterm.py       #   Short-term memory (chat/heartbeat separated)
-│   │   ├── activity.py        #   Unified activity log (JSONL timeline)
-│   │   ├── streaming_journal.py #  Streaming journal (WAL)
-│   │   ├── priming/           #   Automatic recall layer (multi-source search + deterministic gate)
-│   │   ├── action_gate.py     #   Memory check before side-effecting actions
-│   │   ├── consolidation.py   #   Memory consolidation (daily/weekly)
-│   │   ├── forgetting.py      #   Active forgetting (3 stages)
-│   │   ├── reconsolidation.py #   Memory reconsolidation
-│   │   ├── task_queue.py      #   Persistent task queue
-│   │   ├── taskboard_housekeeping.py # TaskBoard cleanup integration
-│   │   ├── resolution_tracker.py # Resolution registry
-│   │   ├── rag_search.py      #   Search orchestration
-│   │   └── rag/               #   RAG engine (ChromaDB + sentence-transformers)
-│   │       ├── indexer.py, retriever.py, graph.py, store.py, http_store.py
-│   │       ├── vector_worker_client.py, vector_worker_process.py, vector_worker_server.py
-│   │       └── watcher.py, repair.py # File monitoring and RAG repair
-│   ├── supervisor/            # Process supervision
-│   │   ├── manager.py         #   ProcessSupervisor (child process launch, monitoring)
-│   │   ├── ipc.py             #   Unix Domain Socket IPC
-│   │   ├── runner.py          #   Anima process runner
-│   │   ├── process_handle.py  #   Process handle management
-│   │   ├── pending_executor.py #   TaskExec (state/pending/ task execution)
-│   │   ├── scheduler_manager.py #  Child-process-side scheduler
-│   │   ├── inbox_rate_limiter.py, streaming_handler.py, transport.py, etc.
-│   │   └── _mgr_*.py          #   Internal helpers (health, coordination, etc.)
-│   ├── notification/          # Human notification
-│   │   ├── notifier.py        #   HumanNotifier (call_human integration)
-│   │   ├── reply_routing.py   #   Reply routing
-│   │   └── channels/          #   Slack, Chatwork, LINE, Telegram, ntfy
-│   ├── voice/                 # Voice chat subsystem
-│   │   ├── stt.py             #   VoiceSTT (faster-whisper)
-│   │   ├── tts_*.py           #   TTS providers (VOICEVOX, ElevenLabs, SBV2)
-│   │   └── session.py         #   VoiceSession (STT→Chat IPC→TTS)
+│   │   ├── activity/          #   Unified activity log (JSONL timeline, replay, rotation)
+│   │   ├── conversation/      #   Conversation memory, short-term memory, streaming journal
+│   │   ├── facts/             #   Atomic facts, extraction, invalidation, entity index
+│   │   ├── maintenance/       #   Consolidation, distillation, forgetting, housekeeping
+│   │   ├── priming/           #   Automatic recall layer
+│   │   ├── retrieval/         #   Hybrid search (BM25, RRF, rerank, RAG search)
+│   │   ├── backend/, graph/, extraction/, ontology/, migration/
+│   │   └── rag/               #   Vector store: HttpVectorStore is the only client;
+│   │                          #   a phase3 root calls its own MemoryService in-process
+│   ├── supervisor/            # Process supervision (ProcessSupervisor, runner, task runner, IPC)
+│   ├── notification/          # Human notification (call_human, reply routing, channels)
+│   ├── voice/                 # Voice chat (STT, TTS, session)
 │   ├── mcp/                   # stdio MCP (Mode S: tool names `mcp__aw__*`)
-│   │   └── server.py
-│   ├── config/                # Configuration management
-│   │   ├── models.py          #   Public facade (re-exports load_config / load_permissions, etc.)
-│   │   ├── schemas.py         #   Pydantic model definitions (AnimaWorksConfig body)
-│   │   ├── io.py              #   config.json read/write and cache
-│   │   ├── model_mode.py      #   resolve_execution_mode / DEFAULT_MODEL_MODE_PATTERNS
-│   │   ├── resolver.py        #   status.json merge resolution
-│   │   ├── vault.py           #   VaultManager (~/.animaworks/vault.json + vault.key)
-│   │   └── cli.py, etc.       #   migrate, anima_registry, model_config, global_permissions, etc.
-│   ├── prompt/                # Prompt and context management
-│   │   ├── builder.py         #   System prompt construction (6-group structure)
-│   │   ├── assembler.py, sections.py, org_context.py, messaging.py
-│   │   └── context.py         #   Context window tracking
-│   ├── tooling/               # Tool infrastructure
-│   │   ├── handler.py         #   ToolHandler core (dispatch aggregation)
-│   │   ├── handler_base.py, handler_memory.py, handler_comms.py, handler_skills.py
-│   │   ├── handler_perms.py, handler_org.py, handler_org_dashboard.py
-│   │   ├── handler_delegation.py, handler_subordinate_control.py, handler_create_anima.py
-│   │   ├── schemas/           #   Tool schemas (domain-specific Python modules)
-│   │   ├── guide.py, dispatch.py, permissions.py, skill_tool.py, skill_creator.py
-│   │   └── prompt_db.py, org_helpers.py
-│   ├── execution/             # Execution engines
-│   │   ├── base.py            #   BaseExecutor ABC
-│   │   ├── agent_sdk.py       #   Mode S: Claude Agent SDK
-│   │   ├── codex_sdk.py       #   Mode C: Codex CLI
-│   │   ├── cursor_agent.py    #   Mode D: Cursor Agent CLI
-│   │   ├── gemini_cli.py      #   Mode G: Gemini CLI
-│   │   ├── grok_cli.py        #   Mode X: Grok Build CLI (ACP stdio)
-│   │   ├── litellm_loop.py    #   Mode A: LiteLLM + tool_use
-│   │   ├── assisted.py        #   Mode B: Framework-assisted
-│   │   └── _session.py, etc.  #   Session, SDK stream, sanitization, etc.
-│   ├── i18n/                  #   User-facing strings (t() / _STRINGS)
-│   ├── skills/                # Skill Hub, activation, router, curator, promotion
-│   ├── taskboard/             # TaskBoard store, state, cleanup
-│   └── tools/                 # External tool implementations
-│       ├── web_search.py, x_search.py, slack.py, chatwork.py
-│       ├── gmail.py, github.py, google_calendar.py, google_tasks.py
-│       ├── discord.py, notion.py, machine.py
-│       ├── call_human.py, transcribe.py, aws_collector.py, local_llm.py
-│       ├── image_gen.py       #   Images and 3D (image/ subpackage)
-│       └── …
+│   ├── config/                # Configuration (schemas, io, model_mode, vault, file access policy)
+│   ├── prompt/                # Prompt building and context tracking
+│   ├── tooling/               # ToolHandler, tool schemas, permissions, action gate
+│   ├── skills/                # Skill Hub, activation, router, curator
+│   ├── migrations/            # Runtime data migrations (run automatically on start)
+│   ├── integrations/          # External service tools (Slack, Chatwork, Gmail, GitHub, web search, …)
+│   └── tools/                 # Compatibility alias for core.integrations (old imports, animaworks-tool)
 ├── cli/                       # CLI package
 │   ├── parser.py              #   argparse definitions + cli_main()
 │   └── commands/              #   Subcommand implementations
 ├── server/
 │   ├── app.py                 # FastAPI (lifespan, middleware, static serving, router registration)
-│   ├── slack_socket.py        # Slack Socket Mode client
+│   ├── gateways/              # Inbound gateways (Slack Socket Mode, Discord, Zoom, GitHub webhooks)
 │   ├── websocket.py           # WebSocketManager (dashboard `/ws`)
 │   ├── stream_registry.py     # Chat/SSE stream producer registration and cleanup
 │   ├── reload_manager.py      # ConfigReloadManager (config hot reload)
