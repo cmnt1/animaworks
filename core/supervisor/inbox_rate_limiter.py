@@ -226,10 +226,9 @@ class InboxRateLimiter:
         if self._retry_is_delayed() or (self.is_in_cooldown() and not self._has_external_platform_message()):
             self.schedule_deferred_trigger()
             return
-        # NOTE: _background_lock (TaskExec/cron gate) は意図的に見ない。
-        # inboxは task runner 子で実行するため root 側の排他は heartbeat_running
-        # のみで十分（_cron_idle 待機は子の中の inbox 処理が担う）。
-        # ここで待つと長時間タスク中に dispatch通知が滞留・overflowする。
+        # Cron runs in a separate task-runner process with its own AgentCore,
+        # so inbox dispatch must not wait for the root's scheduled-work lock.
+        # Waiting here would let dispatch notifications accumulate or overflow.
         self._pending_trigger = True
         asyncio.create_task(self.message_triggered_inbox())
 
@@ -380,7 +379,7 @@ class InboxRateLimiter:
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue
-                # NOTE: _background_lock は見ない（try_deferred_trigger 側の注記参照）。
+                # Cron runs in a separate task-runner process; do not gate inbox dispatch on it.
 
                 # Unread exists: only then read status.json (avoid per-poll I/O).
                 # Disabled → leave inbox files intact; do not trigger processing.

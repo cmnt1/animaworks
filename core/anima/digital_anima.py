@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import re
-import threading
 from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -123,7 +122,8 @@ class DigitalAnima(
 
         self._agent_progress_callback = _throttled_progress
 
-        # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
+        # Locks: conversation / inbox / scheduled background work (heartbeat, cron, consolidation).
+        # TaskExec is managed by worker slots and does not acquire this lock.
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._active_chat_conversations: dict[str, Any] = {}
         self._inbox_lock = asyncio.Lock()
@@ -133,9 +133,8 @@ class DigitalAnima(
         self._agent_session_locks: dict[str, asyncio.Lock] = {lane: asyncio.Lock() for lane in self._AGENT_LANES}
         # Backward-compatible alias for legacy chat-only call sites/tests.
         self._agent_session_lock = self._agent_session_locks["chat"]
-        self._cron_idle = asyncio.Event()
-        self._cron_idle.set()  # initially idle (no cron running)
-        self._state_file_lock = threading.Lock()  # protects current_state.md / pending.md
+        self._taskexec_session_lock = asyncio.Lock()
+        self._state_file_lock = self.memory.state_lock
 
         # Parallel task execution (DAG scheduler)
         self._task_semaphore: asyncio.Semaphore | None = None  # lazy init from config
@@ -207,8 +206,8 @@ class DigitalAnima(
                 BackgroundWorkerSlot(
                     slot_id=0,
                     agent=self._lane_agents["background"],
-                    session_lock=self._agent_session_locks["background"],
-                    interrupt_event=self._get_interrupt_event("_background"),
+                    session_lock=asyncio.Lock(),
+                    interrupt_event=self._get_interrupt_event("_taskexec"),
                 )
             ]
         else:
@@ -237,7 +236,6 @@ class DigitalAnima(
             first_worker = False
             async with self._background_worker_gate_lock:
                 if self._background_worker_gate_count == 0:
-                    await self._background_lock.acquire()
                     first_worker = True
                 self._background_worker_gate_count += 1
             self._active_background_workers[slot.slot_id] = task_id
@@ -251,13 +249,12 @@ class DigitalAnima(
             raise
 
     async def _release_background_worker(self, slot: BackgroundWorkerSlot) -> None:
-        """Return a TaskExec worker and release the shared background gate if idle."""
+        """Return a TaskExec worker and notify observers when the worker gate is idle."""
         self._active_background_workers.pop(slot.slot_id, None)
         became_idle = False
         async with self._background_worker_gate_lock:
             self._background_worker_gate_count = max(0, self._background_worker_gate_count - 1)
-            if self._background_worker_gate_count == 0 and self._background_lock.locked():
-                self._background_lock.release()
+            if self._background_worker_gate_count == 0:
                 became_idle = True
         self._background_worker_queue.put_nowait(slot)
         if became_idle:

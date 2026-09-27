@@ -22,7 +22,6 @@ The class is composed from responsibility-specific Mixins:
 
 import json as _json
 import logging
-import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -33,6 +32,7 @@ from core.execution.session_context import RuntimeSessionContext, current_runtim
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity.logger import ActivityLogger
+from core.memory.state_lock import StateFileLock
 from core.messaging.messenger import Messenger
 from core.notification import CallHumanKeys
 from core.notification.notifier import HumanNotifier
@@ -156,7 +156,7 @@ class ToolHandler(
         self._session_id: str = uuid.uuid4().hex[:12]
         self._runtime_session_context: RuntimeSessionContext | None = None
         self._activity = ActivityLogger(self._anima_dir)
-        self._state_file_lock: threading.Lock | None = None
+        self._state_file_lock: StateFileLock | None = None
         self._external = ExternalToolDispatcher(
             tool_registry or [],
             personal_tools=personal_tools,
@@ -427,8 +427,8 @@ class ToolHandler(
         self._replied_to.setdefault(ctx.session_type, set())
         self._posted_channels.setdefault(ctx.session_type, set())
 
-    def set_state_file_lock(self, lock: threading.Lock) -> None:
-        """Attach a state-file lock from DigitalAnima for concurrent write protection."""
+    def set_state_file_lock(self, lock: StateFileLock) -> None:
+        """Attach a process-safe state-file lock for concurrent write protection."""
         self._state_file_lock = lock
 
     def set_pending_executor_wake(self, wake_fn: Callable[[], Any]) -> None:

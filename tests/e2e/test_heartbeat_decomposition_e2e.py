@@ -278,8 +278,8 @@ class TestHeartbeatConcurrency:
         _attach_mock_stream(dp)
 
         # Acquire conversation lock to simulate an active user conversation.
-        # With the new concurrent design, heartbeat uses _background_lock
-        # and should NOT be skipped.
+        # Heartbeat uses the scheduled-work lock independently of the chat
+        # conversation lock and should NOT be skipped.
         async with dp._get_thread_lock("default"):
             result = await dp.run_heartbeat()
 

@@ -1286,12 +1286,11 @@ class PendingTaskExecutor:
         try:
             if worker_slot is not None:
                 session_context = worker_slot.session_lock
-            elif callable(getattr(type(self._anima), "_agent_session_context", None)):
-                session_context = self._anima._agent_session_context("background")
             else:
-                session_context = getattr(self._anima, "_agent_session_lock", None)
+                session_context = getattr(self._anima, "_taskexec_session_lock", None)
                 if not isinstance(session_context, asyncio.Lock):
-                    session_context = None
+                    session_context = asyncio.Lock()
+                    self._anima._taskexec_session_lock = session_context
             if session_context is None:
                 from contextlib import nullcontext
 
@@ -1299,11 +1298,13 @@ class PendingTaskExecutor:
             async with session_context:
                 if worker_slot is not None:
                     interrupt_event = worker_slot.interrupt_event
-                    self._anima._interrupt_events[task_id] = interrupt_event
                 elif self._anima and hasattr(self._anima, "_get_interrupt_event"):
-                    interrupt_event = self._anima._get_interrupt_event("_background")
+                    interrupt_event = self._anima._get_interrupt_event("_taskexec")
                 else:
                     interrupt_event = None
+                interrupt_events = getattr(self._anima, "_interrupt_events", None)
+                if interrupt_event is not None and isinstance(interrupt_events, dict):
+                    interrupt_events[task_id] = interrupt_event
                 if interrupt_event is not None:
                     interrupt_event.clear()
                     agent.set_interrupt_event(interrupt_event)
@@ -1362,8 +1363,12 @@ class PendingTaskExecutor:
                             journal.finalize(summary=result_summary[:500])
                 finally:
                     agent.set_task_cwd(None)
-                    if worker_slot is not None and self._anima._interrupt_events.get(task_id) is interrupt_event:
-                        self._anima._interrupt_events.pop(task_id, None)
+                    if (
+                        interrupt_event is not None
+                        and isinstance(interrupt_events, dict)
+                        and interrupt_events.get(task_id) is interrupt_event
+                    ):
+                        interrupt_events.pop(task_id, None)
         finally:
             journal.close()
 
@@ -1735,18 +1740,11 @@ class PendingTaskExecutor:
         keepalive_task: asyncio.Future[Any] | None = None
         try:
             pool_capable = callable(getattr(type(self._anima), "_acquire_background_worker", None))
-            if not pool_capable:
-                # Compatibility for older DigitalAnima-like integrations and
-                # focused test doubles that do not expose the worker pool.
-                await self._anima._background_lock.acquire()
-                self._anima._mark_busy_start()
             keepalive = getattr(self._anima, "_keepalive_while_busy", None)
             if callable(keepalive):
                 keepalive_result = keepalive()
                 if inspect.isawaitable(keepalive_result):
                     keepalive_task = asyncio.ensure_future(keepalive_result)
-            self._anima._status_slots["background"] = "task_exec"
-            self._anima._task_slots["background"] = task_id
             if pool_capable or (self._task_isolated and self._task_runner_supervisor is not None):
                 # Worker lease also gates concurrent isolated children (pool size).
                 result = await self._run_task_in_worker(
@@ -1785,16 +1783,6 @@ class PendingTaskExecutor:
                 await asyncio.gather(keepalive_task, return_exceptions=True)
             if preleased:
                 await self._release_worker(worker_slot)
-            if not callable(getattr(type(self._anima), "_acquire_background_worker", None)):
-                if self._anima._background_lock.locked():
-                    self._anima._background_lock.release()
-            active_workers = getattr(self._anima, "_active_background_workers", {})
-            if isinstance(active_workers, dict) and active_workers:
-                self._anima._status_slots["background"] = "task_exec"
-                self._anima._task_slots["background"] = next(iter(active_workers.values()))
-            else:
-                self._anima._status_slots["background"] = "idle"
-                self._anima._task_slots["background"] = ""
             self._anima._clear_busy_status_sidecar_if_idle()
 
     async def _run_llm_task_isolated(

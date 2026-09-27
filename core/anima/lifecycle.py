@@ -13,6 +13,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 import asyncio
 import logging
 import os
+import re
 import time
 from contextlib import nullcontext
 from typing import Any
@@ -25,6 +26,12 @@ from core.schemas import CycleResult
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")
+
+
+def _cron_thread_id(task_name: str) -> str:
+    """Return a safe, task-specific session thread id for cron work."""
+    safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", task_name)
+    return f"cron-{safe_name}"[:64]
 
 
 def _agent_for_lane(owner: Any, lane: str):
@@ -718,6 +725,7 @@ class LifecycleMixin:
                 result = await agent.run_cycle(
                     prompt,
                     trigger="consolidation:daily",
+                    thread_id="consolidation-daily",
                     message_intent="request",
                     model_config_override=consolidation_model_config,
                 )
@@ -828,6 +836,7 @@ class LifecycleMixin:
             result = await agent.run_cycle(
                 prompt,
                 trigger="consolidation:weekly",
+                thread_id="consolidation-weekly",
                 message_intent="request",
                 model_config_override=consolidation_model_config,
             )
@@ -879,7 +888,6 @@ class LifecycleMixin:
                 logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
                 self._mark_busy_start()
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
-                self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
 
@@ -908,6 +916,7 @@ class LifecycleMixin:
                             return await agent.run_cycle(
                                 prompt,
                                 trigger=f"cron:{task_name}",
+                                thread_id=_cron_thread_id(task_name),
                                 model_config_override=config,
                             )
 
@@ -1028,7 +1037,6 @@ class LifecycleMixin:
                     raise
                 finally:
                     _keepalive.cancel()
-                    self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
         finally:
@@ -1066,14 +1074,13 @@ class LifecycleMixin:
             async with self._background_lock:
                 logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
                 self._mark_busy_start()
-                self._cron_idle.clear()
                 self._status_slots["background"] = "working"
                 self._task_slots["background"] = task_name
                 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 
                 _runtime_ctx = RuntimeSessionContext.create(
                     session_type="cron",
-                    thread_id="default",
+                    thread_id=_cron_thread_id(task_name),
                     trigger=f"cron:{task_name}",
                 )
 
@@ -1187,7 +1194,6 @@ class LifecycleMixin:
                             await proc.wait()
                         except ProcessLookupError:
                             pass
-                    self._cron_idle.set()
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
 

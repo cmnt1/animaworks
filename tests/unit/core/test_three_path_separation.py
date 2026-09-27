@@ -4,7 +4,7 @@
 """Unit tests for 3-path execution separation (Heartbeat/Inbox/TaskExec).
 
 Covers:
-- 3-lock structure (_conversation_locks, _inbox_lock, _background_lock, _state_file_lock)
+- Conversation/inbox/scheduled-work locks plus process-safe current-state locking
 - Trigger-based prompt section filtering (chat/inbox/heartbeat/cron/task)
 - New prompt template loading (inbox_message, task_exec)
 - Heartbeat decision-focus (no inbox processing, no mandatory reflection ritual)
@@ -35,7 +35,7 @@ def _disable_rag_indexing(monkeypatch):
 
 
 class TestThreeLockStructure:
-    """Verify the 3-lock structure on DigitalAnima."""
+    """Verify DigitalAnima execution locks and the current-state lock."""
 
     def test_inbox_lock_exists(self, data_dir, make_anima):
         anima_dir = make_anima("lock_test")
@@ -49,7 +49,7 @@ class TestThreeLockStructure:
             assert isinstance(dp._inbox_lock, asyncio.Lock)
 
     def test_state_file_lock_exists(self, data_dir, make_anima):
-        import threading
+        from core.memory.state_lock import StateFileLock
 
         anima_dir = make_anima("lock_test2")
         shared_dir = data_dir / "shared"
@@ -59,7 +59,7 @@ class TestThreeLockStructure:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             assert hasattr(dp, "_state_file_lock")
-            assert isinstance(dp._state_file_lock, type(threading.Lock()))
+            assert isinstance(dp._state_file_lock, StateFileLock)
 
     def test_three_status_slots(self, data_dir, make_anima):
         anima_dir = make_anima("lock_test3")

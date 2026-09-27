@@ -39,6 +39,7 @@ from core.memory.skill_metadata import (  # noqa: F401
 from core.memory.skill_metadata import (
     match_skills_by_description as _match_skills_by_description,
 )
+from core.memory.state_lock import StateFileLock
 from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_company_dir, get_shared_dir
 from core.schemas import ModelConfig, SkillMeta
 from core.time_utils import now_local, today_local
@@ -83,6 +84,7 @@ class MemoryManager:
             self.state_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
+        self.state_lock = StateFileLock(anima_dir)
 
         self._migrate_current_task_to_state()
         self._migrate_pending_to_state()
@@ -457,7 +459,13 @@ class MemoryManager:
 
     # ── Write helpers ─────────────────────────────────────
 
-    def append_episode(self, entry: str, *, origin: str = "") -> None:
+    def append_episode(
+        self,
+        entry: str,
+        *,
+        origin: str = "",
+        _defer_index: bool = False,
+    ) -> Path | None:
         path = self.episodes_dir / f"{today_local().isoformat()}.md"
         try:
             if not path.exists():
@@ -465,37 +473,63 @@ class MemoryManager:
                     t("manager.action_log_header", date=today_local().isoformat()),
                     encoding="utf-8",
                 )
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(f"\n{entry}\n")
-                f.flush()
-                os.fsync(f.fileno())
+            payload = f"\n{entry}\n".encode()
+            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            try:
+                offset = 0
+                while offset < len(payload):
+                    written = os.write(fd, payload[offset:])
+                    if written <= 0:
+                        raise OSError("episode append made no progress")
+                    offset += written
+                os.fsync(fd)
+            finally:
+                os.close(fd)
         except OSError:
             logger.warning("Failed to append episode to %s", path, exc_info=True)
-            return
+            return None
         logger.debug("Episode appended, length=%d", len(entry))
 
-        # Index the updated episode file (incremental)
+        # Index outside state-lock critical sections when requested.
+        if not _defer_index:
+            self._index_episode_file(path, origin=origin)
+        return path
+
+    def _index_episode_file(self, path: Path, *, origin: str = "") -> None:
+        """Index an episode after its append is safely persisted."""
         self._rag.index_file(path, "episodes", origin=origin)
 
     def update_state(self, content: str) -> None:
         atomic_write_text(self.state_dir / "current_state.md", content)
 
     def archive_and_reset_state(self, new_status: str = "status: idle") -> None:
-        """Archive current_state.md to episodes and reset.
+        """Archive current_state.md to episodes and reset under the process lock.
 
         Skips archiving if current content is just "status: idle" or empty.
-        On append_episode failure, the state is left unchanged to avoid
-        data loss.
+        On episode append failure, the state is left unchanged to avoid data loss.
         """
-        state = self.read_current_state()
-        if not state or state.strip() == "status: idle":
-            return
+        episode_path: Path | None = None
         try:
-            self.append_episode(f"## Working notes archived\n\n{state}")
+            with self.state_lock:
+                state = self.read_current_state()
+                if not state or state.strip() == "status: idle":
+                    return
+                episode_path = self.append_episode(
+                    f"## Working notes archived\n\n{state}",
+                    _defer_index=True,
+                )
+                if episode_path is None:
+                    return
+                self.update_state(new_status.strip() or "status: idle")
         except Exception:
             logger.warning("archive_and_reset_state: failed to archive, leaving state unchanged", exc_info=True)
             return
-        self.update_state(new_status.strip() or "status: idle")
+
+        # Indexing may perform slow local/remote work and stays outside the lock.
+        try:
+            self._index_episode_file(episode_path)
+        except Exception:
+            logger.warning("archive_and_reset_state: failed to index archived state", exc_info=True)
 
     def update_pending(self, content: str) -> None:
         logger.warning("update_pending() is deprecated — pending.md has been abolished")
