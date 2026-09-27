@@ -1021,6 +1021,13 @@ async def lifespan(app: FastAPI):
         if governor:
             await governor.stop()
         await app.state.supervisor.shutdown_all()
+        from core.paths import get_data_dir as _shutdown_get_data_dir
+        from server.internal_auth import remove_operator_token
+
+        try:
+            remove_operator_token(_shutdown_get_data_dir() / "run" / "internal_api.auth")
+        except Exception:
+            logger.exception("Failed to remove operator token file")
         vector_worker = getattr(app.state, "vector_worker", None)
         await _call_optional_async(vector_worker, "stop")
         if getattr(app.state, "_previous_vector_url_present", False) is True:
@@ -1112,6 +1119,18 @@ def create_app(
                 logger.info("Discovered anima: %s", anima_dir.name)
 
     app.state.supervisor = supervisor
+
+    # Internal API caller authentication (R04-1): a per-server secret from which
+    # per-anima / operator tokens are derived.  The secret lives only in
+    # process memory and is regenerated on every start.
+    from server.internal_auth import InternalAuth, set_current_auth, write_operator_token
+
+    internal_auth = InternalAuth.generate()
+    app.state.internal_auth = internal_auth
+    supervisor.internal_auth = internal_auth
+    set_current_auth(internal_auth)
+    write_operator_token(run_dir / "internal_api.auth")
+
     app.state.anima_names = anima_names
     app.state.ws_manager = ws_manager
     app.state.animas_dir = animas_dir
@@ -1229,6 +1248,17 @@ def create_app(
 
         # Skip if local_trust mode
         if auth_config.auth_mode == "local_trust":
+            return await call_next(request)
+
+        # Internal API caller verification: a valid internal token lets an
+        # in-process / sandboxed caller through regardless of trust_localhost,
+        # so anima processes still work under password mode with
+        # trust_localhost=false.
+        if (
+            path.startswith("/api/internal/")
+            and getattr(request.app.state, "internal_auth", None) is not None
+            and request.app.state.internal_auth.verify(request.headers.get("X-AnimaWorks-Internal-Auth")) is not None
+        ):
             return await call_next(request)
 
         # Localhost trust: skip auth for verified local connections

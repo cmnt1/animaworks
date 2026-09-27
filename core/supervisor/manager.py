@@ -169,6 +169,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # Env vars passed to child processes (embed/vector URLs). Set by server/app.py.
         self.child_env_urls: dict[str, str] = {}
 
+        # Internal API auth source, set by server/app.py before animas start.
+        # Used to mint a per-anima token for each spawned child.
+        self.internal_auth = None
+
     def is_scheduler_running(self) -> bool:
         """Return whether the system scheduler is running."""
         return self._scheduler_running
@@ -358,6 +362,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                     shared_dir=self.shared_dir,
                     log_dir=self.log_dir,
                     child_env_urls=self.child_env_urls,
+                    internal_auth_env=(
+                        {ProcessHandle.INTERNAL_AUTH_ENV: self.internal_auth.token_for_anima(anima_name)}
+                        if self.internal_auth is not None
+                        else {}
+                    ),
                     startup_ready_timeout=self._anima_startup_ready_timeout,
                 )
 

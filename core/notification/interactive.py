@@ -558,6 +558,8 @@ def create_interaction_resilient(
     """
     import httpx
 
+    from core.internal_api import internal_api_headers
+
     try:
         resp = httpx.post(
             f"{_server_base_url()}/api/internal/interaction/create",
@@ -568,6 +570,7 @@ def create_interaction_resilient(
                 "allowed_users": allowed_users,
                 "callback_id": callback_id,
             },
+            headers=internal_api_headers(),
             timeout=10.0,
         )
         if resp.status_code == 409:
@@ -600,9 +603,12 @@ def update_interaction_message_ts_resilient(callback_id: str, platform: str, ts:
     """
     import httpx
 
+    from core.internal_api import internal_api_headers
+
     try:
         resp = httpx.post(
             f"{_server_base_url()}/api/internal/interaction/message-ts",
+            headers=internal_api_headers(),
             json={"callback_id": callback_id, "platform": platform, "ts": ts},
             timeout=10.0,
         )

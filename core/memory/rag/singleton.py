@@ -923,7 +923,9 @@ def _shared_http_client():
 
     pid = os.getpid()
     if _HTTP_CLIENT is None or pid != _HTTP_CLIENT_PID:
-        _HTTP_CLIENT = httpx.Client(timeout=180.0)
+        from core.internal_api import internal_api_headers
+
+        _HTTP_CLIENT = httpx.Client(timeout=180.0, headers=internal_api_headers())
         _HTTP_CLIENT_PID = pid
     return _HTTP_CLIENT
 

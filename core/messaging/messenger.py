@@ -407,9 +407,12 @@ class Messenger:
         try:
             import httpx
 
+            from core.internal_api import internal_api_headers
+
             resp = httpx.post(
                 f"{_server_base_url()}/api/internal/send-message",
                 json={"message": msg.model_dump(mode="json")},
+                headers=internal_api_headers(),
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
             )
             resp.raise_for_status()
@@ -430,6 +433,8 @@ class Messenger:
         try:
             import httpx
 
+            from core.internal_api import internal_api_headers
+
             resp = httpx.post(
                 f"{_server_base_url()}/api/internal/post-channel",
                 json={
@@ -439,6 +444,7 @@ class Messenger:
                     "source": source,
                     "from_name": poster,
                 },
+                headers=internal_api_headers(),
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
             )
             resp.raise_for_status()

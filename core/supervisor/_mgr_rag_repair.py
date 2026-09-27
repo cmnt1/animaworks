@@ -474,6 +474,11 @@ class RAGRepairMixin:
         env = os.environ.copy()
         env["ANIMAWORKS_VECTOR_URL"] = vector_url
         env["ANIMAWORKS_RAG_REPAIR_NONCE"] = repair_nonce
+        # Repair runs as an operator-owned process, so it presents the
+        # operator token to the internal API (server-side spawned child).
+        internal_auth = getattr(self, "internal_auth", None)
+        if internal_auth is not None:
+            env["ANIMAWORKS_INTERNAL_AUTH"] = internal_auth.operator_token()
         # Repair is a legitimate native-chroma owner (staging rebuild); the
         # process-local grant does not propagate via environment, so pass it
         # explicitly.

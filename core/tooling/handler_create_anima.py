@@ -143,10 +143,13 @@ class CreateAnimaMixin:
         if supervisor:
             payload["supervisor"] = supervisor
 
+        from core.internal_api import internal_api_headers
+
         try:
             resp = httpx.post(
                 f"{_server_base_url()}/api/internal/anima/create",
                 json=payload,
+                headers=internal_api_headers(),
                 timeout=60.0,
             )
         except Exception as exc:

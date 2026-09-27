@@ -30,6 +30,11 @@ from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger(__name__)
 
+# Env var carrying the caller's internal API token to child processes.  It is
+# defined here so sibling modules (e.g. the supervisor manager) can reuse it
+# without duplicating the literal string.
+INTERNAL_AUTH_ENV = "ANIMAWORKS_INTERNAL_AUTH"
+
 
 # Default upper bound on how long stop() waits for an in-flight interactive
 # stream (a user-facing chat response) to finish before shutting the process
@@ -84,6 +89,7 @@ class ProcessHandle:
         shared_dir: Path,
         log_dir: Path | None = None,
         child_env_urls: dict[str, str] | None = None,
+        internal_auth_env: dict[str, str] | None = None,
         startup_ready_timeout: float = 120.0,
     ):
         self.anima_name = anima_name
@@ -92,6 +98,7 @@ class ProcessHandle:
         self.shared_dir = shared_dir
         self.log_dir = log_dir
         self._child_env_urls = child_env_urls or {}
+        self._internal_auth_env = internal_auth_env or {}
         self.startup_ready_timeout = startup_ready_timeout
 
         self.state = ProcessState.STOPPED
@@ -175,6 +182,7 @@ class ProcessHandle:
 
             child_env = os.environ.copy()
             child_env.update(self._child_env_urls)
+            child_env.update(self._internal_auth_env)  # overrides any parent-inherited value
             child_env["ANIMAWORKS_EXPECT_STARTUP_ACK"] = "1"
 
             self.process = subprocess.Popen(

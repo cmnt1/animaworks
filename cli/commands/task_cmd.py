@@ -292,9 +292,15 @@ def _post_board_action(payload: dict) -> dict:
     """Run the action on the host when the sandbox cannot write the task DB."""
     import httpx
 
+    from core.internal_api import internal_api_headers
     from core.tasks.dispatch import _server_url
 
-    response = httpx.post(f"{_server_url()}/api/internal/task-board-action", json=payload, timeout=60.0)
+    response = httpx.post(
+        f"{_server_url()}/api/internal/task-board-action",
+        json=payload,
+        headers=internal_api_headers(),
+        timeout=60.0,
+    )
     response.raise_for_status()
     return response.json()
 

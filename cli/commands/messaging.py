@@ -129,8 +129,11 @@ def _notify_server_message_sent(
     try:
         import httpx
 
+        from core.internal_api import internal_api_headers
+
         resp = httpx.post(
             f"{server_url}/api/internal/message-sent",
+            headers=internal_api_headers(),
             json={
                 "from_person": from_anima,
                 "to_person": to_anima,
