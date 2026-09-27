@@ -68,7 +68,6 @@ def model_config() -> ModelConfig:
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
 
 
@@ -310,7 +309,6 @@ class TestStreamingRetry:
             model="ollama/qwen3:8b",
             max_tokens=1024,
             context_threshold=0.50,
-            max_chains=2,
         )
         return _make_executor(config, anima_dir, tool_handler, memory)
 

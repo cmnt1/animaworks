@@ -226,7 +226,6 @@ def _gemini_executor(anima_dir: Path):
         max_tokens=4096,
         credential="gemini",
         context_threshold=0.5,
-        max_chains=2,
     )
     return GeminiCLIExecutor(
         model_config=mc,
@@ -296,7 +295,6 @@ def _cursor_executor(anima_dir: Path):
         max_tokens=4096,
         credential="cursor",
         context_threshold=0.5,
-        max_chains=2,
     )
     return CursorAgentExecutor(
         model_config=mc,
@@ -424,7 +422,6 @@ def _grok_executor(anima_dir: Path):
         max_tokens=4096,
         credential="grok",
         context_threshold=0.5,
-        max_chains=2,
     )
     return GrokCLIExecutor(mc, anima_dir, tool_registry=["web_search"])
 
@@ -706,7 +703,6 @@ def _codex_executor(anima_dir: Path):
         credential="openai",
         api_key="test-key-123",
         context_threshold=0.50,
-        max_chains=2,
     )
     return CodexSDKExecutor(
         model_config=mc,
@@ -793,7 +789,6 @@ def _litellm_executor(anima_dir: Path):
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
     memory = MagicMock()
     memory.read_permissions.return_value = ""

@@ -118,7 +118,6 @@ def model_config():
         credential="openai",
         api_key="test-key-123",
         context_threshold=0.50,
-        max_chains=2,
     )
 
 

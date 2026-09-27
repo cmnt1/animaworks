@@ -16,7 +16,6 @@ def _make_agent(anima_dir: Path):
     config = ModelConfig(
         model="claude-sonnet-4-6",
         api_key="test-key",
-        max_chains=2,
         context_threshold=0.5,
     )
     memory = MagicMock()

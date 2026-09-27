@@ -164,11 +164,9 @@ def cmd_config_set(args: argparse.Namespace) -> None:
         "task_compaction_tokens",
         "task_compaction_max",
         "max_session_age_hours",
-        "max_chains",
         "conversation_history_threshold",
         "execution_mode",
         "thinking",
-        "llm_timeout",
     }
     if len(parts) >= 3 and parts[0] == "animas" and parts[2] in _MODEL_FIELDS:
         anima_name = parts[1]

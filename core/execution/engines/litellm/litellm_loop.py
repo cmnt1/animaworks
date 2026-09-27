@@ -12,8 +12,8 @@ from __future__ import annotations
 
 Runs any tool_use-capable model (GPT-4o, Gemini Pro, etc.) in a loop where
 the LLM autonomously calls tools until it produces a final text response
-or the runaway guard halts pathological repetition. Session chaining is handled inline when the
-context threshold is crossed mid-conversation.
+or the runaway guard halts pathological repetition. Context-threshold session state
+is saved for resumption by the next incoming message.
 
 Implementation is split across Mixin modules:
   - ``_litellm_tools``     — tool discovery, execution, partitioning
@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ConfigError, LLMAPIError, ToolExecutionError  # noqa: F401
-from core.execution._session import handle_session_chaining
+from core.execution._session import save_threshold_shortterm
 from core.execution._streaming import try_parse_text_tool_call
 from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
@@ -85,7 +85,6 @@ from core.execution.reminder import (
 )
 from core.memory import MemoryManager
 from core.memory.conversation.shortterm import ShortTermMemory
-from core.prompt.builder import build_system_prompt
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -128,7 +127,6 @@ class LiteLLMExecutor(
         super().__init__(model_config, anima_dir, interrupt_event=interrupt_event)
         self._tool_handler = tool_handler
         self._tool_registry = tool_registry
-        self._memory = memory
         self._personal_tools = personal_tools or {}
 
     @property
@@ -191,7 +189,6 @@ class LiteLLMExecutor(
                 _guard_blocked,
             )
 
-        chain_count = 0
         usage_acc = TokenUsage()
         _empty_tracker = EmptyResponseTracker()
 
@@ -325,28 +322,18 @@ class LiteLLMExecutor(
                 current_text = message.content or ""
                 _, current_text = strip_thinking_tags(current_text)
                 if not is_final_iteration:
-                    await handle_session_chaining(
-                        tracker=tracker,
-                        shortterm=shortterm,
-                        memory=self._memory,
-                        current_text=current_text,
-                        system_prompt_builder=partial(
-                            build_system_prompt,
-                            self._memory,
-                            tool_registry=self._tool_registry,
-                            personal_tools=self._personal_tools,
-                            execution_mode="a",
-                            message=prompt,
-                        ),
-                        max_chains=self._model_config.max_chains,
-                        chain_count=chain_count,
-                        session_id="litellm-a",
-                        trigger="a_tool_loop",
-                        original_prompt=prompt,
-                        accumulated_response="\n".join(all_response_text),
-                        turn_count=iteration,
-                        tool_uses=_extract_tool_uses_from_messages(messages),
-                    )
+                    if tracker is not None:
+                        save_threshold_shortterm(
+                            tracker,
+                            shortterm,
+                            session_id="litellm-a",
+                            trigger="a_tool_loop",
+                            original_prompt=prompt,
+                            accumulated_response="\n".join(all_response_text),
+                            current_text=current_text,
+                            turn_count=iteration,
+                            tool_uses=_extract_tool_uses_from_messages(messages),
+                        )
 
             # ── P1-2: output truncation reminder ─────────────────
             if choice.finish_reason == "length":

@@ -371,14 +371,14 @@ When `background_model` is unset or identical to the main model, the swap is ski
 
 Changing role with `animaworks anima set-role` also updates the default model:
 
-| Role | Default Model | background_model | max_turns | max_chains |
-|------|--------------|-----------------|-----------|------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 | 10 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 | 3 |
-| writer | claude-sonnet-4-6 | — | 80 | 5 |
-| researcher | claude-sonnet-4-6 | — | 30 | 2 |
-| ops | openai/glm-4.7-flash | — | 30 | 2 |
-| general | claude-sonnet-4-6 | — | 20 | 2 |
+| Role | Default Model | background_model | max_turns |
+|------|--------------|-----------------|-----------|
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 |
+| writer | claude-sonnet-4-6 | — | 80 |
+| researcher | claude-sonnet-4-6 | — | 30 |
+| ops | openai/glm-4.7-flash | — | 30 |
+| general | claude-sonnet-4-6 | — | 20 |
 
 Opus-tier roles (engineer, manager) get Sonnet as `background_model` automatically.
 Sonnet-tier and below are already cost-efficient, so `background_model` is left unset.

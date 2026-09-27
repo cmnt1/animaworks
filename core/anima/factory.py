@@ -543,7 +543,6 @@ def _create_status_json(
         "task_compaction_tokens",
         "task_compaction_max",
         "max_session_age_hours",
-        "max_chains",
         "conversation_history_threshold",
         "max_outbound_per_hour",
         "max_outbound_per_day",

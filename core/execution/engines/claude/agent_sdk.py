@@ -42,13 +42,10 @@ if TYPE_CHECKING:
 from pathlib import Path
 
 from core.exceptions import ExecutionError, LLMAPIError, MemoryWriteError  # noqa: F401
-from core.execution.engines.claude import _sdk_session
-from core.execution.engines.claude._sdk_patch import apply_sdk_transport_patch
-
-apply_sdk_transport_patch()
 
 # ── Re-exports from submodules (backward compatibility) ──────
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
+from core.execution.engines.claude import _sdk_session
 from core.execution.engines.claude._sdk_hooks import (  # noqa: F401
     _build_post_tool_hook,
     _build_pre_compact_hook,

@@ -371,14 +371,14 @@ animaworks anima restart {名前}
 
 `animaworks anima set-role` でロールを変更すると、デフォルトモデルも変更される:
 
-| ロール | デフォルトモデル | background_model | max_turns | max_chains |
-|--------|---------------|-----------------|-----------|------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 | 10 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 | 3 |
-| writer | claude-sonnet-4-6 | — | 80 | 5 |
-| researcher | claude-sonnet-4-6 | — | 30 | 2 |
-| ops | openai/glm-4.7-flash | — | 30 | 2 |
-| general | claude-sonnet-4-6 | — | 20 | 2 |
+| ロール | デフォルトモデル | background_model | max_turns |
+|--------|---------------|-----------------|-----------|
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 |
+| writer | claude-sonnet-4-6 | — | 80 |
+| researcher | claude-sonnet-4-6 | — | 30 |
+| ops | openai/glm-4.7-flash | — | 30 |
+| general | claude-sonnet-4-6 | — | 20 |
 
 Opus 系ロール（engineer, manager）は `background_model` として Sonnet が自動設定される。
 Sonnet 以下のロールは既にコスト効率が良いため、`background_model` は未設定。

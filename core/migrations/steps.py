@@ -1708,6 +1708,77 @@ def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: b
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired max_chains and llm_timeout settings from runtime config."""
+    del verbose
+    retired_keys = {"max_chains", "llm_timeout"}
+    changed_files = 0
+    details: list[str] = []
+
+    def _remove_keys(record: dict[str, Any]) -> list[str]:
+        removed = sorted(retired_keys.intersection(record))
+        for key in removed:
+            del record[key]
+        return removed
+
+    try:
+        config_path = data_dir / "config.json"
+        if config_path.is_file():
+            config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(config, dict):
+                return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+
+            config_changed = False
+            defaults = config.get("anima_defaults")
+            if isinstance(defaults, dict):
+                removed = _remove_keys(defaults)
+                if removed:
+                    config_changed = True
+                    action = "Would remove" if dry_run else "Removed"
+                    details.append(f"{action} retired settings from anima_defaults: {', '.join(removed)}")
+
+            animas = config.get("animas")
+            if isinstance(animas, dict):
+                for name, record in animas.items():
+                    if isinstance(record, dict):
+                        removed = _remove_keys(record)
+                        if removed:
+                            config_changed = True
+                            action = "Would remove" if dry_run else "Removed"
+                            details.append(f"{action} retired settings from animas.{name}: {', '.join(removed)}")
+
+            if config_changed:
+                changed_files += 1
+                if not dry_run:
+                    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        else:
+            details.append("config.json not found; skip")
+
+        for anima_dir in _iter_anima_dirs(data_dir):
+            status_path = anima_dir / "status.json"
+            if not status_path.is_file():
+                continue
+            status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(status, dict):
+                continue
+            removed = _remove_keys(status)
+            if not removed:
+                continue
+            changed_files += 1
+            relative_path = status_path.relative_to(data_dir)
+            action = "Would remove" if dry_run else "Removed"
+            details.append(f"{action} retired settings from {relative_path}: {', '.join(removed)}")
+            if not dry_run:
+                status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        if not changed_files:
+            details.append("No retired max_chains / llm_timeout settings found")
+        return StepResult(changed=changed_files, skipped=0 if changed_files else 1, details=details)
+    except Exception as exc:
+        logger.exception("step_retire_chain_timeout_keys failed")
+        return StepResult(changed=0, skipped=0, details=details, error=str(exc))
+
+
 def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove the retired housekeeping hygiene grace-period setting."""
     del verbose
@@ -2244,6 +2315,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove retired process_model/task_process_isolation from status.json",
             "per_anima",
             step_remove_process_model_fields,
+        ),
+        MigrationStep(
+            "retire_chain_timeout_keys",
+            "Remove retired max_chains / llm_timeout settings",
+            "structural",
+            step_retire_chain_timeout_keys,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

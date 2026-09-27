@@ -30,9 +30,7 @@ def _make_mock_memory(tmp_path: Path) -> MagicMock:
     memory.read_current_state.return_value = ""
     memory.read_pending.return_value = ""
     memory.read_resolutions.return_value = []
-    memory.read_model_config.return_value = MagicMock(
-        model="claude-sonnet-4-20250514", supervisor=None, max_chains=3
-    )
+    memory.read_model_config.return_value = MagicMock(model="claude-sonnet-4-20250514", supervisor=None)
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []

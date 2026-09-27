@@ -1274,7 +1274,7 @@ class TestModeABlockingShorttermClear:
                 session_id="test-session",
                 accumulated_response="Important conversation context",
                 trigger="chat",
-                notes="Saved by handle_session_chaining",
+                notes="Saved after context threshold",
             )
         )
         assert shortterm.has_pending()

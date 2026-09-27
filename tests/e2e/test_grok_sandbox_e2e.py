@@ -93,7 +93,6 @@ async def test_grok_profile_enforces_deny_and_write_roots(
         max_tokens=4096,
         credential="grok",
         context_threshold=0.5,
-        max_chains=2,
     )
     executor = GrokCLIExecutor(model_config, anima_dir)
 

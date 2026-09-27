@@ -93,7 +93,6 @@ class AnimaDefaults(BaseModel):
     task_compaction_tokens: int = 0
     task_compaction_max: int = 6
     max_session_age_hours: float = 24.0
-    max_chains: int = 2
     conversation_history_threshold: float = 0.30
     execution_mode: str | None = None  # None = auto-detect from model
     supervisor: str | None = None
@@ -101,7 +100,6 @@ class AnimaDefaults(BaseModel):
     extra_mcp_servers: dict[str, dict] = Field(default_factory=dict)
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
-    llm_timeout: int = 600  # default LLM API timeout (seconds)
     mode_s_auth: str | None = None  # Mode S auth: "max"|"api"|"bedrock"|"vertex"|None(=max)
     max_outbound_per_hour: int | None = None
     max_outbound_per_day: int | None = None

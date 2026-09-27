@@ -217,7 +217,6 @@ Anima 생성 시 `--role` 파라미터로 전문 역할을 지정할 수 있습�
 | `background_model` | heartbeat · cron용 모델 | engineer, manager만 |
 | `context_threshold` | 컴팩션 임계값 | 전체 역할 |
 | `max_turns` | 최대 턴 수 | 전체 역할 |
-| `max_chains` | 최대 체인 수 | 전체 역할 |
 | `conversation_history_threshold` | 대화 이력 압축 임계값 | 전체 역할 |
 | `max_outbound_per_hour` | 시간당 전송 상한 (DM/Board) | 레이트 제한 |
 | `max_outbound_per_day` | 일일 전송 상한 | 레이트 제한 |
@@ -225,14 +224,14 @@ Anima 생성 시 `--role` 파라미터로 전문 역할을 지정할 수 있습�
 
 ### 사용 가능한 역할
 
-| 역할 | 개요 | 기본 모델 | max_turns | max_chains | context_threshold | background_model |
-|------|------|----------|-----------|------------|-------------------|------------------|
-| manager | 위임, 보고, 에스컬레이션 판단 | claude-opus-4-6 | 10000 | 3 | 0.60 | claude-sonnet-4-6 |
-| engineer | 코드 구현, 기술 설계, 테스트 | claude-opus-4-6 | 10000 | 10 | 0.80 | claude-sonnet-4-6 |
-| researcher | 정보 수집, 분석, 리포트 | claude-sonnet-4-6 | 10000 | 2 | 0.50 | — |
-| writer | 문서 작성, 커뮤니케이션 설계 | claude-sonnet-4-6 | 10000 | 5 | 0.70 | — |
-| ops | 모니터링, 이상 감지, 인시던트 대응 | ollama/glm-4.7 | 10000 | 2 | 0.50 | — |
-| general | 범용 태스크 (기본값) | claude-sonnet-4-6 | 10000 | 2 | 0.50 | — |
+| 역할 | 개요 | 기본 모델 | max_turns | context_threshold | background_model |
+|------|------|----------|-----------|-------------------|------------------|
+| manager | 위임, 보고, 에스컬레이션 판단 | claude-opus-4-6 | 10000 | 0.60 | claude-sonnet-4-6 |
+| engineer | 코드 구현, 기술 설계, 테스트 | claude-opus-4-6 | 10000 | 0.80 | claude-sonnet-4-6 |
+| researcher | 정보 수집, 분석, 리포트 | claude-sonnet-4-6 | 10000 | 0.50 | — |
+| writer | 문서 작성, 커뮤니케이션 설계 | claude-sonnet-4-6 | 10000 | 0.70 | — |
+| ops | 모니터링, 이상 감지, 인시던트 대응 | ollama/glm-4.7 | 10000 | 0.50 | — |
+| general | 범용 태스크 (기본값) | claude-sonnet-4-6 | 10000 | 0.50 | — |
 
 미지정 시 `general`이 적용됩니다. ops에서 vLLM 등을 사용하는 경우 `status.json`의
 `model`과 `credential`을 편집하여 `openai/glm-4.7-flash` 등을 지정하세요.
@@ -245,7 +244,7 @@ engineer와 manager는 `background_model`로 heartbeat · cron에 claude-sonnet-
    `specialty_prompt.md`를 `animas/{name}/`에 복사합니다. `_create_status_json()`가
    `defaults.json`의 전체 필드(`background_model`, `max_outbound_*` 포함)를 `status.json`에 병합합니다.
 2. **역할 변경 시** (`animaworks anima set-role`): `permissions.json`와 `specialty_prompt.md`를 재복사합니다.
-   `status.json`에는 `model`, `context_threshold`, `max_turns`, `max_chains`,
+   `status.json`에는 `model`, `context_threshold`, `max_turns`,
    `conversation_history_threshold`만 병합됩니다. `background_model`과 `max_outbound_*`는 set-role에서 적용되지 않습니다.
    `--status-only`로 status.json만 업데이트, `--no-restart`로 자동 재시작을 건너뜁니다.
 

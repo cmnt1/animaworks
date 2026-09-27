@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
-from core.time_utils import now_jst
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -27,6 +26,7 @@ from core.supervisor.ipc import (
     IPCResponse,
     IPCServer,
 )
+from core.time_utils import now_jst
 
 
 @pytest.mark.asyncio
@@ -49,7 +49,6 @@ async def test_streaming_with_cycle_result_datetime():
             summary="Hello from IPC",
             duration_ms=250,
             context_usage_ratio=0.3,
-            session_chained=False,
             total_turns=1,
         ).model_dump()  # Note: mode="json" NOT used here to test defensive serialization
 

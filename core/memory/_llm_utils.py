@@ -415,6 +415,9 @@ async def _try_agent_sdk(
     max_tokens: int,
 ) -> str | None:
     """Attempt one-shot completion via Agent SDK.  Returns text or None."""
+    from core.execution.engines.claude._sdk_patch import apply_sdk_transport_patch
+
+    apply_sdk_transport_patch()
     try:
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
     except ImportError:

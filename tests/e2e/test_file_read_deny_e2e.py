@@ -105,7 +105,6 @@ def test_generated_profile_denies_direct_and_symlink_reads(
         credential="openai",
         api_key="test-key",
         context_threshold=0.5,
-        max_chains=2,
     )
     executor = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
     monkeypatch.setattr(executor, "_propagate_auth", lambda: None)
