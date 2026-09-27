@@ -32,7 +32,7 @@ def temp_vectordb():
 
     from core.memory.rag.store import ChromaVectorStore
 
-    store = ChromaVectorStore(persist_dir=vectordb_dir)
+    store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
     yield store
     shutil.rmtree(tmpdir)
 

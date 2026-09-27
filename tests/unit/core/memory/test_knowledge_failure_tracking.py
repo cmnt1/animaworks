@@ -404,7 +404,7 @@ class TestIndexerMetadataExtraction:
             from core.memory.rag.indexer import MemoryIndexer
             from core.memory.rag.store import ChromaVectorStore
 
-            store = ChromaVectorStore(persist_dir=a_dir / "vectordb")
+            store = ChromaVectorStore(persist_dir=a_dir / "vectordb", allow_direct=True)
             indexer = MemoryIndexer(store, "idx_test", a_dir)
             total = indexer.index_directory(a_dir / "knowledge", "knowledge").chunks_indexed
             assert total > 0

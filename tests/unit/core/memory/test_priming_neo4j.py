@@ -92,7 +92,7 @@ class TestLegacyCommunityContext:
     @pytest.fixture
     def legacy_backend(self, tmp_path: Path):
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=MagicMock()),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=MagicMock()),
             patch("core.memory.retrieval.rag_search.RAGMemorySearch"),
         ):
             from core.memory.backend.legacy import LegacyRAGBackend

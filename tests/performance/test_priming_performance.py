@@ -197,7 +197,7 @@ def test_indexing_throughput(large_knowledge_base):
     chroma_dir.mkdir(exist_ok=True)
 
     # Create vector store
-    vector_store = ChromaVectorStore(persist_dir=chroma_dir)
+    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=True)
 
     indexer = MemoryIndexer(
         vector_store=vector_store,
@@ -256,7 +256,7 @@ def test_search_latency_comparison(large_knowledge_base):
     chroma_dir.mkdir(exist_ok=True)
 
     # Create vector store
-    vector_store = ChromaVectorStore(persist_dir=chroma_dir)
+    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=True)
 
     # Index all files
     indexer = MemoryIndexer(
@@ -449,7 +449,7 @@ def test_large_dataset_scalability(tmp_path):
     chroma_dir.mkdir(exist_ok=True)
 
     # Create vector store
-    vector_store = ChromaVectorStore(persist_dir=chroma_dir)
+    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=True)
 
     indexer = MemoryIndexer(
         vector_store=vector_store,

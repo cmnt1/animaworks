@@ -170,12 +170,6 @@ def _empty_external_roots(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
-def _allow_direct_chroma_for_tests(monkeypatch: pytest.MonkeyPatch):
-    """Allow low-level Chroma tests to instantiate the guarded store explicitly."""
-    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
-
-
-@pytest.fixture(autouse=True)
 def _disable_external_sync_for_tests(monkeypatch: pytest.MonkeyPatch):
     """Prevent tests from sending board posts to real external services."""
     monkeypatch.setenv("ANIMAWORKS_DISABLE_EXTERNAL_SYNC", "1")

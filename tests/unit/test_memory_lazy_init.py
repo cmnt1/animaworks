@@ -56,7 +56,7 @@ class TestMemoryManagerLazyIndexer:
 
         # First call triggers init without loading real Chroma/SentenceTransformer deps.
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=dummy_store),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=dummy_store),
             patch("core.memory.rag.MemoryIndexer", return_value=dummy_indexer),
             patch("core.memory.retrieval.rag_search.RAGMemorySearch._check_shared_collections"),
         ):

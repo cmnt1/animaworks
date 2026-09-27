@@ -275,7 +275,7 @@ class ForgettingEngine:
         Returns:
             VectorStore instance, or ``None`` if unavailable.
         """
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.vector_registry import get_vector_store
 
         return get_vector_store(self.anima_name)
 

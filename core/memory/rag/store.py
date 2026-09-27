@@ -15,18 +15,13 @@ Provides persistent vector storage for memory embeddings with:
 import logging
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 logger = logging.getLogger("animaworks.rag.store")
-_T = TypeVar("_T")
-_SQLITE_REFUTABLE_SELF_HEAL_REASONS = {"chroma_corruption", "sqlite_malformed"}
-_SQLITE_LIGHTWEIGHT_RETRY_STATUSES = {"ok", "busy"}
 _persistent_client_init_lock = threading.Lock()
-_lightweight_failure_marker_lock = threading.Lock()
 _missing_collection_warned: set[str] = set()
 _missing_collection_warned_lock = threading.Lock()
 
@@ -207,9 +202,13 @@ class ChromaVectorStore(VectorStore):
     Stores embeddings in SQLite at ~/.animaworks/vectordb/chroma.sqlite3
     """
 
-    _self_heal_reset_lock = threading.Lock()
-
-    def __init__(self, persist_dir: Path | None = None, anima_name: str | None = None) -> None:
+    def __init__(
+        self,
+        persist_dir: Path | None = None,
+        anima_name: str | None = None,
+        *,
+        allow_direct: bool = False,
+    ) -> None:
         """Initialize ChromaDB client.
 
         Args:
@@ -219,7 +218,8 @@ class ChromaVectorStore(VectorStore):
         """
         from core.memory.rag.direct_access import require_direct_chroma_allowed
 
-        require_direct_chroma_allowed()
+        if not allow_direct:
+            require_direct_chroma_allowed()
 
         import chromadb
 
@@ -246,7 +246,6 @@ class ChromaVectorStore(VectorStore):
         self.persist_dir = persist_dir
         self.anima_name = anima_name
         self._closed = False
-        self._lightweight_self_heal_failures = 0
         # No maintenance connection after PersistentClient init: closing a
         # Python sqlite3 rw connection here deletes the -wal/-shm the live
         # client just created (POSIX locks cannot see the Rust client's locks
@@ -278,6 +277,7 @@ class ChromaVectorStore(VectorStore):
                 _stop_chroma_client_system(client)
         finally:
             self.client = None
+            _clear_chroma_system_cache()
 
     def _report_chroma_error(self, collection: str, error: Exception, source: str) -> None:
         """Record Chroma errors that may indicate persistent-index corruption."""
@@ -299,226 +299,6 @@ class ChromaVectorStore(VectorStore):
     def _owner_label(self) -> str:
         return self._anima_name() or "shared"
 
-    def _with_self_heal(
-        self,
-        operation: str,
-        collection: str,
-        action: Callable[[ChromaVectorStore], _T],
-    ) -> _T:
-        try:
-            return action(self)
-        except Exception as error:
-            from core.memory.rag.repair_utils import classify_corruption_error
-
-            reason = classify_corruption_error(error)
-            if reason is None:
-                raise
-
-            if self._should_retry_without_reset(reason, operation, collection, error):
-                try:
-                    return self._retry_without_reset(operation, collection, action)
-                except Exception as retry_error:
-                    if reason != "chroma_transient" or classify_corruption_error(retry_error) != "chroma_transient":
-                        raise
-                    # Two consecutive transient failures mean this client is
-                    # latched (e.g. a poisoned segment cache), not a one-shot
-                    # compaction glitch; escalate to a rate-limited reset.
-                    error = retry_error
-
-            self._report_chroma_error(collection, error, operation)
-            fresh_store = self._reset_for_self_heal(operation, collection, reason, error)
-            if fresh_store is None:
-                raise
-            try:
-                return action(fresh_store)
-            except Exception as retry_error:
-                fresh_store._report_chroma_error(collection, retry_error, operation)
-                logger.warning(
-                    "ChromaDB self-heal retry failed during %s: owner=%s db_path=%s collection=%s error=%s",
-                    operation,
-                    fresh_store._owner_label(),
-                    fresh_store.persist_dir,
-                    collection,
-                    retry_error,
-                )
-                raise
-            finally:
-                from core.memory.rag.singleton import _close_vector_store_with_gate
-
-                _close_vector_store_with_gate(
-                    fresh_store,
-                    fresh_store._anima_name(),
-                    operation=f"self-heal retry close ({operation})",
-                )
-
-    def _should_retry_without_reset(
-        self,
-        reason: str,
-        operation: str,
-        collection: str,
-        error: Exception,
-    ) -> bool:
-        if reason == "chroma_transient":
-            logger.info(
-                "ChromaDB transient error during %s; retrying once without resetting vector store: "
-                "owner=%s db_path=%s collection=%s reason=%s error=%s",
-                operation,
-                self._owner_label(),
-                self.persist_dir,
-                collection,
-                reason,
-                error,
-            )
-            return True
-        if reason not in _SQLITE_REFUTABLE_SELF_HEAL_REASONS:
-            return False
-
-        reset_lock = type(self)._self_heal_reset_lock
-        if not reset_lock.acquire(blocking=False):
-            logger.debug(
-                "Skipping concurrent Chroma SQLite quick_check during %s: owner=%s db_path=%s",
-                operation,
-                self._owner_label(),
-                self.persist_dir,
-            )
-            return False
-        try:
-            try:
-                from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
-
-                health = quick_check_chroma_sqlite(self.persist_dir)
-            except Exception:
-                logger.debug(
-                    "Failed to run Chroma SQLite quick_check during self-heal: owner=%s db_path=%s",
-                    self._owner_label(),
-                    self.persist_dir,
-                    exc_info=True,
-                )
-                return False
-
-            if health.status in _SQLITE_LIGHTWEIGHT_RETRY_STATUSES:
-                logger.info(
-                    "ChromaDB self-heal avoided vector-store reset after SQLite quick_check: "
-                    "owner=%s db_path=%s collection=%s operation=%s reason=%s sqlite_status=%s error=%s",
-                    self._owner_label(),
-                    self.persist_dir,
-                    collection,
-                    operation,
-                    reason,
-                    health.status,
-                    error,
-                )
-                return True
-            return False
-        finally:
-            reset_lock.release()
-
-    def _retry_without_reset(
-        self,
-        operation: str,
-        collection: str,
-        action: Callable[[ChromaVectorStore], _T],
-    ) -> _T:
-        try:
-            return action(self)
-        except Exception as retry_error:
-            with _lightweight_failure_marker_lock:
-                self._lightweight_self_heal_failures = int(getattr(self, "_lightweight_self_heal_failures", 0)) + 1
-            self._report_chroma_error(collection, retry_error, operation)
-            logger.warning(
-                "ChromaDB lightweight self-heal retry failed during %s: owner=%s db_path=%s collection=%s error=%s",
-                operation,
-                self._owner_label(),
-                self.persist_dir,
-                collection,
-                retry_error,
-            )
-            raise
-
-    def consume_lightweight_self_heal_failure(self) -> bool:
-        """Consume one failed lightweight retry for worker-level escalation."""
-        with _lightweight_failure_marker_lock:
-            failures = int(getattr(self, "_lightweight_self_heal_failures", 0))
-            if failures <= 0:
-                return False
-            self._lightweight_self_heal_failures = failures - 1
-            return True
-
-    def _reset_for_self_heal(
-        self,
-        operation: str,
-        collection: str,
-        reason: str,
-        error: Exception,
-    ) -> ChromaVectorStore | None:
-        reset_lock = type(self)._self_heal_reset_lock
-        if not reset_lock.acquire(blocking=False):
-            logger.info(
-                "ChromaDB self-heal reset already in progress during %s: owner=%s db_path=%s",
-                operation,
-                self._owner_label(),
-                self.persist_dir,
-            )
-            return None
-        try:
-            try:
-                from core.memory.rag.singleton import reset_vector_store_after_error
-
-                did_reset = reset_vector_store_after_error(self._anima_name(), source=f"self_heal:{operation}")
-            except Exception:
-                logger.debug(
-                    "Failed to reset singleton vector store during self-heal: owner=%s db_path=%s",
-                    self._owner_label(),
-                    self.persist_dir,
-                    exc_info=True,
-                )
-                did_reset = False
-            if not did_reset:
-                logger.warning(
-                    "ChromaDB self-heal reset suppressed by cooldown during %s: "
-                    "owner=%s db_path=%s collection=%s reason=%s error=%s",
-                    operation,
-                    self._owner_label(),
-                    self.persist_dir,
-                    collection,
-                    reason,
-                    error,
-                )
-                return None
-            logger.warning(
-                "ChromaDB corruption detected during %s; resetting vector store before one retry: "
-                "owner=%s db_path=%s collection=%s reason=%s error=%s",
-                operation,
-                self._owner_label(),
-                self.persist_dir,
-                collection,
-                reason,
-                error,
-            )
-            from core.memory.rag.singleton import _close_vector_store_with_gate
-
-            _close_vector_store_with_gate(
-                self,
-                self._anima_name(),
-                operation=f"self-heal reset close ({operation})",
-            )
-            try:
-                return type(self)(persist_dir=self.persist_dir, anima_name=self._anima_name())
-            except Exception as recreate_error:
-                self._report_chroma_error(collection, recreate_error, f"{operation}:recreate")
-                logger.warning(
-                    "Failed to recreate ChromaDB vector store after reset: owner=%s db_path=%s "
-                    "collection=%s operation=%s error=%s",
-                    self._owner_label(),
-                    self.persist_dir,
-                    collection,
-                    operation,
-                    recreate_error,
-                )
-                return None
-        finally:
-            reset_lock.release()
-
     def _create_collection_once(self, name: str) -> bool:
         try:
             self.client.create_collection(
@@ -538,7 +318,7 @@ class ChromaVectorStore(VectorStore):
     def create_collection(self, name: str) -> bool:
         """Create a new collection or get existing one."""
         try:
-            return self._with_self_heal("create_collection", name, lambda store: store._create_collection_once(name))
+            return self._create_collection_once(name)
         except Exception as e:
             if "already exists" in str(e).lower():
                 logger.debug("Collection '%s' already exists: %s", name, e)
@@ -561,7 +341,7 @@ class ChromaVectorStore(VectorStore):
     def delete_collection(self, name: str) -> bool:
         """Delete a collection."""
         try:
-            return self._with_self_heal("delete_collection", name, lambda store: store._delete_collection_once(name))
+            return self._delete_collection_once(name)
         except Exception as e:
             self._report_chroma_error(name, e, "delete_collection")
             logger.warning(
@@ -580,11 +360,7 @@ class ChromaVectorStore(VectorStore):
     def list_collections(self) -> list[str] | None:
         """List all collections, or return ``None`` when the store is unavailable."""
         try:
-            return self._with_self_heal(
-                "list_collections",
-                "<list_collections>",
-                lambda store: store._list_collections_once(),
-            )
+            return self._list_collections_once()
         except Exception as e:
             self._report_chroma_error("<list_collections>", e, "list_collections")
             logger.warning(
@@ -662,7 +438,7 @@ class ChromaVectorStore(VectorStore):
             return True
 
         try:
-            return self._with_self_heal("upsert", collection, lambda store: store._upsert_once(collection, documents))
+            return self._upsert_once(collection, documents)
         except Exception as e:
             self._report_chroma_error(collection, e, "upsert")
             msg = "Failed to upsert %d documents to '%s': owner=%s db_path=%s error=%s"
@@ -726,11 +502,7 @@ class ChromaVectorStore(VectorStore):
     ) -> list[SearchResult]:
         """Query by embedding similarity."""
         try:
-            return self._with_self_heal(
-                "query",
-                collection,
-                lambda store: store._query_once(collection, embedding, top_k, filter_metadata),
-            )
+            return self._query_once(collection, embedding, top_k, filter_metadata)
         except Exception as e:
             self._report_chroma_error(collection, e, "query")
             msg = "ChromaDB query failed for collection '%s': owner=%s db_path=%s error=%s"
@@ -753,11 +525,7 @@ class ChromaVectorStore(VectorStore):
             return True
 
         try:
-            return self._with_self_heal(
-                "delete_documents",
-                collection,
-                lambda store: store._delete_documents_once(collection, ids),
-            )
+            return self._delete_documents_once(collection, ids)
         except Exception as e:
             self._report_chroma_error(collection, e, "delete_documents")
             msg = "Failed to delete documents from '%s': owner=%s db_path=%s error=%s"
@@ -808,11 +576,7 @@ class ChromaVectorStore(VectorStore):
         if not ids:
             return True
         try:
-            return self._with_self_heal(
-                "update_metadata",
-                collection,
-                lambda store: store._update_metadata_once(collection, ids, metadatas),
-            )
+            return self._update_metadata_once(collection, ids, metadatas)
         except Exception as e:
             self._report_chroma_error(collection, e, "update_metadata")
             msg = "Failed to update metadata in '%s': owner=%s db_path=%s error=%s"
@@ -875,11 +639,7 @@ class ChromaVectorStore(VectorStore):
     ) -> list[SearchResult]:
         """Retrieve documents by metadata filter without embedding search."""
         try:
-            return self._with_self_heal(
-                "get_by_metadata",
-                collection,
-                lambda store: store._get_by_metadata_once(collection, where, limit),
-            )
+            return self._get_by_metadata_once(collection, where, limit)
         except Exception as e:
             self._report_chroma_error(collection, e, "get_by_metadata")
             logger.debug(
@@ -907,11 +667,7 @@ class ChromaVectorStore(VectorStore):
         if not ids:
             return []
         try:
-            return self._with_self_heal(
-                "get_by_ids",
-                collection,
-                lambda store: store._get_by_ids_once(collection, ids),
-            )
+            return self._get_by_ids_once(collection, ids)
         except Exception as e:
             self._report_chroma_error(collection, e, "get_by_ids")
             logger.debug(
@@ -956,12 +712,25 @@ class ChromaVectorStore(VectorStore):
         return serialized
 
 
+def _clear_chroma_system_cache() -> None:
+    """Drop stopped PersistentClient systems before a MemoryService reopens."""
+    try:
+        from chromadb.api.client import SharedSystemClient
+
+        SharedSystemClient.clear_system_cache()
+    except Exception:
+        logger.debug("Failed to clear ChromaDB system cache", exc_info=True)
+
+
 def create_chroma_vector_store(
     *,
     persist_dir: Path | None = None,
     anima_name: str | None = None,
+    allow_direct: bool = False,
 ) -> ChromaVectorStore:
     """Create a guarded direct Chroma vector store."""
-    if anima_name is None:
-        return ChromaVectorStore(persist_dir=persist_dir)
-    return ChromaVectorStore(persist_dir=persist_dir, anima_name=anima_name)
+    return ChromaVectorStore(
+        persist_dir=persist_dir,
+        anima_name=anima_name,
+        allow_direct=allow_direct,
+    )

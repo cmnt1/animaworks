@@ -58,7 +58,7 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
 
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=capture_get_vs),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=capture_get_vs),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -88,7 +88,7 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -126,7 +126,7 @@ async def test_daily_indexing_includes_facts(tmp_path: Path) -> None:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -153,7 +153,7 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -178,7 +178,7 @@ async def test_daily_indexing_rebuilds_entity_collection(tmp_path: Path) -> None
 
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -204,7 +204,7 @@ async def test_daily_indexing_skips_repair_locked_anima(tmp_path: Path) -> None:
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.repair.is_repair_locked", return_value=True),
-        patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+        patch("core.memory.rag.vector_registry.get_vector_store") as mock_get_vs,
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -223,7 +223,7 @@ async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -251,7 +251,7 @@ async def test_daily_indexing_does_not_write_shared_hash_after_failure(tmp_path:
     mock_store = MagicMock()
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),
@@ -285,7 +285,7 @@ async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(t
     mock_store.collection_exists.return_value = CollectionExistence.UNAVAILABLE
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),
@@ -316,10 +316,10 @@ async def test_daily_indexing_skips_on_model_change(tmp_path: Path) -> None:
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
         patch(
-            "core.memory.rag.singleton.get_embedding_model_name",
+            "core.memory.rag.embedding.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
         ),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=track_chroma),
     ):
         await sup._run_daily_indexing()
 
@@ -346,11 +346,11 @@ async def test_daily_indexing_skips_on_e5_prefix_change(tmp_path: Path) -> None:
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
         patch(
-            "core.memory.rag.singleton.get_embedding_model_name",
+            "core.memory.rag.embedding.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
         ),
-        patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=track_chroma),
+        patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=track_chroma),
     ):
         await sup._run_daily_indexing()
 

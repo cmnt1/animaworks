@@ -435,8 +435,8 @@ def test_reconcile_config_and_vector_candidate_search(
                 SearchResult(Document(id="unknown", content="", metadata={"fact_id": "fact_unknown"}), 0.95),
             ]
 
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name: FakeVectorStore())
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
+    monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", lambda anima_name: FakeVectorStore())
+    monkeypatch.setattr("core.memory.rag.embedding.generate_embeddings", lambda texts, **_kwargs: [[0.1, 0.2]])
 
     candidates = fact_invalidation_module._search_fact_candidates(anima_dir, new, 5)
 

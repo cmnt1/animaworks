@@ -72,7 +72,7 @@ class RetrieverCache:
         try:
             from core.memory.rag import MemoryRetriever
             from core.memory.rag.indexer import MemoryIndexer
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             anima_name = anima_dir.name
             vector_store = get_vector_store(anima_name)

@@ -41,7 +41,7 @@ class TestInternalEmbed:
         mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
 
         with patch(
-            "core.memory.rag.singleton.get_embedding_model",
+            "core.memory.rag.embedding.get_embedding_model",
             return_value=mock_model,
         ):
             async with AsyncClient(
@@ -95,7 +95,7 @@ class TestInternalEmbed:
         mock_model.encode.return_value = np.array([[0.5, 0.6]])
 
         with patch(
-            "core.memory.rag.singleton.get_embedding_model",
+            "core.memory.rag.embedding.get_embedding_model",
             return_value=mock_model,
         ):
             async with AsyncClient(
@@ -114,7 +114,7 @@ class TestInternalEmbed:
     async def test_priority_is_passed_to_thread_safe_encode(self, app):
         """Embed endpoint should propagate priority to the singleton encoder."""
         with patch(
-            "core.memory.rag.singleton.thread_safe_encode",
+            "core.memory.rag.embedding.thread_safe_encode",
             return_value=[[0.7, 0.8]],
         ) as mock_encode:
             async with AsyncClient(
@@ -137,7 +137,7 @@ class TestInternalEmbed:
         mock_model.encode.return_value = np.array([[0.1]] * 1000)
 
         with patch(
-            "core.memory.rag.singleton.get_embedding_model",
+            "core.memory.rag.embedding.get_embedding_model",
             return_value=mock_model,
         ):
             async with AsyncClient(

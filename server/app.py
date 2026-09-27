@@ -689,7 +689,7 @@ async def _run_startup_initialization(app: FastAPI) -> None:
     app.state.worker_services_ready = False
     try:
         _prepare_child_env_urls(app)
-        from core.memory.rag.singleton import configure_server_vector_access
+        from core.memory.rag.vector_registry import configure_server_vector_access
 
         configure_server_vector_access(app.state.supervisor.send_request, asyncio.get_running_loop())
 
@@ -726,7 +726,7 @@ async def _run_model_warmup() -> None:
     20-30s cold-load penalty."""
 
     def _warm_native() -> None:
-        from core.memory.rag.singleton import thread_safe_encode
+        from core.memory.rag.embedding import thread_safe_encode
         from core.memory.retrieval.reranker import get_reranker
 
         thread_safe_encode(["ウォームアップ"], purpose="query")
@@ -1007,7 +1007,7 @@ async def lifespan(app: FastAPI):
         if governor:
             await governor.stop()
         await app.state.supervisor.shutdown_all()
-        from core.memory.rag.singleton import configure_server_vector_access
+        from core.memory.rag.vector_registry import configure_server_vector_access
 
         configure_server_vector_access(None)
         from core.paths import get_data_dir as _shutdown_get_data_dir

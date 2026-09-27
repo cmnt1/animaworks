@@ -95,7 +95,7 @@ class LegacyRAGBackend(MemoryBackend):
         """Return a lazily initialised :class:`VectorStore` (or ``None``)."""
         if self._vector_store is None:
             try:
-                from core.memory.rag.singleton import get_vector_store
+                from core.memory.rag.vector_registry import get_vector_store
 
                 self._vector_store = get_vector_store(self._anima_name)
             except Exception:

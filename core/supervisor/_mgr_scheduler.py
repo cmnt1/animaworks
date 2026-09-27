@@ -657,7 +657,7 @@ class SchedulerMixin:
 
         base_dir = self._get_data_dir()
 
-        from core.memory.rag.singleton import get_embedding_e5_prefix_enabled, get_embedding_model_name
+        from core.memory.rag.embedding import get_embedding_e5_prefix_enabled, get_embedding_model_name
 
         current_model = get_embedding_model_name()
         current_e5_prefix = get_embedding_e5_prefix_enabled()
@@ -697,7 +697,7 @@ class SchedulerMixin:
                     logger.warning("Skipping daily RAG indexing for %s: RAG repair lock is held", anima_name)
                     continue
 
-                from core.memory.rag.singleton import get_vector_store
+                from core.memory.rag.vector_registry import get_vector_store
 
                 vector_store = get_vector_store(anima_name)
                 if vector_store is None:

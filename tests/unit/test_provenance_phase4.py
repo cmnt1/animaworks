@@ -410,7 +410,7 @@ class TestConsolidationOrigin:
         mock_indexer = MagicMock()
         with (
             patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
         ):
             engine._update_rag_index(["test.md"])
 

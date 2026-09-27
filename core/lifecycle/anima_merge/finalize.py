@@ -303,7 +303,7 @@ class AnimaMergeFinalizeService:
             return []
         from core.memory.rag.store import create_chroma_vector_store
 
-        store = create_chroma_vector_store(persist_dir=vectordb, anima_name=self.source)
+        store = create_chroma_vector_store(persist_dir=vectordb, anima_name=self.source, allow_direct=True)
         removed: list[str] = []
         try:
             collections = store.list_collections()

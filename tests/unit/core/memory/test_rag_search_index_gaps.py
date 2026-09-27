@@ -99,7 +99,7 @@ class TestColdCatchupIndexing:
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_vector_store,
             ),
             patch(
@@ -162,7 +162,7 @@ class TestColdCatchupIndexing:
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_store,
             ),
             patch(

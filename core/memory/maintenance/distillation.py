@@ -352,7 +352,7 @@ class ProceduralDistiller:
         """Cluster activities using vector embeddings (cosine similarity)."""
         # Build text representations
         from core.memory.activity.format import entry_text
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         texts: list[str] = []
         for entry in entries:
@@ -611,7 +611,7 @@ class ProceduralDistiller:
         try:
             from core.memory.rag import MemoryIndexer
             from core.memory.rag.retriever import MemoryRetriever
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = get_vector_store(self.anima_name)
             if vector_store is None:

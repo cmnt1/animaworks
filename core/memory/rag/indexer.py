@@ -301,7 +301,7 @@ class MemoryIndexer:
 
     def _init_embedding_model(self) -> None:
         """Initialize sentence-transformers model via process-level singleton."""
-        from core.memory.rag.singleton import get_embedding_model
+        from core.memory.rag.embedding import get_embedding_model
 
         self.embedding_model = get_embedding_model(self._embedding_model_name_override)
 
@@ -737,7 +737,7 @@ class MemoryIndexer:
     def _document_embedding_signature() -> str | None:
         """Fingerprint the same model and input-prefix policy as the encoder."""
         from core.config import load_config
-        from core.memory.rag.singleton import get_embedding_model_name
+        from core.memory.rag.embedding import get_embedding_model_name
 
         try:
             rag = load_config().rag
@@ -1606,7 +1606,7 @@ class MemoryIndexer:
             return []
 
         logger.debug("Generating embeddings for %d texts", len(texts))
-        from core.memory.rag.singleton import generate_embeddings
+        from core.memory.rag.embedding import generate_embeddings
 
         resolved_priority = priority or ("interactive" if purpose == "query" else "bulk")
         return generate_embeddings(texts, purpose=purpose, priority=resolved_priority)

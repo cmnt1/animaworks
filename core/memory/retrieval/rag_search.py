@@ -127,7 +127,7 @@ class RAGMemorySearch:
         self._index_retry_at = None
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             anima_name = self._anima_dir.name
             vector_store = get_vector_store(anima_name)

@@ -53,6 +53,7 @@ def anima_dir(tmp_path, monkeypatch):
 
     # Invalidate cached paths/config so the monkeypatch takes effect
     from core.paths import _prompt_cache
+
     _prompt_cache.clear()
 
     anima_dir = data_dir / "animas" / "test_anima"
@@ -70,7 +71,7 @@ def vector_store(anima_dir):
     """Create a ChromaDB vector store persisted under the anima's vectordb dir."""
     from core.memory.rag.store import ChromaVectorStore
 
-    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
+    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=True)
     return store
 
 
@@ -300,20 +301,13 @@ def test_e2e_spreading_activation(anima_dir, vector_store, indexer, monkeypatch)
     has_error = any("error-handling" in d for d in all_doc_ids) or "エラー" in all_content
 
     # At minimum, the directly relevant files should be found
-    assert has_api or has_error, (
-        "Search should find api-design or error-handling content"
-    )
+    assert has_api or has_error, "Search should find api-design or error-handling content"
 
     # Spreading activation should bring in at least one linked neighbor
     # (either error-handling via api-design's link, or logging-policy via error-handling's link)
-    total_unique_files = len({
-        d.split("/")[-1].split("#")[0]
-        for d in all_doc_ids
-        if "/" in d
-    })
+    total_unique_files = len({d.split("/")[-1].split("#")[0] for d in all_doc_ids if "/" in d})
     assert total_unique_files >= 2, (
-        f"Spreading activation should expand results beyond a single file "
-        f"(found {total_unique_files} unique files)"
+        f"Spreading activation should expand results beyond a single file (found {total_unique_files} unique files)"
     )
 
 
@@ -469,9 +463,7 @@ def test_e2e_incremental_index_and_graph(anima_dir, vector_store, indexer, retri
 
     # The new file should be found
     has_new_file = any("query-optimization" in doc_id for doc_id in after_doc_ids)
-    assert has_new_file, (
-        f"New file should appear in search results. Found: {after_doc_ids}"
-    )
+    assert has_new_file, f"New file should appear in search results. Found: {after_doc_ids}"
 
 
 # ── Test 6: Priming Integration ──────────────────────────────────
@@ -539,17 +531,13 @@ def test_e2e_priming_integration(anima_dir, vector_store, indexer):
     has_activity = bool(result.recent_activity)
     has_knowledge = bool(result.related_knowledge)
 
-    assert has_activity or has_knowledge, (
-        "At least one priming channel should return content"
-    )
+    assert has_activity or has_knowledge, "At least one priming channel should return content"
 
     # Format for system prompt injection
     formatted = format_priming_section(result, sender_name="yamada")
 
     assert formatted, "Formatted priming section should not be empty"
-    assert "あなたが思い出していること" in formatted, (
-        "Formatted section should contain the standard header"
-    )
+    assert "あなたが思い出していること" in formatted, "Formatted section should contain the standard header"
 
     # Verify structural sections exist based on what was primed
     if has_activity:
@@ -615,9 +603,7 @@ def test_e2e_multi_memory_type(anima_dir, vector_store, indexer):
     assert len(knowledge_results) > 0, "Knowledge search should return results"
     # All results should be from the knowledge collection
     for r in knowledge_results:
-        assert "knowledge" in r.doc_id, (
-            f"Knowledge search result should be from knowledge collection: {r.doc_id}"
-        )
+        assert "knowledge" in r.doc_id, f"Knowledge search result should be from knowledge collection: {r.doc_id}"
 
     # Search episodes type
     episodes_results = retriever.search(
@@ -630,9 +616,7 @@ def test_e2e_multi_memory_type(anima_dir, vector_store, indexer):
     assert len(episodes_results) > 0, "Episodes search should return results"
     # All results should be from the episodes collection
     for r in episodes_results:
-        assert "episodes" in r.doc_id, (
-            f"Episodes search result should be from episodes collection: {r.doc_id}"
-        )
+        assert "episodes" in r.doc_id, f"Episodes search result should be from episodes collection: {r.doc_id}"
 
     # Verify content isolation: knowledge results should contain policy content
     knowledge_content = " ".join(r.content for r in knowledge_results)

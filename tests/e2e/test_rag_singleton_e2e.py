@@ -52,11 +52,11 @@ class TestMemoryManagerSingleton:
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_store,
             ) as mock_get_store,
             patch(
-                "core.memory.rag.singleton.get_embedding_model",
+                "core.memory.rag.embedding.get_embedding_model",
                 return_value=mock_model,
             ),
         ):
@@ -89,11 +89,11 @@ class TestMemoryManagerSingleton:
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 side_effect=per_anima_store,
             ) as mock_get_store,
             patch(
-                "core.memory.rag.singleton.get_embedding_model",
+                "core.memory.rag.embedding.get_embedding_model",
                 return_value=mock_model,
             ),
         ):
@@ -128,11 +128,11 @@ class TestMemoryManagerSingleton:
 
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_store,
             ),
             patch(
-                "core.memory.rag.singleton.get_embedding_model",
+                "core.memory.rag.embedding.get_embedding_model",
                 return_value=mock_model,
             ),
         ):

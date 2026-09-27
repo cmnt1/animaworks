@@ -203,8 +203,8 @@ class TestLifespan:
                 await asyncio.wait_for(mock_app.state._anima_startup_task, timeout=1.0)
                 mock_supervisor.start_all.assert_awaited_once_with(["alice"])
 
-                from core.memory.rag.singleton import get_vector_store
                 from core.memory.rag.vector_client import VectorClient
+                from core.memory.rag.vector_registry import get_vector_store
 
                 store = get_vector_store("alice")
                 assert isinstance(store, VectorClient)

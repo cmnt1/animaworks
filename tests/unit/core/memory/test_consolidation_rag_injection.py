@@ -75,7 +75,7 @@ class TestUpdateRagIndexInjection:
         with (
             patch("core.memory.rag.MemoryIndexer") as MockIndexer,
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
             ) as mock_get_vs,
         ):
             mock_indexer_inst = MagicMock()
@@ -101,7 +101,7 @@ class TestUpdateRagIndexInjection:
         with (
             patch("core.memory.rag.MemoryIndexer") as MockIndexer,
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
             ) as mock_get_vs,
         ):
             singleton_store = MagicMock()

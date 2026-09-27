@@ -539,7 +539,7 @@ class SkillCurator:
     def _purge_personal_skill_vectors(self, skill_name: str) -> None:
         """Best-effort deletion of already indexed personal skill chunks."""
         try:
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = get_vector_store(self.anima_dir.name)
             if vector_store is None:

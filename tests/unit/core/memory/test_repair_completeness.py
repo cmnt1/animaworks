@@ -19,7 +19,7 @@ def _entity_rebuild_fixture(tmp_path, monkeypatch, *, entities):
     registry = {"version": 1, "entities": entities}
     monkeypatch.setattr("core.memory.facts.entity_index.load_entity_registry", lambda _path: registry)
     monkeypatch.setattr(
-        "core.memory.rag.singleton.generate_embeddings",
+        "core.memory.rag.embedding.generate_embeddings",
         lambda texts, **kwargs: [[0.1, 0.2] for _ in texts],
     )
     store = MagicMock()

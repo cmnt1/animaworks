@@ -197,13 +197,13 @@ def sync_entity_collection(
         return True
     try:
         if vector_store is None:
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = get_vector_store(Path(anima_dir).name)
         if vector_store is None:
             return False
         if embedding_fn is None:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             def _default_embedding_fn(texts):
                 return generate_embeddings(texts, purpose="document", priority="bulk")
@@ -299,7 +299,7 @@ def _match_query_entities_from_collection(
 ) -> set[str]:
     try:
         if vector_store is None:
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = get_vector_store(Path(anima_dir).name)
         if vector_store is None:
@@ -312,7 +312,7 @@ def _match_query_entities_from_collection(
         if vector_store.collection_exists(collection) in {CollectionExistence.MISSING, CollectionExistence.UNAVAILABLE}:
             return set()
         if embedding_fn is None:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             def _default_embedding_fn(texts):
                 return generate_embeddings(texts, purpose="query", priority="interactive")

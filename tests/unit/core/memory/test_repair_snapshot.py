@@ -38,7 +38,7 @@ def sources(data_dir: Path, monkeypatch):
     (live / "old.marker").write_text("old database")
     monkeypatch.setattr(MemoryIndexer, "_init_embedding_model", lambda self: None)
     monkeypatch.setattr(
-        "core.memory.rag.singleton.generate_embeddings", lambda texts, **kwargs: [[0.1, 0.2] for _ in texts]
+        "core.memory.rag.embedding.generate_embeddings", lambda texts, **kwargs: [[0.1, 0.2] for _ in texts]
     )
     return anima
 
@@ -116,7 +116,7 @@ def test_failed_build_does_not_restore_over_a_concurrent_source_writer(sources, 
         changed.write_text("Concurrent writer's new source survives failed repair.")
         return [[0.1, 0.2] for _ in texts]
 
-    monkeypatch.setattr("core.memory.rag.singleton.generate_embeddings", encode)
+    monkeypatch.setattr("core.memory.rag.embedding.generate_embeddings", encode)
     with pytest.raises(RuntimeError, match=re.escape(t("rag.rebuild_input_changed"))):
         _build(sources)
     assert changed.read_text() == "Concurrent writer's new source survives failed repair."

@@ -402,8 +402,8 @@ class AnimaRunner:
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
         if supervisor is None or supervisor._memory_service is None:
             return
-        from core.memory.rag.singleton import configure_owner_vector_access
         from core.memory.rag.vector_ops import bridge_transport
+        from core.memory.rag.vector_registry import configure_owner_vector_access
 
         loop = asyncio.get_running_loop()
 
@@ -1090,7 +1090,7 @@ class AnimaRunner:
             await self._scheduler_mgr.shutdown_task_runners()
 
         if getattr(self, "_owner_vector_transport_installed", False):
-            from core.memory.rag.singleton import configure_owner_vector_access
+            from core.memory.rag.vector_registry import configure_owner_vector_access
 
             configure_owner_vector_access(None)
             self._owner_vector_transport_installed = False

@@ -16,9 +16,7 @@ from pathlib import Path
 
 import pytest
 
-chromadb = pytest.importorskip(
-    "chromadb", reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'"
-)
+chromadb = pytest.importorskip("chromadb", reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'")
 pytest.importorskip(
     "sentence_transformers",
     reason="sentence-transformers not installed. Install with: pip install 'animaworks[rag]'",
@@ -108,7 +106,7 @@ def vector_store(temp_dirs):
 
     vectordb_dir = anima_dir.parent.parent / "vectordb"
     vectordb_dir.mkdir(parents=True, exist_ok=True)
-    return ChromaVectorStore(persist_dir=vectordb_dir)
+    return ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
 
 
 # ── Test: Subdirectory files are indexed and searchable ─────────
@@ -127,15 +125,16 @@ def test_common_knowledge_subdirectory_indexing_and_search(temp_dirs, vector_sto
 
     # Index common_knowledge (recursive — including subdirectories)
     shared_indexer = MemoryIndexer(
-        vector_store, "shared", data_dir, collection_prefix="shared",
+        vector_store,
+        "shared",
+        data_dir,
+        collection_prefix="shared",
     )
     ck_chunks = shared_indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
 
     # All 4 files should be indexed: top-level-guide + organization/structure +
     # organization/roles + communication/messaging-guide
-    assert ck_chunks >= 4, (
-        f"Expected at least 4 chunks from 4 files (with heading sections), got {ck_chunks}"
-    )
+    assert ck_chunks >= 4, f"Expected at least 4 chunks from 4 files (with heading sections), got {ck_chunks}"
 
     # Verify collection exists
     collections = vector_store.list_collections()
@@ -143,7 +142,9 @@ def test_common_knowledge_subdirectory_indexing_and_search(temp_dirs, vector_sto
 
     # Search for content that only exists in a subdirectory file
     retriever = MemoryRetriever(
-        vector_store, personal_indexer, anima_dir / "knowledge",
+        vector_store,
+        personal_indexer,
+        anima_dir / "knowledge",
     )
     results = retriever.search(
         query="organization hierarchy CEO VPs directors",
@@ -156,13 +157,10 @@ def test_common_knowledge_subdirectory_indexing_and_search(temp_dirs, vector_sto
     assert len(results) > 0, "Search should return results"
 
     shared_results = [r for r in results if r.metadata.get("anima") == "shared"]
-    assert len(shared_results) > 0, (
-        "Should find results from shared common_knowledge subdirectory files"
-    )
+    assert len(shared_results) > 0, "Should find results from shared common_knowledge subdirectory files"
 
     found_org = any(
-        "organization" in str(r.metadata.get("source_file", "")).lower()
-        or "hierarchy" in r.content.lower()
+        "organization" in str(r.metadata.get("source_file", "")).lower() or "hierarchy" in r.content.lower()
         for r in shared_results
     )
     assert found_org, (
@@ -182,12 +180,17 @@ def test_common_knowledge_messaging_guide_searchable(temp_dirs, vector_store):
     personal_indexer.index_directory(anima_dir / "knowledge", "knowledge")
 
     shared_indexer = MemoryIndexer(
-        vector_store, "shared", data_dir, collection_prefix="shared",
+        vector_store,
+        "shared",
+        data_dir,
+        collection_prefix="shared",
     )
     shared_indexer.index_directory(ckdir, "common_knowledge")
 
     retriever = MemoryRetriever(
-        vector_store, personal_indexer, anima_dir / "knowledge",
+        vector_store,
+        personal_indexer,
+        anima_dir / "knowledge",
     )
     results = retriever.search(
         query="DM rate limits messaging rules recipients",
@@ -204,9 +207,7 @@ def test_common_knowledge_messaging_guide_searchable(temp_dirs, vector_store):
         or "recipients" in r.content.lower()
         for r in shared_results
     )
-    assert found_messaging, (
-        "Should find communication/messaging-guide.md content via RAG search"
-    )
+    assert found_messaging, "Should find communication/messaging-guide.md content via RAG search"
 
 
 # ── Test: Skills only index SKILL.md ────────────────────────────
@@ -219,7 +220,10 @@ def test_common_skills_only_indexes_skill_md(temp_dirs, vector_store):
     from core.memory.rag.indexer import MemoryIndexer
 
     shared_indexer = MemoryIndexer(
-        vector_store, "shared", data_dir, collection_prefix="shared",
+        vector_store,
+        "shared",
+        data_dir,
+        collection_prefix="shared",
     )
     cs_chunks = shared_indexer.index_directory(csdir, "common_skills").chunks_indexed
 
@@ -232,17 +236,15 @@ def test_common_skills_only_indexes_skill_md(temp_dirs, vector_store):
     # Use 384 (multilingual-e5-small dimension) for dummy query
     query_embedding = [0.0] * 384
     results = vector_store.query(
-        "shared_common_skills", query_embedding, top_k=20,
+        "shared_common_skills",
+        query_embedding,
+        top_k=20,
     )
 
     for r in results:
         sf = r.document.metadata.get("source_file", "")
-        assert "template" not in sf.lower(), (
-            f"Template file should not be indexed, found: {sf}"
-        )
-        assert sf.endswith("SKILL.md") or "SKILL" in sf, (
-            f"Only SKILL.md should be indexed, found: {sf}"
-        )
+        assert "template" not in sf.lower(), f"Template file should not be indexed, found: {sf}"
+        assert sf.endswith("SKILL.md") or "SKILL" in sf, f"Only SKILL.md should be indexed, found: {sf}"
 
 
 # ── Test: source_file metadata has subdirectory path ────────────
@@ -255,25 +257,25 @@ def test_source_file_metadata_includes_subdirectory(temp_dirs, vector_store):
     from core.memory.rag.indexer import MemoryIndexer
 
     shared_indexer = MemoryIndexer(
-        vector_store, "shared", data_dir, collection_prefix="shared",
+        vector_store,
+        "shared",
+        data_dir,
+        collection_prefix="shared",
     )
     shared_indexer.index_directory(ckdir, "common_knowledge")
 
     # Use 384 (multilingual-e5-small dimension) for dummy query
     query_embedding = [0.0] * 384
     results = vector_store.query(
-        "shared_common_knowledge", query_embedding, top_k=20,
+        "shared_common_knowledge",
+        query_embedding,
+        top_k=20,
     )
 
     source_files = {r.document.metadata.get("source_file", "") for r in results}
 
     has_subdir = any("/" in sf and "organization" in sf for sf in source_files)
-    assert has_subdir, (
-        f"Expected source_file with subdirectory path (organization/...), "
-        f"got: {source_files}"
-    )
+    assert has_subdir, f"Expected source_file with subdirectory path (organization/...), got: {source_files}"
 
     has_top_level = any("top-level-guide" in sf for sf in source_files)
-    assert has_top_level, (
-        f"Expected top-level file in source_files, got: {source_files}"
-    )
+    assert has_top_level, f"Expected top-level file in source_files, got: {source_files}"

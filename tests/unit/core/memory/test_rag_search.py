@@ -134,7 +134,7 @@ class TestGetIndexerLazyInit:
         )
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
             patch("core.memory.rag.MemoryIndexer") as indexer_cls,
             patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls,
             patch.object(rag, "_check_shared_collections") as check_shared,
@@ -161,7 +161,7 @@ class TestGetIndexerLazyInit:
         rag = RAGMemorySearch(anima_dir, common_knowledge_dir, common_skills_dir)
 
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
             patch("core.memory.rag.MemoryIndexer") as indexer_cls,
             patch.object(rag, "_check_shared_collections") as check_shared,
         ):

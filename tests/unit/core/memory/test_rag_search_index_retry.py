@@ -32,7 +32,7 @@ def test_failed_catchup_is_retried_after_cooldown(rag: RAGMemorySearch, failure:
     indexer = MagicMock()
     indexer.index_directory.side_effect = [failure, IndexDirectoryResult(files_indexed=1, chunks_indexed=1)]
     with (
-        patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
         patch("core.memory.rag.MemoryIndexer", return_value=indexer) as factory,
         patch.object(rag, "_check_shared_collections"),
         patch("core.memory.retrieval.rag_search.time.monotonic", return_value=100.0) as clock,
@@ -55,7 +55,7 @@ def test_unavailable_store_can_recover_without_process_restart(rag: RAGMemorySea
     indexer = MagicMock()
     indexer.index_directory.return_value = IndexDirectoryResult()
     with (
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=[None, object()]) as store,
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=[None, object()]) as store,
         patch("core.memory.rag.MemoryIndexer", return_value=indexer),
         patch.object(rag, "_check_shared_collections"),
         patch("core.memory.retrieval.rag_search.time.monotonic", return_value=100.0) as clock,
@@ -92,7 +92,7 @@ def test_concurrent_first_access_initializes_only_once(rag: RAGMemorySearch) -> 
     indexer = MagicMock()
     indexer.index_directory.return_value = IndexDirectoryResult()
     with (
-        patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
         patch("core.memory.rag.MemoryIndexer", return_value=indexer) as factory,
         patch.object(rag, "_check_shared_collections"),
         ThreadPoolExecutor(max_workers=4) as pool,
@@ -106,7 +106,7 @@ def test_task_runner_store_recovery_never_runs_automatic_indexing(rag: RAGMemory
     rag._auto_index_on_access = False
     indexer = MagicMock()
     with (
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=[None, object()]),
+        patch("core.memory.rag.vector_registry.get_vector_store", side_effect=[None, object()]),
         patch("core.memory.rag.MemoryIndexer", return_value=indexer),
         patch.object(rag, "_check_shared_collections") as shared,
         patch("core.memory.retrieval.rag_search.time.monotonic", return_value=100.0) as clock,
@@ -121,7 +121,7 @@ def test_task_runner_store_recovery_never_runs_automatic_indexing(rag: RAGMemory
 def test_slow_failed_catchup_cools_down_from_completion(rag: RAGMemorySearch) -> None:
     indexer = MagicMock()
     with (
-        patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
         patch("core.memory.rag.MemoryIndexer", return_value=indexer),
         patch.object(rag, "_check_shared_collections"),
         patch("core.memory.retrieval.rag_search.time.monotonic", return_value=100.0) as clock,
@@ -147,7 +147,7 @@ def test_summary_fail_soft_result_schedules_retry(rag: RAGMemorySearch) -> None:
     indexer.index_conversation_summary.return_value = 0
     indexer._last_index_file_outcome = SimpleNamespace(status="failed")
     with (
-        patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=object()),
         patch("core.memory.rag.MemoryIndexer", return_value=indexer),
         patch.object(rag, "_check_shared_collections"),
         patch("core.memory.retrieval.rag_search.time.monotonic", return_value=100.0),

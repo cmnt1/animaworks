@@ -444,48 +444,30 @@ async def test_phase3_task_runner_process_smoke(
 
 def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
     repo = Path(__file__).resolve().parents[3]
-    boundary_allowlist = {
-        "constructor": {"core/memory/rag/store.py"},
-        "root": {"core/supervisor/memory_service.py"},
-        "staging": {"core/memory/rag/repair_rebuild.py"},
-        "direct_env": {"core/memory/rag/repair_rebuild.py"},
+    direct_factory_callers = {
+        "core/supervisor/memory_service.py",
+        "core/memory/rag/repair_rebuild.py",
+        "core/lifecycle/anima_merge/finalize.py",
     }
-    constructors: set[str] = set()
-    direct_access_enablers: set[str] = set()
+    persistent_client_callers: set[str] = set()
+    factory_callers: set[str] = set()
     direct_env_writers: set[str] = set()
 
     for path in (repo / "core").rglob("*.py"):
         relative = path.relative_to(repo).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
-        chromadb_aliases = {"chromadb"}
-        persistent_aliases: set[str] = set()
-        enable_aliases = {"enable_direct_chroma_for_process"}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                chromadb_aliases.update(alias.asname or alias.name for alias in node.names if alias.name == "chromadb")
-            elif isinstance(node, ast.ImportFrom) and node.module == "chromadb":
-                persistent_aliases.update(
-                    alias.asname or alias.name for alias in node.names if alias.name == "PersistentClient"
-                )
-            elif isinstance(node, ast.ImportFrom) and node.module == "core.memory.rag.direct_access":
-                enable_aliases.update(
-                    alias.asname or alias.name
-                    for alias in node.names
-                    if alias.name == "enable_direct_chroma_for_process"
-                )
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                named_constructor = isinstance(node.func, ast.Name) and node.func.id in persistent_aliases
-                qualified_constructor = (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "PersistentClient"
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id in chromadb_aliases
-                )
-                if named_constructor or qualified_constructor:
-                    constructors.add(relative)
-                elif isinstance(node.func, ast.Name) and node.func.id in enable_aliases:
-                    direct_access_enablers.add(relative)
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "PersistentClient":
+                    persistent_client_callers.add(relative)
+                if isinstance(node.func, ast.Name) and node.func.id == "create_chroma_vector_store":
+                    factory_callers.add(relative)
+                    assert any(
+                        keyword.arg == "allow_direct"
+                        and isinstance(keyword.value, ast.Constant)
+                        and keyword.value.value is True
+                        for keyword in node.keywords
+                    )
             elif (
                 isinstance(node, ast.Subscript)
                 and isinstance(node.ctx, ast.Store)
@@ -494,10 +476,9 @@ def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
             ):
                 direct_env_writers.add(relative)
 
-    assert constructors == boundary_allowlist["constructor"]
-    assert direct_access_enablers == boundary_allowlist["root"]
-    assert direct_env_writers == boundary_allowlist["direct_env"]
-    assert boundary_allowlist["staging"] <= direct_env_writers
+    assert persistent_client_callers == {"core/memory/rag/store.py"}
+    assert factory_callers == direct_factory_callers
+    assert direct_env_writers == set()
 
 
 if __name__ == "__main__" and os.environ.get("ANIMAWORKS_PHASE3_DRAIN_HARNESS"):
