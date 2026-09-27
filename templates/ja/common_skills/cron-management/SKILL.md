@@ -211,7 +211,7 @@ args:
   text: "おはようございます！"
 ```
 
-- `tool:` にツール名（`get_tool_schemas()` / `permissions.md` で許可されたスキーマ名。例: Slack 投稿は `slack_channel_post` など）
+- `tool:` にツール名（`permissions.json` の許可設定に含まれるスキーマ名。例: Slack 投稿は `slack_channel_post` など）
 - `args:` 以降はYAMLブロック形式でインデント2スペース
 - `ToolHandler.handle(tool, args)` で実行され、結果文字列が stdout 相当として扱われる
 

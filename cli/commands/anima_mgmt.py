@@ -674,10 +674,10 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
     )
 
     if not args.status_only:
-        # Re-apply role template files (specialty_prompt.md, permissions.md)
+        # Re-apply role template files (specialty_prompt.md, permissions.json)
         _apply_role_defaults(anima_dir, new_role)
         print(f"Role changed: {old_role} → {new_role}")
-        print("  Updated: status.json, specialty_prompt.md, permissions.md")
+        print("  Updated: status.json, specialty_prompt.md, permissions.json")
     else:
         print(f"Role changed: {old_role} → {new_role} (status.json only)")
 

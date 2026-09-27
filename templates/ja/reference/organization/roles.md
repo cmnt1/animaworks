@@ -227,7 +227,6 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
 | `model` | チャット・タスク実行用モデル | 全ロール |
 | `background_model` | ハートビート・cron 等バックグラウンド用モデル | engineer / manager のみ（他ロールはキーなし） |
 | `context_threshold` | コンパクション閾値 | 全ロール |
-| `max_turns` | 最大ターン数 | 全ロール |
 | `conversation_history_threshold` | 会話履歴圧縮閾値 | 全ロール（テンプレートでは 0.30〜0.40） |
 | `max_outbound_per_hour` | 1時間あたりの送信上限（DM・Board） | レート制限 |
 | `max_outbound_per_day` | 1日あたりの送信上限 | レート制限 |
@@ -239,14 +238,14 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
 
 モデル・実行パラメータ:
 
-| ロール | model | background_model | context_threshold | max_turns | conversation_history_threshold |
-|--------|-------|------------------|-------------------|-----------|----------------------------------|
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 10000 | 0.30 |
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 10000 | 0.40 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 10000 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 10000 | 0.30 |
-| ops | ollama/glm-4.7 | — | 0.50 | 10000 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 10000 | 0.30 |
+| ロール | model | background_model | context_threshold | conversation_history_threshold |
+|--------|-------|------------------|-------------------|----------------------------------|
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
+| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
+| ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
+| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
 メッセージング上限（`defaults.json` 内のレート関連）:
 
@@ -267,7 +266,7 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
    - `_apply_defaults_from_sheet()` … キャラシートから `identity.md` / `injection.md` /（権限セクションがあれば）`permissions.md` → `permissions.json` へマイグレーション
    - `_apply_role_defaults()` … ロールの `permissions.json` と `specialty_prompt.md` を **上書きコピー**（キャラシート由来の `permissions.json` はロール側で上書きされる）
    - `_create_status_json()` … `SHARED_ROLES_DIR`（`_shared/roles/<role>/defaults.json`）から上表のキーをすべて読み、キャラシートの「モデル」「credential」があればそれで上書きして `status.json` を書く。キャラシートの「実行モード」に値があるときだけ `execution_mode` を書き込む；未指定ならキー自体を省略し、`models.json` 等のパターン解決に任せる（`core/anima/factory.py` の `_create_status_json`）。
-2. **ロール変更時**（`animaworks anima set-role`）: `_apply_role_defaults()` で `permissions.json` と `specialty_prompt.md` を再コピー。`status.json` には `model`, `context_threshold`, `max_turns`, `conversation_history_threshold` のみ `defaults.json` からマージされる。`background_model` と `max_outbound_*` は **set-role では更新されない**（必要なら手動で `status.json` を編集する）。`--status-only` は `role` フィールドと上記数値キーのみ更新しテンプレートファイルは触れない。`--no-restart` で API 経由の自動再起動をスキップできる。CLI の成功メッセージに `permissions.md` と出るが、実際に上書きされるのは **`permissions.json`**（`cli/commands/anima_mgmt.py` の `cmd_anima_set_role`）。
+2. **ロール変更時**（`animaworks anima set-role`）: `_apply_role_defaults()` で `permissions.json` と `specialty_prompt.md` を再コピー。`status.json` には `model`, `context_threshold`, `conversation_history_threshold` が `defaults.json` からマージされる。`background_model` と `max_outbound_*` は **set-role では更新されない**（必要なら手動で `status.json` を編集する）。`--status-only` は `role` のみ更新しテンプレートファイルには触れない。`--no-restart` で API 経由の自動再起動をスキップできる。CLI の成功出力には `permissions.json` が含まれる（`cli/commands/anima_mgmt.py` の `cmd_anima_set_role`）。
 
 ### プロンプト注入
 

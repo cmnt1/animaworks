@@ -209,3 +209,55 @@ class TestUnreadMessagesTemplate:
             content = load_prompt_text("unread_messages", locale=locale)
             assert "delegate_task" not in content
             assert "thread_id" not in content
+
+
+class TestRuntimeTemplateAccuracy:
+    def test_ja_templates_have_no_retired_or_invalid_runtime_references(self):
+        forbidden = (
+            "deadline=",
+            "sync_delegated",
+            "OVERDUE",
+            "dynamic_budget",
+            "budget_greeting",
+            "export-sections",
+            "animaworks slack ",
+            "migrate --resync-db",
+            "max_chains",
+            "max_turns",
+            "Max Chains",
+            "Max Turns",
+        )
+        for path in (TEMPLATES_ROOT / "ja").rglob("*.md"):
+            content = path.read_text(encoding="utf-8")
+            for term in forbidden:
+                assert term not in content, f"{path} contains retired reference {term!r}"
+
+    def test_tool_usage_overview_lists_every_exposed_mcp_tool(self):
+        from core.mcp.server import _EXPOSED_TOOL_NAMES
+
+        overview = (TEMPLATES_ROOT / "ja" / "reference" / "operations" / "tool-usage-overview.md").read_text(
+            encoding="utf-8"
+        )
+        missing = sorted(name for name in _EXPOSED_TOOL_NAMES if name not in overview)
+        assert not missing, f"MCP tools missing from the reference: {missing}"
+
+    def test_ja_templates_do_not_contain_organization_specific_anima_names(self):
+        ja_root = TEMPLATES_ROOT / "ja"
+        for path in ja_root.rglob("*.md"):
+            if "anima_templates" in path.relative_to(ja_root).parts:
+                continue
+            content = path.read_text(encoding="utf-8")
+            assert not re.search(r"\btaka\b", content), f"{path} contains an organization-specific name"
+
+    def test_delegate_task_required_arguments_match_the_subordinate_guide(self):
+        from core.tooling.schemas.supervisor import _supervisor_tools
+
+        schema = next(tool for tool in _supervisor_tools() if tool["name"] == "delegate_task")
+        required = set(schema["parameters"]["required"])
+        guide = (TEMPLATES_ROOT / "ja" / "common_skills" / "subordinate-management" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        required_line = next(line for line in guide.splitlines() if line.startswith("# 必須:"))
+        required_text = required_line.split("任意:", maxsplit=1)[0]
+        documented = set(re.findall(r"`([a-z_]+)`", required_text))
+        assert documented == required

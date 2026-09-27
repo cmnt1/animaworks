@@ -133,7 +133,7 @@ send_message(
 
 一度きりの作業を**直属部下**に委譲する場合、`delegate_task` を使用する。タスクキューに追加され、進捗を `task_tracker` で追跡できる。
 
-必須パラメータ: `name`（委譲先）、`instruction`（指示内容）、`deadline`（期限。相対形式 `30m`/`2h`/`1d` または ISO8601）。オプション: `summary`（1行要約）。
+必須パラメータ: `name`（委譲先）、`instruction`（指示内容）。任意: `summary`（1行要約）、`workspace`、`acceptance_criteria`、`model`。期限がある場合は `instruction` 本文に記載する。
 
 ```
 delegate_task(
@@ -146,7 +146,6 @@ delegate_task(
 - 変更の詳細: /shared/docs/changelog-v2.1.md を参照
 
 完了したら返答をお願いします。""",
-    deadline="2d",
     summary="API仕様書 v2.1 反映"
 )
 ```

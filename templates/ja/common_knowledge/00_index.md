@@ -193,7 +193,6 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | 役割, 責任, speciality, 専門 | `reference/organization/roles.md` |
 | 階層, 通信経路, org_dashboard, ping_subordinate | `organization/hierarchy-rules.md` |
 | delegate_task, タスク委譲, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
-| sync_delegated, 委譲同期, 自動同期 | `reference/operations/task-management.md`, `operations/task-delegation-guide.md` |
 | タスク, current_state, pending, 進捗, 優先順位 | `reference/operations/task-management.md` |
 | タスクキュー, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
 | タスクボード, ダッシュボード, 人間向け | `operations/task-board-guide.md` |

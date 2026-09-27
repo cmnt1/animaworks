@@ -190,7 +190,7 @@ Curator の昇格・退役は既定で提案だけです。安全上のブロッ
 1. **インデックス**: `knowledge/`・`episodes/`・`procedures/`・共有 `common_knowledge/` などがチャンク化され、embedding でベクトルストア（既定では Chroma、Anima ごとの永続ディレクトリ）に格納される。ファイルハッシュを `index_meta.json` に保持し、**変更のあったファイルだけ**を差分更新する。
 2. **会話要約の別コレクション**: `state/conversation.json` の **`compressed_summary`** を読み、`### ` 見出し単位でチャンク化し、**専用コレクション**（`memory_type: conversation_summary` / メタデータ `source: conversation_gist`）に載せる。通常の knowledge インデックスとは別枠で、長期チャットの圧縮メモを検索対象に含められる。
 3. **`.ragignore`**: データディレクトリ（`~/.animaworks/`）直下の `.ragignore` に glob 風パターンを書くと、該当パスはインデックス対象から除外される（コメント行 `#` 可）。
-4. **Embedding モデル**: `config.json` の `rag.embedding_model`（未設定時は `intfloat/multilingual-e5-small`）。ChromaDB と埋め込み処理は通常 vector worker 経由で隔離され、必要に応じてサーバーや一時ワーカーに委譲される。
+4. **Embedding モデル**: `config.json` の `rag.embedding_model`（未設定時は `intfloat/multilingual-e5-small`）。ベクトル DB（ChromaDB）は各 Anima の root プロセスが所有し、他のプロセスはサーバーの内部 API（`/api/internal/vector`）経由で root に届ける。埋め込みと rerank はサーバー1か所で計算する。
 5. **検索**: クエリをベクトル化し、類似度と**時間減衰**・参照頻度などを組み合わせてランキングする。`config.json` の `rag.min_retrieval_score` で結果の下限を切れる。Priming やツール経由の検索でも同じ下限が解決される。
 6. **グラフ拡散**: `config.json` の `rag.enable_spreading_activation`（既定 true）と `rag.spreading_memory_types` で、知識グラフによる **spreading activation** を制御できる。
 7. **増分更新と再構築**: ファイル変更に応じた再インデックスに加え、日次・週次・月次のライフサイクル後に **インデックス再構築** が走り整合を取る。RAG不整合が検出された場合は、repair が `vectordb` を隔離して再構築できる。

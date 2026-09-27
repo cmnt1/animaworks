@@ -1,1 +1,1 @@
-シェルコマンドを実行する（permissions.mdの許可リスト内）。
+シェルコマンドを実行する（permissions.json と permissions.global.json の許可設定に従う）。

@@ -44,7 +44,7 @@ submit_tasks(batch_id="build", tasks=[
 委譲先の部下がそのワークスペースで作業する。
 
 ```
-delegate_task(name="aoi", instruction="API テストを実施して", deadline="2d", workspace="myproject")
+delegate_task(name="aoi", instruction="API テストを実施して", workspace="myproject")
 ```
 
 ## 登録と割り当て
