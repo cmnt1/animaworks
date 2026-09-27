@@ -33,6 +33,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+from core.mcp.trigger_tools import SKILL_MANAGEMENT_TOOLS, is_full_tool_trigger
 from core.tooling.handler_base import active_session_type
 from core.tooling.schemas import submit_tasks_enabled_for_trigger
 
@@ -88,6 +89,21 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "create_anima",
     }
 )
+
+# Skill-management tools are only advertised during full-activity triggers
+# (heartbeat / consolidation).  See core.mcp.trigger_tools for rationale.
+_SKILL_MANAGEMENT_TOOL_NAMES: frozenset[str] = frozenset(SKILL_MANAGEMENT_TOOLS)
+
+
+def _trigger_scoped_tool_names(trigger: str) -> frozenset[str]:
+    """Return the default exposed tool names for *trigger*.
+
+    Full-activity triggers (heartbeat / consolidation) keep every tool;
+    other triggers drop the skill-management tools.
+    """
+    from core.mcp.trigger_tools import scoped_tool_names
+
+    return frozenset(scoped_tool_names(_EXPOSED_TOOL_NAMES, trigger))
 
 
 def _get_supervisor_tool_names() -> frozenset[str]:
@@ -561,6 +577,22 @@ _TOOL_TIMEOUT_OVERRIDES: dict[str, float] = {
 }
 
 
+def _mcp_tools_env_for_trigger(trigger: str, *, enabled: bool) -> str | None:
+    """Return the ANIMAWORKS_MCP_TOOLS value for *trigger*, or None to leave unset.
+
+    When *enabled* is False (config ``mcp.trigger_scoped_tools``), the server
+    keeps its previous behaviour (everything exposed) and we return None so the
+    subprocess uses its full default set.  When enabled and the trigger is
+    full (heartbeat / consolidation) we also leave it unset so the subprocess
+    advertises everything.  Only scoped triggers pin an explicit list.
+    """
+    if not enabled or is_full_tool_trigger(trigger):
+        return None
+    from core.mcp.trigger_tools import scoped_tool_list
+
+    return scoped_tool_list(_EXPOSED_TOOL_NAMES, trigger)
+
+
 def _resolve_tool_timeout(name: str) -> float | None:
     """Resolve the overall timeout (seconds) for a tool call.
 
@@ -583,6 +615,19 @@ def _resolve_tool_timeout(name: str) -> float | None:
 
 
 # ── MCP handlers ─────────────────────────────────────────
+
+
+def _tool_not_found_message(name: str) -> str:
+    """Build a localized "not exposed" message for *name*.
+
+    For skill-management tools (only advertised during heartbeat /
+    consolidation) an extra sentence explains when they become available.
+    """
+    from core.i18n import t as _t
+
+    if name in _SKILL_MANAGEMENT_TOOL_NAMES:
+        return _t("mcp.tool_not_exposed.skill_curation", tool=name)
+    return _t("mcp.tool_not_exposed", tool=name)
 
 
 def _is_consolidation_mode() -> bool:
@@ -622,9 +667,18 @@ def _runtime_blocked_tool_names() -> frozenset[str]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """Return exposed AnimaWorks tools, filtering supervisor/admin tools dynamically."""
+    """Return exposed AnimaWorks tools, filtering supervisor/admin tools dynamically.
+
+    The full MCP_TOOLS list may already be trigger-scoped by the parent
+    process via the ``ANIMAWORKS_MCP_TOOLS`` env var.  As defense-in-depth
+    we re-apply the same trigger scoping from ``ANIMAWORKS_TRIGGER`` so the
+    set is correct even if the subprocess is reused across sessions.
+    """
+    trigger = (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
+    scoped = _trigger_scoped_tool_names(trigger)
+    tools = [t for t in MCP_TOOLS if t.name in scoped]
     blocked = _runtime_blocked_tool_names()
-    tools = [t for t in MCP_TOOLS if t.name not in blocked]
+    tools = [t for t in tools if t.name not in blocked]
     if not _has_subordinates_for_anima():
         tools = [t for t in tools if t.name not in _SUPERVISOR_TOOL_NAMES]
     if not _has_newstaff_skill_for_anima():
@@ -702,7 +756,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
                     {
                         "status": "error",
                         "error_type": "ToolNotFound",
-                        "message": f"Tool '{name}' is not exposed via MCP",
+                        "message": _tool_not_found_message(name),
                     },
                     ensure_ascii=False,
                 ),

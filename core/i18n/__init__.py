@@ -84,6 +84,20 @@ _STRINGS.update(
                 "Do not re-notify humans (call_human) about this resolved matter."
             ),
         },
+        "mcp.tool_not_exposed": {
+            "ja": "ツール '{tool}' はこの実行モードでは公開されていません",
+            "en": "Tool '{tool}' is not exposed in this execution mode",
+        },
+        "mcp.tool_not_exposed.skill_curation": {
+            "ja": (
+                "ツール '{tool}' はスキル整理用のため、この実行では公開されていません。"
+                "heartbeat / consolidation 実行中は利用できます。"
+            ),
+            "en": (
+                "Tool '{tool}' is a skill-management tool and is not exposed in this run. "
+                "It is available during heartbeat / consolidation runs."
+            ),
+        },
     }
 )
 

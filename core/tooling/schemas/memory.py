@@ -135,9 +135,8 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                 "to": {
                     "type": "string",
                     "description": (
-                        "Recipient name. Can be an anima name (e.g. 'sakura') "
-                        "or a human alias (e.g. 'user', 'owner'). "
-                        "Messages to human aliases are automatically delivered "
+                        "Recipient name: an anima name (e.g. 'sakura') or a human "
+                        "alias (e.g. 'user', 'owner'). Human aliases are delivered "
                         "via the configured external channel."
                     ),
                 },
@@ -147,13 +146,10 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                 "intent": {
                     "type": "string",
                     "description": (
-                        "Message intent (REQUIRED for DM). "
-                        "Permitted values: 'report', 'question' only. "
-                        "'report' = status/result to supervisor, "
-                        "'question' = ask a specific question requiring a response. "
-                        "For task assignment use delegate_task. "
-                        "Acknowledgments, thanks, and FYI must use "
-                        "post_channel (Board) instead of DM."
+                        "Message intent (REQUIRED for DM), permitted values: "
+                        "'report' (status/result to supervisor) or 'question' "
+                        "(ask a specific question). For task assignment use "
+                        "delegate_task; acknowledgments and FYI use post_channel."
                     ),
                 },
             },

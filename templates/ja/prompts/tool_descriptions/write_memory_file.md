@@ -1,10 +1,1 @@
-自分の記憶ディレクトリ内のファイルに書き込みまたは追記する。
-以下の場面で記録すべき:
-- 問題を解決した → knowledge/ に原因と解決策を記録
-- 正しいパラメータ・設定値を発見した → knowledge/ に記録
-- 作業手順を確立・改善した → procedures/ に手順書を作成
-- 新しい再利用可能な能力を習得した → create_skill で skills/{name}/SKILL.md を作成
-- 送信・投稿・通知・記憶書き込み前の確認ルールが必要 → knowledge/action-rule-*.md に [ACTION-RULE] と trigger_tools を記録
-- heartbeat.md や cron.md の更新
-mode='overwrite' で全体置換、mode='append' で末尾追記。
-自動統合（日次consolidation）を待たず、重要な発見は即座に書き込むこと。
+自分の記憶ディレクトリ内のファイルに書き込みまたは追記する。記録すべき時: 問題解決→knowledge/に原因と解決策、正しい設定値→knowledge/、手順確立→procedures/、新能力→create_skillで skills/{name}/SKILL.md を作成、送信・投稿前の確認ルール→knowledge/action-rule-*.md に [ACTION-RULE] と trigger_tools、heartbeat.md / cron.md の更新。mode='overwrite' で全体置換、mode='append' で末尾追記。重要な発見はconsolidationを待たず即座に書き込む。

@@ -763,6 +763,16 @@ class LlmRateGuardConfig(BaseModel):
     max_quota_block_seconds: int = Field(default=14400, ge=0)
 
 
+class MCPConfig(BaseModel):
+    """Configuration for the Mode S aw MCP server tool exposure."""
+
+    # Limit the advertised aw MCP tool set by trigger: interactive triggers
+    # (chat / inbox / cron / task) skip the skill-management tools, while
+    # heartbeat / consolidation still receive the full set.  Set False to
+    # always expose every tool (previous behaviour).
+    trigger_scoped_tools: bool = True
+
+
 class BackgroundToolConfig(BaseModel):
     """Per-tool background execution threshold."""
 
@@ -1407,6 +1417,7 @@ class AnimaWorksConfig(BaseModel):
     interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
     llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
+    mcp: MCPConfig = MCPConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     external_tasks: ExternalTasksConfig = Field(default_factory=ExternalTasksConfig)
     github_webhook: GitHubWebhookConfig = GitHubWebhookConfig()
@@ -1478,6 +1489,7 @@ __all__ = [
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
+    "MCPConfig",
     "MediaProxyConfig",
     "MemoryConfig",
     "Neo4jConfig",
