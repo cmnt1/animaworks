@@ -12,16 +12,16 @@ file saving, truncation, and cleanup behavior.
 import subprocess
 from pathlib import Path
 
-from core.execution.engines.claude.agent_sdk import (
+from core.execution.engines.claude._sdk_security import (
     _BASH_HEAD_BYTES,
     _BASH_TAIL_BYTES,
     _BASH_TRUNCATE_BYTES,
     _GLOB_DEFAULT_HEAD_LIMIT,
     _GREP_DEFAULT_HEAD_LIMIT,
     _READ_DEFAULT_LIMIT,
-    _cleanup_tool_outputs,
     _guard_bash,
 )
+from core.execution.engines.claude._sdk_session import _cleanup_tool_outputs
 
 
 class TestBashGuardE2E:

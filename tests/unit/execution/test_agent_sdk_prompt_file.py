@@ -123,7 +123,7 @@ class TestPromptFileFallback:
     def test_threshold_boundary_no_file(self, model_config, anima_dir):
         """Prompt at exactly the threshold does not trigger file fallback."""
         executor = _make_executor(model_config, anima_dir)
-        from core.execution.engines.claude.agent_sdk import _PROMPT_FILE_THRESHOLD
+        from core.execution.engines.claude._sdk_session import _PROMPT_FILE_THRESHOLD
 
         # ASCII: 1 byte per char
         boundary_prompt = "X" * _PROMPT_FILE_THRESHOLD
@@ -141,7 +141,7 @@ class TestPromptFileFallback:
     def test_threshold_boundary_plus_one_creates_file(self, model_config, anima_dir):
         """Prompt one byte over the threshold triggers file fallback."""
         executor = _make_executor(model_config, anima_dir)
-        from core.execution.engines.claude.agent_sdk import _PROMPT_FILE_THRESHOLD
+        from core.execution.engines.claude._sdk_session import _PROMPT_FILE_THRESHOLD
 
         over_prompt = "X" * (_PROMPT_FILE_THRESHOLD + 1)
         with patch_agent_sdk():

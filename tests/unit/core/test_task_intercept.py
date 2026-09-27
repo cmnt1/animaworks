@@ -24,7 +24,7 @@ class TestPreToolHookTaskBranch:
         except ImportError:
             pytest.skip("claude_agent_sdk not installed")
 
-        from core.execution.engines.claude.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         anima_dir = tmp_path / "animas" / "hook_test"
         anima_dir.mkdir(parents=True)
@@ -43,7 +43,7 @@ class TestPreToolHookTaskBranch:
         except ImportError:
             pytest.skip("claude_agent_sdk not installed")
 
-        from core.execution.engines.claude.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         anima_dir = tmp_path / "animas" / "hook_cb_test"
         anima_dir.mkdir(parents=True)

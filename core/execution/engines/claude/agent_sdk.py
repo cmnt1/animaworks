@@ -41,78 +41,29 @@ if TYPE_CHECKING:
 
 from pathlib import Path
 
-from core.exceptions import ExecutionError, LLMAPIError, MemoryWriteError  # noqa: F401
-
 # ── Re-exports from submodules (backward compatibility) ──────
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
 from core.execution.engines.claude import _sdk_session
-from core.execution.engines.claude._sdk_hooks import (  # noqa: F401
-    _build_post_tool_hook,
-    _build_pre_compact_hook,
-    _build_pre_tool_hook,
-    _cache_subordinate_paths,
-)
-from core.execution.engines.claude._sdk_interrupt import (  # noqa: F401
-    _graceful_interrupt_blocking,
-    _graceful_interrupt_stream,
-)
-from core.execution.engines.claude._sdk_options import SDKOptionsMixin  # noqa: F401
-from core.execution.engines.claude._sdk_security import (  # noqa: F401
-    _BASH_HEAD_BYTES,
-    _BASH_TAIL_BYTES,
-    _BASH_TRUNCATE_BYTES,
-    _GLOB_DEFAULT_HEAD_LIMIT,
-    _GREP_DEFAULT_HEAD_LIMIT,
-    _PROTECTED_FILES,
-    _READ_DEFAULT_LIMIT,
-    _WRITE_COMMANDS,
-    _build_output_guard,
-    _check_a1_bash_command,
-    _check_a1_file_access,
-    _guard_bash,
-    _guard_glob,
-    _guard_grep,
-    _guard_read,
-)
-from core.execution.engines.claude._sdk_session import (  # noqa: F401
-    _CONTEXT_AUTOCOMPACT_SAFETY,
-    _PROMPT_FILE_THRESHOLD,
+from core.execution.engines.claude._sdk_interrupt import _graceful_interrupt_blocking
+from core.execution.engines.claude._sdk_options import SDKOptionsMixin
+from core.execution.engines.claude._sdk_session import (
     _RESUMABLE_SESSION_TYPES,
-    _SDK_MAX_BUFFER_SIZE,
     COMPACT_TIMEOUT_SEC,
-    INTERRUPT_TIMEOUT_SEC,
     RESUME_TIMEOUT_SEC,
-    SESSION_TYPE_CHAT,
-    SESSION_TYPE_CRON,
-    SESSION_TYPE_HEARTBEAT,
-    SESSION_TYPE_INBOX,
-    SESSION_TYPE_TASK,
-    SessionContextState,
     _build_sdk_query_input,
     _cleanup_prompt_files,
     _cleanup_tool_outputs,
-    _clear_session_id,
-    _image_prompt_messages,
-    _is_debug_superuser,
     _load_session_id,
     _resolve_session_type,
     _save_session_id,
-    _session_file,
-    clear_session_id_for_type,
     compact_sdk_session,
-    load_session_state,
-    record_session_measurement,
 )
-from core.execution.engines.claude._sdk_stream import (  # noqa: F401
+from core.execution.engines.claude._sdk_stream import (
     StreamingContext,
     StreamingState,
     _finalize_pending_records,
     _handle_tool_result_block,
     _handle_tool_use_block,
-    _log_tool_result,
-    _log_tool_use,
-    _sanitise_tool_args,
-    _summarise_tool_input,
     _tool_result_content_len,
     process_stream_messages,
 )

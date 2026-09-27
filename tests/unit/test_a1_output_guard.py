@@ -11,7 +11,7 @@ tools to prevent context bloat in Agent SDK sessions.
 
 from pathlib import Path
 
-from core.execution.engines.claude.agent_sdk import (
+from core.execution.engines.claude._sdk_security import (
     _BASH_HEAD_BYTES,
     _BASH_TAIL_BYTES,
     _BASH_TRUNCATE_BYTES,
@@ -19,12 +19,12 @@ from core.execution.engines.claude.agent_sdk import (
     _GREP_DEFAULT_HEAD_LIMIT,
     _READ_DEFAULT_LIMIT,
     _build_output_guard,
-    _cleanup_tool_outputs,
     _guard_bash,
     _guard_glob,
     _guard_grep,
     _guard_read,
 )
+from core.execution.engines.claude._sdk_session import _cleanup_tool_outputs
 
 # ── _guard_bash tests ────────────────────────────────────────
 
