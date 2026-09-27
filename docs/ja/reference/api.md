@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 0fc379a0a86cde156c92aaf64c9753e5ec4cd06448dc725bb907557e86b2e586 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 1fdb79891da2041ba65751e1023640afbf760b376c5ab2696ffb5b90641b7db4 -->
 
 # API リファレンス
 
@@ -246,11 +246,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 ## `server/routes/usage_routes.py`
 
-| GET | `/api/usage` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return combined Claude + OpenAI + nanoGPT usage data + governor status. | `server/routes/usage_routes.py:get_usage` |
+| GET | `/api/usage` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return combined Claude + OpenAI + nanoGPT usage data. | `server/routes/usage_routes.py:get_usage` |
 | POST | `/api/usage/claude/relogin` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/usage_routes.py:relogin_claude` |
 | POST | `/api/usage/openai/relogin` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/usage_routes.py:relogin_openai` |
-| GET | `/api/usage/policy` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the current usage policy. | `server/routes/usage_routes.py:get_policy` |
-| PUT | `/api/usage/policy` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update the usage policy. | `server/routes/usage_routes.py:update_policy` |
 
 ## `server/routes/users.py`
 

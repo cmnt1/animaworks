@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 6fed4c3d0ac4cb212200146f4bb246d1ce734c8049866361cc9076ea109318c5 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: ee36247128c0c09f9bdbc047255ef663475b6791096ecdfd0da5c0ed5138e60e -->
 
 # 設定リファレンス
 
@@ -230,8 +230,6 @@
 | `interaction.web_base_url` | `str` | `""` | — |
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP サーバー、認証、利用量制御の設定。 |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
-| `server.usage_governor` | `UsageGovernorConfig` | `{UsageGovernorConfig}` | — |
-| `server.usage_governor.enabled` | `bool` | `false` | — |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
 | `server.runner_liveness_timeout` | `int` | `900` | — |
