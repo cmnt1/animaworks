@@ -776,6 +776,7 @@ class CommsToolsMixin:
     # ── Human notification handler ────────────────────────────
 
     def _handle_call_human(self, args: dict[str, Any]) -> str:
+        self._last_call_human_denied = False
         if not self._human_notifier:
             return _error_result(
                 "NotConfigured",
@@ -812,6 +813,14 @@ class CommsToolsMixin:
             return _error_result(
                 "InvalidArguments",
                 "subject and body are required",
+            )
+
+        issued_key = self._call_human_keys.check(self._anima_name, self.session_id, args.get("sha", ""))
+        self._last_call_human_denied = issued_key is not None
+        if issued_key is not None:
+            return _error_result(
+                "ConfirmationRequired",
+                t("handler.call_human_confirm_required", sha=issued_key),
             )
 
         interaction_req = None

@@ -18,11 +18,21 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from core.notification.notifier import HumanNotifier
 from core.tooling.handler import ToolHandler
 from server.websocket import WebSocketManager
 
 # ── Helpers ───────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _call_human_preconfirmed(monkeypatch):
+    """These tests cover delivery; the confirmation key is tested in test_call_human_confirm."""
+    from core.notification import CallHumanKeys
+
+    monkeypatch.setattr(CallHumanKeys, "check", lambda self, *args: None)
 
 
 def _make_mock_notifier(*, channel_count: int = 1, notify_result: list[str] | None = None) -> MagicMock:
