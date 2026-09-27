@@ -1028,19 +1028,3 @@ class TestPendingExecutorWake:
             assert woke == [True]
         finally:
             unregister_wake(dp.name)
-
-
-# ── Runner IPC ──────────────────────────────────────────────
-
-
-class TestRunnerIPC:
-    """Verify runner has process_inbox IPC handler."""
-
-    def test_process_inbox_handler_registered(self):
-        from core.supervisor.runner import AnimaRunner
-
-        runner = AnimaRunner.__new__(AnimaRunner)
-        runner.anima = MagicMock()
-        runner._streaming_handler = None
-        handlers = runner._get_handler.__func__(runner, "process_inbox")
-        assert handlers is not None

@@ -328,7 +328,7 @@ class ExternalRefsRewriter:
 
     # ── Ancillary state ──────────────────────────────────────
 
-    def rewrite_ancillary_state(self, *, wake_target: bool = False) -> dict[str, Any]:
+    def rewrite_ancillary_state(self) -> dict[str, Any]:
         """Rewrite ephemeral routing/state and remove stale source run files."""
 
         changed_files: list[str] = []
@@ -363,7 +363,6 @@ class ExternalRefsRewriter:
 
         removed_run_paths: list[str] = []
         source_wake = self.data_dir / "run" / "inbox_wake" / self.source
-        source_wake_existed = source_wake.exists()
         self._remove_path(source_wake, removed_run_paths)
         self._remove_path(
             self.data_dir / "run" / "events" / self.source,
@@ -376,13 +375,6 @@ class ExternalRefsRewriter:
         ):
             self._remove_path(path, removed_run_paths)
 
-        target_wake_created = False
-        target_wake = self.data_dir / "run" / "inbox_wake" / self.target
-        if (wake_target or source_wake_existed) and not target_wake.exists():
-            atomic_write_text(target_wake, "")
-            target_wake_created = True
-            changed_files.append(self._relative(target_wake))
-
         changed_files.extend(removed_run_paths)
         return {
             "notification_mappings_updated": notification_updates,
@@ -390,7 +382,6 @@ class ExternalRefsRewriter:
             "usage_state_updated": usage_updated,
             "bootstrap_retry_removed": bootstrap_removed,
             "removed_run_paths": removed_run_paths,
-            "target_wake_created": target_wake_created,
             "changed_files": changed_files,
         }
 

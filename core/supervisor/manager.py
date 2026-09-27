@@ -9,6 +9,7 @@ Process Supervisor - Manages lifecycle of Anima child processes.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -112,7 +113,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self._lifecycle_locks: dict[str, asyncio.Lock] = {}
         self._health_check_task: asyncio.Task | None = None
         self._reconciliation_task: asyncio.Task | None = None
-        self._inbox_wake_task: asyncio.Task | None = None
+        self._event_file_drain_task: asyncio.Task | None = None
+        self._event_tasks: dict[str, asyncio.Task] = {}
         self._zombie_reaper_task: asyncio.Task | None = None
         self._shutdown = False
         self.scheduler: AsyncIOScheduler | None = None
@@ -237,8 +239,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # Start reconciliation loop
         self._reconciliation_task = asyncio.create_task(self._reconciliation_loop())
 
-        # Start inbox wake dispatcher
-        self._inbox_wake_task = asyncio.create_task(self._inbox_wake_dispatcher())
+        # Drain fallback event files independently from the health checks.
+        self._event_file_drain_task = asyncio.create_task(self._event_file_drain_loop())
 
         # Start zombie reaper (safety net for orphaned child processes)
         self._zombie_reaper_task = asyncio.create_task(self._zombie_reaper_loop())
@@ -383,6 +385,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                         )
                         return
                     self.processes[anima_name] = handle
+                    await self._cancel_event_consumer(anima_name)
+                    self._event_tasks[anima_name] = asyncio.create_task(
+                        self._consume_events(anima_name, handle),
+                        name=f"event-stream-{anima_name}",
+                    )
                     if self._restart_ctl is not None:
                         self._restart_ctl.record_started(anima_name)
                     logger.info("Anima process started: %s (PID %s)", anima_name, handle.get_pid())
@@ -676,6 +683,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 logger.debug("Process not found (no-op stop): %s", anima_name)
                 return
 
+            await self._cancel_event_consumer(anima_name)
             await handle.stop(
                 # Full-server shutdown deliberately retains the short budget
                 # so systemd is not held up; ordinary stops/restarts get the
@@ -783,13 +791,14 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             except asyncio.CancelledError:
                 pass
 
-        # Stop inbox wake dispatcher
-        if self._inbox_wake_task:
-            self._inbox_wake_task.cancel()
-            try:
-                await self._inbox_wake_task
-            except asyncio.CancelledError:
-                pass
+        # Stop fallback event-file draining and root event subscriptions.
+        if self._event_file_drain_task:
+            self._event_file_drain_task.cancel()
+            await asyncio.gather(self._event_file_drain_task, return_exceptions=True)
+        await asyncio.gather(
+            *(self._cancel_event_consumer(name) for name in list(self._event_tasks)),
+            return_exceptions=True,
+        )
 
         # Stop zombie reaper
         if self._zombie_reaper_task:
@@ -898,70 +907,60 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             except Exception:
                 logger.debug("zombie reaper error", exc_info=True)
 
-    async def _inbox_wake_dispatcher(self) -> None:
-        """Watch ``run/inbox_wake/`` for wake files and trigger process_inbox.
+    async def _cancel_event_consumer(self, anima_name: str) -> None:
+        """Cancel and join the event subscription task for one process."""
+        task = self._event_tasks.pop(anima_name, None)
+        if task is None or task is asyncio.current_task():
+            return
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
-        Files are named after the target anima (e.g. ``run/inbox_wake/sakura``).
-        When detected, sends a ``process_inbox`` IPC request to the target and
-        deletes the file.  Polls at 0.5s intervals.
-        """
-        wake_dir = self.run_dir / "inbox_wake"
-        wake_dir.mkdir(parents=True, exist_ok=True)
+    async def _consume_events(self, anima_name: str, handle: ProcessHandle) -> None:
+        """Consume pushed root events while *handle* remains registered."""
+        current_task = asyncio.current_task()
+        try:
+            while (
+                not self._shutdown and self.processes.get(anima_name) is handle and handle.state == ProcessState.RUNNING
+            ):
+                try:
+                    async with contextlib.aclosing(handle.open_event_stream()) as events:
+                        async for event in events:
+                            if self.processes.get(anima_name) is not handle:
+                                return
+                            event_type = event.get("event")
+                            event_data = event.get("data", {})
+                            if isinstance(event_type, str) and isinstance(event_data, dict):
+                                await self._broadcast_event(event_type, event_data)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.debug("Event stream disconnected for %s", anima_name, exc_info=True)
 
+                if (
+                    self._shutdown
+                    or self.processes.get(anima_name) is not handle
+                    or handle.state != ProcessState.RUNNING
+                ):
+                    return
+                await asyncio.sleep(1.0)
+        finally:
+            if self._event_tasks.get(anima_name) is current_task:
+                self._event_tasks.pop(anima_name, None)
+
+    async def _event_file_drain_loop(self) -> None:
+        """Drain fallback event files without coupling them to health checks."""
         while not self._shutdown:
             try:
-                await asyncio.sleep(0.5)
-                if not wake_dir.exists():
-                    continue
-                for wake_file in wake_dir.iterdir():
-                    if wake_file.name.startswith("."):
-                        continue
-                    target_name = wake_file.name
-                    try:
-                        wake_file.unlink()
-                    except FileNotFoundError:
-                        continue
-                    except OSError:
-                        logger.debug("Failed to remove wake file %s", wake_file, exc_info=True)
-                        continue
-
-                    # Discard wake for disabled animas; leave inbox message files intact.
-                    if not self.read_anima_enabled(self.animas_dir / target_name):
-                        logger.info(
-                            "Ignoring inbox wake for disabled anima: %s",
-                            target_name,
-                        )
-                        continue
-
-                    if target_name not in self.processes:
-                        logger.debug(
-                            "Inbox wake for unknown anima: %s",
-                            target_name,
-                        )
-                        continue
-
-                    try:
-                        await self.send_request(
-                            target_name,
-                            "process_inbox",
-                            {},
-                            timeout=30.0,
-                        )
-                        logger.debug("Inbox wake dispatched: %s", target_name)
-                    except Exception:
-                        logger.debug(
-                            "Failed to dispatch inbox wake for %s",
-                            target_name,
-                            exc_info=True,
-                        )
+                await self._poll_anima_events()
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.debug("Inbox wake dispatcher error", exc_info=True)
-                await asyncio.sleep(1.0)
+                logger.warning("Event file drain failed", exc_info=True)
+            await asyncio.sleep(1.0)
 
     async def _poll_anima_events(self) -> None:
-        """Read and broadcast event files from child processes."""
+        """Read and broadcast event files from non-root child processes."""
         events_base = self.run_dir / "events"
         if not events_base.exists():
             return

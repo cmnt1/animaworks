@@ -978,9 +978,7 @@ class AnimaMergeService:
         )
 
         def rewrite_ancillary_state() -> dict[str, Any]:
-            artifacts = external.rewrite_ancillary_state(
-                wake_target=bool(inbox.get("messages_moved", 0)),
-            )
+            artifacts = external.rewrite_ancillary_state()
             if self._server_running():
                 artifacts["live_runtime"] = self._sync_live_reference_state()
             return artifacts

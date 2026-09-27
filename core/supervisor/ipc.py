@@ -97,24 +97,6 @@ class IPCResponse:
         )
 
 
-@dataclass
-class IPCEvent:
-    """Asynchronous event from child to parent (no request ID)."""
-
-    event: str
-    data: dict[str, Any] = field(default_factory=dict)
-
-    def to_json(self) -> str:
-        """Serialize to JSON line."""
-        return json.dumps({"event": self.event, "data": self.data}, default=str)
-
-    @classmethod
-    def from_json(cls, line: str) -> IPCEvent:
-        """Deserialize from JSON line."""
-        data = json.loads(line)
-        return cls(event=data["event"], data=data.get("data", {}))
-
-
 # ── IPC Server (Child Process) ────────────────────────────────────────
 
 # Handler may return a single IPCResponse OR an AsyncIterator of IPCResponse

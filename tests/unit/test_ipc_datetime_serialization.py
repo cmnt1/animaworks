@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.schemas import CycleResult
-from core.supervisor.ipc import IPCEvent, IPCRequest, IPCResponse
+from core.supervisor.ipc import IPCRequest, IPCResponse
 from core.time_utils import now_jst
 
 # ── CycleResult model_dump(mode="json") Tests ────────────────────────
@@ -196,36 +196,3 @@ class TestIPCRequestDatetimeSerialization:
         data = json.loads(json_str)
 
         assert data["params"] == {"message": "hello", "count": 5}
-
-
-# ── IPCEvent.to_json() with non-primitive data Tests ─────────────────
-
-
-class TestIPCEventDatetimeSerialization:
-    """Verify IPCEvent.to_json() handles non-primitive data."""
-
-    def test_event_with_datetime_in_data(self):
-        """to_json() should not raise when data contains a datetime object."""
-        now = now_jst()
-        event = IPCEvent(
-            event="status_changed",
-            data={"status": "active", "since": now},
-        )
-
-        json_str = event.to_json()
-        data = json.loads(json_str)
-
-        assert data["data"]["status"] == "active"
-        assert isinstance(data["data"]["since"], str)
-
-    def test_normal_event_unchanged(self):
-        """Normal events with primitive types should still work correctly."""
-        event = IPCEvent(
-            event="heartbeat",
-            data={"status": "ok"},
-        )
-
-        json_str = event.to_json()
-        data = json.loads(json_str)
-
-        assert data == {"event": "heartbeat", "data": {"status": "ok"}}

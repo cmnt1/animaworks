@@ -67,45 +67,6 @@ class HealthMixin:
             data["last_progress_at"] = last_progress
         return data
 
-    def _log_hang_context(self, anima_name: str, handle: ProcessHandle) -> None:
-        """Emit a one-line JSON hang context (sidecar + activity-log tail)."""
-        try:
-            ctx: dict[str, Any] = {}
-            sidecar = self._read_busy_sidecar(anima_name, handle)
-            if sidecar:
-                ctx.update(
-                    {
-                        k: sidecar.get(k)
-                        for k in ("busy_since", "last_progress_at", "updated_at", "lanes")
-                        if sidecar.get(k) is not None
-                    }
-                )
-            animas_dir = getattr(self, "animas_dir", None)
-            if animas_dir is not None:
-                anima_dir = Path(animas_dir) / anima_name
-                if (anima_dir / "activity_log").is_dir():
-                    from core.memory.activity.logger import ActivityLogger
-
-                    recent: list[dict[str, Any]] = []
-                    for e in ActivityLogger(anima_dir).recent(days=1)[-3:]:
-                        recent.append(
-                            {
-                                "ts": e.ts,
-                                "type": e.type,
-                                "tool": e.tool,
-                                "summary": str(e.summary or "")[:120],
-                            }
-                        )
-                    if recent:
-                        ctx["recent_activity"] = recent
-            logger.error(
-                "Busy hang context: %s %s",
-                anima_name,
-                json.dumps(ctx, ensure_ascii=False, default=str),
-            )
-        except Exception:
-            logger.debug("Failed to collect hang context for %s", anima_name, exc_info=True)
-
     def _health_warmup_reason(self, anima_name: str, handle: ProcessHandle) -> str | None:
         """Return a reason to suppress unresponsive-runner restarts, if any."""
         try:
@@ -136,9 +97,6 @@ class HealthMixin:
         while not self._shutdown:
             try:
                 await asyncio.sleep(self.health_config.ping_interval_sec)
-
-                # Poll and broadcast child process events
-                await self._poll_anima_events()
 
                 await self._poll_requested_rag_repairs()
 

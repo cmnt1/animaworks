@@ -34,6 +34,7 @@ from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids
+from core.supervisor.event_bus import RootEventBus
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
 from core.supervisor.scheduler_manager import SchedulerManager
@@ -77,6 +78,8 @@ class AnimaRunner:
         self.pending_task_watcher_task: asyncio.Task | None = None
         self._orphan_cleanup_task: asyncio.Task | None = None
         self.shutdown_event = asyncio.Event()
+        self._event_bus = RootEventBus()
+        self._event_keepalive_interval = 20.0
         self._ready_event = asyncio.Event()
         self._startup_ack_event = asyncio.Event()
         self._expects_startup_ack = os.environ.get("ANIMAWORKS_EXPECT_STARTUP_ACK") == "1"
@@ -229,6 +232,10 @@ class AnimaRunner:
         readiness via the ``ping`` method.
         """
         try:
+            self._event_bus.bind_loop()
+            from core.memory.activity.logger import set_live_event_sink
+
+            set_live_event_sink(self._event_bus.publish)
             self._acquire_process_lock()
 
             # Start IPC server first so the socket is created immediately.
@@ -366,7 +373,12 @@ class AnimaRunner:
             sys.exit(getattr(e, "code", 1) if isinstance(e, SystemExit) else 1)
 
         finally:
-            await self._cleanup()
+            try:
+                await self._cleanup()
+            finally:
+                from core.memory.activity.logger import set_live_event_sink
+
+                set_live_event_sink(None)
 
     async def _wait_for_startup_ack(self) -> None:
         """Wait until the parent supervisor confirms it observed readiness."""
@@ -757,17 +769,8 @@ class AnimaRunner:
     # ── Event Emission ─────────────────────────────────────────────
 
     def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Write an event file for the parent process to pick up."""
-        import time as _time
-
-        events_dir = self.shared_dir.parent / "run" / "events" / self.anima_name
-        events_dir.mkdir(parents=True, exist_ok=True)
-        # Use monotonic timestamp for uniqueness
-        filename = f"{_time.time_ns()}.json"
-        event = {"event": event_type, "data": data}
-        tmp = events_dir / f".{filename}"
-        tmp.write_text(json.dumps(event, default=str, ensure_ascii=False), encoding="utf-8")
-        tmp.rename(events_dir / filename)  # Atomic rename
+        """Publish a root event for the parent process to broadcast."""
+        self._event_bus.publish({"event": event_type, "data": data})
 
     # ── IPC Handlers ──────────────────────────────────────────────
 
@@ -780,6 +783,9 @@ class AnimaRunner:
         an AsyncIterator[IPCResponse] instead of a single IPCResponse.
         """
         try:
+            if request.method == "subscribe_events":
+                return self._stream_events(request, keepalive_interval=self._event_keepalive_interval)
+
             # Check for streaming process_message
             if request.method == "process_message" and request.params.get("stream") and self._streaming_handler:
                 return self._streaming_handler.handle_stream(request)
@@ -812,6 +818,51 @@ class AnimaRunner:
             logger.exception("Error handling request %s: %s", request.method, e)
             return IPCResponse(id=request.id, error={"code": "EXECUTION_ERROR", "message": str(e)})
 
+    async def _stream_events(
+        self,
+        request: IPCRequest,
+        *,
+        keepalive_interval: float = 20.0,
+    ) -> AsyncIterator[IPCResponse]:
+        """Stream root events and keepalives until runner shutdown."""
+        events = self._event_bus.subscribe()
+        event_task = asyncio.create_task(anext(events))
+        shutdown_task = asyncio.create_task(self.shutdown_event.wait())
+        try:
+            while True:
+                done, _ = await asyncio.wait(
+                    {event_task, shutdown_task},
+                    timeout=keepalive_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if shutdown_task in done:
+                    break
+                if event_task in done:
+                    try:
+                        event = event_task.result()
+                    except StopAsyncIteration:
+                        break
+                    yield IPCResponse(
+                        id=request.id,
+                        stream=True,
+                        chunk=json.dumps(event, default=str, ensure_ascii=False),
+                    )
+                    event_task = asyncio.create_task(anext(events))
+                else:
+                    yield IPCResponse(
+                        id=request.id,
+                        stream=True,
+                        chunk=json.dumps({"keepalive": True}),
+                    )
+
+            yield IPCResponse(id=request.id, stream=True, done=True)
+        finally:
+            for task in (event_task, shutdown_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(event_task, shutdown_task, return_exceptions=True)
+            await events.aclose()
+
     def _get_handler(self, method: str) -> Callable[..., Awaitable[dict[str, Any]]] | None:
         """Get handler for method."""
         handlers = {
@@ -819,7 +870,6 @@ class AnimaRunner:
             "greet": self._handle_greet,
             "run_bootstrap": self._handle_run_bootstrap,
             "run_heartbeat": self._handle_run_heartbeat,
-            "process_inbox": self._handle_process_inbox,
             "run_consolidation": self._handle_run_consolidation,
             "memory": self._handle_memory,
             "repair_memory": self._handle_repair_memory,
@@ -884,18 +934,6 @@ class AnimaRunner:
             raise AnimaNotRunningError("Heartbeat scheduler is unavailable")
         await self._scheduler_mgr.heartbeat_tick()
         return {"status": "completed"}
-
-    async def _handle_process_inbox(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Handle process_inbox IPC request (queue a rate-limited inbox trigger).
-
-        Inbox LLM execution now runs in an isolated task runner child (lane
-        ``inbox``); the root only requests the trigger through the limiter.
-        """
-        if not self.anima:
-            return {"error": "Anima not ready"}
-        if not self._inbox_limiter:
-            return {"action": "skipped", "reason": "inbox limiter unavailable"}
-        return self._inbox_limiter.request_trigger()
 
     async def _handle_run_consolidation(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_consolidation request (Anima-driven memory consolidation)."""

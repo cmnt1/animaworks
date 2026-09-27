@@ -19,13 +19,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from core.schemas import CycleResult
-from core.supervisor.ipc import (
-    IPCClient,
-    IPCEvent,
-    IPCRequest,
-    IPCResponse,
-    IPCServer,
-)
+from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 from core.time_utils import now_jst
 
 
@@ -228,27 +222,3 @@ async def test_non_streaming_response_with_datetime():
 
         finally:
             await server.stop()
-
-
-@pytest.mark.asyncio
-async def test_event_with_datetime():
-    """E2E: IPCEvent.to_json() with datetime in data should serialize correctly."""
-    now = now_jst()
-    event = IPCEvent(
-        event="anima_activity",
-        data={
-            "anima": "sakura",
-            "last_activity": now,
-            "status": "active",
-        },
-    )
-
-    # Serialize and deserialize
-    json_str = event.to_json()
-    data = json.loads(json_str)
-
-    assert data["event"] == "anima_activity"
-    assert data["data"]["anima"] == "sakura"
-    assert data["data"]["status"] == "active"
-    assert isinstance(data["data"]["last_activity"], str)
-    assert str(now) == data["data"]["last_activity"]
