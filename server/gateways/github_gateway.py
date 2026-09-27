@@ -18,6 +18,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -34,6 +35,24 @@ logger = logging.getLogger("animaworks.github_gateway")
 
 STATE_FILENAME = "pr-review-dispatch-state.json"
 FAILING_CI_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"})
+
+_BOT_LOGIN_SUFFIX = "[bot]"
+_AI_SYSTEM_NOTE = "_You are interacting with an AI system._"
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_REVIEW_RESOLVED_MARKER = "review thread resolved"
+
+
+def _clean_excerpt(body: str) -> str:
+    """Strip noisy lines from a notification body and cap it at 500 chars.
+
+    Removes HTML comments (``<!-- ... -->``) and the standard
+    ``_You are interacting with an AI system._`` line added by code-review
+    bots, then trims the remainder to 500 characters.
+    """
+    cleaned = _HTML_COMMENT_RE.sub("", body or "")
+    lines = [ln for ln in cleaned.splitlines() if _AI_SYSTEM_NOTE not in ln]
+    cleaned = "\n".join(lines)
+    return cleaned.strip()[:500]
 
 
 def _default_state() -> dict[str, Any]:
@@ -277,7 +296,10 @@ class GitHubWebhookManager:
             return
         review = payload.get("review") or {}
         author = str((review.get("user") or {}).get("login") or "")
+        body = str(review.get("body") or "")
         if self._is_bot(author):
+            return
+        if self._should_drop_noise(author, body):
             return
         pr = payload.get("pull_request") or {}
         number = int(pr.get("number") or 0)
@@ -297,7 +319,7 @@ class GitHubWebhookManager:
             event_label=f"review:{state_word}".rstrip(":"),
             author=author,
             url=str(review.get("html_url") or ""),
-            body=str(review.get("body") or ""),
+            body=body,
             item_id=str(review.get("id") or ""),
         )
 
@@ -308,7 +330,10 @@ class GitHubWebhookManager:
             return
         comment = payload.get("comment") or {}
         author = str((comment.get("user") or {}).get("login") or "")
+        body = str(comment.get("body") or "")
         if self._is_bot(author):
+            return
+        if self._should_drop_noise(author, body):
             return
         if event == "pull_request_review_comment":
             number = int((payload.get("pull_request") or {}).get("number") or 0)
@@ -330,7 +355,7 @@ class GitHubWebhookManager:
             event_label=kind,
             author=author,
             url=str(comment.get("html_url") or ""),
-            body=str(comment.get("body") or ""),
+            body=body,
             item_id=str(comment.get("id") or ""),
         )
 
@@ -446,7 +471,7 @@ class GitHubWebhookManager:
         ci_name: str,
         ci_conclusion: str,
     ) -> str:
-        excerpt = (body or "").strip()[:500]
+        excerpt = _clean_excerpt(body)
         ci_line = t("github_gateway.notify_ci_line", name=ci_name, conclusion=ci_conclusion) if ci_name else ""
         return t(
             "github_gateway.notify",
@@ -459,6 +484,31 @@ class GitHubWebhookManager:
             excerpt=excerpt,
             ci_line=ci_line,
         )
+
+    def _is_auto_bot(self, author: str) -> bool:
+        """True when the login ends with GitHub's bot marker ``[bot]``.
+
+        This auto-detection is independent of the configured
+        ``bot_login`` / ``reviewer_login`` exact-match exclusion (``_is_bot``).
+        Accounts configured there are filtered outright; ``[bot]`` logins are
+        only thinned when they carry no actionable content.
+        """
+        return bool(author) and author.casefold().endswith(_BOT_LOGIN_SUFFIX)
+
+    def _should_drop_noise(self, author: str, body: str) -> bool:
+        """Drop auto-detected bot noise (empty body or resolved-only replies).
+
+        Gated by ``self._config.drop_bot_noise``. Human or configured-bot
+        accounts are never reached here (``_is_bot`` filters configured bots).
+        """
+        if not self._config.drop_bot_noise:
+            return False
+        if not self._is_auto_bot(author):
+            return False
+        if not (body or "").strip():
+            return True
+        flat = (body or "").casefold().replace("\n", " ").replace("\r", " ")
+        return _REVIEW_RESOLVED_MARKER in flat
 
     def _is_bot(self, author: str) -> bool:
         """True when the author is bot_login or reviewer_login."""

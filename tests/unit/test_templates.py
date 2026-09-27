@@ -250,3 +250,27 @@ class TestUnreadMessagesTemplate:
         path = TEMPLATES_DIR / "unread_messages.md"
         content = path.read_text(encoding="utf-8")
         assert "## 未読メッセージ" in content
+
+    def test_inbox_closing_line_appears_once_for_all_locales(self):
+        """B2: the inbox user_message must contain the closing instruction once."""
+        from core.paths import load_prompt
+
+        for locale in LOCALES:
+            # The outer inbox template wraps the unread-messages block.
+            unread = load_prompt("unread_messages", locale=locale, summary="dummy-summary")
+            prompt = load_prompt("inbox_message", locale=locale, messages=unread)
+            # The consolidated delegate portion should appear exactly once.
+            assert "delegate_task" in prompt
+            assert prompt.count("delegate_task") == 1
+            # No stale duplicate closing uses "直接答え" (removed inbox wording) or
+            # the old unread-messages trailing instruction as a second close.
+            assert prompt.count("thread_id") == 1
+
+    def test_unread_messages_has_no_independent_closing(self):
+        """B2: unread_messages is a pure content block with no second closing."""
+        from core.paths import load_prompt_text
+
+        for locale in LOCALES:
+            content = load_prompt_text("unread_messages", locale=locale)
+            assert "delegate_task" not in content
+            assert "thread_id" not in content

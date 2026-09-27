@@ -210,7 +210,7 @@ class HeartbeatMixin:
 
     _HEARTBEAT_HISTORY_N = 3
 
-    _PLAN_OUTCOME_MAX_CHARS = 200
+    _PLAN_OUTCOME_MAX_CHARS = 120
 
     def _load_heartbeat_history(self) -> str:
         """Load last N heartbeat history entries with plan-outcome tracking.
@@ -232,9 +232,11 @@ class HeartbeatMixin:
                     ts_short = e.ts[11:19] if len(e.ts) >= 19 else e.ts
                     plan = (e.meta or {}).get("plan_summary", "")
                     if plan:
-                        lines.append(t("heartbeat.history_plan_entry", ts=ts_short, plan=plan[:limit]))
+                        lines.append(
+                            t("heartbeat.history_plan_entry", ts=ts_short, plan=plan[:limit].replace("\n", " "))
+                        )
                     else:
-                        summary = (e.summary or e.content)[:limit]
+                        summary = (e.summary or e.content)[:limit].replace("\n", " ")
                         lines.append(f"- {ts_short}: {summary}")
                 return "\n".join(lines)
 
@@ -252,6 +254,39 @@ class HeartbeatMixin:
     # ── Heartbeat reflections ─────────────────────────────────
 
     _RECENT_REFLECTIONS_N = 3
+
+    def _get_recent_dialogue_max_age_hours(self) -> int:
+        """Read the heartbeat recent-dialogue freshness window from config."""
+        try:
+            from core.config.models import load_config
+
+            value = load_config().heartbeat.recent_dialogue_max_age_hours
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+        except Exception:
+            pass
+        return 6
+
+    def _dialogue_is_recent(self, turns: list[Any]) -> bool:
+        """True when the last turn is newer than the configured freshness window.
+
+        Missing or unparseable timestamps default to including the dialogue so
+        older callers (and tests) keep working. A window of 0 always includes
+        the dialogue.
+        """
+        max_age_hours = self._get_recent_dialogue_max_age_hours()
+        if max_age_hours <= 0:
+            return True
+        if not turns:
+            return True
+        ts = getattr(turns[-1], "timestamp", "") or ""
+        if not ts:
+            return True
+        try:
+            last_at = ensure_aware(datetime.fromisoformat(str(ts)))
+        except (TypeError, ValueError):
+            return True
+        return (now_local() - last_at).total_seconds() <= max_age_hours * 3600
 
     def _load_recent_reflections(self) -> str:
         """Load recent heartbeat reflections from unified activity log."""
@@ -342,7 +377,7 @@ class HeartbeatMixin:
                 conv_mem = ConversationMemory(self.anima_dir, self.model_config)
                 state = conv_mem.load()
                 recent_turns = state.turns[-5:] if state.turns else []
-                if recent_turns:
+                if recent_turns and self._dialogue_is_recent(recent_turns):
                     conv_lines = []
                     for turn in recent_turns:
                         snippet = turn.content[:200]
