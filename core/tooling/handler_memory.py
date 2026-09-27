@@ -38,11 +38,11 @@ from core.tooling.handler_base import (
 )
 
 if TYPE_CHECKING:
-    import threading
     from collections.abc import Callable
 
     from core.memory import MemoryManager
     from core.memory.activity.logger import ActivityLogger
+    from core.memory.state_lock import StateFileLock
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -204,7 +204,7 @@ class MemoryToolsMixin:
     _descendant_state_files: list[Path]
     _descendant_state_dirs: list[Path]
     _peer_activity_dirs: list[Path]
-    _state_file_lock: threading.Lock | None
+    _state_file_lock: StateFileLock | None
     _on_schedule_changed: Callable[[str], None] | None
     _min_trust_seen: int
     _read_paths: set[str]

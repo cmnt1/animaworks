@@ -358,11 +358,7 @@ class InboxMixin:
         logger.info("[%s] process_inbox_message START", self.name)
         started_at = now_local()
         try:
-            # Wait for any running cron task to finish before processing inbox.
-            # Prevents LLM context confusion when inbox arrives mid-cron.
-            if not self._cron_idle.is_set():
-                logger.info("[%s] inbox waiting for cron to finish", self.name)
-                await self._cron_idle.wait()
+            # Cron runs in a separate task-runner process with its own AgentCore.
             async with self._inbox_lock:
                 self._mark_busy_start()
                 self._status_slots["inbox"] = "processing"

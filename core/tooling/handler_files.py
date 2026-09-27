@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, ClassVar
 
+from core.memory.state_lock import StateFileLock
 from core.platform.process import subprocess_session_kwargs, terminate_subprocess
 from core.tooling.handler_base import (
     _CMD_HEAD_BYTES,
@@ -340,7 +341,7 @@ class FileToolsMixin:
     # Declared for type-checker visibility
     _anima_dir: Path
     _context_window: int
-    _state_file_lock: threading.Lock | None
+    _state_file_lock: StateFileLock | None
 
     # ── Web fetch class-level config ──────────────────────────
     _WEB_FETCH_MAX_CHARS = 8000

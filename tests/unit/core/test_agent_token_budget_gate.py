@@ -44,8 +44,6 @@ class _DummyInbox(InboxMixin):
         self.name = anima_dir.name
         self.agent = agent
         self._inbox_lock = asyncio.Lock()
-        self._cron_idle = asyncio.Event()
-        self._cron_idle.set()
         self._status_slots = {"inbox": "idle"}
         self._task_slots = {"inbox": ""}
         self._activity = MagicMock()

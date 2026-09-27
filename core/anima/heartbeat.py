@@ -437,16 +437,27 @@ class HeartbeatMixin:
         max_chars = self._get_current_state_max_chars()
         if max_chars <= 0:
             return
-        state = self.memory.read_current_state()
-        if len(state) <= max_chars:
-            return
-        trimmed = state[-max_chars:]
-        first_nl = trimmed.find("\n")
-        if first_nl != -1 and first_nl < max_chars * 0.2:
-            trimmed = trimmed[first_nl + 1 :]
-        overflow = state[: len(state) - len(trimmed)]
-        self.memory.append_episode(f"## current_state.md overflow archived\n\n{overflow}")
-        self.memory.update_state(trimmed)
+        episode_path = None
+        with self.memory.state_lock:
+            state = self.memory.read_current_state()
+            if len(state) <= max_chars:
+                return
+            trimmed = state[-max_chars:]
+            first_nl = trimmed.find("\n")
+            if first_nl != -1 and first_nl < max_chars * 0.2:
+                trimmed = trimmed[first_nl + 1 :]
+            overflow = state[: len(state) - len(trimmed)]
+            episode_path = self.memory.append_episode(
+                f"## current_state.md overflow archived\n\n{overflow}",
+                _defer_index=True,
+            )
+            if episode_path is None:
+                return
+            self.memory.update_state(trimmed)
+        try:
+            self.memory._index_episode_file(episode_path)
+        except Exception:
+            logger.warning("[%s] Failed to index archived current_state overflow", self.name, exc_info=True)
         logger.info(
             "[%s] current_state.md hard-trimmed: %d → %d chars",
             self.name,

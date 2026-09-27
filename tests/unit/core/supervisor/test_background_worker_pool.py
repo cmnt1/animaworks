@@ -52,18 +52,18 @@ async def test_worker_lease_waits_at_capacity_and_release_unblocks() -> None:
     await asyncio.sleep(0)
 
     assert not waiting.done()
-    assert anima._background_lock.locked()
+    assert not anima._background_lock.locked()
     assert set(anima._active_background_workers.values()) == {"task-one", "task-two"}
 
     await anima._release_background_worker(first)
     third = await asyncio.wait_for(waiting, timeout=1)
 
     assert third is first
-    assert anima._background_lock.locked()
+    assert not anima._background_lock.locked()
     assert set(anima._active_background_workers.values()) == {"task-two", "task-three"}
 
     await anima._release_background_worker(second)
-    assert anima._background_lock.locked()
+    assert not anima._background_lock.locked()
     await anima._release_background_worker(third)
 
     assert not anima._background_lock.locked()
@@ -71,7 +71,7 @@ async def test_worker_lease_waits_at_capacity_and_release_unblocks() -> None:
     anima._mark_busy_start.assert_called_once_with()
 
 
-def test_pool_size_one_reuses_legacy_background_agent_and_session() -> None:
+def test_pool_size_one_reuses_legacy_background_agent_with_taskexec_session() -> None:
     anima = DigitalAnima.__new__(DigitalAnima)
     background_agent = MagicMock(name="legacy_background_agent")
     background_session_lock = asyncio.Lock()
@@ -88,8 +88,8 @@ def test_pool_size_one_reuses_legacy_background_agent_and_session() -> None:
     slot = anima._background_worker_slots[0]
     assert slot.slot_id == 0
     assert slot.agent is background_agent
-    assert slot.session_lock is background_session_lock
-    assert slot.interrupt_event is anima._get_interrupt_event("_background")
+    assert slot.session_lock is not background_session_lock
+    assert slot.interrupt_event is anima._get_interrupt_event("_taskexec")
     assert anima._background_worker_queue.get_nowait() is slot
 
 
