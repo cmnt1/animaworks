@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.memory.rag.http_store import HttpVectorStore, VectorStoreRetryableError
-from core.memory.rag.owner_transport import owner_transport
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
+from core.memory.rag.vector_ops import bridge_transport
 from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
 
 
@@ -50,7 +50,7 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
         "memory.query",
         {"collection": "sakura_knowledge", "embedding": [0.1, 0.2], "top_k": 3},
     )
-    listed = await service.handle("memory.list_collections_checked", {})
+    listed = await service.handle("memory.list_collections", {})
     metadata = await service.handle(
         "memory.get_by_metadata",
         {"collection": "sakura_knowledge", "where": {"kind": "knowledge"}, "limit": 2},
@@ -267,7 +267,7 @@ async def test_memory_service_unavailable_is_not_an_empty_success(tmp_path: Path
     )
 
     with pytest.raises(MemoryServiceUnavailable):
-        await service.handle("memory.list_collections_checked", {})
+        await service.handle("memory.list_collections", {})
     await service.close()
 
 
@@ -287,7 +287,7 @@ async def test_phase3_memory_does_not_use_cross_process_repair_fence(tmp_path: P
     )
     service = MemoryService("sakura", anima_dir, opener=_store)
 
-    assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
+    assert await service.handle("memory.list_collections", {}) == {"collections": ["sakura_knowledge"]}
     await service.close()
 
 
@@ -354,7 +354,7 @@ async def test_memory_service_serializes_parallel_writes(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_owner_transport_round_trip_and_checked_unavailable(tmp_path: Path) -> None:
+async def test_bridge_transport_round_trip_and_unavailable(tmp_path: Path) -> None:
     native = _store()
     written: dict[str, Document] = {}
 
@@ -373,7 +373,7 @@ async def test_owner_transport_round_trip_and_checked_unavailable(tmp_path: Path
     async def handle(method: str, params: dict) -> dict:
         return await service.handle(method, params)
 
-    store = HttpVectorStore("http://vector.invalid", "sakura", transport=owner_transport(handle, loop))
+    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
     assert await asyncio.to_thread(
         store.upsert,
         "sakura_knowledge",
@@ -383,14 +383,14 @@ async def test_owner_transport_round_trip_and_checked_unavailable(tmp_path: Path
     assert results[0].document.id == "written"
 
     service._repair_fenced = lambda: True
-    assert await asyncio.to_thread(store.list_collections_checked) is None
+    assert await asyncio.to_thread(store.list_collections) is None
 
     await service.close()
 
 
 def test_owner_store_routes_writes_to_root() -> None:
     transport = MagicMock(return_value={"ok": True})
-    store = HttpVectorStore("http://vector.invalid", "sakura", transport=transport)
+    store = HttpVectorStore("sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is True
     call_path, call_payload = transport.call_args.args
@@ -403,7 +403,7 @@ def test_owner_store_marks_unavailable_write_as_transient() -> None:
     def transport(_path: str, _payload: dict) -> dict:
         raise VectorStoreRetryableError("owner unavailable", retry_after_ms=100)
 
-    store = HttpVectorStore("http://vector.invalid", "sakura", transport=transport)
+    store = HttpVectorStore("sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is False
     assert store.is_transient_write_failure("sakura_knowledge") is True
@@ -411,12 +411,10 @@ def test_owner_store_marks_unavailable_write_as_transient() -> None:
 
 def test_owner_store_collection_existence_is_three_state() -> None:
     available = HttpVectorStore(
-        "http://vector.invalid",
         "sakura",
         transport=lambda _path, _payload: {"collections": ["sakura_knowledge"]},
     )
     unavailable = HttpVectorStore(
-        "http://vector.invalid",
         "sakura",
         transport=lambda _path, _payload: (_ for _ in ()).throw(RuntimeError("root down")),
     )
@@ -557,7 +555,7 @@ async def test_root_repair_swap_failure_reopens_untouched_store(tmp_path: Path, 
     assert (live / "old.bin").read_text(encoding="utf-8") == "old"
     original.close.assert_called_once()
     assert service._store is reopened
-    assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
+    assert await service.handle("memory.list_collections", {}) == {"collections": ["sakura_knowledge"]}
     await service.close()
 
 
@@ -577,7 +575,7 @@ async def test_root_memory_is_explicitly_unavailable_during_repair(tmp_path: Pat
     await entered.wait()
 
     with pytest.raises(MemoryServiceUnavailable, match="repair in progress"):
-        await service.handle("memory.list_collections_checked", {})
+        await service.handle("memory.list_collections", {})
 
     release.set()
     with pytest.raises(RuntimeError, match="stop test repair"):
@@ -657,7 +655,7 @@ async def test_memory_service_owner_busy_does_not_request_startup_repair(tmp_pat
         opener.assert_not_called()
         service._request_startup_repair.assert_not_called()
         with pytest.raises(MemoryServiceUnavailable, match="sakura"):
-            await service.handle("memory.list_collections_checked", {})
+            await service.handle("memory.list_collections", {})
     finally:
         other_owner.release()
         await service.close()
@@ -679,7 +677,7 @@ async def test_memory_service_retries_owner_after_backoff(tmp_path: Path, monkey
         other_owner.release()
         monkeypatch.setattr(memory_service_module, "monotonic", lambda: retry_at + 0.1)
 
-        result = await service.handle("memory.list_collections_checked", {})
+        result = await service.handle("memory.list_collections", {})
 
         assert result == {"collections": ["sakura_knowledge"]}
         assert service._owner_lock.held

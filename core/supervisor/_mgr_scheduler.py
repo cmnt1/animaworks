@@ -697,14 +697,9 @@ class SchedulerMixin:
                     logger.warning("Skipping daily RAG indexing for %s: RAG repair lock is held", anima_name)
                     continue
 
-                from core.memory.rag.http_store import HttpVectorStore
-                from core.memory.rag.vector_ops import supervisor_transport
+                from core.memory.rag.singleton import get_vector_store
 
-                vector_store = HttpVectorStore(
-                    base_url="",
-                    anima_name=anima_name,
-                    transport=supervisor_transport(self.send_request, anima_name),
-                )
+                vector_store = get_vector_store(anima_name)
                 if vector_store is None:
                     logger.warning("Vector store unavailable for %s, skipping indexing", anima_name)
                     continue

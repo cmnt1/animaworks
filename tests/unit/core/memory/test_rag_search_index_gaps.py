@@ -152,7 +152,6 @@ class TestColdCatchupIndexing:
             return True
 
         mock_store.list_collections.side_effect = _list_collections
-        mock_store.list_collections_checked.side_effect = _list_collections
         mock_store.upsert.side_effect = _upsert
 
         def _make_real_indexer(vector_store, anima_name, anima_dir_arg, **kwargs):

@@ -23,7 +23,7 @@ class Store:
     def create_collection(self, collection):
         return True
 
-    def list_collections_checked(self):
+    def list_collections(self):
         return ["test_episodes", "shared_common_knowledge"]
 
     def get_by_metadata(self, collection, where, limit=20):

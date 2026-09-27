@@ -402,8 +402,8 @@ class AnimaRunner:
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
         if supervisor is None or supervisor._memory_service is None:
             return
-        from core.memory.rag.owner_transport import owner_transport
-        from core.memory.rag.singleton import configure_owner_transport
+        from core.memory.rag.singleton import configure_owner_vector_access
+        from core.memory.rag.vector_ops import bridge_transport
 
         loop = asyncio.get_running_loop()
 
@@ -417,7 +417,7 @@ class AnimaRunner:
             await supervisor.start()
             return await supervisor.handle_memory(method, params)
 
-        configure_owner_transport(owner_transport(handle_memory, loop), anima_name=self.anima_name)
+        configure_owner_vector_access(bridge_transport(handle_memory, loop), anima_name=self.anima_name)
         self._owner_vector_transport_installed = True
 
     def _start_autonomous_services(self) -> None:
@@ -1090,9 +1090,9 @@ class AnimaRunner:
             await self._scheduler_mgr.shutdown_task_runners()
 
         if getattr(self, "_owner_vector_transport_installed", False):
-            from core.memory.rag.singleton import configure_owner_transport
+            from core.memory.rag.singleton import configure_owner_vector_access
 
-            configure_owner_transport(None)
+            configure_owner_vector_access(None)
             self._owner_vector_transport_installed = False
 
         # Stop IPC server

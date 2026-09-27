@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +19,8 @@ logger = logging.getLogger("animaworks.cli.index")
 def _setup_server_delegation() -> bool:
     """Detect running server and configure HTTP delegation.
 
-    When the server is running, sets ``ANIMAWORKS_VECTOR_URL``,
-    ``ANIMAWORKS_EMBED_URL``, and ``ANIMAWORKS_RERANK_URL`` so that
-    ``get_vector_store(anima_name)`` returns ``HttpVectorStore`` and embeddings /
+    When the server is running, configures vector/embed/rerank URLs so that
+    ``get_vector_store(anima_name)`` delegates to the server and embeddings /
     rerank are generated server-side.  This prevents unsafe concurrent
     ChromaDB access and per-process model loads.
 
@@ -32,7 +30,10 @@ def _setup_server_delegation() -> bool:
     from cli.commands.server import _is_process_alive, _read_pid
 
     pid = _read_pid()
+    from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
+
     if pid is None or not _is_process_alive(pid):
+        configure_endpoints(RagEndpoints())
         return False
 
     try:
@@ -42,10 +43,7 @@ def _setup_server_delegation() -> bool:
     except Exception:
         port = 18500
 
-    base = f"http://127.0.0.1:{port}/api"
-    os.environ.setdefault("ANIMAWORKS_VECTOR_URL", f"{base}/internal/vector")
-    os.environ.setdefault("ANIMAWORKS_EMBED_URL", f"{base}/internal/embed")
-    os.environ.setdefault("ANIMAWORKS_RERANK_URL", f"{base}/internal/rerank")
+    configure_endpoints(RagEndpoints.for_server(port))
     logger.info(
         "Server detected (pid=%d). Using HTTP delegation for safe ChromaDB access.",
         pid,

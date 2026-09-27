@@ -11,7 +11,6 @@ kept) rather than falling back to a local model load.
 
 import asyncio
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -31,7 +30,9 @@ class CrossEncoderReranker:
         self._model_name = model_name
         self._model = None
         self._available = True
-        self._rerank_url = os.environ.get("ANIMAWORKS_RERANK_URL")
+        from core.memory.rag.endpoints import get_endpoints
+
+        self._rerank_url = get_endpoints().rerank_url
         if self._rerank_url:
             self._device = "cpu"
         else:

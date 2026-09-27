@@ -100,11 +100,11 @@ class TestRerankerHTTP:
             )
 
         assert [r["content"] for r in result] == ["high", "low"]
-        mock_post.assert_called_once_with(
-            "http://127.0.0.1:18500/api/internal/rerank",
-            json={"query": "query", "documents": ["low", "high"]},
-            timeout=180.0,
-        )
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args.args == ("http://127.0.0.1:18500/api/internal/rerank",)
+        assert call_args.kwargs["json"] == {"query": "query", "documents": ["low", "high"]}
+        assert call_args.kwargs["timeout"] == 180.0
 
     def test_http_mode_does_not_import_sentence_transformers(self, monkeypatch):
         """With RERANK_URL set, sentence_transformers must not enter sys.modules."""

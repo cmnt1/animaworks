@@ -243,13 +243,13 @@ class MemoryIndexer:
         self.upsert_failure_state_path = anima_dir / "state" / UPSERT_FAILURE_STATE_FILE
 
         # Use injected embedding model or initialize via singleton.
-        # When ANIMAWORKS_EMBED_URL is set (child processes), skip local
-        # model loading — generate_embeddings() handles HTTP delegation.
-        import os
+        # When an embed endpoint is configured, skip local model loading —
+        # generate_embeddings() handles HTTP delegation.
+        from core.memory.rag.endpoints import get_endpoints
 
         if embedding_model is not None:
             self.embedding_model = embedding_model
-        elif os.environ.get("ANIMAWORKS_EMBED_URL"):
+        elif get_endpoints().embed_url:
             self.embedding_model = None  # type: ignore[assignment]
         else:
             self._init_embedding_model()
@@ -270,14 +270,14 @@ class MemoryIndexer:
         """Return the checked existence state for *name*.
 
         Lazily populates ``self._known_collections`` from
-        ``vector_store.list_collections_checked()`` on first access.  Subsequent
+        ``vector_store.list_collections()`` on first access. Subsequent
         calls reuse the cache; callers add to the cache after successful
         ``create_collection()`` / ``upsert()`` to avoid repeated listing.
 
         An unavailable result is not cached so a later check can recover.
         """
         if self._known_collections is None:
-            collections = self.vector_store.list_collections_checked()
+            collections = self.vector_store.list_collections()
             if collections is None:
                 return CollectionExistence.UNAVAILABLE
             self._known_collections = set(collections)
@@ -293,7 +293,7 @@ class MemoryIndexer:
         re-list collections.
         """
         if self._known_collections is None:
-            collections = self.vector_store.list_collections_checked()
+            collections = self.vector_store.list_collections()
             if collections is None:
                 return
             self._known_collections = set(collections)

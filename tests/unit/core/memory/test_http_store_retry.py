@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory.rag.http_store import HttpVectorStore
-from core.memory.rag.owner_transport import owner_transport
+from core.memory.rag.vector_ops import bridge_transport
 from core.supervisor.memory_service import MemoryServiceUnavailable
 
 
@@ -45,7 +45,7 @@ class _FakeClient:
 
 
 def _http_store(client: _FakeClient) -> HttpVectorStore:
-    store = HttpVectorStore("http://vector.invalid", "sakura")
+    store = HttpVectorStore("sakura", base_url="http://vector.invalid")
     store._get_client = lambda: client
     return store
 
@@ -54,7 +54,7 @@ _RESULTS = {"results": [{"id": "doc1", "content": "hello", "score": 0.9, "metada
 
 
 def test_http_read_retries_once_then_succeeds(monkeypatch) -> None:
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda _s: None)
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda _s: None)
     client = _FakeClient([_FakeResp(503, headers={"Retry-After": "1"}), _FakeResp(200, _RESULTS)])
     results = _http_store(client).query("sakura_knowledge", [0.1, 0.2], top_k=3)
     assert len(results) == 1
@@ -63,7 +63,7 @@ def test_http_read_retries_once_then_succeeds(monkeypatch) -> None:
 
 
 def test_http_read_second_failure_returns_empty(monkeypatch) -> None:
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda _s: None)
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda _s: None)
     client = _FakeClient([_FakeResp(503, headers={"Retry-After": "1"}), _FakeResp(503, headers={"Retry-After": "1"})])
     results = _http_store(client).query("sakura_knowledge", [0.1])
     assert results == []
@@ -72,7 +72,7 @@ def test_http_read_second_failure_returns_empty(monkeypatch) -> None:
 
 def test_http_retry_after_ms_capped_at_500(monkeypatch) -> None:
     slept: list[float] = []
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda s: slept.append(s))
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda s: slept.append(s))
     client = _FakeClient([_FakeResp(503, headers={"Retry-After": "9"}), _FakeResp(503, headers={"Retry-After": "9"})])
     assert _http_store(client).query("sakura_knowledge", [0.1]) == []
     assert slept == [0.5]
@@ -81,7 +81,7 @@ def test_http_retry_after_ms_capped_at_500(monkeypatch) -> None:
 
 def test_http_retry_waits_body_retry_after_ms(monkeypatch) -> None:
     slept: list[float] = []
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda s: slept.append(s))
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda s: slept.append(s))
     client = _FakeClient(
         [_FakeResp(503, {"retry_after_ms": 250}, headers={"Retry-After": "1"}), _FakeResp(200, _RESULTS)]
     )
@@ -91,7 +91,7 @@ def test_http_retry_waits_body_retry_after_ms(monkeypatch) -> None:
 
 def test_http_retry_after_header_is_seconds(monkeypatch) -> None:
     slept: list[float] = []
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda s: slept.append(s))
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda s: slept.append(s))
     client = _FakeClient([_FakeResp(503, headers={"Retry-After": "0.2"}), _FakeResp(200, _RESULTS)])
     assert len(_http_store(client).query("sakura_knowledge", [0.1])) == 1
     assert slept == [0.2]
@@ -107,7 +107,7 @@ def test_http_non_retryable_failure_does_not_retry(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_owner_read_retries_once_then_succeeds(monkeypatch) -> None:
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda _s: None)
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda _s: None)
     calls = {"n": 0}
 
     async def handle(_method: str, _params: dict) -> dict:
@@ -117,7 +117,7 @@ async def test_owner_read_retries_once_then_succeeds(monkeypatch) -> None:
         return _RESULTS
 
     loop = asyncio.get_running_loop()
-    store = HttpVectorStore("", "sakura", transport=owner_transport(handle, loop))
+    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
 
     results = await asyncio.to_thread(store.query, "sakura_knowledge", [0.1])
     assert len(results) == 1
@@ -127,13 +127,13 @@ async def test_owner_read_retries_once_then_succeeds(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_owner_read_second_failure_returns_empty(monkeypatch) -> None:
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda _s: None)
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", lambda _s: None)
 
     async def handle(_method: str, _params: dict) -> dict:
         raise MemoryServiceUnavailable("memory store unavailable")
 
     loop = asyncio.get_running_loop()
-    store = HttpVectorStore("", "sakura", transport=owner_transport(handle, loop))
+    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
 
     assert await asyncio.to_thread(store.query, "sakura_knowledge", [0.1]) == []
 
@@ -141,13 +141,13 @@ async def test_owner_read_second_failure_returns_empty(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_owner_write_does_not_retry(monkeypatch) -> None:
     sleep = MagicMock()
-    monkeypatch.setattr("core.memory.rag.http_store.time.sleep", sleep)
+    monkeypatch.setattr("core.memory.rag.vector_client.time.sleep", sleep)
 
     async def handle(_method: str, _params: dict) -> dict:
         raise MemoryServiceUnavailable("memory queue is full")
 
     loop = asyncio.get_running_loop()
-    store = HttpVectorStore("", "sakura", transport=owner_transport(handle, loop))
+    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
 
     assert await asyncio.to_thread(store.create_collection, "sakura_knowledge") is False
     sleep.assert_not_called()

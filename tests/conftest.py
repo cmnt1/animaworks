@@ -129,6 +129,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_rag_endpoints():
+    """Reset cached environment endpoint snapshots between tests."""
+    from core.memory.rag.endpoints import configure_endpoints
+
+    configure_endpoints(None)
+    yield
+    configure_endpoints(None)
+
+
+@pytest.fixture(autouse=True)
 def _reset_app_timezone():
     """Reset the application timezone to the fallback after each test.
 
