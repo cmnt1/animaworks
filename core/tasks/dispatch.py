@@ -35,8 +35,15 @@ def _post_tasks(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
 
     payload = {**payload, "attempt_identity": current_attempt_identity()}
     for attempt in range(2):
+        from core.internal_api import internal_api_headers
+
         try:
-            response = httpx.post(f"{_server_url()}/api/internal/{endpoint}", json=payload, timeout=60.0)
+            response = httpx.post(
+                f"{_server_url()}/api/internal/{endpoint}",
+                json=payload,
+                headers=internal_api_headers(),
+                timeout=60.0,
+            )
             response.raise_for_status()
             return response.json()
         except httpx.TransportError:
@@ -139,9 +146,12 @@ def read_tasks_via_server(
     params = {"anima_name": anima_name, "include_archived": include_archived}
     if task_id is not None:
         params["task_id"] = task_id
+    from core.internal_api import internal_api_headers
+
     response = httpx.get(
         f"{_server_url()}/api/internal/tasks",
         params=params,
+        headers=internal_api_headers(),
         timeout=30.0,
     )
     response.raise_for_status()
@@ -152,7 +162,14 @@ def read_executable_ids_via_server(anima_name: str) -> set[str]:
     """Read execution-input availability without granting shared DB access."""
     import httpx
 
-    response = httpx.get(f"{_server_url()}/api/internal/tasks", params={"anima_name": anima_name}, timeout=30.0)
+    from core.internal_api import internal_api_headers
+
+    response = httpx.get(
+        f"{_server_url()}/api/internal/tasks",
+        params={"anima_name": anima_name},
+        headers=internal_api_headers(),
+        timeout=30.0,
+    )
     response.raise_for_status()
     return set(response.json()["input_ids"])
 

@@ -156,6 +156,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "内部エラーが発生しました。再試行してください。",
         "en": "An internal error occurred. Please retry.",
     },
+    "server.internal_auth_required": {
+        "ja": "内部 API の認証に失敗しました",
+        "en": "Internal API authentication required",
+    },
     "chat.message_too_large": {
         "ja": "メッセージが大きすぎます（{size_mb}MB / 上限10MB）",
         "en": "Message too large ({size_mb}MB / max 10MB)",

@@ -1168,10 +1168,13 @@ def check_company_boundary(
     try:
         import httpx
 
+        from core.internal_api import internal_api_headers
+
         server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
         response = httpx.get(
             f"{server_url}/api/internal/company/boundary",
             params={"from_anima": from_anima, "to_anima": to_anima},
+            headers=internal_api_headers(),
             timeout=5.0,
         )
         if response.status_code != 200:

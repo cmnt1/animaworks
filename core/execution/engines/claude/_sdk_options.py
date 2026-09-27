@@ -263,6 +263,7 @@ class SDKOptionsMixin:
             "ANIMAWORKS_EMBED_URL",
             "ANIMAWORKS_VECTOR_URL",
             "ANIMAWORKS_RERANK_URL",
+            "ANIMAWORKS_INTERNAL_AUTH",
         ):
             value = os.environ.get(key)
             if value:

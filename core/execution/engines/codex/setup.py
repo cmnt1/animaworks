@@ -466,6 +466,8 @@ class CodexSetupMixin:
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())
+        if internal_auth := os.environ.get("ANIMAWORKS_INTERNAL_AUTH"):
+            env["ANIMAWORKS_INTERNAL_AUTH"] = internal_auth
         # Windows requires SYSTEMROOT for Winsock/TLS initialisation and
         # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
         # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
@@ -516,7 +518,12 @@ class CodexSetupMixin:
             "PATH": _default_path_env(),
             "ANIMAWORKS_SERVER_URL": _resolve_animaworks_server_url(),
         }
-        for name in ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL", "ANIMAWORKS_RERANK_URL"):
+        for name in (
+            "ANIMAWORKS_EMBED_URL",
+            "ANIMAWORKS_VECTOR_URL",
+            "ANIMAWORKS_RERANK_URL",
+            "ANIMAWORKS_INTERNAL_AUTH",
+        ):
             if value := os.environ.get(name):
                 env[name] = value
         ctx = current_runtime_session()

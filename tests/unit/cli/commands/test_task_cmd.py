@@ -138,7 +138,7 @@ def test_cli_real_readonly_sqlite_falls_back_to_host_update_endpoint(task, monke
 
     with TestClient(app) as client:
 
-        def post_to_host(url, *, json, timeout):
+        def post_to_host(url, *, json, timeout, **kwargs):
             return client.post("/api/internal/update-task", json=json)
 
         with (

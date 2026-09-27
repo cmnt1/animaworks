@@ -221,11 +221,13 @@ def _check_confirm_key_via_server(anima_name: str, session_id: str, sha: str) ->
     The key lives in server memory (a CLI process cannot keep it across calls).
     Fails open when the server is unreachable so escalations are never lost.
     """
+    from core.internal_api import internal_api_headers
     from core.notification.interactive import _server_base_url
 
     try:
         resp = httpx.post(
             f"{_server_base_url()}/api/internal/call-human/confirm",
+            headers=internal_api_headers(),
             json={"anima_name": anima_name, "session_id": session_id, "sha": sha},
             timeout=10.0,
         )

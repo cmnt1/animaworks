@@ -124,9 +124,12 @@ def post_notification_mapping_via_api(
     """
     import httpx
 
+    from core.internal_api import internal_api_headers
+
     try:
         resp = httpx.post(
             f"{_server_base_url()}/api/internal/notification-mapping",
+            headers=internal_api_headers(),
             json={
                 "ts": ts,
                 "channel": channel,

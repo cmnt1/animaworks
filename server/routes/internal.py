@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -199,11 +199,13 @@ class SubmitTasksPersistRequest(BaseModel):
 
 def create_internal_router() -> APIRouter:
     from core.notification import CallHumanKeys
+    from server.internal_auth import require_internal_caller
 
     router = APIRouter()
+    internal = APIRouter(dependencies=[Depends(require_internal_caller)])
     _call_human_keys = CallHumanKeys()
 
-    @router.get("/internal/company/boundary")
+    @internal.get("/internal/company/boundary")
     async def internal_company_boundary(from_anima: str, to_anima: str):
         """Resolve company membership on the host for sandboxed handlers."""
         from core.anima.factory import validate_anima_name
@@ -249,7 +251,7 @@ def create_internal_router() -> APIRouter:
             "to_display_name": display_name,
         }
 
-    @router.post("/internal/message-sent")
+    @internal.post("/internal/message-sent")
     async def internal_message_sent(body: MessageSentNotification, request: Request):
         """Notify the server that a message was sent via CLI.
 
@@ -311,7 +313,7 @@ def create_internal_router() -> APIRouter:
 
     # ── Embedding inference endpoint ────────────────────────────
 
-    @router.post("/internal/embed")
+    @internal.post("/internal/embed")
     async def internal_embed(body: EmbedRequest):
         """Centralized embedding inference for child processes.
 
@@ -340,7 +342,7 @@ def create_internal_router() -> APIRouter:
 
     # ── Cross-encoder rerank endpoint ─────────────────────────────
 
-    @router.post("/internal/rerank")
+    @internal.post("/internal/rerank")
     async def internal_rerank(body: RerankRequest):
         """Centralized cross-encoder reranking for child processes.
 
@@ -485,43 +487,43 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=response.status_code, content=response.data, headers=headers)
         return response.data
 
-    @router.post("/internal/vector/query")
+    @internal.post("/internal/vector/query")
     async def vector_query(body: VectorQueryRequest, request: Request):
         return await _require_vector_worker(request, "/query", body)
 
-    @router.post("/internal/vector/upsert")
+    @internal.post("/internal/vector/upsert")
     async def vector_upsert(body: VectorUpsertRequest, request: Request):
         return await _require_vector_worker(request, "/upsert", body)
 
-    @router.post("/internal/vector/update-metadata")
+    @internal.post("/internal/vector/update-metadata")
     async def vector_update_metadata(body: VectorUpdateMetadataRequest, request: Request):
         return await _require_vector_worker(request, "/update-metadata", body)
 
-    @router.post("/internal/vector/delete-documents")
+    @internal.post("/internal/vector/delete-documents")
     async def vector_delete_documents(body: VectorDeleteDocumentsRequest, request: Request):
         return await _require_vector_worker(request, "/delete-documents", body)
 
-    @router.post("/internal/vector/get-by-metadata")
+    @internal.post("/internal/vector/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest, request: Request):
         return await _require_vector_worker(request, "/get-by-metadata", body)
 
-    @router.post("/internal/vector/get-by-ids")
+    @internal.post("/internal/vector/get-by-ids")
     async def vector_get_by_ids(body: VectorGetByIdsRequest, request: Request):
         return await _require_vector_worker(request, "/get-by-ids", body)
 
-    @router.post("/internal/vector/create-collection")
+    @internal.post("/internal/vector/create-collection")
     async def vector_create_collection(body: VectorCollectionRequest, request: Request):
         return await _require_vector_worker(request, "/create-collection", body)
 
-    @router.post("/internal/vector/delete-collection")
+    @internal.post("/internal/vector/delete-collection")
     async def vector_delete_collection(body: VectorCollectionRequest, request: Request):
         return await _require_vector_worker(request, "/delete-collection", body)
 
-    @router.post("/internal/vector/list-collections")
+    @internal.post("/internal/vector/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest, request: Request):
         return await _require_vector_worker(request, "/list-collections", body)
 
-    @router.post("/internal/vector/quick-check")
+    @internal.post("/internal/vector/quick-check")
     async def vector_quick_check(body: VectorQuickCheckRequest, request: Request):
         return await _require_vector_worker(request, "/quick-check", body)
 
@@ -532,7 +534,7 @@ def create_internal_router() -> APIRouter:
     # process delegate the run-state writes to the server so that Slack
     # thread replies and interactive approvals still route back correctly.
 
-    @router.post("/internal/notification-mapping")
+    @internal.post("/internal/notification-mapping")
     async def internal_notification_mapping(body: NotificationMappingRequest):
         from core.notification.reply_routing import save_notification_mapping
 
@@ -546,13 +548,13 @@ def create_internal_router() -> APIRouter:
         )
         return {"ok": ok}
 
-    @router.post("/internal/call-human/confirm")
+    @internal.post("/internal/call-human/confirm")
     async def internal_call_human_confirm(body: CallHumanConfirmRequest):
         """Check the CLI ``call_human`` confirmation key; keys live in server memory only."""
         issued_key = _call_human_keys.check(body.anima_name, body.session_id, body.sha)
         return {"ok": issued_key is None, "sha": issued_key or ""}
 
-    @router.post("/internal/interaction/create")
+    @internal.post("/internal/interaction/create")
     async def internal_interaction_create(body: InteractionCreateRequest):
         from core.notification.interactive import get_interaction_router
 
@@ -568,7 +570,7 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=409, content={"detail": str(exc)})
         return {"ok": True, "request": req.model_dump(mode="json")}
 
-    @router.post("/internal/interaction/message-ts")
+    @internal.post("/internal/interaction/message-ts")
     async def internal_interaction_message_ts(body: InteractionMessageTsRequest):
         from core.notification.interactive import get_interaction_router
 
@@ -579,7 +581,7 @@ def create_internal_router() -> APIRouter:
         )
         return {"ok": True}
 
-    @router.post("/internal/anima/create")
+    @internal.post("/internal/anima/create")
     async def internal_anima_create(body: AnimaCreateRequest):
         """Create an anima outside sandbox EROFS constraints.
 
@@ -653,7 +655,7 @@ def create_internal_router() -> APIRouter:
 
         return {"status": "ok", "anima_dir": str(anima_dir)}
 
-    @router.post("/internal/send-message")
+    @internal.post("/internal/send-message")
     async def internal_send_message(body: InternalSendMessageRequest):
         """Persist a DM outside sandbox EROFS constraints.
 
@@ -683,7 +685,7 @@ def create_internal_router() -> APIRouter:
         logger.info("internal send-message: %s -> %s (%s)", msg.from_person, msg.to_person, msg.id)
         return {"ok": True, "message_id": msg.id, "thread_id": msg.thread_id}
 
-    @router.post("/internal/post-channel")
+    @internal.post("/internal/post-channel")
     async def internal_post_channel(body: InternalPostChannelRequest):
         """Append a channel post outside sandbox EROFS constraints."""
         from core.anima.factory import validate_anima_name
@@ -708,7 +710,7 @@ def create_internal_router() -> APIRouter:
         logger.info("internal post-channel: %s -> #%s", body.from_anima, body.channel)
         return {"ok": True}
 
-    @router.get("/internal/tasks")
+    @internal.get("/internal/tasks")
     async def internal_tasks(anima_name: str, include_archived: bool = False, task_id: str | None = None):
         """Read a task snapshot for workers without direct database access."""
         from core.anima.factory import validate_anima_name
@@ -737,7 +739,7 @@ def create_internal_router() -> APIRouter:
 
         return await asyncio.get_running_loop().run_in_executor(_native_executor, _read)
 
-    @router.post("/internal/submit-tasks")
+    @internal.post("/internal/submit-tasks")
     async def internal_submit_tasks(body: SubmitTasksPersistRequest):
         """Publish a complete batch on the host; no sandbox DB grant is needed."""
         from core.anima.factory import validate_anima_name
@@ -765,7 +767,7 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=500, content={"detail": str(exc)})
         return {"ok": True, "tasks": [entry.model_dump(mode="json") for entry in entries]}
 
-    @router.post("/internal/delegate-task")
+    @internal.post("/internal/delegate-task")
     async def internal_delegate_task(body: DelegateTaskPersistRequest):
         """Persist a delegated task outside sandbox EROFS constraints.
 
@@ -876,7 +878,7 @@ def create_internal_router() -> APIRouter:
             "tracking_task_id": ids["tracking_task_id"],
         }
 
-    @router.post("/internal/task-board-action")
+    @internal.post("/internal/task-board-action")
     async def internal_task_board_action(body: TaskBoardActionRequest):
         """Run a lease-guarded task board write for a sandboxed anima CLI."""
         from core.anima.factory import validate_anima_name
@@ -898,7 +900,7 @@ def create_internal_router() -> APIRouter:
             logger.exception("internal task-board-action failed")
             return JSONResponse(status_code=500, content={"detail": str(exc)})
 
-    @router.post("/internal/update-task")
+    @internal.post("/internal/update-task")
     async def internal_update_task(body: UpdateTaskPersistRequest):
         """Persist a task update outside sandbox EROFS constraints."""
         from core.anima.factory import validate_anima_name
@@ -948,7 +950,7 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=404, content={"detail": f"Task not found: {body.task_id}"})
         return {"ok": True, "task": entry.model_dump(mode="json")}
 
-    @router.post("/internal/vector/reset-store")
+    @internal.post("/internal/vector/reset-store")
     async def vector_reset_store(body: VectorListCollectionsRequest, request: Request):
         # Forwarded to the worker so repair/quarantine can drop the worker's
         # cached (and possibly stale or corrupt) ChromaVectorStore. Without this
@@ -956,4 +958,5 @@ def create_internal_router() -> APIRouter:
         # leaving stale handles and latched init-failures in place.
         return await _require_vector_worker(request, "/reset-store", body)
 
+    router.include_router(internal)
     return router

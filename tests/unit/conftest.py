@@ -106,6 +106,29 @@ import pytest as _pytest_topology
 import core.config.resolver as _resolver_module
 
 
+@pytest.fixture(autouse=True)
+def _bypass_internal_api_auth_for_existing_route_tests(monkeypatch):
+    """Existing internal-route tests call the router without an auth header.
+
+    R04-1 turned every ``/api/internal/*`` route into a dependency on
+    ``require_internal_caller`` (enforce by default).  To keep those tests'
+    expectations unchanged we make the dependency a pass-through (returns
+    None) here.  The real enforcement behaviour is exercised directly in
+    ``tests/unit/server/test_internal_auth.py`` using the unpatched
+    function.
+    """
+    # The dependency name is resolved to this module attribute by
+    # create_internal_router() at router-build time.  A zero-argument
+    # pass-through keeps FastAPI from treating any parameter as a query
+    # dependency.
+    import server.internal_auth as _internal_auth
+
+    def _noop_internal_caller() -> None:
+        return None
+
+    monkeypatch.setattr(_internal_auth, "require_internal_caller", _noop_internal_caller)
+
+
 @_pytest_topology.fixture(autouse=True)
 def _legacy_topology_for_fixtureless_animas(monkeypatch):
     from pathlib import Path as _Path
