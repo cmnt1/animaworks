@@ -418,7 +418,7 @@ submit の詳細 → `common_knowledge/operations/background-tasks.md`
 ```bash
 animaworks-tool internal archive-memory {相対パス}    # knowledge/ episodes/ procedures/ 以下のみ
 animaworks-tool internal check-permissions {ツール名} [アクション]
-# ※実装は permissions.md が存在する場合はそのパース結果を使用（permissions.json は未参照）
+# ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
 animaworks-tool internal create-skill {名前} [--content ...]   # 省略時は標準入力
 animaworks-tool internal manage-channel create|archive {チャネル名}
 animaworks-tool internal list-background-tasks

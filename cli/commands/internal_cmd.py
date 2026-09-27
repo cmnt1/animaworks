@@ -109,31 +109,46 @@ def _cmd_check_permissions(args: argparse.Namespace, anima_dir: Path) -> None:
         print("Error: TOOL_NAME is required", file=sys.stderr)
         sys.exit(1)
 
-    perm_path = anima_dir / "permissions.md"
-    if not perm_path.is_file():
-        from core.integrations import TOOL_MODULES
+    from core.integrations import TOOL_MODULES, discover_common_tools, discover_personal_tools
+    from core.tooling.permissions import check_tool_access
 
-        permitted = set(TOOL_MODULES.keys())
+    if tool_name in TOOL_MODULES:
+        origin = "core"
+        tool_file = None
     else:
-        from core.tooling.permissions import parse_permitted_tools
+        common = discover_common_tools()
+        personal = discover_personal_tools(anima_dir)
+        if tool_name in personal:
+            origin = "personal"
+            tool_file = Path(personal[tool_name])
+        elif tool_name in common:
+            origin = "common"
+            tool_file = Path(common[tool_name])
+        else:
+            print(
+                json.dumps(
+                    {"tool": tool_name, "action": action or None, "permitted": False, "reason": "unknown_tool"},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
 
-        text = perm_path.read_text(encoding="utf-8")
-        permitted = parse_permitted_tools(text)
-
-    action_key = f"{tool_name}_{action}" if action else tool_name
-    tool_permitted = tool_name in permitted
-    if action:
-        from core.tooling.permissions import is_action_gated
-
-        gated = is_action_gated(tool_name, action, permitted)
-        action_permitted = action_key in permitted or (not gated and tool_permitted)
-        result_permitted = tool_permitted and action_permitted
-    else:
-        result_permitted = tool_permitted
-
+    decision = check_tool_access(
+        anima_dir,
+        tool_name,
+        action or None,
+        origin=origin,  # type: ignore[arg-type]
+        tool_file=tool_file,
+    )
     print(
         json.dumps(
-            {"tool": tool_name, "action": action or None, "permitted": result_permitted},
+            {
+                "tool": tool_name,
+                "action": action or None,
+                "permitted": decision.allowed,
+                "reason": decision.reason,
+            },
             ensure_ascii=False,
             indent=2,
         )

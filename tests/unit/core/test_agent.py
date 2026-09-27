@@ -374,25 +374,3 @@ class TestRunCycle:
             assert isinstance(result, CycleResult)
             assert result.summary == "S mode response"
             assert result.total_turns == 3
-
-
-# ── Permission parsing ────────────────────────────────────
-
-
-class TestPermissionParsing:
-    def test_permission_regex(self):
-        from core.tooling.permissions import (
-            _PERMISSION_ALLOW_RE,
-            _PERMISSION_DENY_RE,
-        )
-
-        assert _PERMISSION_ALLOW_RE.match("- web_search: OK")
-        assert _PERMISSION_ALLOW_RE.match("* slack: yes")
-        assert _PERMISSION_ALLOW_RE.match("  gmail: enabled")
-        assert _PERMISSION_ALLOW_RE.match("github: true")
-        assert _PERMISSION_ALLOW_RE.match("- chatwork: 全権限")
-        assert not _PERMISSION_ALLOW_RE.match("- web_search: no")
-        assert not _PERMISSION_ALLOW_RE.match("# heading")
-        assert _PERMISSION_DENY_RE.match("- chatwork: no")
-        assert _PERMISSION_DENY_RE.match("* gmail: disabled")
-        assert not _PERMISSION_DENY_RE.match("- slack: yes")

@@ -1990,6 +1990,11 @@ def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> Step
         return StepResult(changed=changed_files, skipped=0, details=details, error=str(exc))
 
 
+def step_v0147_guide_permissions_note_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.7: Resync common_skills (animaworks-guide check-permissions note reads permissions.json)."""
+    return step_common_skills_resync(data_dir, dry_run, verbose)
+
+
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
     steps = [
@@ -2191,6 +2196,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.6: Remove runtime prompts retired by prompt-diet4",
             "template_sync",
             step_v0146_prompt_diet4_stale_cleanup,
+        ),
+        MigrationStep(
+            "v0147_guide_permissions_note_resync",
+            "v0.14.7: Resync animaworks-guide (check-permissions reads permissions.json)",
+            "template_sync",
+            step_v0147_guide_permissions_note_resync,
         ),
         MigrationStep(
             "rename_core_tools_to_integrations",

@@ -838,7 +838,8 @@ class TestRegisterAllSteps:
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("v0145_prompt_diet4_resync") - 1
         assert ids.index("v0145_prompt_diet4_resync") == ids.index("v0146_prompt_diet4_stale_cleanup") - 1
-        assert ids.index("v0146_prompt_diet4_stale_cleanup") == ids.index("rename_core_tools_to_integrations") - 1
+        assert ids.index("v0146_prompt_diet4_stale_cleanup") == ids.index("v0147_guide_permissions_note_resync") - 1
+        assert ids.index("v0147_guide_permissions_note_resync") == ids.index("rename_core_tools_to_integrations") - 1
 
     def test_engine_timeout_cleanup_registered_after_tools_rename_and_before_version(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps

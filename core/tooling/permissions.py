@@ -8,38 +8,51 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.config.models import PermissionsConfig
 
-"""Shared permission parser for external tool access control.
+"""Shared permission engine for external tool access control.
 
-Both MCP server (``core.mcp.server``) and AgentCore executor
-(``core.agent.executor_factory``) use :func:`get_permitted_tools` (or legacy
-:func:`parse_permitted_tools`) to resolve which external tools an Anima
-is allowed to invoke, keeping the logic in a single authoritative location.
+Both the MCP server (``core.mcp.server``) and the executor layer
+(``core.agent.executor_factory``) use :func:`get_permitted_tools` to resolve
+which external tools an Anima is allowed to invoke, keeping the logic in a
+single authoritative location.
+
+Runtime gates are evaluated through :func:`check_tool_access` (the loader)
+which wraps the pure :func:`evaluate_tool_access` decision engine and is
+fail-closed: any configuration or profile-loading failure results in a
+denied (:data:`ToolAccessDecision`) rather than silently passing.
 
 Supports action-level gating: dangerous sub-actions (e.g. ``gmail_send``)
-require explicit ``- gmail_send: yes`` in permissions even when
-``- all: yes`` or ``- gmail: yes`` is present.
+require explicit ``external_tools.allow`` entries (``gmail_send``) even when
+``allow_all`` is true — mirroring the legacy ``- all: yes`` behaviour which
+never auto-allowed gated actions.
 """
 
 import importlib
+import importlib.util
 import logging
-import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
-# ── Regex patterns ────────────────────────────────────────
 
-_PERMISSION_ALLOW_RE = re.compile(
-    r"[-*]?\s*(\w+)\s*:\s*(OK|yes|enabled|true|全権限|読み取り.*)\s*$",
-    re.IGNORECASE,
-)
-_PERMISSION_ALL_RE = re.compile(
-    r"[-*]?\s*all\s*:\s*(OK|yes|enabled|true)\s*$",
-    re.IGNORECASE,
-)
-_PERMISSION_DENY_RE = re.compile(
-    r"[-*]?\s*(\w+)\s*:\s*(no|deny|disabled|false)\s*$",
-    re.IGNORECASE,
-)
+@dataclass(frozen=True)
+class ToolAccessDecision:
+    """Result of an external tool access check.
+
+    Attributes:
+        allowed: Whether the tool/action may be executed.
+        reason: Case-level reason — ``"ok"`` | ``"tool_denied"`` |
+            ``"tool_not_permitted"`` | ``"action_gated"`` | ``"check_failed"``.
+        message: User (Anima)-facing explanation, generated via ``core.i18n.t()``.
+    """
+
+    allowed: bool
+    reason: str
+    message: str = ""
 
 
 # ── Public API ────────────────────────────────────────────
@@ -68,73 +81,28 @@ def _disabled_service_tools() -> set[str]:
     return disabled
 
 
+def _permitted_names(
+    config: PermissionsConfig,
+    all_core_tools: set[str],
+    disabled: frozenset[str],
+) -> set[str]:
+    """Compute the permitted name set (tool modules + action keys) from config."""
+    deny = set(config.external_tools.deny)
+    if config.external_tools.allow_all:
+        base = all_core_tools - disabled - deny
+        action_permits = set(config.external_tools.allow) - all_core_tools - deny
+        return base | action_permits
+    if config.external_tools.allow:
+        return set(config.external_tools.allow) - deny
+    return (all_core_tools - disabled) - deny
+
+
 def get_permitted_tools(config: PermissionsConfig) -> set[str]:
     """Get permitted tool names from structured permissions config."""
     from core.integrations import TOOL_MODULES
 
     all_tools = set(TOOL_MODULES.keys()) - _disabled_service_tools()
-
-    if config.external_tools.allow_all:
-        base = all_tools - set(config.external_tools.deny)
-        action_permits = set(config.external_tools.allow) - all_tools - set(config.external_tools.deny)
-        return base | action_permits
-    if config.external_tools.allow:
-        return set(config.external_tools.allow) - set(config.external_tools.deny)
-    return all_tools - set(config.external_tools.deny)
-
-
-def parse_permitted_tools(text: str) -> set[str]:
-    """Parse permissions.md text and return permitted tool and action names.
-
-    Deprecated: Prefer loading via :func:`load_permissions` and
-    :func:`get_permitted_tools` for structured config. This wrapper parses
-    legacy Markdown and delegates to :func:`get_permitted_tools`.
-
-    Strategy:
-      1. No ``外部ツール`` / ``External Tools`` section present → ALL tools (default-all)
-      2. ``- all: yes`` found → ALL tools minus any deny entries, plus explicit
-         action-level permits (``all: yes`` does NOT auto-allow gated actions)
-      3. Individual ``- tool: yes`` / ``- tool_action: yes`` entries → whitelist mode
-      4. Section present but no matching entries → ALL tools
-
-    Returns:
-        Set of permitted names: tool module names (keys from ``core.integrations.TOOL_MODULES``)
-        and action-level permits (e.g. ``gmail_send``).
-    """
-    from core.config.models import ExternalToolsPermission, PermissionsConfig
-
-    if "外部ツール" not in text and "External Tools" not in text:
-        return get_permitted_tools(PermissionsConfig())
-
-    has_all_yes = False
-    allowed: list[str] = []
-    denied: list[str] = []
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if _PERMISSION_ALL_RE.match(stripped):
-            has_all_yes = True
-            continue
-        m_deny = _PERMISSION_DENY_RE.match(stripped)
-        if m_deny:
-            name = m_deny.group(1)
-            denied.append(name)
-            continue
-        m_allow = _PERMISSION_ALLOW_RE.match(stripped)
-        if m_allow:
-            name = m_allow.group(1)
-            allowed.append(name)
-
-    ext = ExternalToolsPermission(
-        allow_all=has_all_yes,
-        allow=allowed,
-        deny=denied,
-    )
-    config = PermissionsConfig(external_tools=ext)
-    return get_permitted_tools(config)
-
-
-# ── Action gating ──────────────────────────────────────────
+    return _permitted_names(config, all_tools, frozenset(_disabled_service_tools()))
 
 
 def _load_execution_profile(tool_name: str) -> dict[str, dict[str, object]] | None:
@@ -158,30 +126,207 @@ def _load_execution_profile(tool_name: str) -> dict[str, dict[str, object]] | No
         return None
 
 
+def _load_profile_from_file(tool_file: Path | None) -> dict[str, dict[str, object]] | None:
+    """Load EXECUTION_PROFILE from a file-based (common/personal) tool module."""
+    if tool_file is None:
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location(
+            f"animaworks_tool_profile_{tool_file.stem}",
+            tool_file,
+        )
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return getattr(mod, "EXECUTION_PROFILE", None)
+    except Exception:
+        logger.debug("Failed to load EXECUTION_PROFILE from %s", tool_file, exc_info=True)
+        return None
+
+
+# ── Evaluation engine (pure function) ────────────────────
+
+
+def evaluate_tool_access(
+    tool_name: str,
+    action: str | None,
+    *,
+    config: PermissionsConfig,
+    origin: Literal["core", "common", "personal"],
+    profile: Mapping[str, Mapping[str, object]] | None,
+    disabled_services: frozenset[str] = frozenset(),
+) -> ToolAccessDecision:
+    """Evaluate whether a tool (and optional gated action) is permitted.
+
+    Pure decision function — performs no I/O. Configuration, execution
+    profile and disabled-service set are supplied as arguments.
+
+    Decision order:
+      1. ``tool_name`` in ``external_tools.deny`` → ``tool_denied``
+      2. ``origin == "core"`` and ``tool_name`` not in the permitted core
+         set (computed from config + ``disabled_services``) → ``tool_not_permitted``
+      3. ``origin`` in (common, personal): ``allow_all`` is false and ``allow``
+         is non-empty and ``tool_name`` not in ``allow`` → ``tool_not_permitted``
+      4. ``action`` matches a gated entry in ``profile`` (with ``_`` → ``-``
+         leniency): permitted only if ``f"{tool}_{gated_as or profile_action}"``
+         is in ``allow`` and not in ``deny``; otherwise → ``action_gated``
+         (explicit permission is required even when ``allow_all`` is true).
+      5. Otherwise → ``ok``.
+    """
+    from core.integrations import TOOL_MODULES
+
+    deny = set(config.external_tools.deny)
+    allow = set(config.external_tools.allow)
+
+    # 1. Deny always wins.
+    if tool_name in deny:
+        return ToolAccessDecision(False, "tool_denied", t("tooling.tool_denied", tool=tool_name))
+
+    # 2. Core tools must be in the permitted core set.
+    if origin == "core":
+        all_core_tools = set(TOOL_MODULES.keys())
+        permitted = _permitted_names(config, all_core_tools, disabled_services)
+        if tool_name not in permitted:
+            return ToolAccessDecision(
+                False,
+                "tool_not_permitted",
+                t("tooling.tool_not_permitted", tool=tool_name),
+            )
+
+    # 3. Common / personal tools use an allow-list (unless allow_all).
+    elif origin in {"common", "personal"}:
+        if not config.external_tools.allow_all and config.external_tools.allow:
+            if tool_name not in allow:
+                return ToolAccessDecision(
+                    False,
+                    "tool_not_permitted",
+                    t("tooling.tool_not_permitted", tool=tool_name),
+                )
+
+    # 4. Gated action check.
+    if action is not None and isinstance(profile, dict):
+        matches = _action_candidates(profile, action)
+        if matches:
+            profile_action = matches[0]
+            info = profile.get(profile_action)
+            if isinstance(info, dict) and info.get("gated") is True:
+                action_key = f"{tool_name}_{info.get('gated_as', profile_action)}"
+                if action_key in allow and action_key not in deny:
+                    return ToolAccessDecision(True, "ok")
+                return ToolAccessDecision(
+                    False,
+                    "action_gated",
+                    t("tooling.gated_action_denied", tool=tool_name, action=action),
+                )
+
+    # 5. Default allow.
+    return ToolAccessDecision(True, "ok")
+
+
+def _action_candidates(
+    profile: Mapping[str, Mapping[str, object]],
+    action: str,
+) -> tuple[str, ...]:
+    """Return profile action keys an ``action`` resolves to (with ``_``↔``-``)."""
+    if action in profile:
+        return (action,)
+    dashed = action.replace("_", "-")
+    if dashed in profile:
+        return (dashed,)
+    return ()
+
+
+# ── Loader ───────────────────────────────────────────────
+
+
+def check_tool_access(
+    anima_dir: Path | None,
+    tool_name: str,
+    action: str | None,
+    *,
+    origin: Literal["core", "common", "personal"],
+    tool_file: Path | None = None,
+) -> ToolAccessDecision:
+    """Load configuration/execution-profile and evaluate tool access.
+
+    Fail-closed: any exception during permission loading or profile import
+    yields ``ToolAccessDecision(False, "check_failed", ...)`` rather than
+    silently allowing the call.
+    """
+    try:
+        from core.config.models import PermissionsConfig, load_permissions
+
+        config = load_permissions(anima_dir) if anima_dir else PermissionsConfig()
+
+        if origin == "core":
+            profile = _load_execution_profile(tool_name) if tool_name in _core_tool_names() else None
+            disabled = frozenset(_disabled_service_tools())
+        else:
+            profile = _load_profile_from_file(tool_file)
+            disabled = frozenset()
+
+        return evaluate_tool_access(
+            tool_name,
+            action,
+            config=config,
+            origin=origin,
+            profile=profile,
+            disabled_services=disabled,
+        )
+    except Exception as e:
+        logger.warning("Permission check failed for %s %s: %s", tool_name, action, e, exc_info=True)
+        return ToolAccessDecision(
+            False,
+            "check_failed",
+            t("tooling.permission_check_failed", tool=tool_name, error=type(e).__name__),
+        )
+
+
+def _core_tool_names() -> set[str]:
+    from core.integrations import TOOL_MODULES
+
+    return set(TOOL_MODULES.keys())
+
+
+# ── Compatibility wrapper ────────────────────────────────
+
+
 def is_action_gated(tool_name: str, action: str, permitted: set[str]) -> bool:
     """Check if a tool action is gated and not explicitly permitted.
+
+    Thin wrapper over :func:`evaluate_tool_access` for legacy callers.
+    When the tool's ``EXECUTION_PROFILE`` cannot be loaded the action is
+    treated as gated (fail-closed).
 
     Args:
         tool_name: Tool module name (e.g. ``gmail``).
         action: Action/subcommand name (e.g. ``send``).
-        permitted: Set from :func:`parse_permitted_tools`.
+        permitted: Set of permitted names from :func:`get_permitted_tools`.
 
     Returns:
         True if the action is gated AND not in permitted (i.e. should be blocked).
-        False if non-gated, permitted, or tool module not found.
+        False if non-gated or explicitly permitted.
     """
+    from core.config.models import ExternalToolsPermission, PermissionsConfig
+
+    config = PermissionsConfig(
+        external_tools=ExternalToolsPermission(
+            allow_all=True,
+            allow=list(permitted),
+            deny=[],
+        )
+    )
     profile = _load_execution_profile(tool_name)
     if profile is None:
-        return False
-
-    profile_action = action if action in profile else action.replace("_", "-")
-    action_info = profile.get(profile_action)
-    if action_info is None:
-        return False
-
-    if action_info.get("gated") is not True:
-        return False
-
-    # ``gated_as`` lets an action gate under another permission key (e.g. upload → send).
-    action_key = f"{tool_name}_{action_info.get('gated_as', profile_action)}"
-    return action_key not in permitted
+        # Cannot confirm the action is non-gated without a profile → fail-closed.
+        return True
+    decision = evaluate_tool_access(
+        tool_name,
+        action,
+        config=config,
+        origin="core",
+        profile=profile,
+        disabled_services=frozenset(),
+    )
+    return decision.reason == "action_gated"

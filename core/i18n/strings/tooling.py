@@ -62,14 +62,26 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "tooling.gated_action_denied": {
         "ja": (
-            "アクション '{action}' (ツール '{tool}') は明示的な許可が必要です。permissions.md に '{tool}_{action}: yes' を追加してください。"
+            "アクション '{action}' (ツール '{tool}') は明示的な許可が必要です。permissions.json の external_tools.allow に '{tool}_{action}' を追加してください（上司または人間に依頼）。"
         ),
         "en": (
-            "Action '{action}' on tool '{tool}' requires explicit permission. Add '{tool}_{action}: yes' to permissions.md."
+            "Action '{action}' on tool '{tool}' requires explicit permission. Add '{tool}_{action}' to external_tools.allow in permissions.json (ask your supervisor or a human)."
         ),
         "ko": (
-            "액션 '{action}' (도구 '{tool}')은 명시적인 허가가 필요합니다. permissions.md에 '{tool}_{action}: yes'를 추가하세요."
+            "액션 '{action}' (도구 '{tool}')은 명시적인 허가가 필요합니다. permissions.json의 external_tools.allow에 '{tool}_{action}'을 추가하세요(상사 또는 담당자에게 요청)."
         ),
+    },
+    "tooling.tool_denied": {
+        "ja": "ツール '{tool}' は外部ツール設定（external_tools.deny）で拒否されています。",
+        "en": "Tool '{tool}' is denied by the external tools configuration (external_tools.deny).",
+    },
+    "tooling.tool_not_permitted": {
+        "ja": "ツール '{tool}' は許可されていません。permissions.json の external_tools で許可されていることを確認してください。",
+        "en": "Tool '{tool}' is not permitted. Check that it is allowed in external_tools in permissions.json.",
+    },
+    "tooling.permission_check_failed": {
+        "ja": "ツール '{tool}' の権限判定に失敗しました（{error}）。安全のため実行を拒否します。",
+        "en": "Permission check for tool '{tool}' failed ({error}); denied for safety.",
     },
     "tooling.model_list_hint": {
         "ja": "{error}。現行リストは available-models を確認してください",
