@@ -110,11 +110,16 @@ export async function api(path, opts = {}) {
 
     if (!res.ok) {
       logger.error("API request failed", { url: path, status: res.status, statusText: res.statusText });
-      throw new Error(`API ${res.status}: ${res.statusText}`);
+      const payload = await res.json().catch(() => ({}));
+      const detail = payload?.detail;
+      const message = (typeof detail === "string" ? detail : detail?.message) || payload?.message;
+      const error = new Error(message || `API ${res.status}: ${res.statusText}`);
+      error.status = res.status;
+      throw error;
     }
     return res.json();
   } catch (err) {
-    if (err.message && !err.message.startsWith("API ") && err.message !== "Unauthorized") {
+    if (err.message && !err.message.startsWith("API ") && err.message !== "Unauthorized" && !err.status) {
       logger.error("Network error", { url: path, error: err.message });
     }
     throw err;

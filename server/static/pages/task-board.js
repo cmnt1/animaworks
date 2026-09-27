@@ -4,17 +4,12 @@ import { escapeAttr, escapeHtml } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
 import {
   COLUMNS,
-  SUPPRESSED_VISIBILITIES,
   ageText,
-  deadlineText,
-  defaultLocalDateTime,
-  isOverdue,
+  isCancellable,
   shortId,
   splitTaskDescription,
   statusClassSuffix,
   taskKey,
-  visibilityLabel,
-  visibilityPayload,
 } from "./task-board-utils.js";
 
 const REFRESH_MS = 30000;
@@ -26,7 +21,6 @@ let _tasks = [];
 let _allTasks = [];
 let _animaNames = [];
 let _activeColumn = "todo";
-let _drag = null;
 let _searchTimer = null; let _renderToken = 0;
 /** @type {Set<string>} task keys whose card body is expanded */
 let _expandedBodies = new Set();
@@ -37,7 +31,7 @@ export async function render(container) {
   _tasks = [];
   _allTasks = [];
   _animaNames = [];
-  _activeColumn = "todo"; _drag = null; _refreshing = false;
+  _activeColumn = "todo"; _refreshing = false;
 
   container.innerHTML = `
     <div class="taskboard-page" data-testid="taskboard-page">
@@ -60,24 +54,9 @@ export async function render(container) {
           </select>
         </label>
 
-        <fieldset class="taskboard-segmented" aria-label="${t("taskboard.visibility")}">
-          <button type="button" class="taskboard-segment is-active" data-visibility-filter="active">
-            ${t("taskboard.filter_active")}
-          </button>
-          <button type="button" class="taskboard-segment" data-visibility-filter="snoozed">
-            ${t("taskboard.filter_snoozed")}
-          </button>
-          <button type="button" class="taskboard-segment" data-visibility-filter="suppressed">
-            ${t("taskboard.filter_suppressed")}
-          </button>
-          <button type="button" class="taskboard-segment" data-visibility-filter="all">
-            ${t("taskboard.filter_all")}
-          </button>
-        </fieldset>
-
         <label class="taskboard-check">
           <input id="taskboardArchived" type="checkbox" />
-          <span>${t("taskboard.archived")}</span>
+          <span>${t("taskboard.include_history")}</span>
         </label>
 
         <label class="taskboard-search">
@@ -112,7 +91,6 @@ export function destroy() {
   _tasks = [];
   _allTasks = [];
   _animaNames = [];
-  _drag = null;
   _expandedBodies = new Set();
 }
 function _bindEvents() {
@@ -122,15 +100,6 @@ function _bindEvents() {
   _container.querySelector("#taskboardSearch")?.addEventListener("input", () => {
     if (_searchTimer) clearTimeout(_searchTimer);
     _searchTimer = setTimeout(() => _loadBoard(), 250);
-  });
-
-  _container.querySelectorAll("[data-visibility-filter]").forEach((button) => {
-    button.addEventListener("click", () => {
-      _container.querySelectorAll("[data-visibility-filter]").forEach((el) => {
-        el.classList.toggle("is-active", el === button);
-      });
-      _loadBoard();
-    });
   });
 
   _container.addEventListener("click", (event) => {
@@ -163,12 +132,8 @@ function _bindEvents() {
       }
     }
   });
-
-  _container.addEventListener("dragstart", _onDragStart);
-  _container.addEventListener("dragover", _onDragOver);
-  _container.addEventListener("drop", _onDrop);
-  _container.addEventListener("dragend", _onDragEnd);
 }
+
 async function _loadAnimas() {
   try {
     const data = await api("/api/animas");
@@ -179,7 +144,7 @@ async function _loadAnimas() {
   }
 }
 
-async function _loadBoard({ quiet = false, token = _renderToken } = {}) {
+async function _loadBoard({ quiet = false, preserveFeedback = false, token = _renderToken } = {}) {
   if (_refreshing) return;
   _refreshing = true;
   if (!quiet) _setFeedback(t("taskboard.loading"), "loading");
@@ -187,11 +152,11 @@ async function _loadBoard({ quiet = false, token = _renderToken } = {}) {
     const data = await api(`/api/task-board?${_queryParams().toString()}`);
     if (!_container || token !== _renderToken) return;
     _allTasks = data.tasks || [];
-    _tasks = _filterClientVisibility(_allTasks);
+    _tasks = _allTasks;
     _syncAssigneeOptionsFromTasks();
     _ensureActiveColumnHasView();
     _renderBoard();
-    _setFeedback(_summaryText(data), "ok");
+    if (!preserveFeedback) _setFeedback(_summaryText(data), "ok");
   } catch (err) {
     if (!_container || token !== _renderToken) return;
     _setFeedback(`${t("taskboard.load_failed")}: ${err.message || err}`, "error");
@@ -205,40 +170,12 @@ function _queryParams() {
   const params = new URLSearchParams();
   const assignee = _container.querySelector("#taskboardAssignee")?.value || "";
   const search = _container.querySelector("#taskboardSearch")?.value.trim() || "";
-  const visibility = _visibilityFilter();
-  const includeArchived = _includeArchived();
-
   if (assignee) params.set("assignee", assignee);
   if (search) params.set("q", search);
-  if (visibility === "active" || visibility === "snoozed") params.set("visibility", visibility);
-  if (visibility === "all" || visibility === "suppressed" || includeArchived) {
+  if (_container.querySelector("#taskboardArchived")?.checked === true) {
     params.set("include_archived", "true");
   }
-  params.set("include_missing", "true");
   return params;
-}
-
-function _visibilityFilter() {
-  return _container.querySelector("[data-visibility-filter].is-active")?.dataset.visibilityFilter || "active";
-}
-
-function _includeArchived() {
-  return _container.querySelector("#taskboardArchived")?.checked === true;
-}
-
-function _filterClientVisibility(tasks) {
-  const visibility = _visibilityFilter();
-  const includeArchived = _includeArchived();
-  if (visibility === "active") return tasks.filter((task) => task.visibility === "active");
-  if (visibility === "snoozed") return tasks.filter((task) => task.visibility === "snoozed");
-  if (visibility === "suppressed") {
-    return tasks.filter((task) => {
-      if (!SUPPRESSED_VISIBILITIES.has(task.visibility)) return false;
-      return task.visibility !== "archived" || includeArchived;
-    });
-  }
-  if (!includeArchived) return tasks.filter((task) => task.visibility !== "archived");
-  return tasks;
 }
 
 function _renderAssigneeOptions() {
@@ -309,14 +246,18 @@ function _renderMobileTabs() {
 function _cardHtml(task) {
   const key = taskKey(task);
   const column = task.column || "todo";
-  const overdue = isOverdue(task.deadline);
   const description = task.summary || task.original_instruction || "";
   const { title, body } = splitTaskDescription(description);
   const displayTitle = title || t("taskboard.untitled");
   const expanded = _expandedBodies.has(key);
   const hasBody = Boolean(body);
+  const leaseExpiry = task.lease?.expires_at;
+  const leaseDate = leaseExpiry ? new Date(leaseExpiry) : null;
+  const leaseRemaining = leaseDate && !Number.isNaN(leaseDate.getTime())
+    ? leaseDate.toLocaleString()
+    : leaseExpiry || "";
   return `
-    <article class="taskboard-card" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
+    <article class="taskboard-card" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       <div class="taskboard-card-topline">
         <span class="taskboard-anima">${escapeHtml(task.anima_name || task.assignee || "-")}</span>
         <code>${escapeHtml(shortId(task.task_id))}</code>
@@ -332,15 +273,14 @@ function _cardHtml(task) {
       ` : ""}
       <div class="taskboard-meta-row">
         <span class="taskboard-badge taskboard-badge--${statusClassSuffix(task.queue_status)}">
-          ${escapeHtml(task.queue_status || t("taskboard.queue_missing"))}
+          ${escapeHtml(task.queue_status)}
         </span>
-        <span class="taskboard-visibility">${escapeHtml(visibilityLabel(task.visibility))}</span>
+        ${task.source === "human" ? `<span class="taskboard-badge taskboard-badge--human">${t("taskboard.source_human")}</span>` : ""}
       </div>
       <div class="taskboard-card-facts">
-        <span class="${overdue ? "is-overdue" : ""}">
-          <i data-lucide="calendar-clock" aria-hidden="true"></i>${deadlineText(task.deadline)}
-        </span>
         <span><i data-lucide="clock-3" aria-hidden="true"></i>${ageText(task.updated_at)}</span>
+        ${task.waiting ? `<span class="taskboard-card-fact taskboard-card-fact--waiting">${escapeHtml(t("taskboard.waiting_on", { name: task.anima_name || "-" }))}</span>` : ""}
+        ${task.lease ? `<span class="taskboard-card-fact taskboard-card-fact--lease"><i data-lucide="lock-keyhole" aria-hidden="true"></i>${escapeHtml(t("taskboard.lease_by", { holder: task.lease.holder || "-", remaining: leaseRemaining }))}</span>` : ""}
       </div>
       <div class="taskboard-actions">
         ${_actionButtons(task, key)}
@@ -390,16 +330,8 @@ function _syncClampAffordances(root = _container) {
 }
 
 function _actionButtons(task, key) {
-  const attrs = `data-task-key="${escapeAttr(key)}"`;
-  if (task.visibility === "active") {
-    return `
-      <button type="button" data-task-action="snooze" ${attrs}><i data-lucide="alarm-clock"></i>${t("taskboard.action_snooze")}</button>
-      <button type="button" data-task-action="expire" ${attrs}><i data-lucide="timer-off"></i>${t("taskboard.action_expire")}</button>
-      <button type="button" data-task-action="archive" ${attrs}><i data-lucide="archive"></i>${t("taskboard.action_archive")}</button>
-      <button type="button" data-task-action="tombstone" ${attrs}><i data-lucide="ban"></i>${t("taskboard.action_tombstone")}</button>
-    `;
-  }
-  return `<button type="button" data-task-action="reactivate" ${attrs}><i data-lucide="rotate-ccw"></i>${t("taskboard.action_reactivate")}</button>`;
+  if (!isCancellable(task)) return "";
+  return `<button type="button" data-task-action="cancel" data-task-key="${escapeAttr(key)}"><i data-lucide="ban"></i>${t("taskboard.action_cancel")}</button>`;
 }
 
 function _emptyColumnHtml(column) {
@@ -408,34 +340,14 @@ function _emptyColumnHtml(column) {
 
 async function _handleAction(button) {
   const task = _findTask(button.dataset.taskKey);
-  if (!task) return;
-  const action = button.dataset.taskAction;
+  if (!task || button.dataset.taskAction !== "cancel") return;
   button.disabled = true;
   try {
-    if (action === "reactivate") {
-      await _patchTask(task, { visibility: "active", snoozed_until: null, actor: "dashboard" });
-      _setFeedback(t("taskboard.reactivated"), "ok");
-    } else if (action === "snooze") {
-      const result = await _openActionModal({ mode: "snooze", datetime: true });
-      if (!result) return;
-      await _patchTask(task, {
-        visibility: "snoozed",
-        snoozed_until: result.datetime,
-        reason: result.reason,
-        actor: "dashboard",
-      });
-      _setFeedback(t("taskboard.snoozed"), "ok");
-    } else {
-      const result = await _openActionModal({
-        mode: action,
-        reasonRequired: action === "expire" || action === "tombstone",
-        confirmRequired: action === "tombstone",
-      });
-      if (!result) return;
-      await _patchTask(task, { visibility: visibilityPayload(action), reason: result.reason, actor: "dashboard" });
-      _setFeedback(t(`taskboard.${action}d`), "ok");
-    }
-    await _loadBoard({ quiet: true });
+    const result = await _openActionModal({ mode: "cancel", reasonRequired: true, confirmRequired: true });
+    if (!result) return;
+    await _cancelTask(task, result.reason);
+    _setFeedback(t("taskboard.cancelled"), "ok");
+    await _loadBoard({ quiet: true, preserveFeedback: true });
   } catch (err) {
     _setFeedback(`${t("taskboard.action_failed")}: ${err.message || err}`, "error");
   } finally {
@@ -443,7 +355,7 @@ async function _handleAction(button) {
   }
 }
 
-function _openActionModal({ mode, datetime = false, reasonRequired = false, confirmRequired = false }) {
+function _openActionModal({ mode, reasonRequired = false, confirmRequired = false }) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "taskboard-modal";
@@ -453,9 +365,8 @@ function _openActionModal({ mode, datetime = false, reasonRequired = false, conf
           <h3>${t(`taskboard.modal_${mode}`)}</h3>
           <button type="button" class="taskboard-modal-close" aria-label="${t("common.aria_close")}">&times;</button>
         </header>
-        ${datetime ? `<label><span>${t("taskboard.snooze_until")}</span><input name="datetime" type="datetime-local" required value="${defaultLocalDateTime()}" /></label>` : ""}
-        <label><span>${t("taskboard.reason")}${reasonRequired ? " *" : ""}</span><textarea name="reason" rows="3" ${reasonRequired ? "required" : ""}></textarea></label>
-        ${confirmRequired ? `<label class="taskboard-modal-check"><input name="confirm" type="checkbox" required /><span>${t("taskboard.confirm_tombstone")}</span></label>` : ""}
+        <label><span>${t("taskboard.cancel_reason")}${reasonRequired ? " *" : ""}</span><textarea name="reason" rows="3" ${reasonRequired ? "required" : ""}></textarea></label>
+        ${confirmRequired ? `<label class="taskboard-modal-check"><input name="confirm" type="checkbox" required /><span>${t("taskboard.confirm_cancel")}</span></label>` : ""}
         <footer>
           <button type="button" class="btn-secondary" data-cancel>${t("taskboard.cancel")}</button>
           <button type="submit" class="btn-primary">${t("taskboard.apply")}</button>
@@ -483,69 +394,19 @@ function _openActionModal({ mode, datetime = false, reasonRequired = false, conf
       }
       form.elements.reason.setCustomValidity("");
       overlay.remove();
-      resolve({
-        datetime: fd.get("datetime") || "",
-        reason,
-      });
+      resolve({ reason });
     });
   });
 }
 
-async function _patchTask(task, body) {
+async function _cancelTask(task, reason) {
   const anima = encodeURIComponent(task.anima_name);
-  const taskId = encodeURIComponent(task.task_id);
-  return api(`/api/task-board/${anima}/${taskId}`, {
-    method: "PATCH",
+  const taskId = encodeURIComponent(task.canonical_task_id || task.task_id);
+  return api(`/api/task-board/${anima}/${taskId}/cancel`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ reason }),
   });
-}
-
-function _onDragStart(event) {
-  const card = event.target.closest(".taskboard-card");
-  if (!card) return;
-  _drag = { key: card.dataset.taskKey, column: card.dataset.column };
-  card.classList.add("is-dragging");
-  event.dataTransfer.effectAllowed = "move";
-}
-
-function _onDragOver(event) {
-  const column = event.target.closest("[data-column]")?.dataset.column;
-  if (_drag && column === _drag.column) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  }
-}
-
-async function _onDrop(event) {
-  const column = event.target.closest("[data-column]")?.dataset.column;
-  if (!_drag || column !== _drag.column) return;
-  event.preventDefault();
-  const targetCard = event.target.closest(".taskboard-card");
-  const targetKey = targetCard?.dataset.taskKey || "";
-  if (targetKey === _drag.key) return;
-  await _persistReorder(column, _drag.key, targetKey);
-}
-
-function _onDragEnd() {
-  _container?.querySelectorAll(".is-dragging").forEach((card) => card.classList.remove("is-dragging"));
-  _drag = null;
-}
-
-async function _persistReorder(column, movedKey, targetKey) {
-  const columnTasks = _tasks.filter((task) => (task.column || "todo") === column);
-  const movedIndex = columnTasks.findIndex((task) => taskKey(task) === movedKey);
-  if (movedIndex < 0) return;
-  const [moved] = columnTasks.splice(movedIndex, 1);
-  const targetIndex = targetKey ? columnTasks.findIndex((task) => taskKey(task) === targetKey) : -1;
-  columnTasks.splice(targetIndex >= 0 ? targetIndex : columnTasks.length, 0, moved);
-  try {
-    await Promise.all(columnTasks.map((task, index) => _patchTask(task, { position: (index + 1) * 1000, actor: "dashboard" })));
-    _setFeedback(t("taskboard.reordered"), "ok");
-    await _loadBoard({ quiet: true });
-  } catch (err) {
-    _setFeedback(`${t("taskboard.reorder_failed")}: ${err.message || err}`, "error");
-  }
 }
 
 function _setActiveColumn(column) {

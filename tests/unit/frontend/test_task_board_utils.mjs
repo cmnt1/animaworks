@@ -25,7 +25,18 @@ const source = readFileSync(UTILS_PATH, "utf8").replace(
 );
 const moduleUrl =
   "data:text/javascript;base64," + Buffer.from(source, "utf8").toString("base64");
-const { splitTaskDescription } = await import(moduleUrl);
+const { COLUMNS, isCancellable, splitTaskDescription } = await import(moduleUrl);
+
+describe("TaskBoard utilities", () => {
+  it("uses the four TaskBoard columns", () => {
+    assert.deepEqual(COLUMNS, ["todo", "running", "waiting", "done"]);
+  });
+
+  it("allows cancellation only for active tasks", () => {
+    assert.equal(isCancellable({ visibility: "active" }), true);
+    assert.equal(isCancellable({ visibility: "archived" }), false);
+  });
+});
 
 describe("splitTaskDescription", () => {
   it("returns empty title/body for nullish or blank input", () => {

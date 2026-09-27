@@ -175,25 +175,17 @@ async function _loadAll() {
 
 /**
  * Build chip descriptors for the attention summary row (pure).
- * @param {object|null|undefined} summary - TaskBoard summary payload
+ * @param {object|null|undefined} summary - TaskBoard summary payload with pending and in_progress counts
  * @param {number} [extCount=0] - External resource open/in_progress count
  * @param {(key: string, params?: object) => string} [translate]
  * @returns {Array<{ key: string, label: string, count: number, href: string, emphasis: boolean }>}
  */
 export function attentionSummaryChips(summary, extCount = 0, translate = t) {
   const s = summary && typeof summary === "object" ? summary : {};
-  const blocked = Number(s.blocked) || 0;
   const pending = Number(s.pending) || 0;
   const inProgress = Number(s.in_progress) || 0;
   const ext = Number(extCount) || 0;
   return [
-    {
-      key: "blocked",
-      label: translate("home.attention_blocked", { count: blocked }),
-      count: blocked,
-      href: "#/task-board",
-      emphasis: blocked > 0,
-    },
     {
       key: "pending",
       label: translate("home.attention_pending", { count: pending }),
