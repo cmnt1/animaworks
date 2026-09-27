@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: d1aaefc07110e41999542e0a05e8eab6cd042d4e44e51c8be3abc0730159fef2 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: cbc10cb8abc9c88b76d5d659cc9a85c5eba37628c363419ca0625b31fc984cc4 -->
 
 # 設定リファレンス
 
@@ -276,6 +276,7 @@
 | `server.media_proxy.rate_limit_requests` | `int` | `30` | — |
 | `server.media_proxy.rate_limit_window_s` | `int` | `60` | — |
 | `server.base_path` | `str` | `""` | Reverse proxy sub-path (e.g. "/app"); empty = root deploy |
+| `server.internal_api_auth` | `Literal['off', 'log', 'enforce']` | `"enforce"` | /api/internal/* caller verification |
 | `llm_rate_guard` | `LlmRateGuardConfig` | `{LlmRateGuardConfig}` | LLM 呼び出し頻度と同時実行数の制御。 |
 | `llm_rate_guard.enabled` | `bool` | `true` | — |
 | `llm_rate_guard.default_block_seconds` | `int` | `60` | — |
