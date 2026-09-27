@@ -85,7 +85,7 @@ def vector_store(anima_dir):
     """Create a ChromaDB vector store persisted under the anima's vectordb dir."""
     from core.memory.rag.store import ChromaVectorStore
 
-    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
+    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=True)
     return store
 
 

@@ -137,7 +137,7 @@ async def test_spawning_workers_can_embed_before_public_readiness(data_dir: Path
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
     with (
         patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH),
-        patch("core.memory.rag.singleton.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
+        patch("core.memory.rag.embedding.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
     ):
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]})
@@ -157,7 +157,7 @@ async def test_internal_endpoints_remain_gated_before_worker_startup(data_dir: P
     startup_progress.begin_startup("booting")
     startup_progress.set_phase(phase)
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
-    with patch("core.memory.rag.singleton.thread_safe_encode") as encode:
+    with patch("core.memory.rag.embedding.thread_safe_encode") as encode:
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]})
     assert resp.status_code == 503
@@ -181,7 +181,7 @@ async def test_spawning_internal_exception_requires_safe_local_request(
     startup_progress.begin_startup("booting")
     startup_progress.set_phase("spawning_animas")
     transport = ASGITransport(app=app, client=(peer, 12345))
-    with patch("core.memory.rag.singleton.thread_safe_encode") as encode:
+    with patch("core.memory.rag.embedding.thread_safe_encode") as encode:
         async with AsyncClient(transport=transport, base_url=base_url) as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]}, headers=headers)
     assert resp.status_code == 503
@@ -198,7 +198,7 @@ async def test_spawning_internal_exception_preserves_authentication(data_dir: Pa
     auth = AuthConfig(auth_mode="password", trust_localhost=False)
     with (
         patch("server.app.load_auth", return_value=auth),
-        patch("core.memory.rag.singleton.thread_safe_encode") as encode,
+        patch("core.memory.rag.embedding.thread_safe_encode") as encode,
     ):
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             resp = await client.post("/api/internal/embed", json={"texts": ["memory"]})
@@ -242,7 +242,7 @@ async def test_catchup_indexing_cannot_close_ready_worker_services(data_dir: Pat
         patch("server.app._startup_animas_background", side_effect=spawn_and_catchup) as spawn,
         patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
         patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH),
-        patch("core.memory.rag.singleton.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
+        patch("core.memory.rag.embedding.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
     ):
         await _run_startup_initialization(app)
     spawn.assert_awaited_once()
@@ -290,7 +290,7 @@ async def test_failed_phase_cannot_use_a_stale_worker_ready_flag(data_dir: Path)
     startup_progress.begin_startup("booting")
     startup_progress.set_phase("failed")
     transport = ASGITransport(app=app, client=("127.0.0.1", 12345))
-    with patch("core.memory.rag.singleton.thread_safe_encode") as encode:
+    with patch("core.memory.rag.embedding.thread_safe_encode") as encode:
         async with AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             response = await client.post("/api/internal/embed", json={"texts": ["memory"]})
     assert response.status_code == 503

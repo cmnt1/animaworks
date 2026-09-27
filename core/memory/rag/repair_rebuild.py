@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -160,13 +159,11 @@ def build_staging_vectordb(
     if staging.exists():
         shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
-    previous = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
-    os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
     try:
         from core.memory.rag.repair_snapshot import save_rebuild_artifacts, snapshot_inputs, validate_rebuild_sources
 
         with snapshot_inputs(anima_dir, include_shared=include_shared) as inputs:
-            store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name)
+            store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name, allow_direct=True)
             try:
                 chunks, shared_hashes = _reindex_into_store(
                     store,
@@ -187,11 +184,6 @@ def build_staging_vectordb(
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    finally:
-        if previous is None:
-            os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
-        else:
-            os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = previous
 
 
 def _repair_metadata_paths(anima_dir: Path) -> tuple[Path, ...]:

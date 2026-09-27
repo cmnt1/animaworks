@@ -120,7 +120,7 @@ class TestSelectReviewCandidates:
                 "core.memory.rag.retriever.MemoryRetriever.search",
                 return_value=mock_results,
             ),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
             patch("core.memory.rag.MemoryIndexer"),
         ):
             candidates = engine._select_review_candidates(
@@ -146,7 +146,7 @@ class TestSelectReviewCandidates:
                 "core.memory.rag.retriever.MemoryRetriever.search",
                 return_value=mock_results,
             ),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
             patch("core.memory.rag.MemoryIndexer"),
         ):
             candidates = engine._select_review_candidates(
@@ -178,7 +178,7 @@ class TestSelectReviewCandidates:
                 "core.memory.rag.retriever.MemoryRetriever.search",
                 return_value=mock_results,
             ),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
             patch("core.memory.rag.MemoryIndexer"),
         ):
             candidates = engine._select_review_candidates(
@@ -207,7 +207,7 @@ class TestSelectReviewCandidates:
                 "core.memory.rag.retriever.MemoryRetriever.search",
                 return_value=mock_results,
             ),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
             patch("core.memory.rag.MemoryIndexer"),
         ):
             candidates = engine._select_review_candidates(
@@ -241,7 +241,7 @@ class TestSelectReviewCandidates:
                 "core.memory.rag.retriever.MemoryRetriever.search",
                 return_value=[],
             ),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
             patch("core.memory.rag.MemoryIndexer"),
         ):
             candidates = engine._select_review_candidates(
@@ -274,7 +274,7 @@ class TestSelectReviewCandidates:
                 side_effect=ImportError("RAG not available"),
             ),
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 side_effect=ImportError("RAG not available"),
             ),
         ):
@@ -523,7 +523,7 @@ class TestProcessReviewVerdicts:
                 "core.memory.rag.retriever.MemoryRetriever.search",
                 side_effect=_mock_search,
             ),
-            patch("core.memory.rag.singleton.get_vector_store"),
+            patch("core.memory.rag.vector_registry.get_vector_store"),
             patch("core.memory.rag.MemoryIndexer"),
         ):
             candidates = engine._select_review_candidates(

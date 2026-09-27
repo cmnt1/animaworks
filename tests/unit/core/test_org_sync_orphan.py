@@ -397,7 +397,7 @@ class TestChromaVectorStoreMkdirGuard:
         with patch.dict(sys.modules, {"chromadb": mock_chromadb}):
             from core.memory.rag.store import ChromaVectorStore
 
-            ChromaVectorStore(persist_dir=persist_dir)
+            ChromaVectorStore(persist_dir=persist_dir, allow_direct=True)
 
         assert persist_dir.exists()
 
@@ -412,7 +412,7 @@ class TestChromaVectorStoreMkdirGuard:
         with patch.dict(sys.modules, {"chromadb": mock_chromadb}), caplog.at_level(logging.WARNING):
             from core.memory.rag.store import ChromaVectorStore
 
-            ChromaVectorStore(persist_dir=persist_dir)
+            ChromaVectorStore(persist_dir=persist_dir, allow_direct=True)
 
         assert persist_dir.exists()
         assert "Parent directory does not exist" in caplog.text

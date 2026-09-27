@@ -22,7 +22,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Sequence
 
-from core.memory.rag.singleton import generate_embeddings, get_embedding_model_name
+from core.memory.rag.embedding import generate_embeddings, get_embedding_model_name
 from core.paths import get_shared_dir
 from core.platform.atomic_io import atomic_write_json
 from core.skills.models import SkillMetadata

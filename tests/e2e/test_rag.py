@@ -131,7 +131,7 @@ def temp_vector_store(temp_anima_dir):
     vectordb_dir = temp_anima_dir / "vectordb"
     vectordb_dir.mkdir()
 
-    store = ChromaVectorStore(persist_dir=vectordb_dir)
+    store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
     yield store
 
     # Cleanup is handled by temp_anima_dir fixture
@@ -237,9 +237,7 @@ def test_indexer_chunk_by_markdown_headings(temp_anima_dir, temp_vector_store):
 
     from core.memory.rag.indexer import MemoryIndexer
 
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     knowledge_file = temp_anima_dir / "knowledge" / "chatwork-policy.md"
     chunks_indexed = indexer.index_file(knowledge_file, "knowledge")
@@ -253,9 +251,7 @@ def test_indexer_chunk_by_time_headings(temp_anima_dir, temp_vector_store):
 
     from core.memory.rag.indexer import MemoryIndexer
 
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     episode_file = temp_anima_dir / "episodes" / "2026-02-14.md"
     chunks_indexed = indexer.index_file(episode_file, "episodes")
@@ -269,9 +265,7 @@ def test_indexer_incremental_indexing(temp_anima_dir, temp_vector_store):
 
     from core.memory.rag.indexer import MemoryIndexer
 
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     knowledge_file = temp_anima_dir / "knowledge" / "chatwork-policy.md"
 
@@ -304,9 +298,7 @@ def test_indexer_metadata_extraction(temp_anima_dir, temp_vector_store):
         encoding="utf-8",
     )
 
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     chunks_indexed = indexer.index_file(knowledge_file, "knowledge")
     assert chunks_indexed > 0
@@ -320,10 +312,7 @@ def test_indexer_metadata_extraction(temp_anima_dir, temp_vector_store):
     )
 
     # Find the important.md chunk
-    important_chunks = [
-        r for r in results
-        if "important.md" in r.document.metadata.get("source_file", "")
-    ]
+    important_chunks = [r for r in results if "important.md" in r.document.metadata.get("source_file", "")]
 
     assert len(important_chunks) > 0
     assert important_chunks[0].document.metadata["importance"] == "important"
@@ -340,9 +329,7 @@ def test_memory_retriever_vector_search(temp_anima_dir, temp_vector_store):
     from core.memory.rag.retriever import MemoryRetriever
 
     # Index knowledge files
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     knowledge_dir = temp_anima_dir / "knowledge"
     indexer.index_directory(knowledge_dir, "knowledge")
@@ -419,9 +406,7 @@ def test_memory_retriever_search_with_temporal_decay(temp_anima_dir, temp_vector
     from core.memory.rag.retriever import MemoryRetriever
 
     # Index knowledge files
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     knowledge_dir = temp_anima_dir / "knowledge"
     indexer.index_directory(knowledge_dir, "knowledge")
@@ -460,9 +445,7 @@ async def test_priming_with_vector_search(temp_anima_dir, temp_vector_store):
     from core.memory.rag.indexer import MemoryIndexer
 
     # Index knowledge
-    indexer = MemoryIndexer(
-        temp_vector_store, "test_anima", temp_anima_dir
-    )
+    indexer = MemoryIndexer(temp_vector_store, "test_anima", temp_anima_dir)
 
     knowledge_dir = temp_anima_dir / "knowledge"
     indexer.index_directory(knowledge_dir, "knowledge")
@@ -472,9 +455,7 @@ async def test_priming_with_vector_search(temp_anima_dir, temp_vector_store):
 
     from core.memory.rag.retriever import MemoryRetriever
 
-    engine._retriever = MemoryRetriever(
-        temp_vector_store, indexer, temp_anima_dir / "knowledge"
-    )
+    engine._retriever = MemoryRetriever(temp_vector_store, indexer, temp_anima_dir / "knowledge")
 
     # Prime memories
     result = await engine.prime_memories(

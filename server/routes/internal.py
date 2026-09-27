@@ -337,7 +337,7 @@ def create_internal_router() -> APIRouter:
 
         from functools import partial
 
-        from core.memory.rag.singleton import thread_safe_encode
+        from core.memory.rag.embedding import thread_safe_encode
 
         loop = asyncio.get_running_loop()
         embeddings = await loop.run_in_executor(

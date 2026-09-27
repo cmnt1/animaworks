@@ -142,7 +142,7 @@ class Neo4jGraphBackend(MemoryBackend):
         if self._embedding_available is False:
             return [[] for _ in texts]
         try:
-            from core.memory.rag.singleton import generate_embeddings
+            from core.memory.rag.embedding import generate_embeddings
 
             resolved_priority = priority or ("interactive" if purpose == "query" else "bulk")
             result = await asyncio.to_thread(

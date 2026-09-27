@@ -46,6 +46,20 @@ class _MemoryStore(VectorStore):
     def get_by_ids(self, collection: str, ids: list[str]) -> list[Document]:
         return [item for item in self.documents.get(collection, []) if item.id in ids]
 
+    # MemoryService dispatches to the single-attempt ``_*_once`` methods.
+    _create_collection_once = create_collection
+    _delete_collection_once = delete_collection
+    _list_collections_once = list_collections
+    _upsert_once = upsert
+    _query_once = query
+    _delete_documents_once = delete_documents
+    _update_metadata_once = update_metadata
+    _get_by_metadata_once = get_by_metadata
+    _get_by_ids_once = get_by_ids
+
+    def close(self) -> None:
+        return None
+
 
 def test_open_vector_access_uses_temporary_owner_when_lock_is_free(tmp_path: Path, monkeypatch) -> None:
     import core.memory.rag.cli_access as cli_access

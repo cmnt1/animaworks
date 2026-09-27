@@ -91,18 +91,18 @@ class TestFindMergeCandidates:
 
     def test_empty_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
-        with patch("core.memory.rag.singleton.get_vector_store") as mock_store:
+        with patch("core.memory.rag.vector_registry.get_vector_store") as mock_store:
             assert engine._find_merge_candidates() == []
             mock_store.assert_not_called()
 
     def test_single_file_returns_empty(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         (engine.knowledge_dir / "only.md").write_text("---\n---\nContent", encoding="utf-8")
-        with patch("core.memory.rag.singleton.get_vector_store") as mock_store:
+        with patch("core.memory.rag.vector_registry.get_vector_store") as mock_store:
             assert engine._find_merge_candidates() == []
             mock_store.assert_not_called()
 
-    @patch("core.memory.rag.singleton.get_vector_store", return_value=None)
+    @patch("core.memory.rag.vector_registry.get_vector_store", return_value=None)
     def test_rag_unavailable(self, mock_store: MagicMock, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         (engine.knowledge_dir / "a.md").write_text("---\n---\nA", encoding="utf-8")
@@ -131,7 +131,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -161,7 +161,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -187,7 +187,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",
@@ -218,7 +218,7 @@ class TestFindMergeCandidates:
 
         mock_vs = MagicMock()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_vs),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_vs),
             patch("core.memory.rag.MemoryIndexer"),
             patch(
                 "core.memory.rag.retriever.MemoryRetriever",

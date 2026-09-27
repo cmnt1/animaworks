@@ -42,14 +42,14 @@ async def test_daily_indexing_uses_configured_vector_store(data_dir: Path, monke
 
     get_store = MagicMock(return_value=store)
     monkeypatch.setattr("core.memory.rag.MemoryIndexer", FakeIndexer)
-    monkeypatch.setattr("core.memory.rag.singleton.get_embedding_model_name", lambda: "model")
+    monkeypatch.setattr("core.memory.rag.embedding.get_embedding_model_name", lambda: "model")
     monkeypatch.setattr("core.memory.rag.repair.is_repair_locked", lambda _anima_name: False)
     monkeypatch.setattr(
         "core.memory.retrieval.bm25.rebuild_longterm_bm25_index", lambda _path: SimpleNamespace(documents=0)
     )
     monkeypatch.setattr("core.memory.facts.entity_index.rebuild_entity_collection", lambda *_args, **_kwargs: True)
     monkeypatch.setattr("core.memory.rag.graph.rebuild_graph_cache", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", get_store)
+    monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", get_store)
 
     harness = _DailyIndexingHarness(data_dir)
     await harness._run_daily_indexing()

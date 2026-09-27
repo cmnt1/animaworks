@@ -592,6 +592,7 @@ class TestRAGDuplicateCheck:
                 "core.memory.rag": rag_module,
                 "core.memory.rag.retriever": retriever_module,
                 "core.memory.rag.singleton": singleton_module,
+                "core.memory.rag.vector_registry": singleton_module,
             },
         ):
             result = distiller._check_rag_duplicate("some procedure content")

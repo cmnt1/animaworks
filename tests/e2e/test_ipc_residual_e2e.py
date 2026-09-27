@@ -76,7 +76,7 @@ class TestPerAnimaChromaDBIsolation:
         This is the key E2E test: uses real ChromaDB PersistentClient instances
         to verify that per-anima databases are truly isolated.
         """
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.vector_registry import get_vector_store
 
         store_a = get_vector_store("alice")
         store_b = get_vector_store("bob")
@@ -122,14 +122,14 @@ class TestPerAnimaChromaDBIsolation:
 
     def test_none_anima_uses_shared_legacy_dir(self, data_dir: Path):
         """get_vector_store(None) uses the shared legacy vectordb directory."""
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.vector_registry import get_vector_store
 
         shared_store = get_vector_store(None)
         assert shared_store.persist_dir == data_dir / "vectordb"
 
     def test_singleton_per_anima(self, data_dir: Path):
         """Same anima_name returns the same ChromaDB instance."""
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.vector_registry import get_vector_store
 
         s1 = get_vector_store("charlie")
         s2 = get_vector_store("charlie")
@@ -137,7 +137,7 @@ class TestPerAnimaChromaDBIsolation:
 
     def test_different_animas_different_instances(self, data_dir: Path):
         """Different anima_names return different ChromaDB instances."""
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.vector_registry import get_vector_store
 
         sa = get_vector_store("alice")
         sb = get_vector_store("bob")

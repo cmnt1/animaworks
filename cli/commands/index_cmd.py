@@ -97,7 +97,7 @@ def _check_model_change(base_dir: Path, full: bool) -> str:
     import json
     import sys
 
-    from core.memory.rag.singleton import get_embedding_e5_prefix_enabled, get_embedding_model_name
+    from core.memory.rag.embedding import get_embedding_e5_prefix_enabled, get_embedding_model_name
 
     current_model = get_embedding_model_name()
     current_e5_prefix = get_embedding_e5_prefix_enabled()
@@ -123,7 +123,7 @@ def _save_global_index_meta(base_dir: Path, model_name: str) -> None:
     """Write the embedding index signature to the global index_meta.json."""
     import json
 
-    from core.memory.rag.singleton import get_embedding_e5_prefix_enabled
+    from core.memory.rag.embedding import get_embedding_e5_prefix_enabled
 
     meta_path = base_dir / "index_meta.json"
     meta: dict = {}

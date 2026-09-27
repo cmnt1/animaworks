@@ -190,7 +190,7 @@ class TestRetrieverCacheTTL:
 
         sentinel = object()
         with (
-            patch("core.memory.rag.singleton.get_vector_store", return_value=MagicMock()),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=MagicMock()),
             patch("core.memory.rag.indexer.MemoryIndexer", return_value=MagicMock()),
             patch("core.memory.rag.MemoryRetriever", return_value=sentinel),
         ):

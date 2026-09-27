@@ -487,7 +487,7 @@ class TestConsolidationOriginChain:
 
         with (
             patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         ):
             engine._update_rag_index(
                 ["output.md"],
@@ -521,7 +521,7 @@ class TestConsolidationOriginChain:
 
         with (
             patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         ):
             engine._update_rag_index(
                 ["output2.md"],

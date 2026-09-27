@@ -298,7 +298,7 @@ class TestCompressedSummaryToRAGSearchPipeline:
         from core.memory.rag.indexer import MemoryIndexer
         from core.memory.rag.store import ChromaVectorStore
 
-        vector_store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
+        vector_store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=True)
         indexer = MemoryIndexer(vector_store, "test-rag-vec", anima_dir)
 
         # Index the conversation summary

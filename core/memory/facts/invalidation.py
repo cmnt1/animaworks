@@ -196,7 +196,8 @@ def _load_reconcile_config() -> ReconcileConfig:
 
 
 def _search_fact_candidates(anima_dir: Path, fact: FactRecord, top_k: int) -> list[FactCandidate]:
-    from core.memory.rag.singleton import generate_embeddings, get_vector_store
+    from core.memory.rag.embedding import generate_embeddings
+    from core.memory.rag.vector_registry import get_vector_store
 
     vector_store = get_vector_store(anima_dir.name)
     if vector_store is None:

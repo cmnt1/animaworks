@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import shutil
 import sys
 import uuid
@@ -14,12 +13,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic, perf_counter
-from typing import Any
+from typing import Any, TypeVar
 
 from core.memory.rag.owner_lock import VectorOwnerBusy, VectorOwnerLock
-from core.memory.rag.store import Document, SearchResult, VectorStore
+from core.memory.rag.store import ChromaVectorStore, Document, SearchResult
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 
 class MemoryServiceUnavailable(RuntimeError):
@@ -29,13 +29,15 @@ class MemoryServiceUnavailable(RuntimeError):
 class MemoryService:
     """Serialize one anima's native vector operations on one bounded worker."""
 
+    _REOPEN_MIN_INTERVAL_SECONDS = 60.0
+
     def __init__(
         self,
         anima_name: str,
         anima_dir: Path,
         *,
         queue_limit: int = 64,
-        opener: Callable[[], VectorStore] | None = None,
+        opener: Callable[[], ChromaVectorStore] | None = None,
         repair_fenced: Callable[[], bool] | None = None,
         owner_label: str = "root",
     ) -> None:
@@ -49,8 +51,9 @@ class MemoryService:
         self._owner_lock = VectorOwnerLock(anima_dir, owner_label)
         self._owner_retry_at = 0.0
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"memory-{anima_name}")
-        self._store: VectorStore | None = None
+        self._store: ChromaVectorStore | None = None
         self._open_error: Exception | None = None
+        self._last_reopen_monotonic: float | None = None
         self._pending = 0
         self._started = False
         self._closing = False
@@ -209,15 +212,9 @@ class MemoryService:
         from core.config import load_config
 
         timeout = int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
-        # Staging build legitimately opens native chroma (in the staging dir),
-        # so grant direct access explicitly — the process-local grant of this
-        # root process does not propagate through the environment.
-        from core.memory.rag.direct_access import DIRECT_CHROMA_ENV
-
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=Path(__file__).resolve().parents[2],
-            env={**os.environ, DIRECT_CHROMA_ENV: "1"},
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -312,6 +309,7 @@ class MemoryService:
             store = await loop.run_in_executor(self._executor, self._opener)
             self._store = store
             self._open_error = None
+            self._last_reopen_monotonic = monotonic()
             verification = await loop.run_in_executor(self._executor, self._verify_store_sync, store, chunks)
             if shared_hashes:
                 await loop.run_in_executor(self._executor, self._write_shared_hashes_sync, shared_hashes)
@@ -340,6 +338,7 @@ class MemoryService:
                     )
                     self._store = await loop.run_in_executor(self._executor, self._opener)
                     self._open_error = None
+                    self._last_reopen_monotonic = monotonic()
                 except Exception as rollback_exc:
                     self._store = None
                     self._open_error = rollback_exc
@@ -348,6 +347,7 @@ class MemoryService:
                 try:
                     self._store = await loop.run_in_executor(self._executor, self._opener)
                     self._open_error = None
+                    self._last_reopen_monotonic = monotonic()
                 except Exception as reopen_exc:
                     self._open_error = reopen_exc
                     rollback_errors.append(str(reopen_exc))
@@ -402,7 +402,7 @@ class MemoryService:
         rebuild_longterm_bm25_index(self.anima_dir)
 
     @staticmethod
-    def _verify_store_sync(store: VectorStore, expected_chunks: int) -> dict[str, int]:
+    def _verify_store_sync(store: ChromaVectorStore, expected_chunks: int) -> dict[str, int]:
         verify = getattr(store, "verify_rebuilt_data", None)
         if not callable(verify):
             raise RuntimeError("reopened root vector store cannot verify rebuilt data")
@@ -450,10 +450,59 @@ class MemoryService:
             log_missing_collection_once(collection, "Collection %s does not exist yet; reading as empty", collection)
             return []
 
-    def _dispatch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        store = self._store
-        if store is None:
+    def _run_native(self, method: str, collection: str, op: Callable[[ChromaVectorStore], _T]) -> _T:
+        """Run a native store operation with bounded corruption recovery."""
+        if self._repairing:
+            raise MemoryServiceUnavailable("RAG repair in progress")
+        if self._store is None:
             raise MemoryServiceUnavailable("memory store unavailable")
+
+        try:
+            return op(self._store)
+        except Exception as error:
+            from core.memory.rag.repair_utils import classify_corruption_error
+
+            reason = classify_corruption_error(error)
+            if reason is None:
+                raise
+            if reason == "chroma_transient":
+                try:
+                    return op(self._store)
+                except Exception as retry_error:
+                    error = retry_error
+                    reason = classify_corruption_error(retry_error)
+                    if reason is None:
+                        raise
+
+            from core.memory.rag.repair import record_chroma_error
+
+            record_chroma_error(
+                anima_name=self.anima_name,
+                collection=collection,
+                error=error,
+                source=f"root:{method}",
+            )
+
+            now = monotonic()
+            if (
+                self._last_reopen_monotonic is not None
+                and now - self._last_reopen_monotonic < self._REOPEN_MIN_INTERVAL_SECONDS
+            ):
+                raise error
+
+            self._last_reopen_monotonic = now
+            try:
+                self._close_store_sync()
+                self._store = self._opener()
+                self._open_error = None
+            except Exception as reopen_error:
+                self._store = None
+                self._open_error = reopen_error
+                raise reopen_error from error
+
+            return op(self._store)
+
+    def _dispatch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if method == "memory.query":
             collection = self._string(params, "collection")
             embedding = params.get("embedding")
@@ -465,15 +514,22 @@ class MemoryService:
                 raise ValueError("top_k must be an integer >= 1")
             if filter_metadata is not None and not isinstance(filter_metadata, dict):
                 raise ValueError("filter_metadata must be an object or null")
-            query = getattr(store, "_query_once", store.query)
-            return {
-                "results": self._search_results(
-                    self._read_or_empty(collection, lambda: query(collection, embedding, top_k, filter_metadata))
-                )
-            }
+            results = self._run_native(
+                method,
+                collection,
+                lambda store: self._read_or_empty(
+                    collection,
+                    lambda: store._query_once(collection, embedding, top_k, filter_metadata),
+                ),
+            )
+            return {"results": self._search_results(results)}
         if method == "memory.list_collections":
-            listing = getattr(store, "_list_collections_once", store.list_collections)
-            return {"collections": list(listing())}
+            collections = self._run_native(
+                method,
+                "<list_collections>",
+                lambda store: store._list_collections_once(),
+            )
+            return {"collections": list(collections)}
         if method == "memory.get_by_metadata":
             collection = self._string(params, "collection")
             where = params.get("where")
@@ -482,35 +538,47 @@ class MemoryService:
                 raise ValueError("where must be an object")
             if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
                 raise ValueError("limit must be an integer >= 1")
-            get = getattr(store, "_get_by_metadata_once", store.get_by_metadata)
-            return {
-                "results": self._search_results(self._read_or_empty(collection, lambda: get(collection, where, limit)))
-            }
+            results = self._run_native(
+                method,
+                collection,
+                lambda store: self._read_or_empty(
+                    collection,
+                    lambda: store._get_by_metadata_once(collection, where, limit),
+                ),
+            )
+            return {"results": self._search_results(results)}
         if method == "memory.get_by_ids":
             collection = self._string(params, "collection")
             ids = params.get("ids")
             if not isinstance(ids, list) or not all(isinstance(value, str) for value in ids):
                 raise ValueError("ids must be a list of strings")
-            get = getattr(store, "_get_by_ids_once", store.get_by_ids)
-            return {"documents": self._documents(self._read_or_empty(collection, lambda: get(collection, ids)))}
+            documents = self._run_native(
+                method,
+                collection,
+                lambda store: self._read_or_empty(
+                    collection,
+                    lambda: store._get_by_ids_once(collection, ids),
+                ),
+            )
+            return {"documents": self._documents(documents)}
         if method == "memory.create_collection":
             collection = self._string(params, "collection")
-            create = getattr(store, "_create_collection_once", store.create_collection)
-            return {"ok": bool(create(collection))}
+            result = self._run_native(method, collection, lambda store: store._create_collection_once(collection))
+            return {"ok": bool(result)}
         if method == "memory.delete_collection":
             collection = self._string(params, "collection")
-            delete = getattr(store, "_delete_collection_once", store.delete_collection)
-            return {"ok": bool(delete(collection))}
+            result = self._run_native(method, collection, lambda store: store._delete_collection_once(collection))
+            return {"ok": bool(result)}
         if method == "memory.upsert":
             collection = self._string(params, "collection")
             documents = self._document_params(params.get("documents"))
-            upsert = getattr(store, "_upsert_once", store.upsert)
-            return {"ok": bool(upsert(collection, documents))}
+            result = self._run_native(method, collection, lambda store: store._upsert_once(collection, documents))
+            return {"ok": bool(result)}
         if method == "memory.delete_documents":
             collection = self._string(params, "collection")
             ids = self._strings(params.get("ids"), "ids")
-            delete = getattr(store, "_delete_documents_once", store.delete_documents)
-            return {"ok": bool(delete(collection, ids))}
+            result = self._run_native(method, collection, lambda store: store._delete_documents_once(collection, ids))
+            return {"ok": bool(result)}
         if method == "memory.update_metadata":
             collection = self._string(params, "collection")
             ids = self._strings(params.get("ids"), "ids")
@@ -519,10 +587,14 @@ class MemoryService:
                 raise ValueError("metadatas must be a list of objects")
             if len(ids) != len(metadatas):
                 raise ValueError("ids and metadatas must have the same length")
-            update = getattr(store, "_update_metadata_once", store.update_metadata)
-            return {"ok": bool(update(collection, ids, metadatas))}
+            result = self._run_native(
+                method,
+                collection,
+                lambda store: store._update_metadata_once(collection, ids, metadatas),
+            )
+            return {"ok": bool(result)}
         if method == "memory.apply_access_updates":
-            return {"ok": self._apply_access_updates(store, params["operations"])}
+            return {"ok": self._apply_access_updates(params["operations"])}
         raise ValueError(f"unsupported memory method: {method}")
 
     @staticmethod
@@ -542,29 +614,31 @@ class MemoryService:
                 if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
                     raise ValueError(f"{key} must be a non-negative number")
 
-    @staticmethod
-    def _apply_access_updates(store: VectorStore, operations: list[dict[str, Any]]) -> bool:
+    def _apply_access_updates(self, operations: list[dict[str, Any]]) -> bool:
         grouped: dict[str, list[dict[str, Any]]] = {}
         for operation in operations:
             grouped.setdefault(operation["collection"], []).append(operation)
-        get = getattr(store, "_get_by_ids_once", store.get_by_ids)
-        update = getattr(store, "_update_metadata_once", store.update_metadata)
         for collection, rows in grouped.items():
             ids = [row["doc_id"] for row in rows]
-            current = {document.id: dict(document.metadata) for document in get(collection, ids)}
+            documents = self._run_native(
+                "memory.apply_access_updates",
+                collection,
+                lambda store, collection=collection, ids=ids: store._get_by_ids_once(collection, ids),
+            )
+            current = {document.id: dict(document.metadata) for document in documents}
             metadatas: list[dict[str, str | int | float]] = []
             for row in rows:
                 metadata = current.get(row["doc_id"], {})
-                access_count = MemoryService._metadata_number(metadata, "access_count")
+                access_count = self._metadata_number(metadata, "access_count")
                 last_accessed_at = max(
                     str(metadata.get("last_accessed_at", "") or ""),
                     str(row.get("last_accessed_at", "") or ""),
                 )
                 patch: dict[str, str | int | float] = {
                     "access_count": access_count + float(row.get("access_delta", 0)),
-                    "retrieved_count": MemoryService._metadata_number(metadata, "retrieved_count")
+                    "retrieved_count": self._metadata_number(metadata, "retrieved_count")
                     + int(row.get("retrieved_delta", 0)),
-                    "used_count": MemoryService._metadata_number(metadata, "used_count", default=access_count)
+                    "used_count": self._metadata_number(metadata, "used_count", default=access_count)
                     + int(row.get("used_delta", 0)),
                     "last_accessed_at": last_accessed_at,
                 }
@@ -574,11 +648,18 @@ class MemoryService:
                         patch[f"last_{kind}_at"] = max(str(metadata.get(f"last_{kind}_at", "") or ""), timestamp)
                 per_anima_key = row.get("per_anima_access_key")
                 if isinstance(per_anima_key, str) and per_anima_key:
-                    patch[per_anima_key] = MemoryService._metadata_number(metadata, per_anima_key) + float(
+                    patch[per_anima_key] = self._metadata_number(metadata, per_anima_key) + float(
                         row.get("access_delta", 0)
                     )
                 metadatas.append(patch)
-            if not update(collection, ids, metadatas):
+            updated = self._run_native(
+                "memory.apply_access_updates",
+                collection,
+                lambda store, collection=collection, ids=ids, metadatas=metadatas: store._update_metadata_once(
+                    collection, ids, metadatas
+                ),
+            )
+            if not updated:
                 return False
         return True
 
@@ -636,15 +717,14 @@ class MemoryService:
     def _search_results(cls, results: list[SearchResult]) -> list[dict[str, Any]]:
         return [{"document": cls._documents([result.document])[0], "score": result.score} for result in results]
 
-    def _open_native_store(self) -> VectorStore:
-        from core.memory.rag.direct_access import enable_direct_chroma_for_process
+    def _open_native_store(self) -> ChromaVectorStore:
         from core.memory.rag.store import create_chroma_vector_store
         from core.paths import get_anima_vectordb_dir
 
-        enable_direct_chroma_for_process()
         return create_chroma_vector_store(
             persist_dir=get_anima_vectordb_dir(self.anima_name),
             anima_name=self.anima_name,
+            allow_direct=True,
         )
 
     async def close(self) -> None:

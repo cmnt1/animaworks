@@ -57,7 +57,7 @@ def test_retriever_cache_cold_start_is_single_flight(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr("core.memory.rag.indexer.MemoryIndexer", FakeIndexer)
     monkeypatch.setattr("core.memory.rag.MemoryRetriever", FakeRetriever)
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda _name: object())
+    monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", lambda _name: object())
     cache = RetrieverCache()
 
     with ThreadPoolExecutor(max_workers=2) as pool:

@@ -59,7 +59,7 @@ def test_cuda_initialization_failure_falls_back_to_cpu(tmp_path, monkeypatch, mo
     ]
 
     with patch("core.config.load_config", return_value=config):
-        from core.memory.rag.singleton import get_embedding_model
+        from core.memory.rag.embedding import get_embedding_model
 
         result = get_embedding_model("model-x")
 
@@ -81,7 +81,7 @@ def test_cuda_device_count_failure_uses_cpu_without_cuda_constructor(tmp_path, m
     mock_sentence_transformers.return_value = mock_model
 
     with patch("core.config.load_config", return_value=config):
-        from core.memory.rag.singleton import get_embedding_model
+        from core.memory.rag.embedding import get_embedding_model
 
         result = get_embedding_model("model-x")
 
@@ -116,7 +116,7 @@ def test_runtime_cuda_encode_failure_falls_back_to_cpu_and_records_status(
 
     with patch("core.config.load_config", return_value=config):
         from core.infra.gpu import get_gpu_status
-        from core.memory.rag.singleton import thread_safe_encode
+        from core.memory.rag.embedding import thread_safe_encode
 
         result = thread_safe_encode(["hello"])
         status = get_gpu_status()

@@ -89,15 +89,14 @@ def test_preflight_connections_close_before_native_client_starts(tmp_path, monke
             raise RuntimeError("injected native startup failure")
         return MagicMock()
 
-    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
     monkeypatch.setattr(sqlite_health.sqlite3, "connect", connect)
     monkeypatch.setattr("chromadb.PersistentClient", native_client)
     try:
         if native_failure:
             with pytest.raises(RuntimeError, match="injected native startup failure"):
-                ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture")
+                ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture", allow_direct=True)
         else:
-            store = ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture")
+            store = ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture", allow_direct=True)
             store.close()
         assert events == ["native_started_after_preflight_closed"]
         _assert_closed(connections)

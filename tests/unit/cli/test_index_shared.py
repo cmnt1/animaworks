@@ -51,7 +51,7 @@ class TestIsAnimaEnabled:
 
 class TestGlobalIndexMeta:
     def test_save_global_index_meta_records_e5_prefix(self, tmp_path: Path) -> None:
-        with patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True):
+        with patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True):
             _save_global_index_meta(tmp_path, "test-embedding-model")
 
         data = json.loads((tmp_path / "index_meta.json").read_text(encoding="utf-8"))
@@ -68,8 +68,8 @@ class TestGlobalIndexMeta:
         )
 
         with (
-            patch("core.memory.rag.singleton.get_embedding_model_name", return_value="test-embedding-model"),
-            patch("core.memory.rag.singleton.get_embedding_e5_prefix_enabled", return_value=True),
+            patch("core.memory.rag.embedding.get_embedding_model_name", return_value="test-embedding-model"),
+            patch("core.memory.rag.embedding.get_embedding_e5_prefix_enabled", return_value=True),
             pytest.raises(SystemExit),
         ):
             _check_model_change(tmp_path, full=False)
@@ -223,7 +223,7 @@ class TestIndexSharedCollections:
 
         with (
             patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=vector_store),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=vector_store),
             patch(_PATCH_INDEXER) as indexer,
         ):
             _index_shared_collections([anima_dir], base_dir, full=False, dry_run=False)
@@ -246,7 +246,7 @@ class TestIndexSharedCollections:
         with (
             patch.object(Path, "read_text", side_effect=PermissionError("denied")),
             patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-            patch("core.memory.rag.singleton.get_vector_store", return_value=vector_store),
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=vector_store),
             patch(_PATCH_INDEXER) as indexer,
         ):
             _index_shared_collections([anima_dir], base_dir, full=False, dry_run=False)
@@ -395,7 +395,7 @@ def test_index_command_does_not_index_shared_user_store(tmp_path: Path) -> None:
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("cli.commands.index_cmd._index_anima", return_value=0),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=True) as delegation,
-        patch("core.memory.rag.singleton.get_vector_store", return_value=shared_store) as get_store,
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=shared_store) as get_store,
     ):
         index_command(args)
 
@@ -417,7 +417,7 @@ def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path)
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=True),
-        patch("core.memory.rag.singleton.get_vector_store") as mock_get_vs,
+        patch("core.memory.rag.vector_registry.get_vector_store") as mock_get_vs,
         patch("core.memory.rag.MemoryIndexer") as mock_indexer,
     ):
         index_command(args)
@@ -468,7 +468,7 @@ def test_index_command_rebuilds_longterm_bm25(tmp_path: Path) -> None:
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
@@ -495,7 +495,7 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
@@ -531,7 +531,7 @@ def test_index_command_full_uses_atomic_repair_before_indexing(tmp_path: Path) -
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.memory.rag.cli_access.open_vector_access", return_value=access_context),
     ):

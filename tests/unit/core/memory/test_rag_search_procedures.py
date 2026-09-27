@@ -204,7 +204,7 @@ class TestInitIndexerIndexesProcedures:
         # Patch where the imports happen (inside _init_indexer's local scope)
         with (
             patch(
-                "core.memory.rag.singleton.get_vector_store",
+                "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_vector_store,
             ),
             patch(

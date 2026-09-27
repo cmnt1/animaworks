@@ -162,7 +162,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
 
         indexer = MemoryIndexer(store, "test-chunk", anima_dir)
 
@@ -230,7 +230,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
         indexer = MemoryIndexer(store, "test-empty", anima_dir)
 
         result = indexer.index_conversation_summary(state_dir, "test-empty")
@@ -271,7 +271,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
         indexer = MemoryIndexer(store, "test-short", anima_dir)
 
         result = indexer.index_conversation_summary(state_dir, "test-short")
@@ -298,7 +298,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
         indexer = MemoryIndexer(store, "test-fallback", anima_dir)
 
         # Plain text without ### headings

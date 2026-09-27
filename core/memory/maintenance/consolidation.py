@@ -1228,7 +1228,7 @@ class ConsolidationEngine:
         try:
             from core.memory.rag import MemoryIndexer
             from core.memory.rag.retriever import MemoryRetriever
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = self._rag_store or get_vector_store(self.anima_name)
             if vector_store is None:
@@ -1515,7 +1515,7 @@ class ConsolidationEngine:
 
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.singleton import get_vector_store
+            from core.memory.rag.vector_registry import get_vector_store
 
             vector_store = self._rag_store or get_vector_store(self.anima_name)
             if vector_store is None:

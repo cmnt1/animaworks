@@ -108,7 +108,7 @@ def _get_retriever(anima_dir: Path) -> Any | None:
     try:
         from core.memory.rag import MemoryRetriever
         from core.memory.rag.indexer import MemoryIndexer
-        from core.memory.rag.singleton import get_vector_store
+        from core.memory.rag.vector_registry import get_vector_store
 
         vector_store = get_vector_store(anima_dir.name)
         if vector_store is None:

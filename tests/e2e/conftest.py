@@ -130,7 +130,7 @@ def _deterministic_embedding_model(monkeypatch: pytest.MonkeyPatch):
     """Prevent E2E tests from reaching external embedding model hosts."""
 
     model = _DeterministicEmbeddingModel()
-    monkeypatch.setattr("core.memory.rag.singleton.get_embedding_model", lambda model_name=None: model)
+    monkeypatch.setattr("core.memory.rag.embedding.get_embedding_model", lambda model_name=None: model)
 
 
 @pytest.fixture(autouse=True)

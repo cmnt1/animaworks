@@ -197,9 +197,8 @@ def test_real_owner_metadata_update_keeps_embedding_and_refreshes_hash(tmp_path,
     pytest.importorskip("chromadb")
     from core.memory.rag.store import ChromaVectorStore
 
-    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
     idx, _, path, kind = make_indexer(tmp_path, monkeypatch)
-    store = ChromaVectorStore(persist_dir=tmp_path / "test-vectors")
+    store = ChromaVectorStore(persist_dir=tmp_path / "test-vectors", allow_direct=True)
     idx.vector_store = store
     try:
         path.write_text(body(2))
@@ -270,7 +269,7 @@ def test_signature_tracks_actual_encoder_policy(monkeypatch, changed):
     from types import SimpleNamespace
 
     from core import config
-    from core.memory.rag import singleton
+    from core.memory.rag import embedding
 
     rag = SimpleNamespace(
         embedding_e5_prefix_enabled=True,
@@ -279,11 +278,11 @@ def test_signature_tracks_actual_encoder_policy(monkeypatch, changed):
         embedding_max_seq_length=512,
     )
     monkeypatch.setattr(config, "load_config", lambda: SimpleNamespace(rag=rag))
-    monkeypatch.setattr(singleton, "get_embedding_model_name", lambda: "model-a")
+    monkeypatch.setattr(embedding, "get_embedding_model_name", lambda: "model-a")
     initial = MemoryIndexer._document_embedding_signature()
     assert initial is not None
     if changed == "model":
-        monkeypatch.setattr(singleton, "get_embedding_model_name", lambda: "model-b")
+        monkeypatch.setattr(embedding, "get_embedding_model_name", lambda: "model-b")
     elif changed == "enabled":
         rag.embedding_e5_prefix_enabled = False
     elif changed == "max_seq_length":

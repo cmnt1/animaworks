@@ -753,7 +753,7 @@ def test_anima_merge_rebuilds_entities_and_bm25_from_merged_source_memory(
         lambda self: (store, Mock()),
     )
     monkeypatch.setattr(
-        "core.memory.rag.singleton.generate_embeddings",
+        "core.memory.rag.embedding.generate_embeddings",
         lambda texts, **kwargs: [[0.1, 0.2] for _text in texts],
     )
 
