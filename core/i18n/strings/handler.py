@@ -86,6 +86,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "═══ 組織タイムライン (直近{hours}h) — {count}名 ═══",
         "en": "═══ Org Timeline (last {hours}h) — {count} animas ═══",
     },
+    "handler.audit_merged_title_since": {
+        "ja": "═══ 組織タイムライン ({since}〜) — {count}名 ═══",
+        "en": "═══ Org Timeline (since {since}) — {count} animas ═══",
+    },
     "handler.audit_merged_tool_header": {
         "ja": "■ ツール使用サマリー",
         "en": "■ Tool Usage Summary",
@@ -103,6 +107,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.audit_report_title": {
         "ja": "═══ {name} — 行動レポート (直近{hours}h) ═══",
         "en": "═══ {name} — Activity Report (last {hours}h) ═══",
+    },
+    "handler.audit_report_title_since": {
+        "ja": "═══ {name} — 行動レポート ({since}〜) ═══",
+        "en": "═══ {name} — Activity Report (since {since}) ═══",
     },
     "handler.audit_section_tool_summary": {
         "ja": "■ ツール使用サマリー（全{count}回）",

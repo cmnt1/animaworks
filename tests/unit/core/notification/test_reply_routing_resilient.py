@@ -107,25 +107,21 @@ class TestResilientFallback:
 
 
 class TestInternalEndpoint:
-    @pytest.mark.anyio
-    async def test_notification_mapping_endpoint(self, routing_dir: Path) -> None:
-        from server.routes.internal import (
-            NotificationMappingRequest,
-            create_internal_router,
-        )
+    def test_notification_mapping_endpoint(self, routing_dir: Path) -> None:
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
 
-        router = create_internal_router()
-        endpoint = next(
-            r.endpoint for r in router.routes if r.path == "/internal/notification-mapping"
+        from server.routes.internal import create_internal_router
+
+        app = FastAPI()
+        app.include_router(create_internal_router(), prefix="/api")
+        client = TestClient(app)
+        resp = client.post(
+            "/api/internal/notification-mapping",
+            json={"ts": "9.9", "channel": "C9", "anima_name": "ritsu", "notification_text": "hello"},
         )
-        body = NotificationMappingRequest(
-            ts="9.9",
-            channel="C9",
-            anima_name="ritsu",
-            notification_text="hello",
-        )
-        result = await endpoint(body)
-        assert result == {"ok": True}
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
         data = json.loads((routing_dir / "run" / "notification_map.json").read_text())
         assert data["9.9"]["anima"] == "ritsu"
 

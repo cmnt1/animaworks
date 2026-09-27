@@ -62,7 +62,7 @@ def test_cleanup_removes_retired_config_and_status_keys_and_moves_edge_types(tmp
     assert "memory_backend" not in bob
     assert "neo4j_edge_types" not in bob
     assert bob["fact_edge_types"] == [{"name": "MENTORS", "description": "Preserve current value"}]
-    assert any("alice" in detail and "Neo4j データは参照されなくなった" in detail for detail in result.details)
+    assert any("alice" in detail and "Neo4j data is no longer used" in detail for detail in result.details)
 
     repeated = step_neo4j_config_cleanup(tmp_path, dry_run=False, verbose=False)
     assert repeated.changed == 0

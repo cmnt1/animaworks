@@ -116,7 +116,6 @@ async def test_ipc_server_client_communication():
             assert response.error is None
 
             # Clean up
-            await client.close()
 
         finally:
             await server.stop()
@@ -147,7 +146,6 @@ async def test_ipc_ping_pong():
             assert response.result is not None
             assert response.result["pong"] is True
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -178,7 +176,6 @@ async def test_ipc_error_handling():
             assert response.error["code"] == "TEST_ERROR"
             assert response.result is None
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -208,7 +205,6 @@ async def test_ipc_timeout():
             with pytest.raises(asyncio.TimeoutError):
                 await client.send_request(request, timeout=1.0)
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -240,7 +236,6 @@ async def test_ipc_large_message():
             assert response.result is not None
             assert response.result["length"] == 128 * 1024
 
-            await client.close()
         finally:
             await server.stop()
 

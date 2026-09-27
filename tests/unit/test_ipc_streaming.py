@@ -12,18 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import pytest
+from collections.abc import AsyncIterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from collections.abc import AsyncIterator
+
+import pytest
 
 from core.supervisor.ipc import (
     IPCClient,
-    IPCServer,
     IPCRequest,
     IPCResponse,
+    IPCServer,
 )
-
 
 # ── Streaming Protocol Serialization Tests ────────────────────────────
 
@@ -116,7 +116,6 @@ async def test_ipc_streaming_basic():
             assert final_result is not None
             assert final_result["response"] == "Hello, world!"
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -153,7 +152,6 @@ async def test_ipc_streaming_single_done():
             assert results[0].done is True
             assert results[0].result == {"response": "immediate result"}
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -190,7 +188,6 @@ async def test_ipc_streaming_error_from_handler():
             assert results[0].error is not None
             assert results[0].error["code"] == "SOME_ERROR"
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -250,7 +247,6 @@ async def test_ipc_streaming_mixed_with_non_streaming():
             resp3 = await client.send_request(req3, timeout=5.0)
             assert resp3.result == {"echo": "still alive"}
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -296,7 +292,6 @@ async def test_ipc_streaming_many_chunks():
             assert received[-1] == f"chunk_{num_chunks - 1}"
             assert final == {"total": num_chunks}
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -352,7 +347,6 @@ async def test_ipc_streaming_json_chunks():
             assert received_events[3]["type"] == "tool_end"
             assert final_result["response"] == "Hello world"
 
-            await client.close()
 
         finally:
             await server.stop()
@@ -388,7 +382,6 @@ async def test_ipc_streaming_timeout():
                 async for _ in client.send_request_stream(request, timeout=1.0):
                     pass
 
-            await client.close()
 
         finally:
             await server.stop()

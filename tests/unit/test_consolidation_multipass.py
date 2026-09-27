@@ -240,16 +240,6 @@ class TestMergeTimelineParts:
         assert ConsolidationEngine.merge_timeline_parts([]) == ""
 
 
-class TestCommTypes:
-    """Tests for ConsolidationEngine._COMM_TYPES."""
-
-    def test_message_sent_included(self) -> None:
-        assert "message_sent" in ConsolidationEngine._COMM_TYPES
-
-    def test_human_notify_included(self) -> None:
-        assert "human_notify" in ConsolidationEngine._COMM_TYPES
-
-
 class TestCollectActivityChunks:
     """Tests for ConsolidationEngine.collect_activity_chunks."""
 

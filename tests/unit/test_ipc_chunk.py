@@ -12,8 +12,9 @@ behaviour introduced to handle large RAG payloads.
 from __future__ import annotations
 
 import asyncio
-import pytest
 from pathlib import Path
+
+import pytest
 
 from core.supervisor.ipc import (
     IPC_CHUNK_MAX,
@@ -22,7 +23,6 @@ from core.supervisor.ipc import (
     IPCResponse,
     IPCServer,
 )
-
 
 # ── Mock Writer ──────────────────────────────────────────────────
 

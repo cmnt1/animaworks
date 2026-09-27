@@ -799,7 +799,7 @@ class TestServerFallback:
     def test_send_falls_back_to_server_on_erofs(self, messenger: Messenger) -> None:
         captured: dict = {}
 
-        def fake_post(url, json=None, timeout=None):
+        def fake_post(url, json=None, timeout=None, headers=None):
             captured["url"] = url
             captured["json"] = json
             resp = MagicMock()
@@ -830,7 +830,7 @@ class TestServerFallback:
         (channels / "general.jsonl").write_text("", encoding="utf-8")
         captured: dict = {}
 
-        def fake_post(url, json=None, timeout=None):
+        def fake_post(url, json=None, timeout=None, headers=None):
             captured["url"] = url
             captured["json"] = json
             resp = MagicMock()

@@ -2354,7 +2354,7 @@ def step_neo4j_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> S
                 action = "would remove" if dry_run else "removed"
                 details.append(f"{anima_dir.name}: {action} neo4j_edge_types")
             if legacy_backend == "neo4j":
-                details.append(f"{anima_dir.name}: Neo4j データは参照されなくなった（legacy RAG で継続）")
+                details.append(f"{anima_dir.name}: Neo4j data is no longer used (legacy RAG continues)")
 
             if status_changed:
                 changed += 1
