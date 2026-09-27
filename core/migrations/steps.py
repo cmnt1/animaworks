@@ -1580,6 +1580,33 @@ def step_v0145_prompt_diet4_resync(data_dir: Path, dry_run: bool, verbose: bool)
     return step_v0142_task_board_cli_resync(data_dir, dry_run, verbose)
 
 
+_V0146_STALE_PROMPTS = (
+    "builder/common_knowledge_hint.md",
+    "builder/reference_hint.md",
+    "builder/human_notification_howto_s.md",
+    "builder/human_notification_howto_other.md",
+)
+
+
+def step_v0146_prompt_diet4_stale_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.6: Drop runtime copies of prompts retired by prompt-diet4 (folded into memory_guide/human_notification)."""
+    details: list[str] = []
+    changed = 0
+    skipped = 0
+    for name in _V0146_STALE_PROMPTS:
+        stale = data_dir / "prompts" / name
+        if not stale.is_file():
+            skipped += 1
+            continue
+        if dry_run:
+            details.append(f"Would remove stale prompts/{name}")
+        else:
+            stale.unlink()
+            details.append(f"Removed stale prompts/{name}")
+        changed += 1
+    return StepResult(changed=changed, skipped=skipped, details=details)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1851,6 +1878,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.5: Resync prompts and common_knowledge (prompt-diet4)",
             "template_sync",
             step_v0145_prompt_diet4_resync,
+        ),
+        MigrationStep(
+            "v0146_prompt_diet4_stale_cleanup",
+            "v0.14.6: Remove runtime prompts retired by prompt-diet4",
+            "template_sync",
+            step_v0146_prompt_diet4_stale_cleanup,
         ),
         MigrationStep(
             "rename_core_tools_to_integrations",

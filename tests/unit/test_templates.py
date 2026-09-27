@@ -125,9 +125,7 @@ class TestActionRulesGuideTemplate:
     def test_indexes_and_hints_point_to_action_rules_without_skill_creator_duplication(self):
         for locale in LOCALES:
             index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
-            hint = (TEMPLATES_ROOT / locale / "prompts" / "builder" / "common_knowledge_hint.md").read_text(
-                encoding="utf-8"
-            )
+            hint = (TEMPLATES_ROOT / locale / "prompts" / "memory_guide.md").read_text(encoding="utf-8")
             assert "operations/action-rules-guide.md" in index
             assert "operations/action-rules-guide.md" in hint
             assert "common_skills/skill-creator/SKILL.md" not in hint
