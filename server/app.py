@@ -46,6 +46,17 @@ logger = logging.getLogger("animaworks.server")
 # Public embeddable avatars (e.g. Slack) — no session cookie required
 _PUBLIC_ICON_ASSET_PATH = re.compile(r"^/api/animas/[^/]+/assets/icon(?:_realistic)?\.png$")
 
+_AUTH_WHITELIST_PREFIXES = (
+    "/api/auth/login",
+    "/api/system/health",
+    "/api/setup",
+    "/api/approve",
+    # Webhook receivers authenticate via per-platform HMAC signature
+    # verification (Slack/Chatwork/Zoom), not session cookies.
+    "/api/webhooks/",
+    "/health",
+)
+
 # Paths to exclude from request logging (noisy health checks, etc.)
 _NOISY_PATHS = frozenset(
     {
@@ -1205,17 +1216,6 @@ def create_app(
 
     # ── Auth guard middleware ──────────────────────────────
     # Paths that don't require authentication
-    _AUTH_WHITELIST_PREFIXES = (
-        "/api/auth/login",
-        "/api/system/health",
-        "/api/setup",
-        "/api/approve",
-        # Webhook receivers authenticate via per-platform HMAC signature
-        # verification (Slack/Chatwork/Zoom), not session cookies.
-        "/api/webhooks/",
-        "/health",
-    )
-
     @app.middleware("http")
     async def auth_guard(request: Request, call_next):
         path = request.url.path

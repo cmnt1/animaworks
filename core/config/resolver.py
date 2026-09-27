@@ -19,6 +19,38 @@ from core.config.schemas import AnimaDefaults, AnimaModelConfig, AnimaWorksConfi
 
 logger = logging.getLogger("animaworks.config")
 
+STATUS_JSON_FIELD_MAP: dict[str, str] = {
+    "model": "model",
+    "background_model": "background_model",
+    "background_credential": "background_credential",
+    "context_threshold": "context_threshold",
+    "context_absolute_ceiling": "context_absolute_ceiling",
+    "task_compaction_tokens": "task_compaction_tokens",
+    "task_compaction_max": "task_compaction_max",
+    "max_session_age_hours": "max_session_age_hours",
+    "conversation_history_threshold": "conversation_history_threshold",
+    "credential": "credential",
+    "execution_mode": "execution_mode",
+    "supervisor": "supervisor",
+    "max_tokens": "max_tokens",
+    "fallback_model": "fallback_model",
+    "fallback_models": "fallback_models",
+    "thinking": "thinking",
+    "thinking_effort": "thinking_effort",
+    "background_thinking_effort": "background_thinking_effort",
+    "voice_thinking_effort": "voice_thinking_effort",
+    "mode_s_auth": "mode_s_auth",
+    "max_outbound_per_hour": "max_outbound_per_hour",
+    "max_outbound_per_day": "max_outbound_per_day",
+    "max_recipients_per_run": "max_recipients_per_run",
+    "default_workspace": "default_workspace",
+    "consolidation_enabled": "consolidation_enabled",
+    "heartbeat_enabled": "heartbeat_enabled",
+    "token_budget_monthly": "token_budget_monthly",
+    "extra_mcp_servers": "extra_mcp_servers",
+}
+STATUS_JSON_NULLABLE_FIELDS = frozenset({"supervisor", "speciality", "token_budget_monthly"})
+
 
 def is_root_memory_owner(anima_dir: Path) -> bool:
     """Always return True for phase3-fixed; retained only until RAG legacy branches are removed in R07."""
@@ -43,43 +75,12 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
 
     # Map status.json fields to AnimaModelConfig field names
     result: dict[str, Any] = {}
-    field_mapping = {
-        "model": "model",
-        "background_model": "background_model",
-        "background_credential": "background_credential",
-        "context_threshold": "context_threshold",
-        "context_absolute_ceiling": "context_absolute_ceiling",
-        "task_compaction_tokens": "task_compaction_tokens",
-        "task_compaction_max": "task_compaction_max",
-        "max_session_age_hours": "max_session_age_hours",
-        "conversation_history_threshold": "conversation_history_threshold",
-        "credential": "credential",
-        "execution_mode": "execution_mode",
-        "supervisor": "supervisor",
-        "max_tokens": "max_tokens",
-        "fallback_model": "fallback_model",
-        "fallback_models": "fallback_models",
-        "thinking": "thinking",
-        "thinking_effort": "thinking_effort",
-        "background_thinking_effort": "background_thinking_effort",
-        "voice_thinking_effort": "voice_thinking_effort",
-        "mode_s_auth": "mode_s_auth",
-        "max_outbound_per_hour": "max_outbound_per_hour",
-        "max_outbound_per_day": "max_outbound_per_day",
-        "max_recipients_per_run": "max_recipients_per_run",
-        "default_workspace": "default_workspace",
-        "consolidation_enabled": "consolidation_enabled",
-        "heartbeat_enabled": "heartbeat_enabled",
-        "token_budget_monthly": "token_budget_monthly",
-        "extra_mcp_servers": "extra_mcp_servers",
-    }
     # Fields where None is a valid explicit value (e.g. supervisor=null
     # means "top-level / no supervisor").  Empty string is still "not set".
-    _nullable_fields = frozenset({"supervisor", "speciality", "token_budget_monthly"})
-    for status_key, config_key in field_mapping.items():
+    for status_key, config_key in STATUS_JSON_FIELD_MAP.items():
         if status_key in data:
             value = data[status_key]
-            if value is None and status_key in _nullable_fields or value not in (None, ""):
+            if value is None and status_key in STATUS_JSON_NULLABLE_FIELDS or value not in (None, ""):
                 result[config_key] = value
     return result
 
