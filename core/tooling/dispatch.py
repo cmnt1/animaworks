@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import ToolExecutionError  # noqa: F401
-from core.i18n import t
 
 logger = logging.getLogger("animaworks.external_tools")
 
@@ -54,42 +53,48 @@ class ExternalToolDispatcher:
         """Hot-reload: replace the personal/common tools mapping."""
         self._personal_tools = personal_tools
 
-    def _check_gated(self, name: str, args: dict[str, Any]) -> str | None:
-        """Check if a schema name is gated and not permitted.
+    def _check_access(self, name: str, args: dict[str, Any]) -> str | None:
+        """Evaluate whether a schema name may be executed for this anima.
 
-        Parses tool_name and action from schema name (e.g. gmail_send),
-        reads permissions.md from anima_dir, and returns an error string
-        if the action is gated and not explicitly permitted.
+        Parses tool_name and action from the schema name (e.g. ``gmail_send``)
+        and delegates the decision to :func:`core.tooling.permissions.check_tool_access`.
+        Non-decomposable names return ``None`` (they become Unknown tool in dispatch).
 
         Returns:
-            Error string if blocked, None if allowed or anima_dir missing.
+            A JSON error string if blocked, ``None`` if allowed.
         """
+        from core.tooling.permissions import check_tool_access
+
         anima_dir = args.get("anima_dir")
-        if not anima_dir:
-            return None
 
         tool_name, action = self._split_schema_name(name)
-        if tool_name is None or action is None:
+        if tool_name is None:
             return None
 
-        try:
-            from core.config.models import load_permissions
-            from core.tooling.permissions import get_permitted_tools, is_action_gated
+        if tool_name in self._personal_tools:
+            origin = "personal"
+            tool_file = Path(self._personal_tools[tool_name])
+        else:
+            origin = "core"
+            tool_file = None
 
-            perm_config = load_permissions(Path(anima_dir))
-            permitted = get_permitted_tools(perm_config)
-            if is_action_gated(tool_name, action, permitted):
-                return json.dumps(
-                    {
-                        "status": "error",
-                        "error_type": "PermissionDenied",
-                        "message": t("tooling.gated_action_denied", tool=tool_name, action=action),
-                    },
-                    ensure_ascii=False,
-                )
-        except Exception as e:
-            logger.debug("Gated check failed for %s: %s", name, e)
-        return None
+        decision = check_tool_access(
+            Path(anima_dir) if anima_dir else None,
+            tool_name,
+            action,
+            origin=origin,
+            tool_file=tool_file,
+        )
+        if decision.allowed:
+            return None
+        return json.dumps(
+            {
+                "status": "error",
+                "error_type": "PermissionDenied",
+                "message": decision.message,
+            },
+            ensure_ascii=False,
+        )
 
     def _split_schema_name(self, name: str) -> tuple[str | None, str | None]:
         """Split schema name into tool_name and action.
@@ -118,7 +123,7 @@ class ExternalToolDispatcher:
         Tries core tools first (from TOOL_MODULES), then file-based tools
         (common + personal).  Returns None if no matching tool found.
         """
-        err = self._check_gated(name, args)
+        err = self._check_access(name, args)
         if err is not None:
             return err
 

@@ -1681,6 +1681,11 @@ def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: b
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_v0147_guide_permissions_note_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.7: Resync common_skills (animaworks-guide check-permissions note reads permissions.json)."""
+    return step_common_skills_resync(data_dir, dry_run, verbose)
+
+
 def step_update_version(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """No-op step for display; version update is handled by runner."""
     return StepResult(changed=1, skipped=0, details=["migration_state.json"])
@@ -1884,6 +1889,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.6: Remove runtime prompts retired by prompt-diet4",
             "template_sync",
             step_v0146_prompt_diet4_stale_cleanup,
+        ),
+        MigrationStep(
+            "v0147_guide_permissions_note_resync",
+            "v0.14.7: Resync animaworks-guide (check-permissions reads permissions.json)",
+            "template_sync",
+            step_v0147_guide_permissions_note_resync,
         ),
         MigrationStep(
             "rename_core_tools_to_integrations",

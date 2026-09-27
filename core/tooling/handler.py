@@ -770,28 +770,27 @@ class ToolHandler(
         if not is_core and not is_personal:
             return _error_result(
                 "PermissionDenied",
-                f"Tool '{tool_name}' is not permitted. Check permissions.md for allowed external tools.",
+                t("tooling.tool_not_permitted", tool=tool_name),
             )
 
         schema_name = f"{tool_name}_{action}"
 
-        # Check gated action permission
-        permitted: set[str] = set()
-        try:
-            from core.config.models import load_permissions
-            from core.tooling.permissions import get_permitted_tools
+        # Single permission gate covering tool-level allow/deny and gated actions.
+        from core.tooling.permissions import check_tool_access
 
-            perm_config = load_permissions(self._anima_dir)
-            permitted = get_permitted_tools(perm_config)
-        except Exception:
-            logger.debug("Failed to load permissions for gated action check; defaulting to empty set")
-
-        from core.tooling.permissions import is_action_gated
-
-        if is_action_gated(tool_name, action, permitted):
+        origin = "core" if tool_name in TOOL_MODULES else "personal"
+        tool_file = Path(personal_tools[tool_name]) if is_personal else None
+        decision = check_tool_access(
+            self._anima_dir,
+            tool_name,
+            action,
+            origin=origin,  # type: ignore[arg-type]
+            tool_file=tool_file,
+        )
+        if not decision.allowed:
             return _error_result(
                 "PermissionDenied",
-                t("tooling.gated_action_denied", tool=tool_name, action=action),
+                decision.message,
             )
 
         dispatch_args = {**tool_args, "anima_dir": str(self._anima_dir)}

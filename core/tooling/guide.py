@@ -66,7 +66,7 @@ def filter_gated_from_guide(
     Args:
         guide_text: Raw CLI guide text (e.g. from get_cli_guide or skill content).
         tool_name: Tool module name (e.g. ``gmail``, ``image_gen``).
-        permitted: Set from :func:`core.tooling.permissions.parse_permitted_tools`.
+        permitted: Set from :func:`core.tooling.permissions.get_permitted_tools`.
 
     Returns:
         Filtered guide text with gated action lines removed when not permitted.

@@ -149,6 +149,57 @@ _ANIMA_SUBCOMMANDS: frozenset[str] = frozenset(
 _SUBMIT_TASK_ID_LENGTH = 12
 
 
+def _load_cli_profile(
+    tool_name: str,
+    origin: str,
+    tool_file: Path | None,
+) -> dict | None:
+    """Load EXECUTION_PROFILE for a CLI tool (core, common, or personal)."""
+    try:
+        if origin == "core":
+            if tool_name not in TOOL_MODULES:
+                return None
+            import importlib
+
+            mod = importlib.import_module(TOOL_MODULES[tool_name])
+            return getattr(mod, "EXECUTION_PROFILE", None)
+        if tool_file is None:
+            return None
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            f"animaworks_cli_profile_{tool_name}",
+            tool_file,
+        )
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return getattr(mod, "EXECUTION_PROFILE", None)
+    except Exception:
+        logger.debug("Failed to load CLI EXECUTION_PROFILE for %s", tool_name, exc_info=True)
+        return None
+
+
+def _gated_action_candidates(
+    origin: str,
+    tool_name: str,
+    tool_file: Path | None,
+    action_candidates: list[str],
+) -> list[str]:
+    """Return candidate actions that are gated in the tool's EXECUTION_PROFILE."""
+    profile = _load_cli_profile(tool_name, origin, tool_file)
+    if not isinstance(profile, dict):
+        return []
+    gated: list[str] = []
+    for cand in action_candidates:
+        pkey = cand if cand in profile else cand.replace("_", "-")
+        info = profile.get(pkey)
+        if isinstance(info, dict) and info.get("gated") is True:
+            gated.append(cand)
+    return gated
+
+
 def _handle_submit(argv: list[str]) -> None:
     """Handle ``animaworks-tool submit <tool> <args...>``.
 
@@ -188,6 +239,38 @@ def _handle_submit(argv: list[str]) -> None:
         if not arg.startswith("-"):
             subcommand = arg
             break
+
+    # Permission gate before writing the descriptor (fail early).
+    from core.tooling.permissions import check_tool_access
+
+    if tool_name in TOOL_MODULES:
+        submit_origin = "core"
+        submit_file: Path | None = None
+    else:
+        from core.integrations import discover_common_tools, discover_personal_tools
+
+        _common = discover_common_tools()
+        _personal = discover_personal_tools(anima_dir_path)
+        if tool_name in _personal:
+            submit_origin = "personal"
+            submit_file = Path(_personal[tool_name])
+        elif tool_name in _common:
+            submit_origin = "common"
+            submit_file = Path(_common[tool_name])
+        else:
+            submit_origin = "core"
+            submit_file = None
+    if submit_origin != "core" or tool_name in TOOL_MODULES:
+        submit_decision = check_tool_access(
+            anima_dir_path,
+            tool_name,
+            subcommand or None,
+            origin=submit_origin,  # type: ignore[arg-type]
+            tool_file=submit_file,
+        )
+        if not submit_decision.allowed:
+            print(f"Error: {submit_decision.message}", file=sys.stderr)
+            sys.exit(1)
 
     # Optional: check EXECUTION_PROFILE for warning
     try:
@@ -292,33 +375,42 @@ def cli_dispatch():
         except Exception:
             logger.debug("CLI action rule attach failed for %s", tool_name, exc_info=True)
 
-    # Gated action check (before loading tool module)
-    if anima_dir_str:
-        subcommand = ""
-        for arg in sys.argv[2:]:
-            if not arg.startswith("-"):
-                subcommand = arg
-                break
-        if subcommand:
-            try:
-                from core.config.models import load_permissions
-                from core.tooling.permissions import get_permitted_tools, is_action_gated
+    # Permission gate (tool-level + gated action). Only for real external tools;
+    # main-CLI forwarding commands (internal, task, ...) are not gated here.
+    if anima_dir_str and tool_name in all_tools:
+        from core.tooling.permissions import check_tool_access
 
-                perm_config = load_permissions(Path(anima_dir_str))
-                permitted = get_permitted_tools(perm_config)
-                if is_action_gated(tool_name, subcommand, permitted):
-                    from core.i18n import t
+        if tool_name in TOOL_MODULES:
+            origin = "core"
+            tool_file: Path | None = None
+        elif tool_name in personal:
+            origin = "personal"
+            tool_file = Path(personal[tool_name])
+        else:
+            origin = "common"
+            tool_file = Path(common[tool_name])
 
-                    msg = t("tooling.gated_action_denied", tool=tool_name, action=subcommand)
-                    print(f"Error: {msg}", file=sys.stderr)
-                    sys.exit(1)
-            except Exception:
-                logger.debug(
-                    "CLI gated check failed for %s %s",
-                    tool_name,
-                    subcommand,
-                    exc_info=True,
-                )
+        # Tool-level check always.
+        decision = check_tool_access(Path(anima_dir_str), tool_name, None, origin=origin, tool_file=tool_file)
+        if not decision.allowed:
+            print(f"Error: {decision.message}", file=sys.stderr)
+            sys.exit(1)
+
+        # Gated action check: every non-option argument that matches a gated
+        # profile action must be explicitly permitted.
+        action_candidates = [a for a in sys.argv[2:] if not a.startswith("-")]
+        gated_candidates = _gated_action_candidates(origin, tool_name, tool_file, action_candidates)
+        for cand in gated_candidates:
+            check = check_tool_access(
+                Path(anima_dir_str),
+                tool_name,
+                cand,
+                origin=origin,
+                tool_file=tool_file,
+            )
+            if not check.allowed:
+                print(f"Error: {check.message}", file=sys.stderr)
+                sys.exit(1)
 
     # Try core tools first
     if tool_name in TOOL_MODULES:

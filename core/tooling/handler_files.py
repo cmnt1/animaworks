@@ -1106,6 +1106,13 @@ class FileToolsMixin:
             )
         limit = args.get("limit", 5)
 
+        # Permission gate (fail-closed): web_search is a core tool module.
+        from core.tooling.permissions import check_tool_access
+
+        decision = check_tool_access(self._anima_dir, "web_search", None, origin="core")
+        if not decision.allowed:
+            return _error_result("PermissionDenied", decision.message)
+
         try:
             ext_args: dict[str, Any] = {
                 "query": query,
