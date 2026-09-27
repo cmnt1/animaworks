@@ -1,64 +1,53 @@
 ---
 name: newstaff
 description: >-
-  Skill for hiring and creating new Digital Anima in the AnimaWorks organization.
-  Create a character sheet (Markdown) based on interviews, then use the CLI command
-  (animaworks anima create) to generate identity/injection/permissions in bulk. After creation, self-configure via bootstrap.
-  "Create a new employee", "Hire someone", "New employee", "Hiring", "Create Anima", "Recruitment", "Add team member", "Expand the team", "Add staff", "Create subordinate", "hire", "recruit", "team member"
+  A skill for hiring or creating a new Digital Anima within the AnimaWorks organization.
+  Based on the interview, create a character sheet (Markdown) and use the CLI command (animaworks anima create) to
+  identity/injection/permissionsgenerate everything at once. After creation, self-maintain via bootstrap.
+  "Create a new employee," "Hire someone," "New employee," "Hiring," "Create Anima," "Recruitment," "Add team members," "Add personnel," "Create a subordinate," "Add staff," "hire," "recruit," "team member"
 ---
+Understood. I’m ready to translate the Japanese content into natural English while preserving all Markdown structure, headings, tables, links, identifiers, sentinels (including ⟦§number⟧ markers), and YAML frontmatter keys. I’ll keep the prefix “Use when:” unchanged and translate only exposed values in the frontmatter. Please provide the content to translate.# Skill: New Employee Hiring## Prerequisites
 
-# Skill: New Employee Hiring
+- The direction of the role for the employee to be created has been determined (if unclear, conduct an interview)## Procedure### 1. Interview (minimal is fine)
 
-## Prerequisites
-
-- The role direction of the employee to create has been decided (if unclear, conduct an interview)
-
-## Procedure
-
-### 1. Interview (Minimal is OK)
-
-Interview the requester for the following information. **Bold items are required**; others are auto-generated if not specified:
+Gather the following information from the requester. **Only the bold items are required**; anything else unspecified will be auto-generated:
 
 **Required:**
-- **English name** (lowercase alphanumeric only; becomes directory name)
-- **Role/specialty**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
-- **Personality direction**: temperature, not job gravity (genki, gyaru, airhead, hot-blooded, ojou, onee-san). Do not pick cool if the org already has 2
-- **Face type**: exactly one from `{data_dir}/prompts/face_types.md`. Avoid clustering with existing members
+- **English name** (lowercase alphanumeric only. This becomes the directory name)
+- **Role / area of expertise**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
+- **Personality direction**: Not the function but the tone (e.g., energetic, gal, airheaded, passionate, ojou, older sister). If there are already 2 cool types in the organization, don't choose that
+- **Face type**: Choose one from `{data_dir}/prompts/face_types.md`. Avoid too much overlap with existing members
 
-**Optional (reflect if specified, auto-generate if not):**
+**Optional (use if specified, otherwise auto-generate):**
 - Japanese name
 - Age
 - Any other preferences
 
-**Technical settings (use defaults if not specified):**
-- Role: `commander` (can delegate to others) or `worker` (receives delegation)
-- supervisor: English name of the supervising Anima (required for worker; default: self if unspecified)
+**Technical configuration (use defaults if not specified):**
+- Role: `commander` (can delegate to other employees) or `worker` (receives delegation)
+- supervisor: English name of the Anima that is the supervisor (required for worker; if unspecified, use self)
 
-**Brain (LLM model) settings:**
+**Brain (LLM model) configuration:**
 
-Present this table for selection:
+Present the following table and let them choose:
 
-| Level | Execution Mode | Example Models | Features | credential |
+| Level | Execution mode | Example models | Features | credential |
 |--------|-----------|-------------|------|------------|
 | S | autonomous | `claude-opus-4-6`, `claude-sonnet-4-6` | Claude Agent SDK. Most capable | anthropic |
-| A | autonomous | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash` | Via LiteLLM. Tool use supported | openai / google / azure / vertex |
+| A | autonomous | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash` | Via LiteLLM. Tool use available | openai / google / azure / vertex |
 | B | assisted | `ollama/gemma3:27b`, `ollama/qwen2.5-coder:32b` | No tools. Local execution, low cost | ollama |
 
-※ If not specified, use defaults (claude-sonnet-4 / autonomous / anthropic).
+※ If not specified, use the default (claude-sonnet-4 / autonomous / anthropic).### 2. Character Design (Auto-Generated)
 
-### 2. Character Design (Auto-generated)
+Flesh out the character based on the information gathered from the interview. **Personality comes first, function follows.**
 
-Flesh out the character from the interview. **Personality first, job second.**
-
-Always Read in this order:
+Always Read the following in this order:
 1. `{data_dir}/prompts/face_types.md`
 2. `{data_dir}/prompts/character_design_guide.md`
 
-Do not infer a cool beauty from the role. Hobbies must not all be job extensions. Check hair color, face type, and speech against existing members.
+Do not associate a cool beauty with the role. Do not make hobbies an extension of work. Check that the hair color, face type, and speech style do not overlap with existing members.### 3. Create character sheets and batch-create via CLI
 
-### 3. Create Character Sheet and Bulk-create via CLI
-
-According to the interview and design results, follow the **Character Sheet Specification**, write the character sheet to a file, and create via CLI command:
+Write character sheets to files based on the **character sheet specification** from the interview and design results, then create them using CLI commands:
 
 1. Write the character sheet to a file (e.g., `/tmp/{english_name}.md`)
 2. Run the following command:
@@ -68,11 +57,11 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 ```
 
 **supervisor configuration:**
-- Specify explicitly via `supervisor` parameter (recommended)
-- If omitted: read from `| 上司 |` field in character sheet
-- If neither: the caller Anima becomes supervisor
+- Explicitly specify via the `supervisor` parameter (recommended)
+- If omitted: retrieve from the `| 上司 |` field of the character sheet
+- If neither exists: the caller (Anima) becomes the supervisor
 
-**Character Sheet Specification:**
+**Character sheet specification:**
 
 ```markdown
 # キャラクターシート: {Japanese name}
@@ -111,57 +100,46 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 {If omitted: standard bootstrap only}
 ```
 
-**Required sections**: Basic information, Personality, Role and conduct
-**Optional sections**: Permissions, Recurring tasks, First-run instructions
+**Required sections**: Basic information, personality, role and action policy
+**Optional sections**: Permission, periodic tasks, initial startup instruction
 
-This automatically performs:
-- Bulk creation of directory structure
+This automatically executes the following:
+- Batch creation of the directory structure
 - Placement of skeleton files
 - Placement of bootstrap.md
 - Creation of status.json (including supervisor)
 - Registration in config.json (model, supervisor, etc.)
-- Default application for omitted sections
+- Application of defaults to omitted sections### 4. Check the model configuration for config.json
 
-### 4. Verify Model Configuration in config.json
+`animaworks anima create` will automatically register in config.json, but confirm and complete the following:
 
-`animaworks anima create` automatically registers to config.json, but verify/supplement:
-
-- `model`: Model name decided in interview
+- `model`: Model name determined during the interview
 - `credential`: Credential name to use
 - `execution_mode`: autonomous or assisted
-- `speciality`: Role/specialty
+- `speciality`: Job title / specialty### 4.5. Heartbeat Frequency Proposal and Configuration
 
-### 4.5. Propose and Set Heartbeat Frequency
+Based on the new employee's work driving style, propose a regular heartbeat interval to the requester and configure the agreed value:
 
-Propose a periodic heartbeat interval to the requester based on how the new staff's work is driven, then set the agreed value:
+| Driving Style | Recommended Interval | Example |
+|--------|---------|-----|
+| Self-directed situation assessment and adjustment as primary work | 30 minutes (default) | Team coordinator, progress supervisor |
+| Message/event-driven as primary | 60–120 minutes | Review lead, development lead |
+| Cron-based scheduled work as primary | 120–240 minutes | Monitoring, accounting, legal |
 
-| Work style | Recommended interval | Examples |
-|-----------|---------------------|----------|
-| Proactive judgment / coordination | 30 min (default) | Team coordinator, progress supervisor |
-| Message / event driven | 60-120 min | Reviewer, developer |
-| Mainly cron scheduled tasks | 120-240 min | Monitoring, accounting, legal |
+Add `"heartbeat_interval_minutes": <分>` (1–1440) to `{data_dir}/animas/{英名}/status.json` in the configuration.
+Message-triggered heartbeats and cron operate independently of this setting, so extending the interval does not reduce responsiveness. When in doubt, choose a longer interval (wasted heartbeats consume tokens unnecessarily).### 5. Reflecting on the Server
 
-Set it by adding `"heartbeat_interval_minutes": <minutes>` (1-1440) to `{data_dir}/animas/{english_name}/status.json`.
-Message-triggered heartbeats and cron run regardless of this setting, so a longer interval does not hurt responsiveness. When unsure, choose longer (no-op heartbeats waste tokens).
-
-### 5. Apply to Server
-
-Use **Bash** to reload the server:
-
-```bash
-curl -s -X POST http://localhost:18500/api/system/reload
 ```
+Bash: curl -s -X POST http://localhost:18500/api/system/reload
+```
+### 6. Report to the Requester
 
-### 6. Report to Requester
+Report the completion of the hire:
+- The new employee's name and role
+- The configured tech stack (model, execution mode)
 
-Report hiring completion:
-- New employee's name and role
-- Configured technical stack (model, execution mode)
-
-⚠️ Do not report avatar image generation (new Anima will generate in bootstrap)
-
-### Thereafter the new Anima runs autonomously:
-- Enrichment of identity.md / injection.md
+⚠️ Do not report avatar image generation (the new Anima itself generates it via bootstrap)### From here on, the new Anima itself executes autonomously:
+- Enhancement of identity.md / injection.md
 - Self-design of heartbeat.md / cron.md
-- Avatar image generation (with supervisor reference)
-- Onboarding report to supervisor
+- Generation of avatar images (with supervisor reference)
+- Arrival report to the supervisor

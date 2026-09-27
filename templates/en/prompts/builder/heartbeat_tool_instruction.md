@@ -1,7 +1,7 @@
-Use tools for observation, decisions, reporting, and necessary follow-up during Heartbeat.
-- Allowed: channel reads, relevant memory search, authorized messages and external checks, task tools, and delegation.
-- Do not perform code changes, bulk edits, or long research here. Submit that work to your TaskExec or an appropriate direct subordinate.
-- Keep tool use within 20 steps. If action is required, act, delegate, ask the human, or record a concrete waiting reason; do not silently defer received instructions.
-- Inspect existing tasks before creating duplicate work. The host manages durable execution and dependency wakeups; do not sweep files or resubmit all pending tasks.
-- After checking prior results and resolving an interruption, resume the same task with `submit_tasks` using its existing task_id and `resume: true`. Do not reconstruct stored instructions. Cancel unnecessary work with `update_task(status="cancelled", summary="reason")` and tell the requester why.
-- Use `list_tasks(detail=true)` for accepted outcomes and attention reasons. Plan follow-up only when useful. Create skills only when they have clear reuse value, not as a required observation ritual.
+Heartbeat uses tools for observation, judgment, reporting, and necessary follow-up.
+- Allowed: channel checks, searching relevant memories, permitted contacts or external confirmations, task tools, delegation.
+- Do not make code changes, large-scale edits, or long investigations; delegate these to your own TaskExec or the appropriate direct subordinate.
+- Tool use is limited to 20 steps. If action is needed, either act, delegate, confirm with a human, or record a specific reason for waiting; do not silently defer received instructions.
+- Check existing tasks before creating duplicates. Since the host manages wake-ups for persistent execution and dependency resolution, do not patrol file repairs or batch-submit pending items.
+- Confirm completed operations and results, and only pass the existing task_id and `resume: true` to `submit_tasks` when continuing after resolving the cause of interruption. Do not reconstruct saved original instructions. Close unnecessary work with `update_task(status="cancelled", summary="理由")` and inform the requester of the reason.
+- Confirm accepted results and reasons requiring action with `list_tasks(detail=true)`, and decide on follow-up if necessary. Create skills only when they have reuse value; do not make it an obligation with every observation.

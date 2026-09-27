@@ -1,9 +1,9 @@
-## 최근 대화 (워킹 메모리)
+## 최근 대화 (작업 메모리)
 
 {conversation_history}
 
 ---
 
-{from_person}으로부터 새 메시지가 도착했습니다:
+당신에게 {from_person}에서 새 메시지가 도착했습니다:
 
 {content}

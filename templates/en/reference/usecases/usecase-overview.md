@@ -1,104 +1,95 @@
 # AnimaWorks Use Case Guide
 
-A theme-based guide to what you can do with AnimaWorks. It is structured to help first-time users imagine how the framework can support their day-to-day work.
+This guide organizes what you can do with AnimaWorks by theme.
+It is structured to help first-time AnimaWorks users easily imagine how it can be applied to their own work.
 
 ---
 
-## What is AnimaWorks?
+## What is AnimaWorks
 
-AnimaWorks is a framework that organizes AI agents (Anima) as "employees" and runs them 24/7, 365 days a year.
+AnimaWorks is a framework that organizes AI agents (Anima) as "employees" and keeps them running 24 hours a day, 365 days a year.
 
-While humans sleep, Anima can:
+Even while humans are asleep, Anima can:
+- Monitor messages and respond as needed
+- Detect and report server or service anomalies
+- Generate periodic reports
+- Execute code reviews and tests
 
-- Monitor messages and respond when needed
-- Detect and report server or service issues
-- Generate regular reports
-- Run code reviews and tests
-
-They handle these tasks autonomously.
+These tasks are handled autonomously.
 
 ---
 
-## Anima Characteristics
+## Features of Anima
 
 ### 1. Memory
-
-Anima have short-term and long-term memory. They accumulate past responses, lessons learned, and established procedures, so quality improves over time. Experience like "last time we solved this problem this way" builds up across the organization.
+Anima has short-term memory and long-term memory. It accumulates past response history, lessons learned, and established procedures, improving response quality with each iteration. The experience of "this is how we solved this problem last time" is accumulated within the organization.
 
 ### 2. Roles
-
-Each Anima is assigned a specific role. Secretary, engineer, monitoring, customer support, and so on. By giving them clear responsibilities, you can build a division of labor similar to a human team.
+Each Anima is assigned a specialized role. By giving them areas of expertise—such as secretary, engineer, monitoring specialist, or customer support—you can build a division of labor just like in a human organization.
 
 ### 3. Collaboration as an Organization
+Anima exchange messages with each other and delegate tasks. A hierarchical organizational structure is possible, where a supervisor coordinates the overall picture and specialized staff handle the actual work.
 
-Anima exchange messages and delegate tasks to each other. A coordinator can oversee the whole, while specialists handle execution, enabling hierarchical organization.
-
-### 4. Scheduled Autonomous Actions
-
-You can configure scheduled runs such as "create a report every morning at 9" or "check messages every 30 minutes." They keep running these routines without human intervention.
+### 4. Regular Autonomous Actions
+You can configure scheduled execution, such as "generate a report every morning at 9 AM" or "check messages every 30 minutes." Even without human instruction, Anima continues to execute the defined routines.
 
 ### 5. Integration with External Services
-
-Anima can connect to chat tools, email, calendars, cloud services, social media, and more. Any service with a public API can be operated directly by Anima.
+Anima can connect to various external services, including chat tools, email, calendars, cloud services, and social media. As long as a service has a public API, Anima can operate it directly.
 
 ---
 
-## Use Case Index
+## Use Case List
 
-The following theme-based guides describe concrete usage patterns.
+The following theme-based guides introduce specific usage patterns.
 
-| Guide | Theme | Best for |
-|-------|-------|----------|
-| [Communication Automation](usecase-communication.md) | Automating chat and email handling | People with many external contacts and concerns about missed messages |
-| [Software Development Support](usecase-development.md) | Code review, PR management, bug investigation | Development teams and solo developers |
-| [Infrastructure & Service Monitoring](usecase-monitoring.md) | 24/7 monitoring, alerts, incident response | People running servers or web services |
-| [Secretary & Admin Support](usecase-secretary.md) | Schedule management, coordination, reminders | Busy people who lack time for admin tasks |
-| [Research & Investigation](usecase-research.md) | Web research, market analysis, report creation | People who regularly gather and analyze information |
-| [Knowledge Management](usecase-knowledge.md) | Procedures, FAQ, structuring information | People who want to systematize team knowledge |
-| [Customer Support](usecase-customer-support.md) | Handling inquiries, escalation | People with customer-facing responsibilities |
+| Guide | Theme | Who It's For |
+|--------|--------|-------------|
+| [Communication Automation](usecase-communication.md) | Automating chat and email responses | People with many external contacts who worry about missed responses |
+| [Software Development Support](usecase-development.md) | Code review, PR management, bug investigation | People with development teams, solo developers |
+| [Infrastructure and Service Monitoring](usecase-monitoring.md) | 24/7 monitoring, alerts, incident response | People operating servers or web services |
+| [Secretary and Administrative Support](usecase-secretary.md) | Schedule management, coordination, reminders | Busy people who can't keep up with administrative work |
+| [Research and Investigation](usecase-research.md) | Web research, market analysis, report creation | People who regularly gather and analyze information |
+| [Knowledge Management](usecase-knowledge.md) | Procedure documentation, FAQs, structured information | People who want to systematize their team's knowledge |
+| [Customer Support](usecase-customer-support.md) | Inquiry handling, escalation | People with customer-facing responsibilities |
 
 ---
 
 ## Getting Started
 
-You don't need to do everything at once. Starting with one or two Anima and scaling up as you get comfortable is recommended.
+You don't need to "do everything at once." We recommend starting with one or two Anima and gradually increasing as you become more comfortable.
 
-### Small Start Examples
+### Examples of a Small Start
 
-**Pattern 1: Start with one**
-- Deploy a single secretary Anima
+**Pattern 1: Start with just one**
+- Deploy one secretary Anima
 - Assign only message monitoring and reminders
-- Expand responsibilities gradually as you get used to it
+- Expand the scope of responsibilities once you're comfortable
 
-**Pattern 2: Two Anima with divided roles**
-- Secretary Anima (communications, schedule management)
-- Monitoring Anima (server and service health checks)
-- These two alone can provide 24/7 coverage
+**Pattern 2: Division of labor with two**
+- Secretary Anima (communication and schedule management)
+- Monitoring Anima (checking server and service status)
+- Even with just these two, you get peace of mind with 24-hour coverage
 
-**Pattern 3: Team setup**
-- Coordinator Anima (overall coordination and decisions)
-- Several worker Anima (development, monitoring, secretary, etc.)
-- Humans interact only with the coordinator; the coordinator delegates to the workers
+**Pattern 3: Team structure**
+- Supervisor Anima (overall coordination and decision-making)
+- Several operational Anima (development, monitoring, secretarial, etc.)
+- Humans only interact with the supervisor Anima, and the supervisor delegates the actual work to its subordinates
 
 ---
 
-## Important Notes
+## Notes
 
-### When Human Judgment Is Required
-
-Anima act autonomously but should escalate to humans in these situations:
-
+### Situations Requiring Human Judgment
+Anima operates autonomously, but it will seek human judgment in the following situations:
 - Decisions involving money
 - Important external communications (contracts, negotiations, etc.)
-- Irreversible actions (data deletion, production deploys, etc.)
-- New situations where the decision criteria are unclear
+- Irreversible operations (data deletion, production deployment, etc.)
+- New situations where the criteria for judgment are unclear
 
 ### Cost Awareness
-
-Each Anima uses LLM (large language model) APIs, so costs scale with usage. It's important to run them only where and as often as needed.
+Each Anima operates using LLM (large language model) APIs, so costs are incurred based on the volume of activity. It's important to run them only as needed and at the necessary frequency.
 
 ### Security
-
-- Define clear rules for handling confidential information
-- Manage external service credentials centrally
-- Grant Anima minimal permissions (only the tools they need)
+- Clearly define rules for handling confidential information
+- Centrally manage authentication credentials for external services
+- Set Anima permissions to the minimum required (only allow access to necessary tools)

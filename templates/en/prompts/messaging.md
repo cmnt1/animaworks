@@ -1,16 +1,16 @@
-## Messaging
+## Message Sending
 
-**Recipients:** {animas_line}
+**Recipients you can send to:** {animas_line}
 
-DM:
+DM sending:
 ```json
-{{"name": "send_message", "arguments": {{"to": "recipient_name", "content": "message", "intent": "report"}}}}
+{{"name": "send_message", "arguments": {{"to": "相手名", "content": "メッセージ", "intent": "report"}}}}
 ```
-- intent: `report` | `question`. With intent → immediate, without → 30min check
+- intent: `report` | `question`. With intent → immediate processing, without → 30-minute patrol
 
-Board:
+Board posting:
 ```json
-{{"name": "post_channel", "arguments": {{"channel": "general", "text": "post content"}}}}
+{{"name": "post_channel", "arguments": {{"channel": "general", "text": "投稿内容"}}}}
 ```
 {board_channel_guidance}
-- `read_channel(channel)` / `read_dm_history(peer)` for history
+- Reference history with `read_channel(channel)` / `read_dm_history(peer)`

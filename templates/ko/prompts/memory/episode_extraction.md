@@ -1,38 +1,38 @@
-# Episode Extraction from Activity Log
+# 활동 로그에서 에피소드 추출
 
-{anima_name}, organize your activity records into a structured timeline.
+당신({anima_name})의 행동 기록을 구조화된 타임라인으로 정리하세요.
 
-## Target period: {time_range}
+## 대상 기간: {time_range}
 
-## Existing Episode Content
+## 기존 에피소드 내용
 
 {existing_episode}
 
-## Activity Log
+## 활동 로그
 
 {activity_chunk}
 
 ---
 
-## Output Format
+## 출력 형식
 
-Use the following Markdown format. Separate sections by time period using `## HH:MM-HH:MM Title` headers, with bullet points for events.
+다음 Markdown 형식으로 출력하세요. 「## HH:MM — 제목」으로 시간대별로 섹션을 구분하고, 글머리 기호 목록으로 사건을 기록합니다.
 
 ```
-## HH:MM-HH:MM Section Title
+## HH:MM — セクションタイトル
 
-- HH:MM Event summary
-  - Details, results, related information
-- HH:MM Next event
+- HH:MM 出来事の要約
+  - 詳細・結果・関連情報
+- HH:MM 次の出来事
 ```
 
-## Rules
+## 규칙
 
-1. **Group by time period**: Cluster related activities into 30-minute to 2-hour blocks
-2. **Preserve specific information**: Keep key details from email bodies, command outputs, file changes, and message contents that could serve as future knowledge references
-3. **Eliminate redundant repetition**: Deduplicate repeated `current_state.md` dumps or duplicate REFLECTION blocks — keep only one instance
-4. **Tool execution results**: Record result summaries for successes and error details for failures
-5. **Communication content**: Record the key points of sent/received messages (who, to whom, about what)
-6. **No speculation**: Record only facts from the activity log. Do not add inferences or interpretations
-7. **Use existing content for deduplication**: If existing episode content is provided, absorb overlapping details into the timeline and avoid repeating the same facts twice
-8. **Use only `##` markdown headers**: Do not use `#` or `###`
+1. **시간대별로 그룹화**: 관련 활동을 30분~2시간 정도의 시간대로 묶기
+2. **구체적인 정보 유지**: 이메일 본문의 요점, 명령 실행 결과의 요약, 파일 변경 내용, 메시지 내용 등 나중에 지식으로 참조할 수 있는 정보를 남기기
+3. **중복 반복 제거**: 같은 내용의 `current_state.md` 덤프나 중복되는 REFLECTION은 한 번만 남기기
+4. **도구 실행 결과**: 성공한 경우 결과 요약을, 실패한 경우 오류 내용을 기록
+5. **통신 내용**: 송수신 메시지의 요점을 기록 (누가 누구에게, 무엇에 대해)
+6. **추측을 더하지 않기**: 행동 기록에 있는 사실만 기록. 추론이나 해석은 하지 않기
+7. **기존 내용은 중복 제거에 사용**: 기존 에피소드 내용이 있는 경우, 중복되는 정보는 타임라인 쪽에 흡수하고 같은 사실을 두 번 쓰지 않기
+8. **마크다운의 `##` 헤더만 사용**: `#`나 `###`은 사용하지 않기

@@ -7,62 +7,62 @@
   ## Task Name
   schedule: <5-field cron expression>
   type: llm | command
-  (body or command/tool definition)
+  (Body or command/tool definition)
 
 ■ schedule: is required
-  Write a `schedule:` line immediately after each task (## heading).
+  Write the `schedule:` line immediately after each task (## heading).
   If omitted, the task will not run.
 
 ■ 5-field cron expression
-  schedule: min hour day month weekday
-  ┌───── min (0-59)
+  schedule: minute hour day month weekday
+  ┌───── minute (0-59)
   │ ┌───── hour (0-23)
   │ │ ┌───── day (1-31)
   │ │ │ ┌───── month (1-12)
-  │ │ │ │ ┌───── weekday (0=Mon 〜 6=Sun)
+  │ │ │ │ ┌───── weekday (0=Mon to 6=Sun)
   │ │ │ │ │
   * * * * *
 
-■ Common Schedule Examples
+■ Common schedule examples
   schedule: 0 9 * * *       # Every morning at 9:00
   schedule: */5 * * * *     # Every 5 minutes
-  schedule: 0 9 * * 0-4    # Weekdays at 9:00 (Mon–Fri)
-  schedule: 0 17 * * 4     # Every Friday at 17:00
-  schedule: 0 2 * * *      # Daily at 2:00
-  schedule: 30 12 1 * *    # 1st of each month at 12:30
+  schedule: 0 9 * * 0-4     # Weekdays at 9:00 (Mon-Fri)
+  schedule: 0 17 * * 4      # Every Friday at 17:00
+  schedule: 0 2 * * *       # Every day at 2:00
+  schedule: 30 12 1 * *     # On the 1st of every month at 12:30
 
-■ Invalid Patterns
-  ✗ ### cron expression     ← Use ## only for heading level
-  ✗ schedule: 9am daily    ← Natural language not allowed; use 5-field cron expression
-  ✗ (no schedule: line)    ← Must be specified
+■ What not to do
+  ✗ ### cron expression      ← Only use ## for heading levels
+  ✗ schedule: every morning at 9   ← Natural language is not allowed; use a 5-field cron expression
+  ✗ (no schedule: line)     ← Always include it
 
-■ type values
-  1. LLM type (type: llm) - Tasks requiring judgment or reasoning
-  2. Command type (type: command) - Deterministic bash/tool execution
+■ type options
+  1. LLM type (type: llm) - tasks requiring judgment or thinking
+  2. Command type (type: command) - deterministic bash/tool execution
 
 ■ Options (command type only)
-  skip_pattern: <regex>       — Skip LLM analysis when stdout matches
-  trigger_heartbeat: false    — Do not trigger LLM analysis even when output exists
+  skip_pattern: <regex>       — If stdout matches, skip LLM analysis
+  trigger_heartbeat: false    — Do not trigger LLM analysis even if there is output
 
-■ Detailed Reference
+■ Detailed reference
   → See common_skills/cron-management.md
 -->
 
-## Daily Planning
+## Daily Morning Work Plan
 schedule: 0 9 * * *
 type: llm
-Review yesterday's progress from long-term memory and plan today's tasks.
-Prioritize according to vision and goals.
-Write results to state/current_state.md.
+Check yesterday's progress from long-term memory and plan today's tasks.
+Prioritize based on the philosophy and goals.
+Write the results to state/current_state.md.
 
-## Weekly Reflection
+## Weekly Review
 schedule: 0 17 * * 4
 type: llm
 Review this week's episodes/ and extract patterns to integrate into knowledge/.
-(Memory consolidation = memory consolidation during sleep in neuroscience)
+(Memory consolidation = the brain's memory fixation during sleep, as in neuroscience)
 
 <!--
-## Backup Execution
+## Run Backup
 schedule: 0 2 * * *
 type: command
 command: /usr/local/bin/backup.sh

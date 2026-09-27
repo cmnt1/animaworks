@@ -1,34 +1,29 @@
 ---
 name: workspace-manager
 description: >-
-  Registers, lists, removes, and assigns workspaces (project directories) for Anima work.
-  Use when: binding project paths to Anima, managing aliases, or switching workspace roots.
+  Configure the registration, listing, deletion, and assignment of workspaces (working directories).
+  Use when: Use when: you need to link project paths to Anima, manage aliases, and switch working directories.
 tags: [workspace, directory, project, management]
 ---
+Understood. I’m ready to translate the Japanese content into natural English while preserving all Markdown structure, headings, tables, links, identifiers, sentinels (including ⟦§number⟧ markers), and YAML frontmatter keys. I’ll keep the literal prefix “Use when:” unchanged and return only the translation without explanations.
 
-# Workspace Management
+Please provide the Japanese content you’d like me to translate.# Workspace Management
 
-Skill for managing project directories (workspaces) where Animas perform work.
+A skill for managing the project directory (workspace) where Anima works.## 概念
 
-## Concept
+Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
+プロジェクトの作業をするときは「仕事場」（ワークスペース）に出かけて作業する。
 
-An Anima normally lives in its "home" (~/.animaworks/animas/{name}/).
-When working on a project, it "goes to the workplace" (workspace) to do the job.
-
-Workspaces are stored in a shared registry (config.json `workspaces` section) and referenced by alias#hash.
+ワークスペースは組織共有のレジストリ（config.json の workspaces セクション）に登録し、エイリアス#ハッシュで参照する。
 
 ## Aliases and Hashes
 
 - Alias: A short name assigned by humans (e.g., `myproject`)
-- Hash: The first 8 hex digits of the path's SHA-256, auto-generated (e.g., `3af4be6e`)
-- Qualified form: `myproject#3af4be6e` — zero collision risk
-- Tool arguments accept alias only, qualified form, hash only, or absolute path
+- Hash: Automatically assigned as the first 8 characters of the SHA-256 of the path (e.g., `3af4be6e`)
+- Full form: `myproject#3af4be6e` — zero possibility of collision
+- Tool arguments can use any of the following: alias only, full form, hash only, or absolute path## How to Use### Registration
 
-## Operations
-
-### Register
-
-A top-level Anima with an explicit human instruction uses `grant_workspace_access`:
+A top-level Anima that has received an explicit instruction from a human uses `grant_workspace_access`:
 
 ```json
 {
@@ -38,27 +33,21 @@ A top-level Anima with an explicit human instruction uses `grant_workspace_acces
 }
 ```
 
-This tool updates the shared workspace registry, adds the path to the target Anima's `permissions.json.file_roots`, and optionally updates `status.json.default_workspace`.
+This tool handles registration in the organization shared registry, adding write permission to `permissions.json.file_roots`, and updating `status.json.default_workspace` as needed.
 
-**Note**: Registration fails if the directory does not exist.
-**Note**: `read_memory_file(path="config.json")` reads the Anima-local `config.json`. Do not use it for the shared workspace registry.
+**Note**: An error occurs if the directory does not exist.
+**Note**: `read_memory_file(path="config.json")` reads the `config.json` in its own Anima directory. It is not used for registration in the organization shared registry.### List
 
-### List
+Check the list of organization shared registries at `core.org.workspace.list_workspaces()`. Do not use `read_memory_file(path="config.json")`.### Deletion
 
-Use `core.org.workspace.list_workspaces()` to inspect the shared registry. Do not use `read_memory_file(path="config.json")`.
+Deletion is treated as an administrator operation. In normal work, do not overwrite existing aliases; register new aliases instead.### Change your default workspace
 
-### Remove
+Top-level Anima specifies `grant_workspace_access` in `make_default: true`.
+Non-top-level Anima cannot add permissions themselves. Have a human give instructions to the top-level Anima.
 
-Treat removal as an administrator operation. For normal work, avoid overwriting an existing alias and register a new alias instead.
+Use when:### Assignment to Subordinates (For Supervisors)
 
-### Change Your Default Workspace
-
-A top-level Anima sets `make_default: true` when calling `grant_workspace_access`.
-Non-top-level Animas cannot grant themselves workspace access; ask the top-level Anima via a human instruction.
-
-### Assign to Subordinates (for Supervisors)
-
-A top-level Anima with an explicit human instruction can grant access to a subordinate or descendant by setting `target_anima`:
+A top-level Anima that has received explicit instructions from a human can grant permission to a subordinate or descendant Anima by specifying `target_anima`:
 
 ```json
 {
@@ -68,15 +57,12 @@ A top-level Anima with an explicit human instruction can grant access to a subor
   "make_default": true
 }
 ```
+## Usage in Tools
 
-## Tool Usage
+- **submit_tasks**: Specify an alias in the `workspace` field of each task
+- **delegate_task**: Specify an alias in the `workspace` field## Notes
 
-- **submit_tasks**: Specify alias in each task's `workspace` field
-- **delegate_task**: Specify alias in the `workspace` field
-
-## Notes
-
-- Directories are validated both at registration and at resolution time
+- The directory is checked for existence both at registration and at time of use
 - Attempting to register a non-existent directory results in an error
-- Overwriting an alias changes the hash, so old hash references will fail to resolve
-- Humans don't need to remember hashes — alias alone is sufficient
+- Overwriting an alias changes the hash, so references to the old hash will fail to resolve
+- Humans do not need to remember hashes — aliases alone are sufficient

@@ -1,15 +1,14 @@
-# Project memory update
+# Project Memory Update
+## Scope and Protection Conditions
 
-## Scope and safeguards
-
-{anima_name}, examine only these new records:
+{anima_name}, please review only the new records below.
 
 {episodes_summary}
 
-Preserve confirmed human instructions, customer-specific facts, and reusable environment-specific procedures or lessons. Keep PR/commit approval status, one-off results and general tool usage in task history instead of generating long-term knowledge.
+Save only confirmed human instructions, customer-specific facts, and reusable environment-specific procedures or lessons. Keep PR SHAs, approval statuses, one-time results, and descriptions of general operations in the case history; do not expand long-term knowledge with them.
 
-For an item worth preserving, find related files with `search_memory`, read their originals with `read_memory_file`, then update them. Create a file only when no existing file covers it. Retain source, date and confidence; do not convert inference into fact or combine details belonging to different customers or projects.
+If there are items to save, use `search_memory` to search for existing related files, and read the original via `read_memory_file` before updating. Create new files only when no existing entry covers the item. Preserve source, date, and confidence level; do not turn speculation into fact, and do not mix details from different customers or cases.
 
-Preserve raw records, confirmed instructions, approval conditions and important tags. Rewriting identity.md, injection.md, permissions, or reorganizing the whole library is outside this task. If there is no useful change, write nothing. Use memory operations only; do not use `delegate_task`, `submit_tasks`, or `send_message`.
+Save original records, confirmed instructions, approval conditions, and important tags. `identity.md`, `injection.md`, automatic rewriting of permissions, and overall deduplication are not part of this task. If no changes are needed, rewrite nothing. Complete the task using memory operations only; do not use `delegate_task`, `submit_tasks`, or `send_message`.
 
-Briefly report changed files and their supporting evidence.
+After completion, briefly report only the files changed and the rationale.
