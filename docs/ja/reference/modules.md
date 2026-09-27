@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 08e1fd7c9fe43aec0a0aa69b44aa100a658bd32f63a93df83dfa361fbcb41a6c -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 7e7e6529db4fea3e0fd60cd333b8c16e2395bca202cc7a1e3891f8169afc995b -->
 
 # モジュール一覧
 
@@ -125,14 +125,14 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima.asset_reconciler` | 675 | — |
 | `core.anima.bootstrap_state` | 581 | — |
-| `core.anima.digital_anima` | 730 | — |
+| `core.anima.digital_anima` | 727 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 770 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
-| `core.anima.heartbeat` | 942 | — |
+| `core.anima.heartbeat` | 953 | — |
 | `core.anima.image_artifacts` | 219 | — |
-| `core.anima.inbox` | 1013 | — |
+| `core.anima.inbox` | 1009 | — |
 | `core.anima.inbox_overflow` | 130 | — |
-| `core.anima.lifecycle` | 1231 | — |
+| `core.anima.lifecycle` | 1237 | — |
 | `core.anima.messaging` | 1694 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -443,7 +443,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.activity.audit` | 290 | — |
 | `core.memory.activity.conversation` | 492 | — |
 | `core.memory.activity.format` | 567 | — |
-| `core.memory.activity.logger` | 587 | — |
+| `core.memory.activity.logger` | 594 | — |
 | `core.memory.activity.models` | 202 | — |
 | `core.memory.activity.replay` | 537 | — |
 | `core.memory.activity.rotation` | 187 | — |
@@ -487,7 +487,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 653 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
-| `core.memory.manager` | 794 | — |
+| `core.memory.manager` | 828 | — |
 | `core.memory.migration.backup` | 150 | — |
 | `core.memory.migration.checkpoint` | 74 | — |
 | `core.memory.migration.migrator` | 146 | — |
@@ -551,6 +551,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.retrieval.types` | 38 | — |
 | `core.memory.retrieval.unified_search` | 895 | — |
 | `core.memory.skill_metadata` | 309 | — |
+| `core.memory.state_lock` | 96 | Process-safe locking for ``state/current_state.md`` updates. |
 
 ## `core.memory.activity`
 
@@ -826,13 +827,13 @@ anima の監督、委任、実行調整。
 | `core.supervisor._mgr_reconcile（非公開）` | 337 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1056 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
-| `core.supervisor.inbox_rate_limiter` | 420 | Inbox rate limiting, cascade detection, and deferred trigger management. |
+| `core.supervisor.inbox_rate_limiter` | 419 | Inbox rate limiting, cascade detection, and deferred trigger management. |
 | `core.supervisor.ipc` | 535 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 430 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1139 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `core.supervisor.memory_service` | 667 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 754 | Process handle for managing child Anima processes. |
-| `core.supervisor.runner` | 1284 | Child process entry point for Anima subprocess. |
+| `core.supervisor.runner` | 1277 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
 | `core.supervisor.scheduler_manager` | 1115 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
@@ -850,7 +851,7 @@ anima の監督、委任、実行調整。
 | `core.tasks.background` | 606 | — |
 | `core.tasks.board.board_actions` | 222 | — |
 | `core.tasks.board.formatting` | 120 | Formatting helpers for TaskBoard prompt sections. |
-| `core.tasks.board.housekeeping` | 343 | — |
+| `core.tasks.board.housekeeping` | 347 | — |
 | `core.tasks.board.models` | 95 | Pydantic models for TaskBoard metadata and projections. |
 | `core.tasks.board.notices` | 119 | — |
 | `core.tasks.board.projector` | 282 | Projection from per-Anima task queues into TaskBoard rows. |
@@ -865,7 +866,7 @@ anima の監督、委任、実行調整。
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1868 | Pending task watcher and executor. |
+| `core.tasks.pending_executor` | 1856 | Pending task watcher and executor. |
 | `core.tasks.pending_housekeeping` | 52 | — |
 | `core.tasks.queue` | 735 | — |
 
@@ -910,7 +911,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.handler_comms` | 902 | — |
 | `core.tooling.handler_create_anima` | 237 | — |
 | `core.tooling.handler_delegation` | 308 | — |
-| `core.tooling.handler_files` | 1142 | — |
+| `core.tooling.handler_files` | 1143 | — |
 | `core.tooling.handler_memory` | 1472 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 199 | — |
