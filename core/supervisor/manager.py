@@ -27,6 +27,7 @@ from core.exceptions import (  # noqa: F401
     MemoryIOError,
     ProcessError,
 )
+from core.platform.process import kill_tree, snapshot_descendants
 from core.supervisor._mgr_health import HealthMixin
 from core.supervisor._mgr_rag_repair import RAGRepairMixin
 from core.supervisor._mgr_reconcile import ReconcileMixin
@@ -282,15 +283,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                     pid,
                 )
                 try:
-                    # Kill entire process tree (runner + CLI subprocesses)
-                    children = proc.children(recursive=True)
+                    # Snapshot before killing the runner; its children may be reparented after exit.
+                    descendants = snapshot_descendants(pid)
                     proc.kill()
                     proc.wait(timeout=5)
-                    for child in children:
-                        try:
-                            child.kill()
-                        except _psutil.NoSuchProcess:
-                            pass
+                    kill_tree(pid, descendants=descendants, include_root=False)
                     logger.info(
                         "Zombie runner killed and confirmed dead: %s (pid=%d)",
                         anima_name,

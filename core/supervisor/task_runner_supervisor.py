@@ -17,7 +17,7 @@ from typing import Any
 import psutil
 
 from core.i18n import t
-from core.platform.process import subprocess_session_kwargs
+from core.platform.process import process_group_exists, signal_tree, snapshot_descendants, subprocess_session_kwargs
 from core.schemas import CronTask
 from core.supervisor.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
@@ -752,13 +752,10 @@ class TaskRunnerSupervisor:
 
     @staticmethod
     def _job_group_exists(job: TaskRunnerJob) -> bool:
-        if os.name != "posix" or not job.pgid:
-            return bool(job.process is not None and job.process.returncode is None)
-        try:
-            os.killpg(job.pgid, 0)
-        except ProcessLookupError:
-            return False
-        return True
+        return process_group_exists(
+            job.pgid,
+            fallback_alive=job.process is not None and job.process.returncode is None,
+        )
 
     def _mark_busy_start(self) -> None:
         owner = self._busy_status_owner
@@ -1081,29 +1078,19 @@ class TaskRunnerSupervisor:
         """
         if not job.pid:
             return []
-        try:
-            return psutil.Process(job.pid).children(recursive=True)
-        except psutil.Error:
-            return []
+        return snapshot_descendants(job.pid)
 
     @staticmethod
     def _signal_job_group(job: TaskRunnerJob, sig: int) -> None:
         process = job.process
         if process is None:
             return
+        # Without a process group the pid is the only handle; once the child
+        # has been reaped its pid may be reused, so never signal it.
+        if process.returncode is not None and (os.name == "nt" or job.pgid is None):
+            return
         descendants = TaskRunnerSupervisor._descendant_processes(job)
-        try:
-            if os.name == "posix" and job.pgid:
-                os.killpg(job.pgid, sig)
-            elif process.returncode is None:
-                process.send_signal(sig)
-        except ProcessLookupError:
-            pass
-        for child in descendants:
-            try:
-                child.send_signal(sig)
-            except psutil.Error:
-                continue
+        signal_tree(job.pid, sig, pgid=job.pgid, descendants=descendants)
 
     @staticmethod
     def _terminate_job_group(job: TaskRunnerJob) -> None:

@@ -33,6 +33,7 @@ from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteErr
 from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
+from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
 from core.supervisor.scheduler_manager import SchedulerManager
@@ -44,47 +45,6 @@ logger = logging.getLogger(__name__)
 
 _ORPHAN_CHECK_INTERVAL_SEC = 300  # 5 minutes
 _ORPHAN_MAX_AGE_SEC = 7200  # 2 hours
-
-
-# ── Task Runner Subtree Discovery ────────────────────────────────
-
-
-def _task_runner_subtree_pids(root: psutil.Process, job_pids: set[int]) -> set[int]:
-    """Return PIDs of task-runner roots and all their descendants.
-
-    A task-runner root is either a registered job pid or a descendant
-    whose cmdline references ``core.supervisor.task_runner`` (which also
-    catches runners spawned but not yet registered).  These roots and their
-    full descendant trees are managed by :class:`TaskRunnerSupervisor`
-    (liveness watchdog and child exit cleanup), so the root's orphan
-    cleanup must never kill them.  The root orphan cleanup uses this to
-    build an exclusion set.
-    """
-    excluded: set[int] = set()
-
-    def _add_subtree(pid: int) -> None:
-        if pid in excluded:
-            return
-        excluded.add(pid)
-        try:
-            for sub in psutil.Process(pid).children(recursive=True):
-                excluded.add(sub.pid)
-        except (psutil.Error, AttributeError):
-            pass
-
-    for pid in job_pids:
-        _add_subtree(pid)
-    try:
-        descendants = root.children(recursive=True)
-    except (psutil.Error, AttributeError):
-        return excluded
-    for proc in descendants:
-        try:
-            if any("core.supervisor.task_runner" in token for token in proc.cmdline()):
-                _add_subtree(proc.pid)
-        except (psutil.Error, TypeError, AttributeError):
-            continue
-    return excluded
 
 
 # ── AnimaRunner ──────────────────────────────────────────────────
@@ -746,12 +706,6 @@ class AnimaRunner:
         the rest. Failures in the overall walk are logged at DEBUG only.
         """
 
-        def _parent_depth(proc: psutil.Process) -> int:
-            try:
-                return len(proc.parents())
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                return 0
-
         try:
             current = psutil.Process()
             scheduler = getattr(self, "_scheduler_mgr", None)
@@ -760,8 +714,8 @@ class AnimaRunner:
             job_pids: set[int] = set()
             if isinstance(jobs, dict):
                 job_pids = {job.pid for job in jobs.values() if getattr(job, "pid", None)}
-            excluded = _task_runner_subtree_pids(current, job_pids)
-            for child in current.children(recursive=True):
+            excluded = task_runner_subtree_pids(current, job_pids)
+            for child in snapshot_descendants(current.pid):
                 try:
                     if child.pid in excluded:
                         continue
@@ -771,30 +725,13 @@ class AnimaRunner:
                     proc_age_sec = time.time() - child.create_time()
                     if proc_age_sec <= _ORPHAN_MAX_AGE_SEC:
                         continue
-                    descendants = child.children(recursive=True)
-
-                    for descendant in sorted(descendants, key=_parent_depth, reverse=True):
-                        try:
-                            desc_pid = descendant.pid
-                            desc_name = descendant.name()
-                            descendant.kill()
-                            logger.warning(
-                                "Killed orphaned Claude descendant pid=%s name=%s (orphan cleanup)",
-                                desc_pid,
-                                desc_name,
-                            )
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            pass
-                    try:
-                        child.kill()
-                        logger.warning(
-                            "Killed orphaned Claude process pid=%s name=%s age_sec=%.1f (orphan cleanup)",
-                            child.pid,
-                            proc_name,
-                            proc_age_sec,
-                        )
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
+                    kill_tree(child.pid, deepest_first=True)
+                    logger.warning(
+                        "Killed orphaned Claude process pid=%s name=%s age_sec=%.1f (orphan cleanup)",
+                        child.pid,
+                        proc_name,
+                        proc_age_sec,
+                    )
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         except Exception:

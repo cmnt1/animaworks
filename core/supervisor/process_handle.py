@@ -24,7 +24,7 @@ from typing import Any
 import psutil
 
 from core.exceptions import AnimaNotRunningError, IPCConnectionError, ProcessError
-from core.platform.process import subprocess_session_kwargs, terminate_subprocess
+from core.platform.process import kill_tree, snapshot_descendants, subprocess_session_kwargs, terminate_subprocess
 from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse
 from core.time_utils import ensure_aware, now_local
 
@@ -582,12 +582,7 @@ class ProcessHandle:
         # Step 1: Snapshot descendant PIDs BEFORE sending shutdown.
         # If the runner exits quickly, we can still find and kill its
         # children (CLI subprocesses like claude, codex, cursor-agent).
-        child_pids: list[int] = []
-        try:
-            parent = psutil.Process(self.process.pid)
-            child_pids = [c.pid for c in parent.children(recursive=True)]
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+        child_pids = [child.pid for child in snapshot_descendants(self.process.pid)]
 
         # Step 2: Send IPC shutdown request BEFORE changing state
         # (send_request requires state == RUNNING)
@@ -665,16 +660,16 @@ class ProcessHandle:
                 proc = psutil.Process(pid)
                 if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
                     continue
-                # Also kill any grandchildren this process spawned
-                for grandchild in proc.children(recursive=True):
+                descendants = snapshot_descendants(pid)
+                # Log each descendant here; kill_tree() below does the actual kill.
+                for descendant in descendants:
                     try:
                         logger.info(
                             "Killing orphaned grandchild of %s: PID %d (%s)",
                             self.anima_name,
-                            grandchild.pid,
-                            grandchild.name(),
+                            descendant.pid,
+                            descendant.name(),
                         )
-                        grandchild.kill()
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
                 logger.info(
@@ -683,7 +678,7 @@ class ProcessHandle:
                     pid,
                     proc.name(),
                 )
-                proc.kill()
+                kill_tree(pid, descendants=descendants)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 

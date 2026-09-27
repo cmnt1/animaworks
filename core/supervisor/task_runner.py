@@ -17,6 +17,7 @@ from typing import Any
 from core.anima.digital_anima import DigitalAnima
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
+from core.platform.process import snapshot_descendants, terminate_tree
 from core.schemas import CronTask
 from core.supervisor.ipc import IPCRequest
 from core.supervisor.ipc_v2 import (
@@ -882,29 +883,16 @@ def _cleanup_descendants() -> None:
     outlive the runner that launched them, so on the way out we politely TERM
     every descendant (letting it flush) and then KILL the stubborn ones.
     """
-    try:
-        import psutil
-
-        children = psutil.Process().children(recursive=True)
-    except Exception:
-        return
+    children = snapshot_descendants(os.getpid())
     if not children:
         return
     pid_count = len(children)
-    for child in children:
-        try:
-            child.terminate()
-        except psutil.Error:
-            pass
-    try:
-        _, alive = psutil.wait_procs(children, timeout=2.0)
-    except Exception:
-        alive = children
-    for child in alive:
-        try:
-            child.kill()
-        except psutil.Error:
-            pass
+    terminate_tree(
+        os.getpid(),
+        descendants=children,
+        include_root=False,
+        grace_sec=2.0,
+    )
     logger.warning(
         "cleaned up leaked child processes: pid_count=%s",
         pid_count,
