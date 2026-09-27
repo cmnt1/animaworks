@@ -1,5 +1,7 @@
 # IPC v2 root⇔task runner wire仕様
 
+> **状態（2026-09 時点）**: 未実装の項目あり。heartbeat、half-open 検出、キュー上限の制御は仕様どおりには実装されておらず、残存する定数だけでは機能を提供しない。現行のプロセスと IPC は [docs/ja/architecture/process.md](../ja/architecture/process.md) を参照。
+
 ## 1. 適用範囲と互換境界
 
 本仕様は Phase 2/3 の anima root と、1 jobにつき1つ生成される task runner の間だけに適用する。task runner は root が公開する1つの endpoint に接続し、jobの開始から終了まで **1本の永続 duplex connection** を使う。transport は Unix socket 固定ではなく、既存の `core/supervisor/transport.py:44-69,141-197,200-236` を使い、`ANIMAWORKS_IPC_TRANSPORT`、Windows、socket path長超過時のloopback TCP fallbackを維持する（C-07）。

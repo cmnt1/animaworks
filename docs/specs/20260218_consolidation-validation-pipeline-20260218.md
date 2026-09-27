@@ -1,5 +1,7 @@
 # 記憶固定化バリデーションパイプライン — NLI+LLMカスケード検証による固定化品質保証
 
+> **状態（2026-09 時点）**: 撤廃済み。NLI を使う固定化検証パイプラインは現行の統合処理に含まれない。現行の候補収集と統合は [docs/ja/memory/consolidation.md](../ja/memory/consolidation.md) を参照。
+
 ## Overview
 
 日次固定化（episodes/ → knowledge/）のLLM出力にハルシネーションが混入するリスクに対し、NLI+LLMカスケード検証パイプラインを導入する。合わせて、knowledgeファイルにフレームワーク管理のYAMLフロントマターを導入し、既存の品質問題（既存knowledge内容未参照、元ファイル即時削除、コードフェンス残存）を修正する。

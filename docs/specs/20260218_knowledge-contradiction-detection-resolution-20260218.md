@@ -1,5 +1,7 @@
 # 知識矛盾検出・解決メカニズム — NLI+LLM判定によるsupersede/merge/coexist自動解決
 
+> **状態（2026-09 時点）**: 撤廃済み。NLI と ContradictionDetector は現行処理に含まれず、週次統合では候補を Anima に提示して判断する。現行の仕組みは [docs/ja/memory/consolidation.md](../ja/memory/consolidation.md) を参照。
+
 ## Overview
 
 既存knowledgeと矛盾する新規知識が独立に生成・蓄積される問題に対し、日次固定化パイプラインに矛盾検出・解決ステージを追加する。NLIで矛盾候補を検出し、LLMで解決方法（supersede/merge/coexist）を判定する。本Issueは `20260218_consolidation-validation-pipeline.md`（YAMLフロントマター基盤）の完了を前提とする。

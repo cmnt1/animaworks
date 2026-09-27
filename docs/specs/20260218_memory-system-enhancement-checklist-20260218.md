@@ -1,5 +1,7 @@
 # 記憶システム強化 統合チェックリスト — 固定化品質保証・矛盾解決・手続き記憶ライフサイクル
 
+> **状態（2026-09 時点）**: 一部撤廃済み。NLI による検証、独立した矛盾検出、月次忘却の項目は現行実装に含まれない。記憶処理の現状は [docs/ja/memory/index.md](../ja/memory/index.md) と [docs/ja/memory/consolidation.md](../ja/memory/consolidation.md) を参照。
+
 ## Overview
 
 memory.md レビューで特定された6つの改善Issueの統合実装チェックリスト。依存関係に基づく実装順序を定義し、各Issueのフェーズ単位で進捗を追跡する。

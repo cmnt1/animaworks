@@ -1,5 +1,7 @@
 # pi-fix3: Action Memory Gate fail_mode 段階移行ガイド
 
+> **状態（2026-09 時点）**: 撤廃済み。旧来の action gate 制御方式は廃止され、現行では共通の権限判定に集約されている。現行の仕組みは [docs/ja/security.md](../ja/security.md) を参照。
+
 ## Summary
 
 Action Memory Gate (`core/tooling/action_gate.py`) は、副作用ツール実行前に
