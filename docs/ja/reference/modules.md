@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 261f4caf8572bb1471a4a322a18465b5f78b51cc81dd8c14c3b420bb2c463bd2 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 8781d6909b6bda73b6c8ea71f66b263f63dc70aaad8ff9c97818409fca7f83b4 -->
 
 # モジュール一覧
 
@@ -51,7 +51,7 @@
 | `cli.commands.server` | 988 | — |
 | `cli.commands.skills` | 155 | — |
 | `cli.commands.supervisor_cmd` | 246 | — |
-| `cli.commands.task_cmd` | 567 | — |
+| `cli.commands.task_cmd` | 568 | — |
 | `cli.commands.task_store_cmd` | 118 | Operator-only, cohort-scoped task migration and current-state export. |
 | `cli.commands.tmp_cmd` | 173 | — |
 | `cli.commands.vault_cmd` | 247 | — |
@@ -125,10 +125,10 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima.asset_reconciler` | 675 | — |
 | `core.anima.bootstrap_state` | 581 | — |
-| `core.anima.digital_anima` | 727 | — |
+| `core.anima.digital_anima` | 722 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 770 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
-| `core.anima.heartbeat` | 953 | — |
+| `core.anima.heartbeat` | 946 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 1009 | — |
 | `core.anima.inbox_overflow` | 130 | — |
@@ -188,9 +188,9 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution.cli_stream` | 254 | — |
 | `core.execution.engine_base` | 75 | — |
 | `core.execution.engine_session` | 101 | — |
-| `core.execution.engines.claude._sdk_hooks（非公開）` | 670 | — |
+| `core.execution.engines.claude._sdk_hooks（非公開）` | 673 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 106 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 562 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 555 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 305 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 524 | — |
@@ -402,10 +402,10 @@ anima の起動、停止、初期化のライフサイクル。
 | `core.lifecycle` | 18 | — |
 | `core.lifecycle.anima_merge.content_refs` | 386 | — |
 | `core.lifecycle.anima_merge.credential_refs` | 65 | — |
-| `core.lifecycle.anima_merge.external_refs` | 456 | — |
+| `core.lifecycle.anima_merge.external_refs` | 447 | — |
 | `core.lifecycle.anima_merge.finalize` | 460 | — |
 | `core.lifecycle.anima_merge.journal` | 187 | — |
-| `core.lifecycle.anima_merge.service` | 1753 | — |
+| `core.lifecycle.anima_merge.service` | 1751 | — |
 | `core.lifecycle.anima_merge.task_refs` | 402 | — |
 | `core.lifecycle.anima_merge.taskboard_refs` | 162 | — |
 | `core.lifecycle.anima_merge.verification` | 268 | — |
@@ -443,7 +443,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.activity.audit` | 290 | — |
 | `core.memory.activity.conversation` | 492 | — |
 | `core.memory.activity.format` | 567 | — |
-| `core.memory.activity.logger` | 594 | — |
+| `core.memory.activity.logger` | 613 | — |
 | `core.memory.activity.models` | 202 | — |
 | `core.memory.activity.replay` | 537 | — |
 | `core.memory.activity.rotation` | 187 | — |
@@ -822,25 +822,26 @@ anima の監督、委任、実行調整。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.supervisor` | 35 | Process isolation supervisor package. |
-| `core.supervisor._mgr_health（非公開）` | 500 | Health check mixin for ProcessSupervisor. |
+| `core.supervisor` | 34 | Process isolation supervisor package. |
+| `core.supervisor._mgr_health（非公開）` | 458 | Health check mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_rag_repair（非公開）` | 245 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_reconcile（非公開）` | 337 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1051 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
-| `core.supervisor.inbox_rate_limiter` | 419 | Inbox rate limiting, cascade detection, and deferred trigger management. |
-| `core.supervisor.ipc` | 535 | IPC communication layer using JSON Lines over a platform-specific transport. |
-| `core.supervisor.ipc_v2` | 430 | Persistent duplex IPC v2 used between an anima root and task runners. |
-| `core.supervisor.manager` | 1095 | Process Supervisor - Manages lifecycle of Anima child processes. |
+| `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
+| `core.supervisor.inbox_rate_limiter` | 402 | Inbox rate limiting, cascade detection, and deferred trigger management. |
+| `core.supervisor.ipc` | 517 | IPC communication layer using JSON Lines over a platform-specific transport. |
+| `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
+| `core.supervisor.manager` | 1094 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `core.supervisor.memory_service` | 667 | Root-owned vector memory service. |
-| `core.supervisor.process_handle` | 749 | Process handle for managing child Anima processes. |
+| `core.supervisor.process_handle` | 771 | Process handle for managing child Anima processes. |
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
-| `core.supervisor.runner` | 1214 | Child process entry point for Anima subprocess. |
+| `core.supervisor.runner` | 1253 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
 | `core.supervisor.scheduler_manager` | 1115 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
-| `core.supervisor.task_runner` | 929 | Disposable task runner entry point. |
-| `core.supervisor.task_runner_supervisor` | 1104 | Root-side lifecycle manager for disposable task runner processes. |
+| `core.supervisor.task_runner` | 949 | Disposable task runner entry point. |
+| `core.supervisor.task_runner_supervisor` | 1111 | Root-side lifecycle manager for disposable task runner processes. |
 | `core.supervisor.transport` | 236 | Transport helpers for IPC server/client communication. |
 
 ## `core.tasks`
@@ -856,7 +857,7 @@ anima の監督、委任、実行調整。
 | `core.tasks.board.models` | 37 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 119 | — |
 | `core.tasks.board.readiness` | 31 | Read-only boundary between legacy task files and canonical execution. |
-| `core.tasks.board.tasks` | 1244 | Durable execution records; the single source of truth for the TaskBoard. |
+| `core.tasks.board.tasks` | 1247 | Durable execution records; the single source of truth for the TaskBoard. |
 | `core.tasks.board.view` | 118 | Single TaskBoard view built directly from the canonical TaskStore. |
 | `core.tasks.dispatch` | 412 | — |
 | `core.tasks.external.collector` | 209 | Multi-source external tasks collector with per-source fault isolation. |
@@ -868,7 +869,8 @@ anima の監督、委任、実行調整。
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
 | `core.tasks.pending_executor` | 1856 | Pending task watcher and executor. |
 | `core.tasks.pending_housekeeping` | 52 | — |
-| `core.tasks.queue` | 595 | — |
+| `core.tasks.queue` | 589 | — |
+| `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
 
 ## `core.tasks.board`
 
@@ -906,7 +908,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.command_policy` | 455 | — |
 | `core.tooling.dispatch` | 255 | — |
 | `core.tooling.guide` | 133 | — |
-| `core.tooling.handler` | 882 | — |
+| `core.tooling.handler` | 878 | — |
 | `core.tooling.handler_base` | 373 | — |
 | `core.tooling.handler_comms` | 902 | — |
 | `core.tooling.handler_create_anima` | 237 | — |
@@ -916,7 +918,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 199 | — |
 | `core.tooling.handler_perms` | 434 | — |
-| `core.tooling.handler_skills` | 766 | — |
+| `core.tooling.handler_skills` | 769 | — |
 | `core.tooling.handler_subordinate_control` | 417 | — |
 | `core.tooling.handler_workspace` | 254 | — |
 | `core.tooling.org_helpers` | 154 | — |
