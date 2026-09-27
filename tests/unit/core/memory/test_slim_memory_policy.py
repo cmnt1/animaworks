@@ -165,19 +165,26 @@ async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
     anima = SimpleNamespace(name="fixture", anima_dir=tmp_path)
     engine = ConsolidationEngine(tmp_path, "fixture")
     engine.collect_activity_chunks = MagicMock(return_value=["new activity"])
+
+    async def fake_one_shot(_prompt: str, **kwargs) -> str:
+        if kwargs.get("structured_output"):
+            return '{"entities": []}'
+        return "## 12:00 — Work\nEvidence"
+
     with (
         patch("core.config.load_config", return_value=AnimaWorksConfig()),
         patch(
             "core.memory._llm_utils.one_shot_completion",
             new_callable=AsyncMock,
-            return_value="## 12:00 — Work\nEvidence",
+            side_effect=fake_one_shot,
         ) as llm,
     ):
         first = await LifecycleMixin._run_daily_consolidation(anima, engine)
         second = await LifecycleMixin._run_daily_consolidation(anima, engine)
     assert first.action == "completed"
     assert second.action == "skipped"
-    assert llm.await_count == 1
+    generation_calls = [call for call in llm.await_args_list if not call.kwargs.get("structured_output")]
+    assert len(generation_calls) == 1
 
 
 def test_explicit_graph_disable_skips_indexer_creation(tmp_path: Path):

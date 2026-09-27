@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 
 # ── Fixtures ──────────────────────────────────────────────
 
@@ -58,7 +58,9 @@ class TestWriteProcedureWithMeta:
         body = "# Deploy\n\n1. Pull latest\n2. Run deploy script"
 
         memory.write_procedure_with_meta(
-            Path("deploy.md"), body, metadata,
+            Path("deploy.md"),
+            body,
+            metadata,
         )
 
         path = anima_dir / "procedures" / "deploy.md"
@@ -71,7 +73,9 @@ class TestWriteProcedureWithMeta:
     def test_writes_absolute_path(self, memory, tmp_path: Path) -> None:
         target = tmp_path / "custom" / "proc.md"
         memory.write_procedure_with_meta(
-            target, "Body content", {"description": "test"},
+            target,
+            "Body content",
+            {"description": "test"},
         )
         assert target.exists()
         assert "description: test" in target.read_text(encoding="utf-8")
@@ -182,6 +186,19 @@ class TestValidateProcedureFormat:
         content = "---\nno closing"
         result = _validate_procedure_format(content)
         assert "フロントマター" in result
+
+    def test_description_with_embedded_dashes_keeps_frontmatter_intact(self) -> None:
+        from core.tooling.handler import _validate_procedure_format
+
+        content = '---\ndescription: "A---B"\n---\n\n# Procedure'
+        assert _validate_procedure_format(content) == ""
+
+    def test_missing_frontmatter_terminator_uses_short_warning(self) -> None:
+        from core.i18n import t
+        from core.tooling.handler import _validate_procedure_format
+
+        content = "---\ndescription: procedure\n"
+        assert _validate_procedure_format(content) == t("handler.procedure_frontmatter_recommended_short")
 
 
 # ── 1-3: indexer _strip_frontmatter ──────────────────────

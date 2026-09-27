@@ -242,11 +242,12 @@ def _validate_skill_format(content: str) -> str:
     if not content.startswith("---"):
         return t("handler.skill_frontmatter_required")
 
-    end_idx = content.find("---", 3)
-    if end_idx == -1:
-        return t("handler.skill_frontmatter_required")
+    from core.memory.frontmatter import split_frontmatter
 
-    frontmatter_raw = content[3:end_idx].strip()
+    frontmatter_raw, body = split_frontmatter(content)
+    if frontmatter_raw == "":
+        return t("handler.skill_frontmatter_required")
+    frontmatter_raw = frontmatter_raw.strip()
     try:
         import yaml
 
@@ -270,7 +271,6 @@ def _validate_skill_format(content: str) -> str:
     if desc and ("「" not in desc or "」" not in desc):
         messages.append(t("handler.description_keyword_warning"))
 
-    body = content[end_idx + 3 :]
     if "## 概要" in body or "## 発動条件" in body:
         messages.append(t("handler.legacy_skill_sections"))
 
@@ -289,12 +289,13 @@ def _validate_procedure_format(content: str) -> str:
         messages.append(t("handler.procedure_frontmatter_recommended"))
         return "\n".join(messages)
 
-    end_idx = content.find("---", 3)
-    if end_idx == -1:
+    from core.memory.frontmatter import split_frontmatter
+
+    frontmatter_raw, _body = split_frontmatter(content)
+    if frontmatter_raw == "":
         messages.append(t("handler.procedure_frontmatter_recommended_short"))
         return "\n".join(messages)
-
-    frontmatter_raw = content[3:end_idx].strip()
+    frontmatter_raw = frontmatter_raw.strip()
     try:
         import yaml
 

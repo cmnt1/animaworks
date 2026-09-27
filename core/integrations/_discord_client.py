@@ -19,7 +19,7 @@ import httpx
 
 from core.exceptions import ToolConfigError
 from core.integrations._base import get_credential
-from core.integrations._retry import retry_on_rate_limit
+from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -114,11 +114,6 @@ class DiscordClient:
             DiscordAPIError: On non-2xx after retries are exhausted.
         """
 
-        def _get_retry_after(exc: Exception) -> float | None:
-            if isinstance(exc, _DiscordRateLimitError):
-                return float(exc.retry_after)
-            return None
-
         def _do() -> Any:
             client = self._ensure_http()
             try:
@@ -153,7 +148,7 @@ class DiscordClient:
                 _do,
                 max_retries=RATE_LIMIT_RETRY_MAX,
                 default_wait=1.0,
-                get_retry_after=_get_retry_after,
+                get_retry_after=retry_after_from_attr,
                 retry_on=(_DiscordRateLimitError,),
             )
         except _DiscordRateLimitError as exc:

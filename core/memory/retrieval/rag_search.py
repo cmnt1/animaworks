@@ -595,56 +595,38 @@ class RAGMemorySearch:
         return dict(self._last_search_meta)
 
     def _load_rag_pipeline_settings(self) -> dict[str, object]:
-        """Resolve RAG pipeline knobs from config with safe defaults."""
-        defaults: dict[str, object] = {
-            "rerank_enabled": True,
-            "rerank_candidate_pool": 50,
-            "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-12-v2",
-            "confidence_threshold": 0.35,
-            "rrf_confidence_threshold": 0.02,
-            "enable_spreading_activation": True,
-            "entity_registry_enabled": True,
-            "entity_boost_enabled": True,
-            "entity_boost": 0.20,
-            "entity_boost_cap": 0.80,
-            "temporal_boost_enabled": True,
-            "temporal_boost": 0.05,
-            "temporal_boost_max": 0.10,
-            "temporal_half_life_days": 7.0,
-            "access_boost_enabled": True,
-            "access_boost_weight": 0.05,
-            "access_boost_cap": 0.25,
-            "access_boost_half_life_days": 30.0,
+        """Resolve RAG pipeline knobs from the schema-backed config."""
+        from core.config.schemas import RAGConfig
+
+        setting_keys = {
+            "rerank_enabled",
+            "rerank_candidate_pool",
+            "cross_encoder_model",
+            "confidence_threshold",
+            "rrf_confidence_threshold",
+            "enable_spreading_activation",
+            "entity_registry_enabled",
+            "entity_boost_enabled",
+            "entity_boost",
+            "entity_boost_cap",
+            "temporal_boost_enabled",
+            "temporal_boost",
+            "temporal_boost_max",
+            "temporal_half_life_days",
+            "access_boost_enabled",
+            "access_boost_weight",
+            "access_boost_cap",
+            "access_boost_half_life_days",
         }
         try:
             from core.config import load_config
 
             rag = load_config().rag
-            defaults.update(
-                {
-                    "enable_spreading_activation": rag.enable_spreading_activation,
-                    "rerank_enabled": rag.rerank_enabled,
-                    "rerank_candidate_pool": rag.rerank_candidate_pool,
-                    "cross_encoder_model": rag.cross_encoder_model,
-                    "confidence_threshold": rag.confidence_threshold,
-                    "rrf_confidence_threshold": rag.rrf_confidence_threshold,
-                    "entity_registry_enabled": getattr(rag, "entity_registry_enabled", True),
-                    "entity_boost_enabled": getattr(rag, "entity_boost_enabled", True),
-                    "entity_boost": getattr(rag, "entity_boost", 0.20),
-                    "entity_boost_cap": getattr(rag, "entity_boost_cap", 0.80),
-                    "temporal_boost_enabled": getattr(rag, "temporal_boost_enabled", True),
-                    "temporal_boost": getattr(rag, "temporal_boost", 0.05),
-                    "temporal_boost_max": getattr(rag, "temporal_boost_max", 0.10),
-                    "temporal_half_life_days": getattr(rag, "temporal_half_life_days", 7.0),
-                    "access_boost_enabled": getattr(rag, "access_boost_enabled", True),
-                    "access_boost_weight": getattr(rag, "access_boost_weight", 0.05),
-                    "access_boost_cap": getattr(rag, "access_boost_cap", 0.25),
-                    "access_boost_half_life_days": getattr(rag, "access_boost_half_life_days", 30.0),
-                }
-            )
         except Exception:
             logger.debug("Using default RAG pipeline settings", exc_info=True)
-        return defaults
+            rag = RAGConfig()
+
+        return rag.model_dump(include=setting_keys.intersection(RAGConfig.model_fields))
 
     def _build_entity_boost_config(self, query: str, settings: dict[str, object] | None = None):
         settings = settings or self._load_rag_pipeline_settings()

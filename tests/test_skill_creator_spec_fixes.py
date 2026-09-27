@@ -169,6 +169,16 @@ class TestValidateSkillFormat:
         result = _validate_skill_format(content)
         assert result != ""
 
+    def test_description_with_embedded_dashes_keeps_frontmatter_intact(self) -> None:
+        content = '---\nname: test\ndescription: "A---B「x」"\n---\n\n# Body\n'
+        assert _validate_skill_format(content) == ""
+
+    def test_missing_frontmatter_terminator_is_required(self) -> None:
+        from core.i18n import t
+
+        content = '---\nname: test\ndescription: "test「x」"\n'
+        assert _validate_skill_format(content) == t("handler.skill_frontmatter_required")
+
     def test_legacy_section_warns(self) -> None:
         content = '---\nname: test\ndescription: "test 「test」"\n---\n\n# test\n\n## 概要\n\nfoo\n'
         result = _validate_skill_format(content)

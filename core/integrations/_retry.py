@@ -87,6 +87,15 @@ def retry_with_backoff(
     raise last_exc  # type: ignore[misc]
 
 
+def retry_after_from_attr(exc: Exception) -> float | None:
+    """Return an exception's ``retry_after`` attribute as seconds, if numeric."""
+    try:
+        value = getattr(exc, "retry_after", None)
+        return float(value) if value is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def retry_on_rate_limit(
     fn: Callable[..., T],
     *args: Any,

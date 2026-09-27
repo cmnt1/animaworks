@@ -145,7 +145,7 @@ class BuildResult:
 
 @dataclass(frozen=True)
 class _SkillCatalogRouterSettings:
-    enabled: bool = False
+    enabled: bool = True
     top_k: int = 5
     min_score: float = 1.15
     include_body: bool = True
@@ -649,18 +649,21 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
         from core.config import load_config
 
         prompt_cfg = load_config().prompt
-        return _SkillCatalogRouterSettings(
-            enabled=bool(getattr(prompt_cfg, "skill_catalog_router_enabled", False)),
-            top_k=max(1, int(getattr(prompt_cfg, "skill_catalog_router_top_k", 5))),
-            min_score=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_min_score", 1.15))),
-            include_body=bool(getattr(prompt_cfg, "skill_catalog_router_include_body", True)),
-            dense_enabled=bool(getattr(prompt_cfg, "skill_catalog_router_dense_enabled", True)),
-            dense_weight=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_dense_weight", 8.0))),
-            max_items=max(1, int(getattr(prompt_cfg, "skill_catalog_max_items", 3))),
-        )
     except Exception:
         logger.debug("Failed to load skill catalog router settings", exc_info=True)
-        return _SkillCatalogRouterSettings()
+        from core.config.schemas import PromptConfig
+
+        prompt_cfg = PromptConfig()
+
+    return _SkillCatalogRouterSettings(
+        enabled=bool(prompt_cfg.skill_catalog_router_enabled),
+        top_k=max(1, int(prompt_cfg.skill_catalog_router_top_k)),
+        min_score=max(0.0, float(prompt_cfg.skill_catalog_router_min_score)),
+        include_body=bool(prompt_cfg.skill_catalog_router_include_body),
+        dense_enabled=bool(prompt_cfg.skill_catalog_router_dense_enabled),
+        dense_weight=max(0.0, float(prompt_cfg.skill_catalog_router_dense_weight)),
+        max_items=max(1, int(prompt_cfg.skill_catalog_max_items)),
+    )
 
 
 def _skill_catalog_pointer(meta: Any) -> str:

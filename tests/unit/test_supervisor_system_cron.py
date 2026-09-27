@@ -110,9 +110,10 @@ class TestSupervisorSchedulerInit:
         with patch.dict("sys.modules", {"core.config": mock_mod}):
             sup._start_system_scheduler()
 
-        # Should still start scheduler even without config (uses defaults)
+        # Should still start scheduler while honoring schema defaults (weekly is disabled).
         assert sup.scheduler is not None
         assert sup.scheduler.running
+        assert sup.scheduler.get_job("system_weekly_integration") is None
 
         sup.scheduler.shutdown(wait=False)
 

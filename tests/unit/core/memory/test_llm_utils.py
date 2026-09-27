@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -425,6 +426,69 @@ class TestOneShotCompletion:
         assert result == "Codex direct text"
         mock_try_litellm.assert_not_called()
         mock_try_codex_sdk.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_memory_kwargs_temperature_and_timeout_are_forwarded(self) -> None:
+        memory_kwargs = {
+            "model": "openai/custom-model",
+            "api_base": "http://gateway.test/v1",
+            "timeout": 99,
+        }
+        guard = MagicMock()
+        guard.blocked_remaining.return_value = 0
+        extra = {"api_base": "http://gateway.test/v1"}
+
+        response = MagicMock()
+        response.choices[0].message.content = "completion"
+        with (
+            patch.object(llm_utils, "get_memory_llm_kwargs_for_model", return_value=memory_kwargs) as resolver,
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("litellm.acompletion", new_callable=AsyncMock, return_value=response) as litellm_call,
+        ):
+            result = await llm_utils.one_shot_completion(
+                "prompt",
+                model="custom-model",
+                credential="gateway-credential",
+                max_tokens=10,
+                temperature=0.0,
+                timeout=5,
+                llm_extra=extra,
+            )
+
+        assert result == "completion"
+        resolver.assert_called_once_with("custom-model", extra, credential="gateway-credential")
+        kwargs = litellm_call.call_args.kwargs
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["timeout"] == 5
+        assert kwargs["api_base"] == "http://gateway.test/v1"
+        assert kwargs["max_tokens"] == 10
+
+    @pytest.mark.asyncio
+    async def test_rate_guard_block_returns_none_without_litellm_attempt(self) -> None:
+        guard = MagicMock()
+        guard.blocked_remaining.return_value = 30
+
+        with (
+            patch.object(llm_utils, "get_llm_kwargs_for_model", return_value={"model": "openai/test-model"}),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch.object(llm_utils, "_try_litellm", new_callable=AsyncMock) as litellm_call,
+        ):
+            result = await llm_utils.one_shot_completion("prompt", model="openai/test-model")
+
+        assert result is None
+        litellm_call.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sync_helper_requires_no_running_loop_and_runs_in_thread(self) -> None:
+        with pytest.raises(RuntimeError, match="active event loop"):
+            llm_utils.one_shot_completion_sync("prompt")
+
+        mock_one_shot = AsyncMock(return_value="thread completion")
+        with patch.object(llm_utils, "one_shot_completion", mock_one_shot):
+            result = await asyncio.to_thread(llm_utils.one_shot_completion_sync, "prompt")
+
+        assert result == "thread completion"
+        mock_one_shot.assert_awaited_once()
 
 
 class TestIsAnthropicModel:

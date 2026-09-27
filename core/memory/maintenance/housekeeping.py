@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.config.models import HousekeepingConfig, InboxConfig
 from core.i18n import t
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_local, today_local
@@ -40,43 +41,14 @@ _ARCHIVE_VERSION_RE = re.compile(r"^(?P<stem>.+)_v(?P<version>\d+)_(?P<ts>\d{8}_
 async def run_housekeeping(
     data_dir: Path,
     *,
-    prompt_log_retention_days: int = 3,
-    daemon_log_max_size_mb: int = 50,
-    daemon_log_keep_generations: int = 5,
-    anima_log_retention_days: int = 30,
-    anima_log_total_max_size_mb: int = 200,
-    frontend_log_backup_count: int = 7,
-    dm_log_archive_retention_days: int = 30,
-    cron_log_retention_days: int = 14,
-    shortterm_retention_days: int = 7,
-    shortterm_archive_retention_days: int = 30,
-    shortterm_thread_gc_days: int = 30,
-    facts_lock_stale_hours: int = 24,
-    curator_report_retention_days: int = 30,
-    task_results_retention_days: int = 7,
-    pending_failed_retention_days: int = 14,
-    corrupt_vectordb_keep_generations: int = 2,
-    tmp_retention_days: int = 14,
-    backup_retention_days: int = 90,
-    codex_log_max_size_mb: int = 200,
-    codex_tmp_retention_hours: int = 12,
-    anima_tmp_gitdirs_retention_days: int = 14,
-    anima_local_log_retention_days: int = 30,
-    pending_processing_stale_hours: int = 24,
-    background_running_stale_hours: int = 48,
-    current_state_stale_hours: int = 24,
-    taskboard_suppressed_retention_days: int = 30,
-    taskboard_orphan_metadata_stale_hours: int = 24,
-    suppressed_messages_max_size_mb: int = 10,
-    suppressed_messages_keep_generations: int = 5,
-    archive_superseded_retention_days: int = 7,
-    archive_versions_keep_per_file: int = 5,
-    inbox_ttl_hours: float = 24.0,
-    inbox_expired_retention_days: int = 7,
-    inbox_processed_retention_days: int = 30,
-    inbox_quarantine_retention_days: int = 30,
+    housekeeping: HousekeepingConfig | None = None,
+    inbox: InboxConfig | None = None,
 ) -> dict[str, Any]:
     """Run all housekeeping tasks. Returns summary of actions taken."""
+    if housekeeping is None:
+        housekeeping = HousekeepingConfig()
+    if inbox is None:
+        inbox = InboxConfig()
     loop = asyncio.get_running_loop()
     results: dict[str, Any] = {}
 
@@ -88,7 +60,7 @@ async def run_housekeeping(
             None,
             _rotate_prompt_logs_all,
             animas_dir,
-            prompt_log_retention_days,
+            housekeeping.prompt_log_retention_days,
         )
         results["prompt_logs"] = r
     except Exception:
@@ -101,8 +73,8 @@ async def run_housekeeping(
             None,
             _rotate_daemon_log,
             data_dir / "logs" / "server-daemon.log",
-            daemon_log_max_size_mb,
-            daemon_log_keep_generations,
+            housekeeping.daemon_log_max_size_mb,
+            housekeeping.daemon_log_keep_generations,
         )
         results["daemon_log"] = r
     except Exception:
@@ -114,8 +86,8 @@ async def run_housekeeping(
             None,
             _rotate_daemon_log,
             data_dir / "logs" / "vector-worker.log",
-            daemon_log_max_size_mb,
-            daemon_log_keep_generations,
+            housekeeping.daemon_log_max_size_mb,
+            housekeeping.daemon_log_keep_generations,
         )
         results["vector_worker_log"] = r
     except Exception:
@@ -128,8 +100,8 @@ async def run_housekeeping(
             None,
             _cleanup_anima_runtime_logs,
             data_dir / "logs" / "animas",
-            anima_log_retention_days,
-            anima_log_total_max_size_mb,
+            housekeeping.anima_log_retention_days,
+            housekeeping.anima_log_total_max_size_mb,
         )
         results["anima_logs"] = r
     except Exception:
@@ -141,7 +113,7 @@ async def run_housekeeping(
             None,
             _cleanup_frontend_logs,
             data_dir / "logs" / "frontend",
-            frontend_log_backup_count,
+            housekeeping.frontend_log_backup_count,
         )
         results["frontend_logs"] = r
     except Exception:
@@ -154,7 +126,7 @@ async def run_housekeeping(
             None,
             _cleanup_dm_archives,
             data_dir / "shared" / "dm_logs",
-            dm_log_archive_retention_days,
+            housekeeping.dm_log_archive_retention_days,
         )
         results["dm_archives"] = r
     except Exception:
@@ -167,7 +139,7 @@ async def run_housekeeping(
             None,
             _cleanup_cron_logs,
             animas_dir,
-            cron_log_retention_days,
+            housekeeping.cron_log_retention_days,
         )
         results["cron_logs"] = r
     except Exception:
@@ -180,9 +152,9 @@ async def run_housekeeping(
             None,
             _cleanup_shortterm,
             animas_dir,
-            shortterm_retention_days,
-            shortterm_archive_retention_days,
-            shortterm_thread_gc_days,
+            housekeeping.shortterm_retention_days,
+            housekeeping.shortterm_archive_retention_days,
+            housekeeping.shortterm_thread_gc_days,
         )
         results["shortterm"] = r
     except Exception:
@@ -195,7 +167,7 @@ async def run_housekeeping(
             None,
             _cleanup_facts_locks,
             animas_dir,
-            facts_lock_stale_hours,
+            housekeeping.facts_lock_stale_hours,
         )
         results["facts_locks"] = r
     except Exception:
@@ -208,7 +180,7 @@ async def run_housekeeping(
             None,
             _cleanup_curator_reports,
             animas_dir,
-            curator_report_retention_days,
+            housekeeping.curator_report_retention_days,
         )
         results["curator_reports"] = r
     except Exception:
@@ -221,7 +193,7 @@ async def run_housekeeping(
             None,
             _cleanup_task_results,
             animas_dir,
-            task_results_retention_days,
+            housekeeping.task_results_retention_days,
         )
         results["task_results"] = r
     except Exception:
@@ -234,7 +206,7 @@ async def run_housekeeping(
             None,
             _cleanup_pending_failed,
             animas_dir,
-            pending_failed_retention_days,
+            housekeeping.pending_failed_retention_days,
         )
         results["pending_failed"] = r
     except Exception:
@@ -247,7 +219,7 @@ async def run_housekeeping(
             None,
             _cleanup_corrupt_vectordb_archives,
             animas_dir,
-            corrupt_vectordb_keep_generations,
+            housekeeping.corrupt_vectordb_keep_generations,
         )
         results["corrupt_vectordb_archives"] = r
     except Exception:
@@ -255,28 +227,32 @@ async def run_housekeeping(
         results["corrupt_vectordb_archives"] = {"error": True}
 
     try:
-        r = await loop.run_in_executor(None, _cleanup_runtime_tmp, data_dir / "tmp", tmp_retention_days)
+        r = await loop.run_in_executor(None, _cleanup_runtime_tmp, data_dir / "tmp", housekeeping.tmp_retention_days)
         results["runtime_tmp"] = r
     except Exception:
         logger.exception("Housekeeping: runtime tmp cleanup failed")
         results["runtime_tmp"] = {"error": True}
 
     try:
-        r = await loop.run_in_executor(None, _cleanup_backup_dirs, animas_dir, backup_retention_days)
+        r = await loop.run_in_executor(None, _cleanup_backup_dirs, animas_dir, housekeeping.backup_retention_days)
         results["backup_dirs"] = r
     except Exception:
         logger.exception("Housekeeping: backup dir cleanup failed")
         results["backup_dirs"] = {"error": True}
 
     try:
-        r = await loop.run_in_executor(None, _cleanup_codex_execution_logs, animas_dir, codex_log_max_size_mb)
+        r = await loop.run_in_executor(
+            None, _cleanup_codex_execution_logs, animas_dir, housekeeping.codex_log_max_size_mb
+        )
         results["codex_execution_logs"] = r
     except Exception:
         logger.exception("Housekeeping: Codex execution log cleanup failed")
         results["codex_execution_logs"] = {"error": True}
 
     try:
-        r = await loop.run_in_executor(None, _cleanup_codex_tmp_dirs, animas_dir, codex_tmp_retention_hours)
+        r = await loop.run_in_executor(
+            None, _cleanup_codex_tmp_dirs, animas_dir, housekeeping.codex_tmp_retention_hours
+        )
         results["codex_tmp"] = r
     except Exception:
         logger.exception("Housekeeping: Codex tmp cleanup failed")
@@ -287,8 +263,8 @@ async def run_housekeeping(
             None,
             _cleanup_anima_runtime_artifacts,
             animas_dir,
-            anima_tmp_gitdirs_retention_days,
-            anima_local_log_retention_days,
+            housekeeping.anima_tmp_gitdirs_retention_days,
+            housekeeping.anima_local_log_retention_days,
         )
         results["anima_runtime_artifacts"] = r
     except Exception:
@@ -302,11 +278,11 @@ async def run_housekeeping(
             None,
             cleanup_taskboard_stale_artifacts,
             data_dir,
-            pending_processing_stale_hours,
-            background_running_stale_hours,
-            current_state_stale_hours,
-            taskboard_suppressed_retention_days,
-            taskboard_orphan_metadata_stale_hours,
+            housekeeping.pending_processing_stale_hours,
+            housekeeping.background_running_stale_hours,
+            housekeeping.current_state_stale_hours,
+            housekeeping.taskboard_suppressed_retention_days,
+            housekeeping.taskboard_orphan_metadata_stale_hours,
         )
         results["taskboard_stale"] = r
     except Exception:
@@ -318,8 +294,8 @@ async def run_housekeeping(
             None,
             _rotate_suppressed_message_logs,
             data_dir,
-            suppressed_messages_max_size_mb,
-            suppressed_messages_keep_generations,
+            housekeeping.suppressed_messages_max_size_mb,
+            housekeeping.suppressed_messages_keep_generations,
         )
         results["suppressed_messages"] = r
     except Exception:
@@ -332,7 +308,7 @@ async def run_housekeeping(
             None,
             _rotate_archive_superseded,
             animas_dir,
-            archive_superseded_retention_days,
+            housekeeping.archive_superseded_retention_days,
         )
         results["archive_superseded"] = r
     except Exception:
@@ -345,7 +321,7 @@ async def run_housekeeping(
             None,
             _prune_archive_versions,
             animas_dir,
-            archive_versions_keep_per_file,
+            housekeeping.archive_versions_keep_per_file,
         )
         results["archive_versions"] = r
     except Exception:
@@ -358,10 +334,10 @@ async def run_housekeeping(
             None,
             _cleanup_shared_inbox,
             data_dir / "shared" / "inbox",
-            inbox_ttl_hours,
-            inbox_expired_retention_days,
-            inbox_processed_retention_days,
-            inbox_quarantine_retention_days,
+            inbox.ttl_hours,
+            inbox.expired_retention_days,
+            inbox.processed_retention_days,
+            inbox.quarantine_retention_days,
         )
         results["shared_inbox"] = r
     except Exception:
