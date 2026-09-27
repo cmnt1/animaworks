@@ -23,7 +23,7 @@ IPC_V2_HEARTBEAT_INTERVAL = 5.0
 IPC_V2_HALF_OPEN_TIMEOUT = 15.0
 
 IPC_KIND = Literal["request", "response", "event"]
-IPC_LANES = frozenset({"chat", "heartbeat", "cron", "task", "background"})
+IPC_LANES = frozenset({"chat", "heartbeat", "cron", "task", "background", "inbox"})
 
 _BASE_FIELDS = {
     "v",

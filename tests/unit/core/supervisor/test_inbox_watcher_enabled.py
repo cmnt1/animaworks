@@ -19,14 +19,21 @@ def _make_limiter(anima_dir: Path, *, name: str = "alice") -> InboxRateLimiter:
     anima = MagicMock()
     anima.anima_dir = anima_dir
     anima.messenger = MagicMock()
-    anima._inbox_lock = MagicMock()
-    anima._inbox_lock.locked.return_value = False
     anima._background_lock = MagicMock()
     anima._background_lock.locked.return_value = False
-    anima.process_inbox_message = AsyncMock()
+
+    supervisor = MagicMock()
+    supervisor.run_inbox = AsyncMock(
+        return_value={
+            "task_type": "inbox",
+            "result": {"action": "responded", "reason": "", "summary": "ok"},
+            "success": True,
+        }
+    )
 
     scheduler_mgr = MagicMock()
     scheduler_mgr.heartbeat_running = False
+    scheduler_mgr._task_runner_supervisor = supervisor
     shutdown = asyncio.Event()
 
     with patch("core.supervisor.inbox_rate_limiter.load_config") as mock_cfg:
@@ -48,41 +55,48 @@ def _make_limiter(anima_dir: Path, *, name: str = "alice") -> InboxRateLimiter:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("raises", [False, True])
 async def test_failed_external_inbox_keeps_unread_and_cannot_bypass_retry_delay(tmp_path, raises):
-    from core.schemas import CycleResult, Message
+    from core.schemas import Message
 
     limiter = _make_limiter(tmp_path)
     limiter._anima.messenger.receive.return_value = [
         Message(from_person="human", to_person="alice", content="request", source="slack", intent="question")
     ]
     limiter._anima.messenger.has_unread.return_value = True
+    run_inbox = limiter._scheduler_mgr._task_runner_supervisor.run_inbox
     if raises:
-        limiter._anima.process_inbox_message.side_effect = ConnectionError("Connection refused")
+        run_inbox.side_effect = ConnectionError("Connection refused")
     else:
-        limiter._anima.process_inbox_message.return_value = CycleResult(
-            trigger="inbox", action="error", reason="network", summary="API Error: ConnectionRefused"
-        )
+        run_inbox.return_value = {
+            "task_type": "inbox",
+            "result": {"action": "error", "reason": "network", "summary": "API Error: ConnectionRefused"},
+            "success": False,
+        }
     with patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=100.0):
         await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until >= 130.0
         await limiter.message_triggered_inbox()
-        assert limiter._anima.process_inbox_message.await_count == 1
+        assert run_inbox.await_count == 1
         assert limiter._deferred_timer is not None
         limiter._deferred_timer.cancel()
         limiter._deferred_timer = None
         await limiter.try_deferred_trigger()
-        assert limiter._anima.process_inbox_message.await_count == 1
+        assert run_inbox.await_count == 1
         limiter._deferred_timer.cancel()
         limiter._deferred_timer = None
     limiter._anima.messenger.archive_paths.assert_not_called()
-    limiter._anima.process_inbox_message.side_effect = None
-    limiter._anima.process_inbox_message.return_value = CycleResult(trigger="inbox", action="responded", summary="ok")
+    run_inbox.side_effect = None
+    run_inbox.return_value = {
+        "task_type": "inbox",
+        "result": {"action": "responded", "reason": "", "summary": "ok"},
+        "success": True,
+    }
     with patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=131.0):
         await limiter.message_triggered_inbox()
-        assert limiter._anima.process_inbox_message.await_count == 2
+        assert run_inbox.await_count == 2
         assert limiter._failure_retry_until == 0
         # A healthy external inbox regains immediate handling after recovery.
         await limiter.message_triggered_inbox()
-        assert limiter._anima.process_inbox_message.await_count == 3
+        assert run_inbox.await_count == 3
 
 
 def test_inbox_failure_waits_for_all_provider_guards_to_expire(tmp_path):
@@ -130,7 +144,7 @@ class TestInboxWatcherEnabledGuard:
 
         await _run_briefly()
 
-        limiter._anima.process_inbox_message.assert_not_awaited()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
         # has_unread was consulted (unread path) but processing never started
         assert limiter._pending_trigger is False
 
@@ -245,7 +259,7 @@ class TestDeferredTriggerEnabledGuard:
             mock_cfg.return_value = cfg
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_not_awaited()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
         assert limiter._pending_trigger is False
 
     @pytest.mark.asyncio
@@ -281,7 +295,7 @@ class TestDeferredTriggerEnabledGuard:
             # message_triggered_inbox is scheduled as a task
             await asyncio.sleep(0.1)
 
-        limiter._anima.process_inbox_message.assert_not_awaited()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
         assert limiter._pending_trigger is False
 
 

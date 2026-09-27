@@ -226,20 +226,41 @@ class InboxRateLimiter:
         if self._retry_is_delayed() or (self.is_in_cooldown() and not self._has_external_platform_message()):
             self.schedule_deferred_trigger()
             return
-        if self._anima._inbox_lock.locked():
-            self.schedule_deferred_trigger()
-            return
         # NOTE: _background_lock (TaskExec/cron gate) は意図的に見ない。
-        # inboxレーンは専用agentで動き、cron排他は process_inbox_message()
-        # 内の _cron_idle 待機で担保される。ここで待つと長時間タスク中に
-        # dispatch通知が滞留・overflowする（2026-07-31の直列化障害）。
+        # inboxは task runner 子で実行するため root 側の排他は heartbeat_running
+        # のみで十分（_cron_idle 待機は子の中の inbox 処理が担う）。
+        # ここで待つと長時間タスク中に dispatch通知が滞留・overflowする。
         self._pending_trigger = True
         asyncio.create_task(self.message_triggered_inbox())
+
+    def request_trigger(self) -> dict[str, str]:
+        """Queue an immediate inbox trigger (used by the ``process_inbox`` IPC path).
+
+        Previously this IPC bypassed rate limiting and ran inbox processing
+        inline in the root.  Now it only queues a trigger through the
+        normal (rate-limited) path; the actual inbox LLM run is performed
+        by an isolated task runner child (lane ``inbox``).
+        """
+        if not self._anima:
+            return {"action": "skipped", "reason": "anima not ready"}
+        if self._pending_trigger:
+            return {"action": "skipped", "reason": "inbox already running"}
+        if not self._anima.messenger.has_unread():
+            return {"action": "skipped", "reason": "no unread messages"}
+        asyncio.create_task(self.try_deferred_trigger())
+        return {"action": "scheduled"}
 
     # ── Message-Triggered Inbox Processing ──────────────────────
 
     async def message_triggered_inbox(self) -> None:
-        """Execute inbox processing triggered by incoming messages."""
+        """Execute inbox processing triggered by incoming messages.
+
+        The actual inbox LLM work runs in an isolated task runner child
+        (``lane="inbox"``); this method stays on the root and only decides
+        *whether* to launch it.  ``self._pending_trigger`` doubles as the
+        "inbox job running" flag: watcher and deferred-trigger paths treat a
+        truthy ``_pending_trigger`` as "an inbox job is in flight" and wait.
+        """
         if not self._anima:
             self._pending_trigger = False
             return
@@ -302,11 +323,15 @@ class InboxRateLimiter:
         self._scheduler_mgr.heartbeat_running = True
         try:
             logger.info("Message-triggered inbox: %s", self._anima_name)
-            result = await self._anima.process_inbox_message()
+            isolated = await self._scheduler_mgr._task_runner_supervisor.run_inbox()
+            result = isolated.get("result")
+            if not isinstance(result, dict):
+                raise ValueError("isolated inbox result must be an object")
             if (
-                getattr(result, "action", None) == "error"
-                or isinstance(getattr(result, "reason", None), str)
-                and result.reason
+                not isolated.get("success")
+                or result.get("action") == "error"
+                or isinstance(result.get("reason"), str)
+                and result.get("reason")
             ):
                 self._record_processing_failure()
             else:
@@ -351,7 +376,7 @@ class InboxRateLimiter:
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue
-                if self._anima._inbox_lock.locked():
+                if self._pending_trigger:
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue
