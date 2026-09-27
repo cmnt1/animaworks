@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -14,13 +13,7 @@ IPC_V2_VERSION = 2
 IPC_V2_MAX_FRAME_BYTES = 4 * 1024 * 1024
 IPC_V2_WINDOW_MAX_FRAMES = 64
 IPC_V2_WINDOW_MAX_BYTES = 4 * 1024 * 1024
-IPC_V2_QUEUE_MAX_FRAMES = 256
-IPC_V2_QUEUE_MAX_BYTES = 16 * 1024 * 1024
-IPC_V2_CONTROL_MAX_FRAMES = 8
-IPC_V2_CONTROL_MAX_BYTES = 512 * 1024
 IPC_V2_BACKPRESSURE_TIMEOUT = 5.0
-IPC_V2_HEARTBEAT_INTERVAL = 5.0
-IPC_V2_HALF_OPEN_TIMEOUT = 15.0
 
 IPC_KIND = Literal["request", "response", "event"]
 IPC_LANES = frozenset({"chat", "heartbeat", "cron", "task", "background", "inbox"})
@@ -225,7 +218,6 @@ class IPCV2Connection:
         self.reader = reader
         self.writer = writer
         self.state = state
-        self.last_traffic_at = time.monotonic()
         self._send_lock = asyncio.Lock()
         self._window_changed = asyncio.Condition()
         self._closed = False
@@ -271,7 +263,6 @@ class IPCV2Connection:
                             raise IPCV2BackpressureTimeout("writer.drain() did not advance for 5 seconds") from exc
                         raise IPCV2ConnectionError(f"write failed: {exc}") from exc
                     self.state.send_seq = next_seq
-                    self.last_traffic_at = time.monotonic()
                     if not is_ack:
                         self.state.unacked[next_seq] = wire
                         self.state.unacked_bytes += frame_bytes
@@ -302,7 +293,6 @@ class IPCV2Connection:
             envelope = await read_ipc_v2_envelope(self.reader)
             if envelope.identity != self.state.identity:
                 raise IPCV2ProtocolError("job identity changed within a connection")
-            self.last_traffic_at = time.monotonic()
             duplicate = envelope.seq <= self.state.received_seq
             self.state.received_seq = max(self.state.received_seq, envelope.seq)
             if envelope.kind == "event" and envelope.body["event"] == "ack":
@@ -319,7 +309,6 @@ class IPCV2Connection:
             raise IPCV2ProtocolError("job identity does not match registry")
         duplicate = envelope.seq <= self.state.received_seq
         self.state.received_seq = max(self.state.received_seq, envelope.seq)
-        self.last_traffic_at = time.monotonic()
         if envelope.kind == "event" and envelope.body["event"] == "ack":
             await self._apply_ack(envelope.body["data"].get("ack_seq"))
             return None
@@ -356,7 +345,6 @@ class IPCV2Connection:
                     continue
                 self.writer.write(wire)
                 await asyncio.wait_for(self.writer.drain(), timeout=IPC_V2_BACKPRESSURE_TIMEOUT)
-            self.last_traffic_at = time.monotonic()
 
     async def wait_for_ack(self, seq: int) -> None:
         """Wait until the peer acknowledges a sent frame."""
@@ -370,9 +358,6 @@ class IPCV2Connection:
                 )
         except TimeoutError as exc:
             raise IPCV2BackpressureTimeout(f"frame {seq} was not acknowledged within 5 seconds") from exc
-
-    def is_half_open(self, now: float | None = None) -> bool:
-        return (now or time.monotonic()) - self.last_traffic_at >= IPC_V2_HALF_OPEN_TIMEOUT
 
     async def close(self) -> None:
         self._closed = True
@@ -414,7 +399,6 @@ def ipc_v2_error(
 
 
 __all__ = [
-    "IPC_V2_HALF_OPEN_TIMEOUT",
     "IPC_V2_MAX_FRAME_BYTES",
     "IPCV2BackpressureTimeout",
     "IPCV2Connection",

@@ -201,27 +201,6 @@ class TestHeartbeatRunningFlag:
         assert limiter._scheduler_mgr.heartbeat_running is False
 
 
-class TestHandleProcessInbox:
-    """The process_inbox IPC path must only queue a trigger, not run the LLM."""
-
-    @pytest.mark.asyncio
-    async def test_requests_trigger_without_calling_anima(self) -> None:
-        from core.supervisor.runner import AnimaRunner
-
-        runner = AnimaRunner.__new__(AnimaRunner)
-        runner.anima = MagicMock()
-        runner.anima.process_inbox_message = AsyncMock()
-        limiter = MagicMock()
-        limiter.request_trigger.return_value = {"action": "scheduled"}
-        runner._inbox_limiter = limiter
-
-        result = await runner._handle_process_inbox({})
-
-        assert result == {"action": "scheduled"}
-        limiter.request_trigger.assert_called_once()
-        runner.anima.process_inbox_message.assert_not_awaited()
-
-
 class TestPrepareExecutionInbox:
     """task_runner._prepare_execution must route lane=inbox to execute_inbox_contract."""
 

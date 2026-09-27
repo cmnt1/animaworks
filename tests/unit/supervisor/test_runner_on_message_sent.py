@@ -7,12 +7,13 @@ Verifies that AnimaRunner.run() wires up an on_message_sent callback on
 DigitalAnima and that the callback correctly calls _emit_event with the
 expected event type and payload.
 """
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 
 
 class TestOnMessageSentCallback:
@@ -39,22 +40,28 @@ class TestOnMessageSentCallback:
 
         # Reproduce the callback closure from AnimaRunner.run()
         def _on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            runner._emit_event("anima.interaction", {
-                "from_person": from_name,
-                "to_person": to_name,
-                "type": "message",
-                "summary": content[:200],
-            })
+            runner._emit_event(
+                "anima.interaction",
+                {
+                    "from_person": from_name,
+                    "to_person": to_name,
+                    "type": "message",
+                    "summary": content[:200],
+                },
+            )
 
         # Invoke the callback
         _on_message_sent("alice", "bob", "Hello Bob, how are you?")
 
-        runner._emit_event.assert_called_once_with("anima.interaction", {
-            "from_person": "alice",
-            "to_person": "bob",
-            "type": "message",
-            "summary": "Hello Bob, how are you?",
-        })
+        runner._emit_event.assert_called_once_with(
+            "anima.interaction",
+            {
+                "from_person": "alice",
+                "to_person": "bob",
+                "type": "message",
+                "summary": "Hello Bob, how are you?",
+            },
+        )
 
     def test_callback_truncates_long_content(self, tmp_path: Path):
         """The callback should truncate content to 200 characters."""
@@ -70,12 +77,15 @@ class TestOnMessageSentCallback:
 
         # Reproduce the callback closure
         def _on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            runner._emit_event("anima.interaction", {
-                "from_person": from_name,
-                "to_person": to_name,
-                "type": "message",
-                "summary": content[:200],
-            })
+            runner._emit_event(
+                "anima.interaction",
+                {
+                    "from_person": from_name,
+                    "to_person": to_name,
+                    "type": "message",
+                    "summary": content[:200],
+                },
+            )
 
         long_content = "A" * 500
         _on_message_sent("alice", "bob", long_content)
@@ -113,17 +123,18 @@ class TestOnMessageSentCallback:
         runner.anima = mock_anima
 
         # Reproduce the wiring logic from run()
-        runner.anima.set_on_lock_released(
-            lambda: None
-        )
+        runner.anima.set_on_lock_released(lambda: None)
 
         def _on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            runner._emit_event("anima.interaction", {
-                "from_person": from_name,
-                "to_person": to_name,
-                "type": "message",
-                "summary": content[:200],
-            })
+            runner._emit_event(
+                "anima.interaction",
+                {
+                    "from_person": from_name,
+                    "to_person": to_name,
+                    "type": "message",
+                    "summary": content[:200],
+                },
+            )
 
         runner.anima.set_on_message_sent(_on_message_sent)
 
@@ -133,8 +144,9 @@ class TestOnMessageSentCallback:
         callback = mock_anima.set_on_message_sent.call_args[0][0]
         assert callable(callback)
 
-    def test_emit_event_writes_json_file(self, tmp_path: Path):
-        """Verify _emit_event writes a JSON event file to the events directory."""
+    @pytest.mark.asyncio
+    async def test_emit_event_publishes_to_event_bus(self, tmp_path: Path):
+        """Verify root events are buffered for the IPC subscriber."""
         from core.supervisor.runner import AnimaRunner
 
         shared_dir = tmp_path / "shared"
@@ -148,20 +160,22 @@ class TestOnMessageSentCallback:
         )
 
         # Call the real _emit_event
-        runner._emit_event("anima.interaction", {
-            "from_person": "alice",
-            "to_person": "bob",
-            "type": "message",
-            "summary": "Test message",
-        })
+        runner._emit_event(
+            "anima.interaction",
+            {
+                "from_person": "alice",
+                "to_person": "bob",
+                "type": "message",
+                "summary": "Test message",
+            },
+        )
 
-        # Verify event file was written
-        events_dir = tmp_path / "run" / "events" / "alice"
-        assert events_dir.exists()
-        event_files = list(events_dir.glob("*.json"))
-        assert len(event_files) == 1
+        events = runner._event_bus.subscribe()
+        try:
+            event = await anext(events)
+        finally:
+            await events.aclose()
 
-        event = json.loads(event_files[0].read_text(encoding="utf-8"))
         assert event["event"] == "anima.interaction"
         assert event["data"]["from_person"] == "alice"
         assert event["data"]["to_person"] == "bob"

@@ -6,13 +6,11 @@
 Verifies that:
 1. DM API endpoints read from per-Anima activity_log (unified activity log)
 2. Legacy dm_logs/ are merged with activity_log without duplicates
-3. AnimaRunner emits anima.interaction events when messages are sent
 """
 
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -150,8 +148,6 @@ class TestDMApiReturnsMessagesFromActivityLog:
         bob_dir = _make_anima_dir(animas_dir, "bob")
 
         # Log a conversation via ActivityLogger
-        ts_base = now_jst().isoformat()
-
         alice_activity = ActivityLogger(alice_dir)
         alice_activity.log(
             "dm_sent",
@@ -275,7 +271,6 @@ class TestDMApiMergesLegacyAndActivityLog:
         _data_dir, shared_dir, animas_dir = _setup_data_dir(tmp_path)
 
         alice_dir = _make_anima_dir(animas_dir, "alice")
-        bob_dir = _make_anima_dir(animas_dir, "bob")
 
         # Legacy messages (old dm_logs/ format)
         legacy_entries = [
@@ -411,186 +406,3 @@ class TestDMApiMergesLegacyAndActivityLog:
         # from both sources should be merged into one
         matching = [m for m in messages if m.get("text") == shared_content]
         assert len(matching) == 1, f"Expected 1 deduplicated message, got {len(matching)}: {matching}"
-
-
-# ── Test 3: Runner emits interaction event on message_sent ────
-
-
-class TestRunnerEmitsInteractionEvent:
-    """AnimaRunner._emit_event writes event files for parent process pickup."""
-
-    def test_emit_event_creates_json_file(self, tmp_path: Path) -> None:
-        """_emit_event writes an atomic JSON event file under run/events/{anima}."""
-        # Simulate the _emit_event mechanism from AnimaRunner.
-        # We replicate the logic directly since AnimaRunner is heavy to instantiate.
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        data_dir = shared_dir.parent  # _emit_event uses shared_dir.parent / "run" / "events"
-        anima_name = "test-anima"
-
-        # Replicate _emit_event logic
-        event_type = "anima.interaction"
-        event_data = {
-            "from_person": "test-anima",
-            "to_person": "bob",
-            "type": "message",
-            "summary": "Hello Bob, this is a test message",
-        }
-
-        events_dir = data_dir / "run" / "events" / anima_name
-        events_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{time.time_ns()}.json"
-        event = {"event": event_type, "data": event_data}
-        tmp_file = events_dir / f".{filename}"
-        tmp_file.write_text(
-            json.dumps(event, default=str, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        tmp_file.rename(events_dir / filename)  # Atomic rename
-
-        # Verify the event file was created
-        event_files = list(events_dir.glob("*.json"))
-        assert len(event_files) == 1
-
-        # Verify content
-        written_event = json.loads(event_files[0].read_text(encoding="utf-8"))
-        assert written_event["event"] == "anima.interaction"
-        assert written_event["data"]["from_person"] == "test-anima"
-        assert written_event["data"]["to_person"] == "bob"
-        assert written_event["data"]["type"] == "message"
-        assert written_event["data"]["summary"] == "Hello Bob, this is a test message"
-
-    def test_emit_event_no_temp_files_remain(self, tmp_path: Path) -> None:
-        """After _emit_event, no dot-prefixed temp files remain."""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        data_dir = shared_dir.parent
-        anima_name = "test-anima"
-
-        events_dir = data_dir / "run" / "events" / anima_name
-        events_dir.mkdir(parents=True, exist_ok=True)
-
-        # Emit multiple events
-        for i in range(5):
-            filename = f"{time.time_ns()}.json"
-            event = {
-                "event": "anima.interaction",
-                "data": {"index": i},
-            }
-            tmp_file = events_dir / f".{filename}"
-            tmp_file.write_text(
-                json.dumps(event, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            tmp_file.rename(events_dir / filename)
-
-        # No temp files should remain
-        temp_files = list(events_dir.glob(".*"))
-        assert len(temp_files) == 0, f"Temp files remain: {temp_files}"
-
-        # All event files should be present
-        event_files = list(events_dir.glob("*.json"))
-        assert len(event_files) == 5
-
-    def test_on_message_sent_callback_produces_correct_event(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The on_message_sent callback wired in AnimaRunner produces
-        the correct anima.interaction event payload."""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        data_dir = shared_dir.parent
-        anima_name = "sakura"
-
-        events_dir = data_dir / "run" / "events" / anima_name
-        events_dir.mkdir(parents=True, exist_ok=True)
-
-        # Simulate the callback that AnimaRunner.run() wires up:
-        #   def _on_message_sent(from_name, to_name, content):
-        #       self._emit_event("anima.interaction", {
-        #           "from_person": from_name,
-        #           "to_person": to_name,
-        #           "type": "message",
-        #           "summary": content[:200],
-        #       })
-
-        def _emit_event(event_type: str, data: dict) -> None:
-            events_dir.mkdir(parents=True, exist_ok=True)
-            filename = f"{time.time_ns()}.json"
-            event = {"event": event_type, "data": data}
-            tmp_file = events_dir / f".{filename}"
-            tmp_file.write_text(
-                json.dumps(event, default=str, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            tmp_file.rename(events_dir / filename)
-
-        def on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            _emit_event(
-                "anima.interaction",
-                {
-                    "from_person": from_name,
-                    "to_person": to_name,
-                    "type": "message",
-                    "summary": content[:200],
-                },
-            )
-
-        # Trigger the callback as AnimaRunner would
-        on_message_sent("sakura", "mio", "This is a test DM from sakura to mio")
-
-        # Verify event file
-        event_files = list(events_dir.glob("*.json"))
-        assert len(event_files) == 1
-
-        event = json.loads(event_files[0].read_text(encoding="utf-8"))
-        assert event["event"] == "anima.interaction"
-        assert event["data"]["from_person"] == "sakura"
-        assert event["data"]["to_person"] == "mio"
-        assert event["data"]["type"] == "message"
-        assert event["data"]["summary"] == "This is a test DM from sakura to mio"
-
-    def test_on_message_sent_truncates_long_content(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The on_message_sent callback truncates content at 200 characters."""
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir()
-        data_dir = shared_dir.parent
-        anima_name = "sakura"
-
-        events_dir = data_dir / "run" / "events" / anima_name
-        events_dir.mkdir(parents=True, exist_ok=True)
-
-        def _emit_event(event_type: str, data: dict) -> None:
-            filename = f"{time.time_ns()}.json"
-            event = {"event": event_type, "data": data}
-            tmp_file = events_dir / f".{filename}"
-            tmp_file.write_text(
-                json.dumps(event, default=str, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            tmp_file.rename(events_dir / filename)
-
-        def on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            _emit_event(
-                "anima.interaction",
-                {
-                    "from_person": from_name,
-                    "to_person": to_name,
-                    "type": "message",
-                    "summary": content[:200],
-                },
-            )
-
-        long_content = "A" * 500
-        on_message_sent("sakura", "mio", long_content)
-
-        event_files = list(events_dir.glob("*.json"))
-        assert len(event_files) == 1
-
-        event = json.loads(event_files[0].read_text(encoding="utf-8"))
-        assert len(event["data"]["summary"]) == 200
-        assert event["data"]["summary"] == "A" * 200

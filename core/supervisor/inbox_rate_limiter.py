@@ -232,23 +232,6 @@ class InboxRateLimiter:
         self._pending_trigger = True
         asyncio.create_task(self.message_triggered_inbox())
 
-    def request_trigger(self) -> dict[str, str]:
-        """Queue an immediate inbox trigger (used by the ``process_inbox`` IPC path).
-
-        Previously this IPC bypassed rate limiting and ran inbox processing
-        inline in the root.  Now it only queues a trigger through the
-        normal (rate-limited) path; the actual inbox LLM run is performed
-        by an isolated task runner child (lane ``inbox``).
-        """
-        if not self._anima:
-            return {"action": "skipped", "reason": "anima not ready"}
-        if self._pending_trigger:
-            return {"action": "skipped", "reason": "inbox already running"}
-        if not self._anima.messenger.has_unread():
-            return {"action": "skipped", "reason": "no unread messages"}
-        asyncio.create_task(self.try_deferred_trigger())
-        return {"action": "scheduled"}
-
     # ── Message-Triggered Inbox Processing ──────────────────────
 
     async def message_triggered_inbox(self) -> None:

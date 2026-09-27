@@ -28,6 +28,7 @@ import math
 import os  # noqa: F401  — kept at module level for mock.patch compat
 import threading
 import time
+from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -85,6 +86,15 @@ from core.paths import get_data_dir
 from core.time_utils import ensure_aware, now_iso, now_local  # noqa: F401
 
 logger = logging.getLogger("animaworks.activity")
+
+_LIVE_EVENT_SINK: Callable[[dict[str, Any]], None] | None = None
+
+
+def set_live_event_sink(sink: Callable[[dict[str, Any]], None] | None) -> None:
+    """Configure an optional in-process destination for live activity events."""
+    global _LIVE_EVENT_SINK
+    _LIVE_EVENT_SINK = sink
+
 
 if TYPE_CHECKING:
     from core.execution.session_context import RuntimeSessionContext
@@ -348,30 +358,39 @@ class ActivityLogger(
             logger.warning("Failed to export activity event", exc_info=True)
 
     def _emit_live_event(self, entry: ActivityEntry, *, dropped: int = 0) -> None:
-        """Write event file for ProcessSupervisor to broadcast via WebSocket."""
+        """Send a live event to the configured sink or the fallback event file."""
+        payload = {
+            "event": "anima.tool_activity",
+            "data": {
+                "name": self._anima_name,
+                "type": entry.type,
+                "kind": entry.type if entry.type in ("tool_use", "tool_result") else "",
+                "tool": entry.tool,
+                "is_error": bool(entry.meta.get("is_error", False) or entry.meta.get("result_status") == "fail"),
+                "summary": entry.summary[:200] if entry.summary else "",
+                "content": entry.content[:200] if entry.content else "",
+                "from_person": entry.from_person,
+                "to_person": entry.to_person,
+                "channel": entry.channel,
+                "ctx": entry.ctx,
+                "ts": entry.ts,
+                "meta": entry.meta,
+            },
+        }
+        if dropped:
+            payload["data"]["dropped"] = dropped
+
+        sink = _LIVE_EVENT_SINK
+        if sink is not None:
+            try:
+                sink(payload)
+                return
+            except Exception:
+                logger.debug("Live event sink failed; falling back to file", exc_info=True)
+
         try:
             event_dir = get_data_dir() / "run" / "events" / self._anima_name
             event_dir.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "event": "anima.tool_activity",
-                "data": {
-                    "name": self._anima_name,
-                    "type": entry.type,
-                    "kind": entry.type if entry.type in ("tool_use", "tool_result") else "",
-                    "tool": entry.tool,
-                    "is_error": bool(entry.meta.get("is_error", False) or entry.meta.get("result_status") == "fail"),
-                    "summary": entry.summary[:200] if entry.summary else "",
-                    "content": entry.content[:200] if entry.content else "",
-                    "from_person": entry.from_person,
-                    "to_person": entry.to_person,
-                    "channel": entry.channel,
-                    "ctx": entry.ctx,
-                    "ts": entry.ts,
-                    "meta": entry.meta,
-                },
-            }
-            if dropped:
-                payload["data"]["dropped"] = dropped
             event_file = event_dir / f"ta_{uuid4().hex[:8]}.json"
             event_file.write_text(
                 json.dumps(payload, ensure_ascii=False),

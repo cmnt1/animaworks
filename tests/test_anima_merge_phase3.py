@@ -66,6 +66,7 @@ def test_anima_merge_rewrite_refs_updates_all_external_surfaces(
     assert moved_message["to_person"] == "target"
     assert moved_message["from_person"] == "source"
     assert moved_message["meta"]["task_id"] == "collision-task__from_source"
+    assert moved_message["content"] == "undelivered"
     moved_report = json.loads((data_dir / "shared" / "inbox" / "target" / "report.json").read_text(encoding="utf-8"))
     assert moved_report["to_person"] == "target"
     assert moved_report["meta"]["task_id"] == "collision-task"
@@ -149,7 +150,6 @@ def test_anima_merge_rewrite_refs_updates_all_external_surfaces(
     assert json.loads((data_dir / "animas" / ".bootstrap_retries.json").read_text(encoding="utf-8")) == {"target": 1}
     assert not (data_dir / "run" / "events" / "source").exists()
     assert not (data_dir / "run" / "animas" / "source.lock").exists()
-    assert (data_dir / "run" / "inbox_wake" / "target").is_file()
 
     journal_text = result.journal_path.read_text(encoding="utf-8")
     journal = json.loads(journal_text)
@@ -195,9 +195,9 @@ def test_anima_merge_rewrite_refs_resume_reuses_mapping_without_duplicates(
     original = ExternalRefsRewriter.rewrite_ancillary_state
     interrupted = False
 
-    def interrupt_after_rewrite(self: ExternalRefsRewriter, *, wake_target: bool = False):
+    def interrupt_after_rewrite(self: ExternalRefsRewriter):
         nonlocal interrupted
-        result = original(self, wake_target=wake_target)
+        result = original(self)
         if not interrupted:
             interrupted = True
             raise RuntimeError("rewrite interruption")

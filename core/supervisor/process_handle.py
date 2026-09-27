@@ -9,6 +9,7 @@ Process handle for managing child Anima processes.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -409,6 +410,27 @@ class ProcessHandle:
                 chunk_count,
                 elapsed,
             )
+
+    async def open_event_stream(self) -> AsyncIterator[dict[str, Any]]:
+        """Subscribe to root events without marking the handle as chat-streaming."""
+        if self.state == ProcessState.RESTARTING:
+            raise ProcessError(f"Process restarting: {self.anima_name}")
+        if self.state != ProcessState.RUNNING:
+            raise AnimaNotRunningError(f"Process not running: {self.state}")
+        if not self.ipc_client:
+            raise IPCConnectionError("IPC client not connected")
+
+        request = IPCRequest(id=f"req_{uuid.uuid4().hex[:8]}", method="subscribe_events")
+        async for response in self.ipc_client.send_request_stream(request, timeout=60.0):
+            if response.error:
+                raise IPCConnectionError(f"Event stream error: {response.error.get('message', 'Unknown error')}")
+            if response.done:
+                break
+            if not response.chunk:
+                continue
+            event = json.loads(response.chunk)
+            if isinstance(event, dict) and not event.get("keepalive"):
+                yield event
 
     async def ping(
         self,
