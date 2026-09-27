@@ -1,9 +1,8 @@
-"""Feature flag and crash semantics for heartbeat process isolation."""
+"""Crash semantics for heartbeat process isolation (always isolated)."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -17,19 +16,10 @@ from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
-def _manager(tmp_path: Path, *, isolated: bool) -> tuple[SchedulerManager, MagicMock]:
+def _manager(tmp_path: Path) -> tuple[SchedulerManager, MagicMock]:
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
     (tmp_path / "shared").mkdir()
-    (anima_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "process_model": "phase2",
-                "task_process_isolation": {"heartbeat": isolated},
-            }
-        ),
-        encoding="utf-8",
-    )
     anima = MagicMock()
     anima.shared_dir = tmp_path / "shared"
     anima.run_heartbeat = AsyncMock(return_value=CycleResult(trigger="heartbeat", action="completed", summary="done"))
@@ -39,41 +29,17 @@ def _manager(tmp_path: Path, *, isolated: bool) -> tuple[SchedulerManager, Magic
 
 
 @pytest.mark.asyncio
-async def test_phase3_starts_root_memory_service_but_phase2_does_not(tmp_path: Path) -> None:
-    manager, _ = _manager(tmp_path, isolated=True)
+async def test_root_memory_service_is_always_provided(tmp_path: Path) -> None:
+    manager, _ = _manager(tmp_path)
     assert manager._task_runner_supervisor is not None
-    assert manager._task_runner_supervisor._memory_service is None
+    assert manager._task_runner_supervisor._memory_service is not None
     await manager.shutdown_task_runners()
-
-    phase3_dir = tmp_path / "phase3" / "animas" / "sakura"
-    phase3_dir.mkdir(parents=True)
-    shared = tmp_path / "phase3" / "shared"
-    shared.mkdir()
-    (phase3_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
-    anima = MagicMock(shared_dir=shared)
-    phase3 = SchedulerManager(anima, "sakura", phase3_dir, MagicMock())
-
-    assert phase3._task_runner_supervisor is not None
-    assert phase3._task_runner_supervisor._memory_service is not None
-    await phase3.shutdown_task_runners()
-
-
-@pytest.mark.asyncio
-async def test_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=False)
-
-    await manager.heartbeat_tick()
-
-    assert manager._task_runner_supervisor is None
-    assert manager._heartbeat_isolated is False
-    anima.run_heartbeat.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=True)
+    manager, anima = _manager(tmp_path)
     assert manager._task_runner_supervisor is not None
-    assert manager._heartbeat_isolated is True
     manager._task_runner_supervisor.run_heartbeat = AsyncMock(
         return_value={
             "task_type": "heartbeat",
@@ -94,7 +60,7 @@ async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> N
 
 @pytest.mark.asyncio
 async def test_heartbeat_skips_while_already_running_serializes_same_anima(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=True)
+    manager, anima = _manager(tmp_path)
     assert manager._task_runner_supervisor is not None
 
     started = asyncio.Event()
@@ -180,7 +146,7 @@ async def test_sigkill_only_reaps_task_group_and_root_can_continue(tmp_path: Pat
 
 @pytest.mark.asyncio
 async def test_child_crash_is_logged_and_next_tick_can_run(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=True)
+    manager, anima = _manager(tmp_path)
     assert manager._task_runner_supervisor is not None
     manager._task_runner_supervisor.run_heartbeat = AsyncMock(
         side_effect=RuntimeError("child exited before returning a result")
@@ -204,37 +170,10 @@ async def test_child_crash_is_logged_and_next_tick_can_run(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_cron_only_flag_does_not_isolate_heartbeat(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "animas" / "sakura"
-    anima_dir.mkdir(parents=True)
-    (tmp_path / "shared").mkdir()
-    (anima_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "process_model": "phase2",
-                "task_process_isolation": {"cron": True, "heartbeat": False},
-            }
-        ),
-        encoding="utf-8",
-    )
-    anima = MagicMock()
-    anima.shared_dir = tmp_path / "shared"
-    anima.run_heartbeat = AsyncMock(return_value=CycleResult(trigger="heartbeat", action="completed", summary="legacy"))
-    manager = SchedulerManager(anima, "sakura", anima_dir, MagicMock())
-
-    assert manager._task_runner_supervisor is not None
-    assert manager._cron_isolated is True
-    assert manager._heartbeat_isolated is False
-
-    await manager.heartbeat_tick()
-    anima.run_heartbeat.assert_awaited_once()
-
-
-@pytest.mark.parametrize("isolated", [False, True])
-async def test_periodic_work_waits_for_initial_profile(tmp_path, isolated):
+async def test_periodic_work_waits_for_initial_profile(tmp_path: Path) -> None:
     from core.schemas import CronTask
 
-    manager, anima = _manager(tmp_path, isolated=isolated)
+    manager, anima = _manager(tmp_path)
     directory = manager._anima_dir
     (directory / "identity.md").write_text("未定義", encoding="utf-8")
     (directory / "injection.md").write_text("未定義", encoding="utf-8")

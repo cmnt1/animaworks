@@ -70,14 +70,19 @@ async def test_runner_propagates_project_to_anima() -> None:
     runner.anima = SimpleNamespace(
         run_consolidation=AsyncMock(return_value=CycleResult(trigger="consolidation:daily", action="completed"))
     )
-    runner._scheduler_mgr = None
+    supervisor = SimpleNamespace(run_background=AsyncMock(return_value={"summary": "consolidated", "duration_ms": 12}))
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
-    await runner._handle_run_consolidation({"consolidation_type": "daily", "project": "foo"})
+    result = await runner._handle_run_consolidation({"consolidation_type": "daily", "project": "foo"})
 
-    runner.anima.run_consolidation.assert_awaited_once_with(
-        consolidation_type="daily",
-        project="foo",
+    supervisor.run_background.assert_awaited_once_with(
+        kind="consolidation",
+        payload={"consolidation_type": "daily", "project": "foo"},
+        display_lane="background",
     )
+    runner.anima.run_consolidation.assert_not_awaited()
+    assert result["status"] == "completed"
+    assert result["summary"] == "consolidated"
 
 
 @pytest.mark.asyncio

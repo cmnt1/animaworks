@@ -20,13 +20,13 @@ from core.supervisor.scheduler_manager import SchedulerManager
 def scheduler_mgr(tmp_path: Path) -> SchedulerManager:
     anima_dir = tmp_path / "animas" / "test"
     anima_dir.mkdir(parents=True)
-    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     anima = MagicMock()
     anima._activity = MagicMock()
     anima.memory.read_cron_config.return_value = ""
-    anima.run_cron_task = AsyncMock()
-    anima.run_cron_command = AsyncMock()
     manager = SchedulerManager(anima, "test", anima_dir, MagicMock())
+    manager._task_runner_supervisor.run_cron = AsyncMock(
+        return_value={"result": {"action": "completed", "summary": "ok"}, "success": True}
+    )
     manager.scheduler = MagicMock()
     manager.scheduler.get_jobs.return_value = []
     return manager
@@ -121,11 +121,14 @@ async def test_corrupt_stats_fail_open_and_are_rebuilt(scheduler_mgr: SchedulerM
     stats_path = scheduler_mgr._anima_dir / "state" / "cron_stats.json"
     stats_path.parent.mkdir(parents=True)
     stats_path.write_text("{broken", encoding="utf-8")
-    result = MagicMock()
-    result.action = "completed"
-    result.usage = {"input_tokens": 12, "output_tokens": 3}
-    result.model_dump.return_value = {"summary": "done"}
-    scheduler_mgr._anima.run_cron_task.return_value = result
+    scheduler_mgr._task_runner_supervisor.run_cron = AsyncMock(
+        return_value={
+            "task_type": "llm",
+            "result": {"action": "completed", "summary": "done"},
+            "success": True,
+            "usage": {"input_tokens": 12, "output_tokens": 3},
+        }
+    )
 
     with patch("core.supervisor.scheduler_manager.load_config", return_value=_config()):
         await scheduler_mgr._run_cron_task(_task("recovered"))

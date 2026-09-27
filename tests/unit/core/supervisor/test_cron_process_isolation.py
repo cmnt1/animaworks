@@ -1,9 +1,8 @@
-"""Feature flag and crash semantics for cron process isolation."""
+"""Crash semantics for cron process isolation (always isolated)."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -17,24 +16,13 @@ from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
-def _manager(tmp_path: Path, *, isolated: bool) -> tuple[SchedulerManager, MagicMock]:
+def _manager(tmp_path: Path) -> tuple[SchedulerManager, MagicMock]:
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
     (tmp_path / "shared").mkdir()
-    (anima_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "process_model": "phase2",
-                "task_process_isolation": {"cron": isolated},
-            }
-        ),
-        encoding="utf-8",
-    )
     anima = MagicMock()
     anima.shared_dir = tmp_path / "shared"
-    anima.run_cron_task = AsyncMock(
-        return_value=CycleResult(trigger="cron:daily", action="completed", summary="done")
-    )
+    anima.run_cron_task = AsyncMock(return_value=CycleResult(trigger="cron:daily", action="completed", summary="done"))
     anima.run_cron_command = AsyncMock()
     emit = MagicMock()
     manager = SchedulerManager(anima, "sakura", anima_dir, emit)
@@ -43,19 +31,8 @@ def _manager(tmp_path: Path, *, isolated: bool) -> tuple[SchedulerManager, Magic
 
 
 @pytest.mark.asyncio
-async def test_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=False)
-    task = CronTask(name="daily", schedule="0 9 * * *", description="daily work")
-
-    await manager._run_cron_task(task)
-
-    assert manager._task_runner_supervisor is None
-    anima.run_cron_task.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> None:
-    manager, anima = _manager(tmp_path, isolated=True)
+async def test_uses_child_result_without_root_llm(tmp_path: Path) -> None:
+    manager, anima = _manager(tmp_path)
     task = CronTask(name="daily", schedule="0 9 * * *", description="daily work")
     assert manager._task_runner_supervisor is not None
     manager._task_runner_supervisor.run_cron = AsyncMock(
@@ -72,6 +49,25 @@ async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> N
     anima.run_cron_task.assert_not_awaited()
     manager._task_runner_supervisor.run_cron.assert_awaited_once_with(task)
     manager._emit_event.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_command_cron_type_is_delegated_to_supervisor(tmp_path: Path) -> None:
+    manager, anima = _manager(tmp_path)
+    task = CronTask(name="daily", schedule="0 9 * * *", type="command", command="echo hi")
+    assert manager._task_runner_supervisor is not None
+    manager._task_runner_supervisor.run_cron = AsyncMock(
+        return_value={
+            "task_type": "command",
+            "result": {"exit_code": 0, "output": "hi"},
+            "success": True,
+        }
+    )
+
+    await manager._run_cron_task(task)
+
+    anima.run_cron_command.assert_not_awaited()
+    manager._task_runner_supervisor.run_cron.assert_awaited_once_with(task)
 
 
 @pytest.mark.asyncio
@@ -115,4 +111,3 @@ async def test_sigkill_only_reaps_task_group_and_root_can_continue(tmp_path: Pat
     assert os.getpid() == root_pid
     assert supervisor._accepting is True
     assert not supervisor.jobs
-

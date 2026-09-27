@@ -424,7 +424,7 @@ async def test_phase3_task_runner_process_smoke(
         "cascade-a",
         phase3_animas["cascade-a"],
         data_dir / "shared",
-        memory_via_root=True,
+        memory_service=MemoryService("cascade-a", phase3_animas["cascade-a"]),
     )
     try:
         result = await supervisor.run_cron(
