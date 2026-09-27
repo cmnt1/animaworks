@@ -1,4 +1,77 @@
 {
-  "files": {},
+  "files": {
+    "templates/en/common_skills/google-tasks-tool/SKILL.md": {
+      "engine": "local",
+      "generated": "2026-09-27",
+      "model": "deepseek-v4-flash",
+      "section_hashes": [
+        "6c1f8e25c9c4664f623ef4335128f83caf46efb841162b712425639b52045a2f",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "10cb30cc91f1ce523264e5baf096c04d396be92c8c72ac4df9d16f46f1345590",
+        "38d3d6ab04e2920162e6fd53e732a3f52449a485331f82f294aac3f642c297ca",
+        "9940e10f9290fc24523d7eacfd86aefe880e734be1b6eb76f369a2cdfc2bafa1",
+        "617782e32968ee219e58f6d88ae46260bbefce310874efcedf80badb002ce7bd",
+        "38e2afb7f1d3c5033d07dcf627a4162aeed6a0b827bce45ca2b49a007f61970e",
+        "913c199e45557df260c8cf2712e439ac1414c3606012552f58e6023a43390f6f",
+        "70e13455d66d03fa9ee95d0be605c2c284d5fd280e05051b70d58758d7213149",
+        "61ff0b403db77c67d8f43d7b631c36a5cb10ec3a488d74bc2a48b230944c6774",
+        "3042cf6c87e83d93f387fef112c598461fe6a987ce261477a055deec167c095a",
+        "9f16b81eb4dbc86fdfeba90b50a6f933cc0845169de7dacc515a340919c738af"
+      ],
+      "source": "templates/ja/common_skills/google-tasks-tool/SKILL.md",
+      "source_sha256": "85e074fe5945c5edeb5421096583b11ba7c548802afb0ff28c0042e41308d4e6",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    },
+    "templates/ko/common_skills/google-tasks-tool/SKILL.md": {
+      "engine": "local",
+      "generated": "2026-09-27",
+      "model": "deepseek-v4-flash",
+      "section_hashes": [
+        "6c1f8e25c9c4664f623ef4335128f83caf46efb841162b712425639b52045a2f",
+        "6306add4eeb9cb4e5ebc1cca066153cc2b0f480fe1f161366cb3ca931ee9821a",
+        "10cb30cc91f1ce523264e5baf096c04d396be92c8c72ac4df9d16f46f1345590",
+        "38d3d6ab04e2920162e6fd53e732a3f52449a485331f82f294aac3f642c297ca",
+        "9940e10f9290fc24523d7eacfd86aefe880e734be1b6eb76f369a2cdfc2bafa1",
+        "617782e32968ee219e58f6d88ae46260bbefce310874efcedf80badb002ce7bd",
+        "38e2afb7f1d3c5033d07dcf627a4162aeed6a0b827bce45ca2b49a007f61970e",
+        "913c199e45557df260c8cf2712e439ac1414c3606012552f58e6023a43390f6f",
+        "70e13455d66d03fa9ee95d0be605c2c284d5fd280e05051b70d58758d7213149",
+        "61ff0b403db77c67d8f43d7b631c36a5cb10ec3a488d74bc2a48b230944c6774",
+        "3042cf6c87e83d93f387fef112c598461fe6a987ce261477a055deec167c095a",
+        "9f16b81eb4dbc86fdfeba90b50a6f933cc0845169de7dacc515a340919c738af"
+      ],
+      "source": "templates/ja/common_skills/google-tasks-tool/SKILL.md",
+      "source_sha256": "85e074fe5945c5edeb5421096583b11ba7c548802afb0ff28c0042e41308d4e6",
+      "statuses": [
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated",
+        "translated"
+      ],
+      "translator_version": "2"
+    }
+  },
   "version": 1
 }

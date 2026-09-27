@@ -29,7 +29,7 @@ from scripts.i18n.manifest import (
 )
 from scripts.i18n.protect import ProtectedText, ProtectionError, protect_text
 from scripts.i18n.segment import Segment, join_segments, split_markdown
-from scripts.i18n.validate import ValidationError, validate_translation
+from scripts.i18n.validate import ValidationError, has_translatable_japanese, validate_translation
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "scripts" / "i18n" / "config.toml"
@@ -170,6 +170,20 @@ def _langs_for_target(target: Target, defaults: dict[str, Any], requested_langs:
 
 def _source_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _normalize_boundaries(translated: str, source: str) -> str:
+    """Restore the source section's leading/trailing newline counts.
+
+    Models frequently compress the blank (separator) line between batch
+    sections, which glued adjacent headings to the previous paragraph. Rebuild
+    the boundary exactly so every heading stays at line start and the blank-line
+    count between sections matches the original.
+    """
+    source_lead = len(source) - len(source.lstrip("\n"))
+    source_trail = len(source) - len(source.rstrip("\n"))
+    body = translated.strip("\n")
+    return "\n" * source_lead + body + "\n" * source_trail
 
 
 def _strip_source_headers(text: str) -> str:
@@ -600,6 +614,12 @@ class Translator:
                 if old_status != "failed":
                     statuses_by_index[index] = old_status
                     continue
+            if not has_translatable_japanese(segment.text):
+                # No translatable prose: keep the original text without calling
+                # the model (avoids empty prompts and preamble answers).
+                translated_by_index[index] = segment.text
+                statuses_by_index[index] = "translated"
+                continue
             protected = protect_text(
                 segment.text, frontmatter=segment.kind == "frontmatter", sentinel_start=index * 10000
             )
@@ -618,9 +638,11 @@ class Translator:
         translated_by_index.update(new_translations)
         statuses_by_index.update(new_statuses)
 
-        translated_segments = [
-            Segment(translated_by_index[index], source_segments[index].kind) for index in range(len(source_segments))
-        ]
+        translated_segments = []
+        for index in range(len(source_segments)):
+            text = translated_by_index[index]
+            source = source_segments[index].text
+            translated_segments.append(Segment(_normalize_boundaries(text, source), source_segments[index].kind))
         translated_text = join_segments(translated_segments)
         destination_name = Path(target.dst[lang]).name if isinstance(target.dst, dict) else ""
         translated_text = _rewrite_markdown_links(
