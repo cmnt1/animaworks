@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 8781d6909b6bda73b6c8ea71f66b263f63dc70aaad8ff9c97818409fca7f83b4 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 451b67f2a1a947a0060ea39d11e69bf184661b559a1babda8a4a333b8316acd4 -->
 
 # モジュール一覧
 
@@ -469,7 +469,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.config` | 110 | — |
 | `core.memory.facts.entity_index` | 457 | — |
 | `core.memory.facts.extraction` | 466 | — |
-| `core.memory.facts.invalidation` | 496 | — |
+| `core.memory.facts.invalidation` | 497 | — |
 | `core.memory.facts.invalidation_llm` | 109 | — |
 | `core.memory.facts.observability` | 41 | — |
 | `core.memory.facts.store` | 460 | — |
@@ -508,7 +508,8 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.priming.utils` | 308 | — |
 | `core.memory.rag.cli_access` | 231 | CLI access to phase3 vector stores through the active owner or server. |
 | `core.memory.rag.contextual_header` | 163 | — |
-| `core.memory.rag.direct_access` | 42 | — |
+| `core.memory.rag.direct_access` | 12 | — |
+| `core.memory.rag.embedding` | 396 | — |
 | `core.memory.rag.endpoints` | 78 | — |
 | `core.memory.rag.entity_graph` | 319 | — |
 | `core.memory.rag.episode_time` | 46 | — |
@@ -521,7 +522,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.indexer_delete` | 135 | — |
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
 | `core.memory.rag.repair` | 33 | — |
-| `core.memory.rag.repair_rebuild` | 258 | — |
+| `core.memory.rag.repair_rebuild` | 250 | — |
 | `core.memory.rag.repair_service` | 621 | — |
 | `core.memory.rag.repair_snapshot` | 152 | Private inputs and metadata publication for the existing RAG rebuild path. |
 | `core.memory.rag.repair_state` | 150 | Persistent repair-state helpers for RAG auto-repair. |
@@ -530,11 +531,12 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.retriever` | 1080 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
-| `core.memory.rag.singleton` | 1057 | — |
+| `core.memory.rag.singleton` | 47 | — |
 | `core.memory.rag.sqlite_health` | 359 | — |
-| `core.memory.rag.store` | 967 | — |
+| `core.memory.rag.store` | 736 | — |
 | `core.memory.rag.vector_client` | 466 | — |
 | `core.memory.rag.vector_ops` | 80 | Conversion between vector API requests and the MemoryService wire format. |
+| `core.memory.rag.vector_registry` | 160 | — |
 | `core.memory.retrieval.access_boost` | 131 | — |
 | `core.memory.retrieval.bm25` | 1141 | — |
 | `core.memory.retrieval.code_index` | 221 | — |
@@ -833,7 +835,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor.ipc` | 517 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1094 | Process Supervisor - Manages lifecycle of Anima child processes. |
-| `core.supervisor.memory_service` | 667 | Root-owned vector memory service. |
+| `core.supervisor.memory_service` | 747 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 771 | Process handle for managing child Anima processes. |
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1253 | Child process entry point for Anima subprocess. |
@@ -841,7 +843,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor.scheduler_manager` | 1115 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
 | `core.supervisor.task_runner` | 949 | Disposable task runner entry point. |
-| `core.supervisor.task_runner_supervisor` | 1111 | Root-side lifecycle manager for disposable task runner processes. |
+| `core.supervisor.task_runner_supervisor` | 1104 | Root-side lifecycle manager for disposable task runner processes. |
 | `core.supervisor.transport` | 236 | Transport helpers for IPC server/client communication. |
 
 ## `core.tasks`
