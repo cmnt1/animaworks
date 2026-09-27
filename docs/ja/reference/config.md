@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 65c891d708e78f8f172016027a0a6698fff2f185305e0039663a90e8d2c38868 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 5cd6d9d4024c771e3a6850dff2ef7aa97b805ae37f849a89d49c5b9aa6c7aa64 -->
 
 # 設定リファレンス
 
@@ -454,8 +454,6 @@
 | `housekeeping.pending_processing_stale_hours` | `int` | `24` | — |
 | `housekeeping.background_running_stale_hours` | `int` | `48` | — |
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
-| `housekeeping.taskboard_suppressed_retention_days` | `int` | `30` | — |
-| `housekeeping.taskboard_orphan_metadata_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
 | `housekeeping.archive_superseded_retention_days` | `int` | `7` | — |

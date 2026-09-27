@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 2e4bc6787caabe106510db6de482a80db3af8205b1d168fe1e712016c81214ab -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 0fc379a0a86cde156c92aaf64c9753e5ec4cd06448dc725bb907557e86b2e586 -->
 
 # API リファレンス
 
@@ -240,10 +240,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 ## `server/routes/taskboard.py`
 
-| GET | `/api/task-board` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the canonical task projection plus TaskBoard presentation metadata. | `server/routes/taskboard.py:list_task_board` |
+| GET | `/api/task-board` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the unified TaskBoard view read straight from the canonical TaskStore. | `server/routes/taskboard.py:list_task_board` |
 | GET | `/api/task-board/summary` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return TaskBoard summary counts for dashboard use. | `server/routes/taskboard.py:get_task_board_summary` |
-| PATCH | `/api/task-board/{anima_name}/{task_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update TaskBoard metadata without mutating Board channel data. | `server/routes/taskboard.py:patch_task_board` |
-| POST | `/api/task-board/{anima_name}/{task_id}/notification-ack` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Record that a runtime notification was acknowledged. | `server/routes/taskboard.py:acknowledge_notification` |
+| POST | `/api/task-board/{anima_name}/{task_id}/cancel` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Explicitly cancel a task, overriding any outstanding lease (human operation). | `server/routes/taskboard.py:cancel_task` |
 
 ## `server/routes/usage_routes.py`
 

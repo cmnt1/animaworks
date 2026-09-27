@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: c7b482f3362b924eb41545b8f633259437ff21675f58623fa3b5381e14f258ef -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 30a271d4d54bda5fbaca0e7bd732f7d3d66371d45d2ce2812d02c56cc86e5f4b -->
 
 # モジュール一覧
 
@@ -169,7 +169,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 123 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1467 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1465 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -483,7 +483,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.maintenance.cron_logger` | 190 | — |
 | `core.memory.maintenance.distillation` | 715 | — |
 | `core.memory.maintenance.forgetting` | 499 | — |
-| `core.memory.maintenance.housekeeping` | 1693 | — |
+| `core.memory.maintenance.housekeeping` | 1691 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 653 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
@@ -495,7 +495,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.priming.channel_a` | 52 | — |
 | `core.memory.priming.channel_b` | 553 | — |
 | `core.memory.priming.channel_c` | 628 | — |
-| `core.memory.priming.channel_e` | 268 | — |
+| `core.memory.priming.channel_e` | 240 | — |
 | `core.memory.priming.channel_f` | 295 | — |
 | `core.memory.priming.channel_g` | 104 | — |
 | `core.memory.priming.constants` | 104 | — |
@@ -680,7 +680,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
 | `core.migrations.registry` | 159 | — |
-| `core.migrations.steps` | 2392 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 2511 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 
@@ -778,7 +778,7 @@ anima 間および外部とのメッセージ配送。
 | `core.skills.index` | 613 | — |
 | `core.skills.loader` | 176 | — |
 | `core.skills.migration._common（非公開）` | 178 | — |
-| `core.skills.migration.hermes` | 515 | — |
+| `core.skills.migration.hermes` | 513 | — |
 | `core.skills.migration.hermes_format` | 170 | — |
 | `core.skills.migration.openclaw` | 220 | — |
 | `core.skills.migration.report` | 125 | — |
@@ -850,15 +850,13 @@ anima の監督、委任、実行調整。
 |---|---:|---|
 | `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
 | `core.tasks.background` | 606 | — |
-| `core.tasks.board.board_actions` | 222 | — |
-| `core.tasks.board.formatting` | 120 | Formatting helpers for TaskBoard prompt sections. |
-| `core.tasks.board.housekeeping` | 347 | — |
-| `core.tasks.board.models` | 95 | Pydantic models for TaskBoard metadata and projections. |
+| `core.tasks.board.board_actions` | 237 | — |
+| `core.tasks.board.housekeeping` | 185 | — |
+| `core.tasks.board.models` | 37 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
 | `core.tasks.board.notices` | 119 | — |
-| `core.tasks.board.projector` | 282 | Projection from per-Anima task queues into TaskBoard rows. |
 | `core.tasks.board.readiness` | 31 | Read-only boundary between legacy task files and canonical execution. |
-| `core.tasks.board.store` | 516 | SQLite-backed TaskBoard metadata store. |
-| `core.tasks.board.tasks` | 1230 | Durable execution records, separate from TaskBoard presentation metadata. |
+| `core.tasks.board.tasks` | 1244 | Durable execution records; the single source of truth for the TaskBoard. |
+| `core.tasks.board.view` | 118 | Single TaskBoard view built directly from the canonical TaskStore. |
 | `core.tasks.dispatch` | 412 | — |
 | `core.tasks.external.collector` | 209 | Multi-source external tasks collector with per-source fault isolation. |
 | `core.tasks.external.models` | 47 | Data models for the external tasks snapshot store. |
@@ -869,7 +867,7 @@ anima の監督、委任、実行調整。
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
 | `core.tasks.pending_executor` | 1856 | Pending task watcher and executor. |
 | `core.tasks.pending_housekeeping` | 52 | — |
-| `core.tasks.queue` | 735 | — |
+| `core.tasks.queue` | 595 | — |
 
 ## `core.tasks.board`
 
@@ -877,7 +875,7 @@ anima の監督、委任、実行調整。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.tasks.board` | 22 | TaskBoard storage and projection utilities. |
+| `core.tasks.board` | 11 | TaskBoard: a single view read directly from the canonical TaskStore. |
 
 ## `core.tasks.external`
 
@@ -911,7 +909,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.handler_base` | 373 | — |
 | `core.tooling.handler_comms` | 902 | — |
 | `core.tooling.handler_create_anima` | 237 | — |
-| `core.tooling.handler_delegation` | 308 | — |
+| `core.tooling.handler_delegation` | 260 | — |
 | `core.tooling.handler_files` | 1143 | — |
 | `core.tooling.handler_memory` | 1472 | — |
 | `core.tooling.handler_org` | 39 | — |
@@ -1038,7 +1036,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 523 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1014 | — |
+| `server.routes.internal` | 1004 | — |
 | `server.routes.logs_routes` | 213 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 459 | — |
@@ -1046,8 +1044,8 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 609 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1213 | — |
-| `server.routes.taskboard` | 498 | — |
+| `server.routes.system` | 1214 | — |
+| `server.routes.taskboard` | 235 | — |
 | `server.routes.usage_routes` | 881 | — |
 | `server.routes.users` | 279 | — |
 | `server.routes.voice` | 257 | Voice chat WebSocket endpoint. |
