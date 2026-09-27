@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.exceptions import ToolExecutionError
-from core.execution._sanitize import TOOL_TRUST_LEVELS, wrap_tool_result
+from core.execution._sanitize import TRUST_RANK, resolve_tool_trust, wrap_tool_result
 from core.execution._tool_summary import make_tool_detail_chunk
 from core.execution.base import ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
 from core.tooling.schemas import (
@@ -208,8 +208,6 @@ class ToolProcessingMixin:
         names = ", ".join(sorted(merged.keys()))
         return f"Refreshed tools ({len(merged)} discovered): {names}"
 
-    _TRUST_ORDER: dict[str, int] = {"trusted": 2, "medium": 1, "untrusted": 0}
-
     async def _execute_tool_call(self, tc, fn_args: dict[str, Any]) -> dict[str, Any]:
         """Execute a single tool call, offloading sync work to a thread.
 
@@ -226,8 +224,8 @@ class ToolProcessingMixin:
             tc.id,
         )
 
-        trust = TOOL_TRUST_LEVELS.get(tc.function.name, "untrusted")
-        trust_rank = self._TRUST_ORDER.get(trust, 0)
+        trust = resolve_tool_trust(tc.function.name, fn_args)
+        trust_rank = TRUST_RANK.get(trust, 0)
         self._tool_handler._min_trust_seen = min(
             self._tool_handler._min_trust_seen,
             trust_rank,

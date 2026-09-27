@@ -249,6 +249,23 @@ class TestMigrationSteps:
         result = step_current_task_rename(data_dir, dry_run=False, verbose=True)
         assert result.changed == 0
 
+    def test_step_trust_state_per_session_dry_run_and_removal(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_trust_state_per_session
+
+        anima = self._make_anima(data_dir, "trust-state")
+        legacy_state = anima / "run" / "min_trust_seen"
+        legacy_state.parent.mkdir()
+        legacy_state.write_text("0", encoding="utf-8")
+
+        dry_result = step_trust_state_per_session(data_dir, dry_run=True, verbose=True)
+        assert dry_result.changed == 1
+        assert any("would remove run/min_trust_seen" in detail for detail in dry_result.details)
+        assert legacy_state.exists()
+
+        result = step_trust_state_per_session(data_dir, dry_run=False, verbose=True)
+        assert result.changed == 1
+        assert not legacy_state.exists()
+
     def test_step_pending_merge(self, data_dir: Path) -> None:
         from core.migrations.steps import step_pending_merge
 
