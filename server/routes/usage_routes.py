@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from core.platform.claude_code import get_claude_executable
@@ -820,25 +820,13 @@ def create_usage_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/usage")
-    async def get_usage(request: Request, skip_cache: bool = False) -> dict[str, Any]:
-        """Return combined Claude + OpenAI + nanoGPT usage data + governor status."""
-        governor = getattr(request.app.state, "usage_governor", None)
-        governor_info: dict[str, Any] = {"active": False}
-        if governor:
-            st = governor.state
-            governor_info = {
-                "active": st.is_governing,
-                "suspended_animas": st.suspended_animas,
-                "reason": st.reason,
-                "since": st.since,
-                "last_check": st.last_check,
-            }
+    async def get_usage(skip_cache: bool = False) -> dict[str, Any]:
+        """Return combined Claude + OpenAI + nanoGPT usage data."""
         payload = {
             "claude": _fetch_claude_usage(skip_cache=skip_cache),
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
-            "governor": governor_info,
         }
         payload = _merge_usage_snapshot(payload)
         payload["snapshot_path"] = str(_usage_snapshot_path())
@@ -855,27 +843,5 @@ def create_usage_router() -> APIRouter:
     async def relogin_openai() -> JSONResponse:
         payload, status_code = _relogin_openai()
         return JSONResponse(payload, status_code=status_code)
-
-    @router.get("/usage/policy")
-    async def get_policy(request: Request) -> dict[str, Any]:
-        """Return the current usage policy."""
-        from core.paths import get_data_dir
-        from server.usage_governor import load_policy
-
-        return load_policy(get_data_dir())
-
-    @router.put("/usage/policy")
-    async def update_policy(request: Request):
-        """Update the usage policy."""
-        from core.paths import get_data_dir
-        from server.usage_governor import save_policy
-
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-
-        save_policy(get_data_dir(), body)
-        return {"ok": True}
 
     return router

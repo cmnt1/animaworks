@@ -130,7 +130,7 @@ def _check_a1_file_access(
                     if resolved == desc_file:
                         return None
 
-            # Descendant read-only directories (state/pending/)
+            # Descendant read-only directories (state/plans/)
             if not write and descendant_read_dirs:
                 for desc_dir in descendant_read_dirs:
                     if resolved.is_relative_to(desc_dir):

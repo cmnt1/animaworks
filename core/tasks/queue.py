@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -79,11 +79,6 @@ def _descriptor_ids(anima_dir: Path) -> set[str]:
         if not is_task_permission_error(exc):
             raise
         return read_executable_ids_via_server(anima_dir.name)
-
-
-def descriptor_exists(anima_dir: Path, task_id: str) -> bool:
-    """Compatibility facade for saved execution-input availability."""
-    return task_id in _descriptor_ids(anima_dir)
 
 
 _NOT_EXECUTABLE_NOTE = "This is a backlog task without execution input. Submit it once when ready to execute."
@@ -240,81 +235,6 @@ class TaskQueueManager:
         )
         return entry
 
-    def add_task_if_absent(
-        self,
-        predicate: Callable[[TaskEntry], bool],
-        *,
-        source: Literal["human", "anima"],
-        original_instruction: str,
-        assignee: str,
-        summary: str,
-        relay_chain: list[str] | None = None,
-        task_id: str | None = None,
-        meta: dict[str, Any] | None = None,
-        status: str = "pending",
-    ) -> TaskEntry | None:
-        """Atomically add a task only when no active task matches ``predicate``."""
-        with self._locked_queue():
-            for task in self._load_all().values():
-                if task.status in _ACTIVE_STATUSES and predicate(task):
-                    return None
-            entry = self._build_task_entry(
-                source=source,
-                original_instruction=original_instruction,
-                assignee=assignee,
-                summary=summary,
-                relay_chain=relay_chain,
-                task_id=task_id,
-                meta=meta,
-                status=status,
-            )
-            self._append_unlocked(entry.model_dump())
-        logger.info(
-            "Task added: id=%s source=%s assignee=%s summary=%s",
-            entry.task_id,
-            source,
-            assignee,
-            summary[:50],
-        )
-        return entry
-
-    def add_delegated_task(
-        self,
-        *,
-        original_instruction: str,
-        assignee: str,
-        summary: str,
-        relay_chain: list[str] | None = None,
-        meta: dict[str, Any] | None = None,
-        task_id: str | None = None,
-    ) -> TaskEntry:
-        """Add a task with 'delegated' status for tracking delegation.
-
-        Used by the delegating supervisor to record that a task was sent
-        to a subordinate. The meta field stores delegated_to and delegated_task_id.
-        """
-        now = now_iso()
-        entry = TaskEntry(
-            task_id=task_id if task_id else uuid.uuid4().hex[:12],
-            ts=now,
-            source="anima",
-            original_instruction=original_instruction,
-            assignee=assignee,
-            status="delegated",
-            summary=summary,
-            relay_chain=relay_chain or [],
-            updated_at=now,
-            meta=meta or {},
-        )
-        self._append(entry.model_dump())
-        logger.info(
-            "Delegated task added: id=%s assignee=%s summary=%s",
-            entry.task_id,
-            assignee,
-            summary[:50],
-        )
-        return entry
-
     def update_status(
         self,
         task_id: str,
@@ -422,10 +342,6 @@ class TaskQueueManager:
         tasks = self._load_all()
         return [t for t in tasks.values() if t.status in ("pending", "in_progress")]
 
-    def get_human_tasks(self) -> list[TaskEntry]:
-        """Return pending/in_progress tasks with source='human'."""
-        return [t for t in self.get_pending() if t.source == "human"]
-
     def get_all_active(self) -> list[TaskEntry]:
         """Return all non-terminal tasks (pending, in_progress)."""
         tasks = self._load_all()
@@ -518,16 +434,6 @@ class TaskQueueManager:
                 logger.debug("format_for_priming: delegated section failed", exc_info=True)
 
         return "\n".join(lines) if lines else ""
-
-    def get_stale_tasks(self) -> list[TaskEntry]:
-        """Return pending/in_progress tasks not updated for 30+ minutes."""
-        now = now_local()
-        result: list[TaskEntry] = []
-        for task in self.get_pending():
-            elapsed = _elapsed_seconds(task.updated_at, now)
-            if elapsed is not None and elapsed >= _STALE_TASK_THRESHOLD_SEC:
-                result.append(task)
-        return result
 
     @staticmethod
     def _search_archive(target_dir: Path, child_id: str) -> str | None:

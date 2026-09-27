@@ -462,10 +462,6 @@ def _add_rewrite_refs_fixture(data_dir: Path, source: Path, target: Path) -> Non
         data_dir / "run" / "discord_thread_map.json",
         json.dumps({"message": {"anima": "source", "ts": 1784100000}}) + "\n",
     )
-    _write(
-        data_dir / "usage_governor_state.json",
-        json.dumps({"suspended_animas": ["source", "target"], "reason": "budget"}) + "\n",
-    )
     _write(data_dir / "animas" / ".bootstrap_retries.json", '{"source":3,"target":1}\n')
     _write(data_dir / "run" / "inbox_wake" / "source", "")
     _write(data_dir / "run" / "events" / "source" / "event.json", "{}\n")

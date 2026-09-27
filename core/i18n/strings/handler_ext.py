@@ -299,10 +299,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "(なし)",
         "en": "(none)",
     },
-    "handler.state_pending": {
-        "ja": "### 保留タスク",
-        "en": "### Pending tasks",
-    },
     "handler.state_read_summary": {
         "ja": "{target_name}の作業状態を読み取り",
         "en": "Read {target_name}'s work status",

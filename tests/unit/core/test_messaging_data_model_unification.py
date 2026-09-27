@@ -362,8 +362,7 @@ class TestCascadeLimiterEventNames:
         from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        depth = limiter.current_depth("alice", "bob", anima_dir)
-        assert depth == 6
+        assert limiter.check_depth("alice", "bob", anima_dir) is False
 
     def test_counts_new_message_entries(self, anima_dir: Path) -> None:
         activity = ActivityLogger(anima_dir)
@@ -375,8 +374,7 @@ class TestCascadeLimiterEventNames:
         from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        depth = limiter.current_depth("alice", "bob", anima_dir)
-        assert depth == 6
+        assert limiter.check_depth("alice", "bob", anima_dir) is False
 
     def test_counts_mixed_old_new(self, anima_dir: Path) -> None:
         activity = ActivityLogger(anima_dir)
@@ -387,9 +385,8 @@ class TestCascadeLimiterEventNames:
 
         from core.messaging.cascade_limiter import ConversationDepthLimiter
 
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        depth = limiter.current_depth("alice", "bob", anima_dir)
-        assert depth == 4
+        limiter = ConversationDepthLimiter(window_s=600, max_depth=4)
+        assert limiter.check_depth("alice", "bob", anima_dir) is False
 
 
 # ── format_for_priming unified display ───────────────────

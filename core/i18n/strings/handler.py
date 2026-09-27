@@ -330,13 +330,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "配下のactivity_log",
         "en": "Descendant activity_log",
     },
-    "handler.descendant_pending": {
-        "ja": "配下のstate/pending/",
-        "en": "Descendant state/pending/",
-    },
     "handler.descendant_state": {
-        "ja": "配下のstatus.json, identity.md, injection.md, state/, task_queue.jsonl",
-        "en": "Descendant status.json, identity.md, injection.md, state/, task_queue.jsonl",
+        "ja": "配下のstatus.json, identity.md, injection.md, state/current_state.md, state/task_queue.jsonl, state/plans/",
+        "en": "Descendant status.json, identity.md, injection.md, state/current_state.md, state/task_queue.jsonl, state/plans/",
     },
     "handler.description_field_required": {
         "ja": "`description` フィールドが必要です。",

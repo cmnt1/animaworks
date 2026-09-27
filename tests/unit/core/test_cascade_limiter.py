@@ -14,9 +14,7 @@ Covers:
 - check_depth allows when under limit
 - check_depth fail-closed when activity_log is missing
 - check_global_outbound hourly/daily limits and fail-closed on error
-- current_depth reporting
-- Legacy check_and_record always returns True (no-op stub)
-- Module-level singleton exists
+- get_depth_limiter() returns a configured limiter
 """
 
 import json
@@ -219,43 +217,6 @@ class TestCheckGlobalOutbound:
         assert limiter.check_global_outbound("alice", anima_dir) is True
 
 
-class TestCurrentDepth:
-    """Test current_depth reporting."""
-
-    def test_zero_when_empty(self, tmp_path: Path, _patch_config):
-        """ログなしで0を返す。"""
-        anima_dir = tmp_path / "animas" / "alice"
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        assert limiter.current_depth("alice", "bob", anima_dir) == 0
-
-    def test_counts_exchanges(self, tmp_path: Path, _patch_config):
-        """交換数を正しくカウントする。"""
-        anima_dir = tmp_path / "animas" / "alice"
-        anima_dir.mkdir(parents=True)
-
-        entries = [
-            _make_dm_entry("dm_sent", "alice", "bob"),
-            _make_dm_entry("dm_received", "bob", "alice"),
-        ]
-        _write_activity_entries(anima_dir, entries)
-
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        assert limiter.current_depth("alice", "bob", anima_dir) == 2
-
-
-class TestLegacyCheckAndRecord:
-    """Legacy check_and_record is a no-op that always returns True."""
-
-    def test_always_returns_true(self, _patch_config):
-        """後方互換性スタブは常にTrueを返す。"""
-        limiter = ConversationDepthLimiter(max_depth=1)
-        with pytest.warns(DeprecationWarning, match="check_and_record is deprecated"):
-            assert limiter.check_and_record("alice", "bob") is True
-        with pytest.warns(DeprecationWarning):
-            assert limiter.check_and_record("alice", "bob") is True
-            assert limiter.check_and_record("alice", "bob") is True
-
-
 class TestUnifiedBudgetChannelPost:
     """Test that channel_post entries are counted in global outbound budget."""
 
@@ -408,12 +369,6 @@ class TestModuleSingleton:
 
         limiter = get_depth_limiter()
         assert isinstance(limiter, ConversationDepthLimiter)
-
-    def test_backward_compat_alias_exists(self):
-        """Module-level depth_limiter alias still exists."""
-        from core.messaging.cascade_limiter import depth_limiter
-
-        assert isinstance(depth_limiter, ConversationDepthLimiter)
 
 
 class TestOutboundLimitDisabled:

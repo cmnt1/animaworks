@@ -74,7 +74,7 @@ def _cache_subordinate_paths(
       injection.md (read/write)
     - descendant_read_files: all descendants' identity.md, injection.md,
       status.json, state files (read-only)
-    - descendant_read_dirs: all descendants' state/pending/ (read-only dir)
+    - descendant_read_dirs: all descendants' state/plans/ (read-only dir)
     """
     sub_activity_dirs: list[Path] = []
     sub_mgmt_files: list[Path] = []
@@ -102,7 +102,7 @@ def _cache_subordinate_paths(
             descendant_read_files.append(sub_dir / "status.json")
             descendant_read_files.append(sub_dir / "state" / "current_state.md")
             descendant_read_files.append(sub_dir / "state" / "task_queue.jsonl")
-            descendant_read_dirs.append(sub_dir / "state" / "pending")
+            descendant_read_dirs.append(sub_dir / "state" / "plans")
 
         # Collect peer activity_log dirs (same supervisor, excluding self)
         my_supervisor = None

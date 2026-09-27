@@ -148,7 +148,7 @@ def test_complete_archives_artifacts_and_preserves_runtime_session(tmp_path: Pat
     assert status["state"] == STATE_COMPLETED
     assert not (anima_dir / "bootstrap.md.failed").exists()
     assert not (anima_dir / "character_sheet.md").exists()
-    assert not (pending_dir / "bootstrap-midori.json").exists()
+    assert (pending_dir / "bootstrap-midori.json").exists()
     assert (anima_dir / "shortterm" / "chat" / "codex_thread_id.txt").exists()
     assert json.loads(retries.read_text(encoding="utf-8")) == {}
     archived = list((anima_dir / "state" / "bootstrap_archive").glob("bootstrap.md.failed.*"))

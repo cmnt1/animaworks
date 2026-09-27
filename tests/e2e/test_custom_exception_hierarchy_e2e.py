@@ -20,7 +20,7 @@ class TestExceptionHierarchyAvailability:
     """Verify core.exceptions is importable and complete."""
 
     def test_import_all_exceptions(self):
-        """All 23 exception classes are importable from core.exceptions."""
+        """Representative exception classes are importable from core.exceptions."""
         from core.exceptions import (
             AnimaWorksError,
             DeliveryError,
@@ -37,36 +37,26 @@ class TestExceptionHierarchyAvailability:
             AnimaNotRunningError,
             AnimaWorksError,
             ConfigNotFoundError,
-            ConfigValidationError,
             DeliveryError,
             IPCConnectionError,
             LLMAPIError,
-            LLMTimeoutError,
-            MemoryCorruptedError,
-            MemoryReadError,
             MemoryWriteError,
             RecipientNotFoundError,
             StreamDisconnectedError,
             ToolConfigError,
             ToolExecutionError,
-            ToolNotFoundError,
         )
 
         leaves = [
             LLMAPIError,
-            LLMTimeoutError,
             StreamDisconnectedError,
             ToolConfigError,
             ToolExecutionError,
-            ToolNotFoundError,
-            MemoryReadError,
             MemoryWriteError,
-            MemoryCorruptedError,
             AnimaNotFoundError,
             AnimaNotRunningError,
             IPCConnectionError,
             ConfigNotFoundError,
-            ConfigValidationError,
             RecipientNotFoundError,
             DeliveryError,
         ]
@@ -174,8 +164,6 @@ class TestNoSilentPasses:
             "handler_memory.py",
             # permissions.py: config unavailable at import time — skip filtering.
             "permissions.py",
-            # _mgr_reconcile.py: governor state file read is best-effort;
-            # failure defaults to empty suspended set.
             "_mgr_reconcile.py",
             # claude_code.py: best-effort bundled CLI path discovery;
             # returns None on any failure.

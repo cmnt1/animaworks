@@ -179,7 +179,6 @@ class TestLifespan:
         mock_app.state.discord_gateway_manager = None
         mock_app.state.zoom_gateway_manager = None
         mock_app.state.github_gateway_manager = None
-        mock_app.state.usage_governor = None
         mock_app.state.startup_preflight_runner = lambda: None
 
         mock_scheduler = MagicMock()
@@ -194,7 +193,6 @@ class TestLifespan:
             patch("core.org.org_sync.detect_orphan_animas"),
             patch("server.app._reconcile_assets_at_startup", new_callable=AsyncMock),
             patch("server.app._prepare_child_env_urls"),
-            patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
             patch("server.app._startup_animas_background", new=fake_startup_animas),
             patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,
         ):

@@ -1,111 +1,18 @@
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import patch
+import errno
+import sqlite3
 
-import pytest
-
-from core.tasks.dispatch import dispatch_direct_task
-from core.tasks.queue import TaskQueueManager
+from core.tasks.dispatch import is_task_permission_error
 
 
-def test_dispatch_direct_task_queues_and_publishes_pending(tmp_path: Path) -> None:
-    target_dir = tmp_path / "natsume"
-    target_dir.mkdir()
-
-    assert dispatch_direct_task(
-        target="natsume",
-        task_id="gh-cmd-101",
-        summary="Fix requested comment",
-        instruction="Do the requested fix.",
-        meta={"origin": "spoofed", "repo": "o/r"},
-        animas_dir=tmp_path,
-    )
-
-    task = TaskQueueManager(target_dir).get_task_by_id("gh-cmd-101")
-    assert task is not None
-    assert task.assignee == "natsume"
-    assert task.meta["origin"] == "github-event"
-    assert task.meta["executor"] == "taskexec"
-    assert task.meta["repo"] == "o/r"
-    pending = TaskQueueManager(target_dir).store.get_input(target_dir.name, "gh-cmd-101")
-    assert pending == {
-        "task_type": "llm",
-        "task_id": "gh-cmd-101",
-        "title": "Fix requested comment",
-        "description": "Do the requested fix.",
-        "context": "",
-        "acceptance_criteria": [],
-        "constraints": [],
-        "file_paths": [],
-        "submitted_by": "github-event-dispatch",
-        "submitted_at": pending["submitted_at"],
-        "reply_to": "",
-        "source": "delegation",
-        "working_directory": "",
-    }
+def test_is_task_permission_error_recognizes_readonly_filesystem() -> None:
+    assert is_task_permission_error(PermissionError(errno.EACCES, "Permission denied"))
 
 
-def test_dispatch_direct_task_skips_active_duplicate_without_pending(tmp_path: Path) -> None:
-    target_dir = tmp_path / "natsume"
-    target_dir.mkdir()
-    kwargs = {
-        "target": "natsume",
-        "task_id": "gh-ci-o-r#1-aaaaaaaa",
-        "summary": "Fix CI",
-        "instruction": "Fix it.",
-        "animas_dir": tmp_path,
-    }
-    assert dispatch_direct_task(**kwargs)
-    pending = target_dir / "state" / "pending" / "gh-ci-o-r#1-aaaaaaaa.json"
-    assert not pending.exists()
-
-    assert dispatch_direct_task(**kwargs) is False
-    assert not pending.exists()
+def test_is_task_permission_error_recognizes_readonly_database() -> None:
+    assert is_task_permission_error(sqlite3.OperationalError("attempt to write a readonly database"))
 
 
-def test_dispatch_direct_task_stores_model_in_task_and_pending(tmp_path: Path) -> None:
-    target_dir = tmp_path / "sumire"
-    target_dir.mkdir()
-
-    with patch("core.config.model_catalog.validate_model_override", return_value=None) as validate:
-        assert dispatch_direct_task(
-            target="sumire",
-            task_id="gh-ci-o-r#1-m-grok-grok-4-5",
-            summary="Multi-pass review",
-            instruction="Review it.",
-            model="x:grok/grok-4.5",
-            animas_dir=tmp_path,
-        )
-    validate.assert_called_with("sumire", "x:grok/grok-4.5")
-
-    task = TaskQueueManager(target_dir).get_task_by_id("gh-ci-o-r#1-m-grok-grok-4-5")
-    assert task is not None
-    assert task.meta["model"] == "x:grok/grok-4.5"
-    pending = TaskQueueManager(target_dir).store.get_input(target_dir.name, "gh-ci-o-r#1-m-grok-grok-4-5")
-    assert pending["model"] == "x:grok/grok-4.5"
-
-
-def test_dispatch_direct_task_without_model_omits_key(tmp_path: Path) -> None:
-    target_dir = tmp_path / "sumire"
-    target_dir.mkdir()
-    dispatch_direct_task(
-        target="sumire",
-        task_id="gh-ci-o-r#1-aaaaaaaa",
-        summary="Single review",
-        instruction="Review it.",
-        animas_dir=tmp_path,
-    )
-    pending = TaskQueueManager(target_dir).store.get_input(target_dir.name, "gh-ci-o-r#1-aaaaaaaa")
-    assert "model" not in pending
-
-
-def test_dispatch_direct_task_rejects_missing_target(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="Anima directory not found: missing"):
-        dispatch_direct_task(
-            target="missing",
-            task_id="gh-cmd-404",
-            summary="Missing",
-            instruction="No target.",
-            animas_dir=tmp_path,
-        )
+def test_is_task_permission_error_rejects_other_operational_errors() -> None:
+    assert not is_task_permission_error(sqlite3.OperationalError("database is locked"))

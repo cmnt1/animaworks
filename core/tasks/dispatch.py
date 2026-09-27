@@ -4,19 +4,17 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Direct task dispatch for deterministic external events."""
+"""Task payload validation, publication, and persistence fallbacks."""
 
 import errno
 import logging
 import os
 import re
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from core.exceptions import TaskPersistenceError
-from core.paths import get_animas_dir
 from core.schemas import TaskEntry
 from core.tasks.queue import TaskQueueManager
 
@@ -357,56 +355,4 @@ def publish_delegation(
                 "execution_input": prepared,
             },
         )
-        return True
-
-
-def dispatch_direct_task(
-    *,
-    target: str,
-    task_id: str,
-    summary: str,
-    instruction: str,
-    submitted_by: str = "github-event-dispatch",
-    meta: dict | None = None,
-    animas_dir: Path | None = None,
-    model: str | None = None,
-) -> bool:
-    """Queue a deterministic task and publish it for TaskExec pickup.
-
-    *model* is the optional ``"mode:model"`` (or plain ``"model"``) override
-    applied by the pending executor at run time.  It is propagated into both
-    the task record's ``meta`` and the published ``task_desc`` (the field the
-    executor actually reads), so a per-task model override reaches execution
-    without changing the anima's default configuration.
-    """
-    target_dir = (animas_dir or get_animas_dir()) / target
-    if not target_dir.is_dir():
-        raise ValueError(f"Anima directory not found: {target}")
-
-    task_meta = {**(meta or {}), "origin": "github-event", "executor": "taskexec"}
-    if model:
-        task_meta["model"] = model
-    task_desc = {
-        "task_type": "llm",
-        "task_id": task_id,
-        "title": summary,
-        "description": instruction,
-        "context": "",
-        "acceptance_criteria": [],
-        "constraints": [],
-        "file_paths": [],
-        "submitted_by": submitted_by,
-        "submitted_at": datetime.now(UTC).isoformat(),
-        "reply_to": "",
-        "source": "delegation",
-        "working_directory": "",
-    }
-    if model:
-        task_desc["model"] = model
-    manager = TaskQueueManager(target_dir)
-    prepared = validate_task_payloads(target, [task_desc])[0]
-    with manager.store.transaction():
-        if manager.get_task_by_id(task_id) is not None:
-            return False
-        manager.submit(prepared, meta=task_meta)
         return True

@@ -138,15 +138,10 @@ class DelegateTaskPersistRequest(BaseModel):
     target: str  # destination anima name
     instruction: str  # full delegation text
     summary: str
-    deadline: str = ""  # retired; accepted for external client compat, ignored
     sub_task_id: str  # client-assigned 12hex id
     tracking_task_id: str  # client-assigned 12hex id
     workspace: str = ""  # resolve_workspace absolute path string
-    exclusive_key: str = ""  # retired; accepted for external client compat, ignored
     acceptance_criteria: list[str] = []  # verifiable acceptance criteria for pending JSON
-    persist_sub: bool = True  # write to subordinate queue
-    persist_tracking: bool = True  # write delegated entry on delegator queue
-    persist_pending: bool = True  # legacy request field; publication is always atomic
     model: str = ""  # optional per-task LLM model override
     execution_input: dict[str, Any] | None = None  # complete canonical input from sandbox callers
     attempt_identity: dict[str, str] | None = None

@@ -52,7 +52,7 @@ class TestBoardMentionDepthCheck:
         return Messenger(shared_dir=shared_dir, anima_name="sender-anima")
 
     def test_board_mention_calls_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
-        """board_mention should NOT be exempt — depth_limiter.check_depth must be called."""
+        """board_mention should NOT be exempt — the message depth check must run."""
         mock_limiter = MagicMock()
         mock_limiter.check_global_outbound.return_value = True  # pass before depth check
         mock_limiter.check_depth.return_value = True

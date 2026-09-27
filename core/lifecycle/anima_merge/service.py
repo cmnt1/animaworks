@@ -727,7 +727,6 @@ class AnimaMergeService:
             for path in sorted(shared_dir.glob(pattern)):
                 copy_file(path)
         for path in (
-            self.data_dir / "usage_governor_state.json",
             self.animas_dir / ".bootstrap_retries.json",
             self.data_dir / "run" / "notification_map.json",
             self.data_dir / "run" / "discord_thread_map.json",

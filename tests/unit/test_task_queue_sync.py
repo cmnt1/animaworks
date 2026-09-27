@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 from core.tasks.board.tasks import TaskStore, task_database_path
@@ -21,19 +22,16 @@ def _add_delegated(sup_tqm: TaskQueueManager, sub_tqm: TaskQueueManager, target:
 
     Returns (supervisor_task_id, subordinate_task_id).
     """
-    sub_entry = sub_tqm.add_task(
-        source="anima",
-        original_instruction="Do the work",
-        assignee=target,
-        summary="Review document",
+    sub_entry = sub_tqm.submit(
+        {
+            "task_id": uuid.uuid4().hex[:12],
+            "title": "Review document",
+            "description": "Do the work",
+        }
     )
-    sup_entry = sup_tqm.add_delegated_task(
-        original_instruction="Do the work",
-        assignee=target,
-        summary="Delegated: Review document",
-        meta={"delegated_to": target, "delegated_task_id": sub_entry.task_id},
-    )
-    return sup_entry.task_id, sub_entry.task_id
+    tracking_task_id = f"tracking-{uuid.uuid4().hex[:12]}"
+    sup_tqm.store.alias(sup_tqm.anima_dir.name, tracking_task_id, target, sub_entry.task_id)
+    return tracking_task_id, sub_entry.task_id
 
 
 class TestFormatDelegatedForPriming:

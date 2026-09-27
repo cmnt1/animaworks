@@ -1873,6 +1873,104 @@ def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: boo
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_usage_governor_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired Usage Governor config and archive its runtime state."""
+    del verbose
+    details: list[str] = []
+    config_path = data_dir / "config.json"
+    config: dict[str, Any] | None = None
+    config_changed = False
+    skipped = 0
+
+    if config_path.is_file():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            return StepResult(
+                changed=0, skipped=0, details=["config.json is not valid JSON; skip cleanup"], error=str(exc)
+            )
+        if not isinstance(loaded, dict):
+            return StepResult(
+                changed=0, skipped=0, details=["config.json root is not an object"], error="Invalid config root"
+            )
+        config = loaded
+        server = config.get("server")
+        if server is not None and not isinstance(server, dict):
+            return StepResult(
+                changed=0,
+                skipped=0,
+                details=["config.json server section is not an object"],
+                error="Invalid server section",
+            )
+        if isinstance(server, dict) and "usage_governor" in server:
+            del server["usage_governor"]
+            config_changed = True
+            details.append(
+                "Would remove server.usage_governor from config.json"
+                if dry_run
+                else "Removed server.usage_governor from config.json"
+            )
+        else:
+            skipped += 1
+            details.append("No retired Usage Governor setting found")
+    else:
+        skipped += 1
+        details.append("config.json not found; skip settings cleanup")
+
+    retired_files = ("usage_governor_state.json", "usage_policy.json")
+    archive_dir = data_dir / "archive" / "retired"
+    sources = [data_dir / name for name in retired_files if (data_dir / name).exists()]
+    if archive_dir.exists() and not archive_dir.is_dir():
+        return StepResult(
+            changed=0,
+            skipped=skipped,
+            details=details + ["archive/retired exists and is not a directory"],
+            error="Archive destination is not a directory",
+        )
+    for source in sources:
+        destination = archive_dir / source.name
+        if not source.is_file():
+            return StepResult(
+                changed=0,
+                skipped=skipped,
+                details=details + [f"{source.name} is not a regular file"],
+                error=f"Cannot archive non-file {source}",
+            )
+        if destination.exists():
+            return StepResult(
+                changed=0,
+                skipped=skipped,
+                details=details + [f"Archive target already exists: {destination}"],
+                error=f"Archive target already exists: {destination}",
+            )
+        details.append(
+            f"Would archive {source.name} to archive/retired/"
+            if dry_run
+            else f"Archived {source.name} to archive/retired/"
+        )
+
+    missing_files = [name for name in retired_files if not (data_dir / name).exists()]
+    skipped += len(missing_files)
+    details.extend(f"{name} not found; skip" for name in missing_files)
+    if dry_run:
+        return StepResult(changed=int(config_changed) + len(sources), skipped=skipped, details=details)
+
+    changed = 0
+    try:
+        if sources:
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            for source in sources:
+                shutil.move(str(source), str(archive_dir / source.name))
+                changed += 1
+        if config_changed and config is not None:
+            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            changed += 1
+        return StepResult(changed=changed, skipped=skipped, details=details)
+    except Exception as exc:
+        logger.exception("step_usage_governor_cleanup failed")
+        return StepResult(changed=changed, skipped=skipped, details=details, error=str(exc))
+
+
 def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Drop the retired rag.max_graph_hops setting from config.json."""
     del verbose
@@ -2508,6 +2606,12 @@ def register_all_steps(runner: Any) -> None:
             "Retire TaskBoard presentation metadata (tasks are the only board source)",
             "db_sync",
             step_taskboard_metadata_retire,
+        ),
+        MigrationStep(
+            "usage_governor_cleanup_20260927",
+            "Remove Usage Governor state and config",
+            "structural",
+            step_usage_governor_cleanup,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

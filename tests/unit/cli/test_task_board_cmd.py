@@ -49,28 +49,29 @@ def test_board_order_status_alias_and_stale_filter(runtime, monkeypatch, capsys)
         source="human", original_instruction="Run", assignee="worker", summary="Running task", task_id="running"
     )
     worker.update_status("running", "in_progress")
-    _add(runtime, "delegated-child")
-    worker.store.alias("boss", "waiting-alias", "worker", "delegated-child")
-    worker.add_delegated_task(
-        original_instruction="Delegate",
-        assignee="boss",
-        summary="Waiting for subordinate",
-        task_id="waiting-task",
+    worker.submit(
+        {
+            "task_id": "delegated-child",
+            "title": "Delegated child",
+            "description": "Review the delegated work.",
+        }
     )
+    worker.store.alias("boss", "waiting-task", "worker", "delegated-child")
 
     monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(runtime[1] / "boss"))
     _invoke(["board", "--json"])
     own_board = json.loads(capsys.readouterr().out)
     assert own_board["counts"] == {"todo": 0, "running": 0, "waiting": 1}
-    assert own_board["tasks"][0]["task_id"] == "waiting-alias"
+    assert own_board["tasks"][0]["task_id"] == "waiting-task"
 
     monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR")
     _invoke(["board", "--all", "--json", "--limit", "10"])
     all_board = json.loads(capsys.readouterr().out)
     ordered = [row["task_id"] for row in all_board["tasks"]]
     assert ordered[:3] == ["running", "todo-old", "delegated-child"]
-    assert ordered[-1] == "waiting-task"
-    assert all_board["counts"] == {"todo": 2, "running": 1, "waiting": 1}
+    assert ordered[-1] == "delegated-child"
+    assert "waiting-task" not in ordered  # aliases are visible to their viewer, not in the owner-wide listing
+    assert all_board["counts"] == {"todo": 2, "running": 1, "waiting": 0}
 
     _invoke(["board", "--all", "--stale", "2", "--json"])
     stale = json.loads(capsys.readouterr().out)

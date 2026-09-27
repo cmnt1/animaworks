@@ -137,24 +137,6 @@ class ReconcileMixin:
         # Update running set after restart_requested handling
         running = set(self.processes.keys())
 
-        # Governor-suspended animas — must not be auto-restarted by reconciliation.
-        # Only read state when Governor is enabled.
-        governor_suspended: set[str] = set()
-        try:
-            from core.config.models import load_config as _lc_rec
-
-            if _lc_rec().server.usage_governor.enabled:
-                from core.paths import get_data_dir
-
-                _gov_state_path = get_data_dir() / "usage_governor_state.json"
-                if _gov_state_path.is_file():
-                    import json as _json
-
-                    _gov_data = _json.loads(_gov_state_path.read_text("utf-8"))
-                    governor_suspended = set(_gov_data.get("suspended_animas", []))
-        except Exception:
-            logger.debug("Reconciliation: cleanup step failed, skipping", exc_info=True)
-
         # Evict stale entries from _recently_stopped (older than 30s)
         _now = time.monotonic()
         for _rs_name in list(getattr(self, "_recently_stopped", {})):
@@ -185,9 +167,6 @@ class ReconcileMixin:
                 _stopped_at = getattr(self, "_recently_stopped", {}).get(name)
                 if _stopped_at is not None and (time.monotonic() - _stopped_at) < 5.0:
                     logger.debug("Reconciliation: skipping %s (recently stopped, safety margin)", name)
-                    continue
-                if name in governor_suspended:
-                    logger.info("Reconciliation: skipping %s (governor suspended)", name)
                     continue
                 # Respect the restart state machine's backoff window instead of
                 # a separate start-failure cooldown.

@@ -131,9 +131,6 @@ def _pending_task_files(anima_dir: Path) -> list[Path]:
     candidates = [
         anima_dir / "state" / "background_tasks" / "pending",
         anima_dir / "state" / "background_tasks" / "pending" / "processing",
-        anima_dir / "state" / "pending",
-        anima_dir / "state" / "pending" / "processing",
-        anima_dir / "state" / "pending" / "deferred",
     ]
     found: list[Path] = []
     for directory in candidates:
@@ -470,10 +467,7 @@ def repair_bootstrap_retry(anima_dir: Path, *, retry_counts_file: Path | None = 
 
 
 def _remove_bootstrap_pending_tasks(anima_dir: Path) -> None:
-    for pending_dir in [
-        anima_dir / "state" / "pending",
-        anima_dir / "state" / "background_tasks" / "pending",
-    ]:
+    for pending_dir in [anima_dir / "state" / "background_tasks" / "pending"]:
         if not pending_dir.exists():
             continue
         for path in pending_dir.rglob("*.json"):

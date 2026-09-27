@@ -174,18 +174,6 @@ def _topological_sort(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def _deps_satisfied(
-    task: dict[str, Any],
-    completed: dict[str, str],
-    unfinished: set[str],
-) -> bool:
-    """Check that every dependency has finished, one way or the other."""
-    for dep in task.get("depends_on", []):  # noqa: SIM110
-        if dep not in completed and dep not in unfinished:
-            return False
-    return True
-
-
 class PendingTaskExecutor:
     """Watch pending/ directory and execute submitted tasks."""
 
@@ -335,12 +323,6 @@ class PendingTaskExecutor:
 
         self._active_task_ids.add(task_id)
         return task_id
-
-    def set_task_runner_supervisor(self, supervisor: TaskRunnerSupervisor | None) -> None:
-        """Wire the shared root-side TaskRunnerSupervisor (process isolation)."""
-        self._task_runner_supervisor = supervisor
-        self._task_isolated = supervisor is not None
-        self._background_isolated = supervisor is not None
 
     def _display_lane_for_task(self, task_id: str, slot_id: int | None) -> str:
         if slot_id is not None and self._worker_pool_size() > 1:

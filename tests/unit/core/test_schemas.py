@@ -11,7 +11,6 @@ import pytest
 from pydantic import ValidationError
 
 from core.schemas import (
-    AnimaConfig,
     AnimaStatus,
     CronTask,
     CycleResult,
@@ -68,29 +67,6 @@ class TestModelConfig:
         assert mc.api_base_url == "http://localhost:8000"
         assert mc.execution_mode == "assisted"
         assert mc.supervisor == "boss"
-
-
-# ── AnimaConfig ──────────────────────────────────────────
-
-
-class TestAnimaConfig:
-    def test_defaults(self, tmp_path):
-        pc = AnimaConfig(name="alice", base_dir=tmp_path)
-        assert pc.name == "alice"
-        assert pc.base_dir == tmp_path
-        assert pc.identity == ""
-        assert pc.injection == ""
-        assert pc.permissions == ""
-        assert pc.heartbeat_interval == 30
-        assert pc.active_hours == (9, 22)
-        assert pc.cron_tasks == []
-        assert isinstance(pc.model_config_data, ModelConfig)
-
-    def test_with_cron_tasks(self, tmp_path):
-        tasks = [CronTask(name="t1", schedule="毎日 9:00", description="daily")]
-        pc = AnimaConfig(name="bob", base_dir=tmp_path, cron_tasks=tasks)
-        assert len(pc.cron_tasks) == 1
-        assert pc.cron_tasks[0].name == "t1"
 
 
 # ── Message ───────────────────────────────────────────────

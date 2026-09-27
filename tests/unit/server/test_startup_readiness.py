@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -240,7 +240,6 @@ async def test_catchup_indexing_cannot_close_ready_worker_services(data_dir: Pat
 
     with (
         patch("server.app._startup_animas_background", side_effect=spawn_and_catchup) as spawn,
-        patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
         patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH),
         patch("core.memory.rag.embedding.thread_safe_encode", return_value=[[0.1, 0.2]]) as encode,
     ):

@@ -23,29 +23,23 @@ from core.tasks.queue import (
 
 
 def test_append_raises_task_persistence_error_on_oserror(tmp_path: Path) -> None:
-    """Test that _append raises TaskPersistenceError when file write fails.
-
-    Mock the file open to raise OSError, then verify TaskPersistenceError
-    is raised. Test through add_task() which calls _append().
-    """
+    """Store write failures are translated to TaskPersistenceError."""
     anima_dir = tmp_path / "anima"
     anima_dir.mkdir()
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
 
     tqm = TaskQueueManager(anima_dir)
 
-    state_dir = anima_dir / "state"
-    state_dir.chmod(0o444)
-    try:
-        with pytest.raises(TaskPersistenceError):
-            tqm.add_task(
-                source="human",
-                original_instruction="test task",
-                assignee="anima",
-                summary="test",
-            )
-    finally:
-        state_dir.chmod(0o755)
+    with (
+        patch.object(TaskStore, "apply", side_effect=OSError("read-only database")),
+        pytest.raises(TaskPersistenceError),
+    ):
+        tqm.add_task(
+            source="human",
+            original_instruction="test task",
+            assignee="anima",
+            summary="test",
+        )
 
 
 # ── Test 2: "blocked"/"failed" statuses are retired ─────────────────────
@@ -180,20 +174,11 @@ def test_task_tracker_completed_includes_cancelled(tmp_path: Path) -> None:
     sakura_tqm = TaskQueueManager(sakura_dir)
     hinata_tqm = TaskQueueManager(hinata_dir)
 
-    hinata_task = hinata_tqm.add_task(
-        source="human",
-        original_instruction="subordinate task",
-        assignee="hinata",
-        summary="sub task",
+    hinata_task = hinata_tqm.submit(
+        {"task_id": "cancelled-child", "title": "sub task", "description": "subordinate task"}
     )
     hinata_tqm.update_status(hinata_task.task_id, "cancelled")
-
-    sakura_tqm.add_delegated_task(
-        original_instruction="delegate to hinata",
-        assignee="hinata",
-        summary="delegated",
-        meta={"delegated_to": "hinata", "delegated_task_id": hinata_task.task_id},
-    )
+    sakura_tqm.store.alias("sakura", "delegated-cancelled", "hinata", hinata_task.task_id)
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
@@ -244,20 +229,11 @@ def test_task_tracker_active_excludes_cancelled(tmp_path: Path) -> None:
     sakura_tqm = TaskQueueManager(sakura_dir)
     hinata_tqm = TaskQueueManager(hinata_dir)
 
-    hinata_task = hinata_tqm.add_task(
-        source="human",
-        original_instruction="subordinate task",
-        assignee="hinata",
-        summary="sub task",
+    hinata_task = hinata_tqm.submit(
+        {"task_id": "cancelled-child", "title": "sub task", "description": "subordinate task"}
     )
     hinata_tqm.update_status(hinata_task.task_id, "cancelled")
-
-    sakura_tqm.add_delegated_task(
-        original_instruction="delegate to hinata",
-        assignee="hinata",
-        summary="delegated",
-        meta={"delegated_to": "hinata", "delegated_task_id": hinata_task.task_id},
-    )
+    sakura_tqm.store.alias("sakura", "delegated-cancelled", "hinata", hinata_task.task_id)
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
