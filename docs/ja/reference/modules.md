@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 63f0709b63558dca644d1f42c678d1f1d7e5be9a61a3197407e5b5e9225b417d -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 7106b5dc0489bd558cc500fa7da06aa98916215eb656ca50c921ea7690b15e7e -->
 
 # モジュール一覧
 
@@ -50,7 +50,7 @@
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 988 | — |
 | `cli.commands.skills` | 155 | — |
-| `cli.commands.supervisor_cmd` | 246 | — |
+| `cli.commands.supervisor_cmd` | 109 | — |
 | `cli.commands.task_cmd` | 568 | — |
 | `cli.commands.task_store_cmd` | 118 | Operator-only, cohort-scoped task migration and current-state export. |
 | `cli.commands.tmp_cmd` | 173 | — |
@@ -109,10 +109,10 @@ LLM エージェントの実行、会話制御、エンジン連携。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.agent` | 23 | — |
-| `core.agent.agent_core` | 337 | — |
+| `core.agent.agent_core` | 331 | — |
 | `core.agent.cycle` | 1577 | — |
 | `core.agent.executor_factory` | 178 | — |
-| `core.agent.priming` | 457 | — |
+| `core.agent.priming` | 454 | — |
 | `core.agent.prompt_log` | 194 | — |
 | `core.agent.session_compactor` | 551 | Per-Anima × per-thread_id idle compaction timer management. |
 
@@ -125,14 +125,14 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima.asset_reconciler` | 675 | — |
 | `core.anima.bootstrap_state` | 581 | — |
-| `core.anima.digital_anima` | 722 | — |
+| `core.anima.digital_anima` | 685 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 770 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 946 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 1009 | — |
 | `core.anima.inbox_overflow` | 130 | — |
-| `core.anima.lifecycle` | 1237 | — |
+| `core.anima.lifecycle` | 1220 | — |
 | `core.anima.messaging` | 1596 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -184,8 +184,8 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 102 | — |
 | `core.execution.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
-| `core.execution.base` | 876 | — |
-| `core.execution.cli_stream` | 254 | — |
+| `core.execution.base` | 874 | — |
+| `core.execution.cli_stream` | 253 | — |
 | `core.execution.engine_base` | 75 | — |
 | `core.execution.engine_session` | 101 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 673 | — |
@@ -196,16 +196,16 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution.engines.claude._sdk_session（非公開）` | 524 | — |
 | `core.execution.engines.claude._sdk_stream（非公開）` | 461 | — |
 | `core.execution.engines.claude.agent_sdk` | 945 | — |
-| `core.execution.engines.codex.codex_sdk` | 905 | — |
+| `core.execution.engines.codex.codex_sdk` | 847 | — |
 | `core.execution.engines.codex.events` | 667 | — |
 | `core.execution.engines.codex.setup` | 977 | — |
-| `core.execution.engines.cursor.cursor_agent` | 715 | — |
+| `core.execution.engines.cursor.cursor_agent` | 711 | — |
 | `core.execution.engines.gemini.gemini_cli` | 467 | — |
-| `core.execution.engines.grok.grok_cli` | 1092 | — |
+| `core.execution.engines.grok.grok_cli` | 1087 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 517 | — |
-| `core.execution.engines.litellm._litellm_streaming（非公開）` | 1402 | — |
-| `core.execution.engines.litellm._litellm_tools（非公開）` | 447 | — |
-| `core.execution.engines.litellm.litellm_loop` | 624 | — |
+| `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
+| `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
+| `core.execution.engines.litellm.litellm_loop` | 622 | — |
 | `core.execution.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.execution.events` | 105 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
@@ -218,7 +218,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution.session_store` | 130 | — |
 | `core.execution.session_types` | 73 | — |
 | `core.execution.tool_evidence` | 182 | — |
-| `core.execution.watchdog` | 144 | — |
+| `core.execution.watchdog` | 139 | — |
 
 ## `core.execution.engines`
 
@@ -287,11 +287,11 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
 | `core.i18n.strings.config` | 332 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 235 | Domain-specific i18n strings. |
+| `core.i18n.strings.execution` | 231 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 420 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 362 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 140 | Domain-specific i18n strings. |
-| `core.i18n.strings.memory` | 404 | Domain-specific i18n strings. |
+| `core.i18n.strings.memory` | 400 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 94 | — |
 | `core.i18n.strings.misc` | 536 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 12 | Domain-specific i18n strings (legacy route modules). |
@@ -427,7 +427,7 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 907 | — |
+| `core.mcp.server` | 739 | — |
 | `core.mcp.trigger_tools` | 84 | — |
 
 ## `core.memory`
@@ -495,10 +495,10 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.priming.channel_a` | 52 | — |
 | `core.memory.priming.channel_b` | 553 | — |
 | `core.memory.priming.channel_c` | 628 | — |
-| `core.memory.priming.channel_e` | 240 | — |
+| `core.memory.priming.channel_e` | 203 | — |
 | `core.memory.priming.channel_f` | 215 | — |
 | `core.memory.priming.constants` | 103 | — |
-| `core.memory.priming.engine` | 538 | — |
+| `core.memory.priming.engine` | 536 | — |
 | `core.memory.priming.format` | 119 | — |
 | `core.memory.priming.items` | 59 | — |
 | `core.memory.priming.outbound` | 142 | — |
@@ -665,7 +665,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
 | `core.migrations.registry` | 159 | — |
-| `core.migrations.steps` | 2511 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 2515 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 
@@ -814,13 +814,13 @@ anima の監督、委任、実行調整。
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
 | `core.supervisor.inbox_rate_limiter` | 402 | Inbox rate limiting, cascade detection, and deferred trigger management. |
-| `core.supervisor.ipc` | 517 | IPC communication layer using JSON Lines over a platform-specific transport. |
+| `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1094 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `core.supervisor.memory_service` | 747 | Root-owned vector memory service. |
-| `core.supervisor.process_handle` | 771 | Process handle for managing child Anima processes. |
+| `core.supervisor.process_handle` | 767 | Process handle for managing child Anima processes. |
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
-| `core.supervisor.runner` | 1253 | Child process entry point for Anima subprocess. |
+| `core.supervisor.runner` | 1248 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
 | `core.supervisor.scheduler_manager` | 1115 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
@@ -886,12 +886,11 @@ anima の監督、委任、実行調整。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.tooling` | 48 | — |
+| `core.tooling` | 39 | — |
 | `core.tooling.action_gate` | 188 | — |
 | `core.tooling.codex_command_hook` | 93 | Codex ``PreToolUse`` hook: deny shell commands by the shared command policy. |
 | `core.tooling.command_policy` | 455 | — |
 | `core.tooling.dispatch` | 255 | — |
-| `core.tooling.guide` | 133 | — |
 | `core.tooling.handler` | 878 | — |
 | `core.tooling.handler_base` | 373 | — |
 | `core.tooling.handler_comms` | 902 | — |
@@ -908,19 +907,20 @@ anima の監督、委任、実行調整。
 | `core.tooling.org_helpers` | 154 | — |
 | `core.tooling.permissions` | 332 | — |
 | `core.tooling.schemas.admin` | 238 | — |
-| `core.tooling.schemas.builder` | 253 | — |
+| `core.tooling.schemas.builder` | 155 | — |
 | `core.tooling.schemas.channel` | 118 | — |
-| `core.tooling.schemas.converters` | 39 | — |
+| `core.tooling.schemas.converters` | 27 | — |
 | `core.tooling.schemas.loader` | 101 | — |
-| `core.tooling.schemas.memory` | 396 | — |
+| `core.tooling.schemas.memory` | 223 | — |
 | `core.tooling.schemas.notification` | 67 | — |
 | `core.tooling.schemas.session_todo` | 62 | — |
-| `core.tooling.schemas.skill` | 383 | — |
+| `core.tooling.schemas.skill` | 306 | — |
 | `core.tooling.schemas.supervisor` | 331 | — |
 | `core.tooling.schemas.task` | 180 | — |
 | `core.tooling.schemas.workspace` | 46 | — |
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
+| `core.tooling.standalone` | 187 | — |
 
 ## `core.tooling.schemas`
 
@@ -928,7 +928,7 @@ anima の監督、委任、実行調整。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.tooling.schemas` | 95 | Canonical tool schema definitions and format converters. |
+| `core.tooling.schemas` | 79 | Canonical tool schema definitions and format converters. |
 
 ## `core.tools`
 
