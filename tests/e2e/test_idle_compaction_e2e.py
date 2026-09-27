@@ -48,7 +48,9 @@ def anima(data_dir: Path, make_anima):
 async def test_timer_scheduled_after_process_message_and_fires_compaction(anima, data_dir: Path, make_anima) -> None:
     """Message processing triggers timer scheduling; timer fires compaction."""
     # Patch load_config so SessionCompactor gets very short idle (0.01 min ≈ 0.6s)
-    mock_config = MagicMock()
+    from core.config.schemas import AnimaWorksConfig
+
+    mock_config = AnimaWorksConfig()
     mock_config.heartbeat.idle_compaction_minutes = 0.01
     with patch("core.config.models.load_config", return_value=mock_config):
         anima_dir = make_anima("test-anima", execution_mode="a", model="claude-sonnet-4-6")

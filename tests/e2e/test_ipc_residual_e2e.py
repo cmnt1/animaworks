@@ -76,10 +76,17 @@ class TestPerAnimaChromaDBIsolation:
         This is the key E2E test: uses real ChromaDB PersistentClient instances
         to verify that per-anima databases are truly isolated.
         """
-        from core.memory.rag.vector_registry import get_vector_store
+        from core.memory.rag.store import create_chroma_vector_store
+        from core.paths import get_anima_vectordb_dir
 
-        store_a = get_vector_store("alice")
-        store_b = get_vector_store("bob")
+        # Only the owning root opens native Chroma; open each store directly
+        # the way a root does.
+        store_a = create_chroma_vector_store(
+            persist_dir=get_anima_vectordb_dir("alice"), anima_name="alice", allow_direct=True
+        )
+        store_b = create_chroma_vector_store(
+            persist_dir=get_anima_vectordb_dir("bob"), anima_name="bob", allow_direct=True
+        )
 
         # Verify different persist directories
         assert store_a.persist_dir != store_b.persist_dir
@@ -119,26 +126,3 @@ class TestPerAnimaChromaDBIsolation:
             top_k=5,
         )
         assert len(results_b) == 0
-
-    def test_none_anima_uses_shared_legacy_dir(self, data_dir: Path):
-        """get_vector_store(None) uses the shared legacy vectordb directory."""
-        from core.memory.rag.vector_registry import get_vector_store
-
-        shared_store = get_vector_store(None)
-        assert shared_store.persist_dir == data_dir / "vectordb"
-
-    def test_singleton_per_anima(self, data_dir: Path):
-        """Same anima_name returns the same ChromaDB instance."""
-        from core.memory.rag.vector_registry import get_vector_store
-
-        s1 = get_vector_store("charlie")
-        s2 = get_vector_store("charlie")
-        assert s1 is s2
-
-    def test_different_animas_different_instances(self, data_dir: Path):
-        """Different anima_names return different ChromaDB instances."""
-        from core.memory.rag.vector_registry import get_vector_store
-
-        sa = get_vector_store("alice")
-        sb = get_vector_store("bob")
-        assert sa is not sb

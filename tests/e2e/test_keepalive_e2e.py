@@ -9,6 +9,7 @@ Validates:
   - End-to-end keep-alive streaming over real Unix sockets:
     keep-alive chunks prevent timeout, and missing keep-alive triggers timeout
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -84,7 +85,8 @@ class TestEndToEndKeepaliveStream:
     """Integration tests using real IPCServer + IPCClient over Unix sockets."""
 
     async def test_keepalive_prevents_timeout(
-        self, socket_path: Path,
+        self,
+        socket_path: Path,
     ) -> None:
         """Keep-alive chunks reset the per-chunk timer so the stream survives.
 
@@ -138,10 +140,7 @@ class TestEndToEndKeepaliveStream:
             assert len(collected) == 3
 
             # Verify keep-alive chunks are present
-            keepalive_chunks = [
-                r for r in collected
-                if r.chunk == "[keep-alive]"
-            ]
+            keepalive_chunks = [r for r in collected if r.chunk == "[keep-alive]"]
             assert len(keepalive_chunks) == 2
 
             # Verify final done response
@@ -150,17 +149,18 @@ class TestEndToEndKeepaliveStream:
             assert final.result == {"status": "ok"}
 
         finally:
-            await client.close()
             await server.stop()
 
     async def test_timeout_fires_without_keepalive(
-        self, socket_path: Path,
+        self,
+        socket_path: Path,
     ) -> None:
         """Without keep-alive chunks the per-chunk timeout fires.
 
         The handler sends one initial chunk and then sleeps forever.
         The client should raise TimeoutError after 0.5s of silence.
         """
+
         async def _stream_stuck(
             request: IPCRequest,
         ) -> AsyncIterator[IPCResponse]:
@@ -190,7 +190,6 @@ class TestEndToEndKeepaliveStream:
                     pass
 
         finally:
-            await client.close()
             # Force-close the server socket to unblock the stuck handler.
             # server.stop() alone would hang because wait_closed() waits
             # for the connection handler (which is stuck in sleep(9999)).

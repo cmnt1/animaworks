@@ -175,7 +175,9 @@ class TestProcessSupervisorSystemCronE2E:
 
         with patch("core.config.load_config") as mock_config:
             mock_cfg = MagicMock()
-            mock_cfg.consolidation = MagicMock(
+            from core.config.schemas import ConsolidationConfig
+
+            mock_cfg.consolidation = ConsolidationConfig(
                 daily_enabled=True,
                 daily_time="02:00",
                 weekly_enabled=True,

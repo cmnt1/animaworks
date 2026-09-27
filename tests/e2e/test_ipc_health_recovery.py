@@ -32,10 +32,7 @@ async def test_large_message_roundtrip():
 
         async def handler(request: IPCRequest) -> IPCResponse:
             msg = request.params.get("message", "")
-            return IPCResponse(
-                id=request.id,
-                result={"length": len(msg), "echo": msg[:10]}
-            )
+            return IPCResponse(id=request.id, result={"length": len(msg), "echo": msg[:10]})
 
         server = IPCServer(socket_path, handler)
         await server.start()
@@ -46,17 +43,12 @@ async def test_large_message_roundtrip():
 
             # 128KB message — would have caused LimitOverrunError before fix
             large_msg = "X" * (128 * 1024)
-            request = IPCRequest(
-                id="e2e_large_001",
-                method="echo",
-                params={"message": large_msg}
-            )
+            request = IPCRequest(id="e2e_large_001", method="echo", params={"message": large_msg})
             response = await client.send_request(request, timeout=10.0)
 
             assert response.error is None
             assert response.result["length"] == 128 * 1024
 
-            await client.close()
         finally:
             await server.stop()
 
@@ -134,6 +126,7 @@ async def test_health_check_detects_failed_state():
 
         # Set started_at far enough back to pass startup grace period
         from datetime import timedelta
+
         handle.stats.started_at = now_jst() - timedelta(seconds=60)
 
         supervisor.processes["test-anima"] = handle

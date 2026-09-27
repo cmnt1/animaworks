@@ -110,8 +110,6 @@ async def test_streaming_with_cycle_result_datetime():
             # timestamp should be a string (serialized by default=str)
             assert isinstance(final_result["cycle_result"]["timestamp"], str)
 
-            await client.close()
-
         finally:
             await server.stop()
 
@@ -178,8 +176,6 @@ async def test_streaming_with_model_dump_json_mode():
             # Should be a valid ISO 8601 datetime
             datetime.fromisoformat(ts)
 
-            await client.close()
-
         finally:
             await server.stop()
 
@@ -217,8 +213,6 @@ async def test_non_streaming_response_with_datetime():
             assert response.result is not None
             assert response.result["response"] == "done"
             assert isinstance(response.result["completed_at"], str)
-
-            await client.close()
 
         finally:
             await server.stop()
