@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 467d5d1c14667d6a005ad0d9a3632e6abe786603ba536371f833ad85b0929e9d -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: b8498ae98a302845eb308de4c9284942b911fe4edc22c406ffd097e285a7ff4f -->
 
 # モジュール一覧
 
@@ -15,7 +15,7 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 112 | — |
 | `cli.demo` | 392 | Native ``animaworks demo`` command. |
-| `cli.parser` | 1099 | — |
+| `cli.parser` | 1006 | — |
 
 ## `cli.commands`
 
@@ -37,15 +37,15 @@
 | `cli.commands.internal_cmd` | 347 | — |
 | `cli.commands.logs` | 206 | CLI commands for viewing anima logs. |
 | `cli.commands.mcp_cmd` | 66 | — |
-| `cli.commands.messaging` | 204 | — |
-| `cli.commands.migrate_cmd` | 119 | — |
+| `cli.commands.messaging` | 167 | — |
+| `cli.commands.migrate_cmd` | 114 | — |
 | `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 148 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
-| `cli.commands.server` | 988 | — |
+| `cli.commands.server` | 975 | — |
 | `cli.commands.skills` | 155 | — |
 | `cli.commands.supervisor_cmd` | 109 | — |
 | `cli.commands.task_cmd` | 568 | — |
@@ -106,7 +106,7 @@ LLM エージェントの実行、会話制御、エンジン連携。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.agent` | 23 | — |
-| `core.agent.agent_core` | 331 | — |
+| `core.agent.agent_core` | 324 | — |
 | `core.agent.cycle` | 1577 | — |
 | `core.agent.executor_factory` | 178 | — |
 | `core.agent.priming` | 454 | — |
@@ -122,7 +122,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima.asset_reconciler` | 675 | — |
 | `core.anima.bootstrap_state` | 575 | — |
-| `core.anima.digital_anima` | 685 | — |
+| `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 770 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 946 | — |
@@ -151,7 +151,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.config` | 43 | — |
+| `core.config` | 41 | — |
 | `core.config.anima_registry` | 295 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.cli` | 348 | CLI handlers for the ``animaworks config`` subcommand. |
 | `core.config.env_slots` | 118 | — |
@@ -164,9 +164,9 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.model_config` | 860 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 122 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 120 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1440 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1396 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -195,14 +195,14 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution.engines.claude.agent_sdk` | 896 | — |
 | `core.execution.engines.codex.codex_sdk` | 847 | — |
 | `core.execution.engines.codex.events` | 667 | — |
-| `core.execution.engines.codex.setup` | 977 | — |
+| `core.execution.engines.codex.setup` | 952 | — |
 | `core.execution.engines.cursor.cursor_agent` | 711 | — |
 | `core.execution.engines.gemini.gemini_cli` | 467 | — |
 | `core.execution.engines.grok.grok_cli` | 1087 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 517 | — |
 | `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
-| `core.execution.engines.litellm.litellm_loop` | 622 | — |
+| `core.execution.engines.litellm.litellm_loop` | 617 | — |
 | `core.execution.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
 | `core.execution.events` | 105 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
@@ -282,23 +282,23 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 52 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 332 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 310 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
-| `core.i18n.strings.execution` | 231 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 416 | Domain-specific i18n strings (handler part 1). |
-| `core.i18n.strings.handler_ext` | 358 | Domain-specific i18n strings (handler part 2). |
-| `core.i18n.strings.lifecycle` | 128 | Domain-specific i18n strings. |
-| `core.i18n.strings.memory` | 400 | Domain-specific i18n strings. |
+| `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
+| `core.i18n.strings.handler` | 376 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler_ext` | 350 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
+| `core.i18n.strings.memory` | 384 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 94 | — |
-| `core.i18n.strings.misc` | 526 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 12 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 285 | Domain-specific i18n strings. |
+| `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 111 | Domain-specific i18n strings (tool prompts and tooling). |
 | `core.i18n.strings.tooling_schema` | 476 | Domain-specific i18n strings (schema.*). |
-| `core.i18n.strings.tooling_schema_ext` | 192 | Domain-specific i18n strings (schema.* part 2). |
+| `core.i18n.strings.tooling_schema_ext` | 132 | Domain-specific i18n strings (schema.* part 2). |
 | `core.i18n.strings.zoom` | 26 | — |
 
 ## `core.i18n.strings`
@@ -330,7 +330,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.integrations` | 464 | AnimaWorks external tools package. |
+| `core.integrations` | 461 | AnimaWorks external tools package. |
 | `core.integrations._anima_icon_url（非公開）` | 306 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
 | `core.integrations._async_compat（非公開）` | 41 | Async compatibility helpers for tools with synchronous HTTP clients. |
 | `core.integrations._base（非公開）` | 372 | Base infrastructure for AnimaWorks tools. |
@@ -622,8 +622,8 @@ anima 間および外部とのメッセージ配送。
 |---|---:|---|
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
-| `core.migrations.registry` | 159 | — |
-| `core.migrations.steps` | 2795 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.registry` | 149 | — |
+| `core.migrations.steps` | 2843 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 
@@ -663,7 +663,7 @@ anima 間および外部とのメッセージ配送。
 | `core.org.company` | 1213 | Company membership and cross-company boundary helpers. |
 | `core.org.company_resources` | 86 | — |
 | `core.org.hierarchy` | 39 | — |
-| `core.org.org_sync` | 552 | — |
+| `core.org.org_sync` | 551 | — |
 | `core.org.workspace` | 234 | — |
 
 ## `core.platform`
@@ -692,12 +692,12 @@ anima 間および外部とのメッセージ配送。
 |---|---:|---|
 | `core.prompt` | 8 | — |
 | `core.prompt.assembler` | 307 | — |
-| `core.prompt.builder` | 1268 | — |
+| `core.prompt.builder` | 1262 | — |
 | `core.prompt.context` | 486 | Context window usage tracker. |
-| `core.prompt.messaging` | 155 | — |
+| `core.prompt.messaging` | 146 | — |
 | `core.prompt.org_context` | 375 | — |
 | `core.prompt.sections` | 52 | — |
-| `core.prompt.tokens` | 102 | — |
+| `core.prompt.tokens` | 92 | — |
 | `core.prompt.tool_content` | 42 | — |
 
 ## `core.skills`
@@ -774,7 +774,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor.inbox_rate_limiter` | 402 | Inbox rate limiting, cascade detection, and deferred trigger management. |
 | `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
-| `core.supervisor.manager` | 1094 | Process Supervisor - Manages lifecycle of Anima child processes. |
+| `core.supervisor.manager` | 1093 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `core.supervisor.memory_service` | 747 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 767 | Process handle for managing child Anima processes. |
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
@@ -793,7 +793,7 @@ anima の監督、委任、実行調整。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
-| `core.tasks.background` | 606 | — |
+| `core.tasks.background` | 604 | — |
 | `core.tasks.board.board_actions` | 237 | — |
 | `core.tasks.board.housekeeping` | 185 | — |
 | `core.tasks.board.models` | 37 | Pydantic models for the single TaskBoard view (read straight from TaskStore). |
@@ -849,8 +849,8 @@ anima の監督、委任、実行調整。
 | `core.tooling.codex_command_hook` | 93 | Codex ``PreToolUse`` hook: deny shell commands by the shared command policy. |
 | `core.tooling.command_policy` | 455 | — |
 | `core.tooling.dispatch` | 255 | — |
-| `core.tooling.handler` | 877 | — |
-| `core.tooling.handler_base` | 373 | — |
+| `core.tooling.handler` | 865 | — |
+| `core.tooling.handler_base` | 367 | — |
 | `core.tooling.handler_comms` | 902 | — |
 | `core.tooling.handler_create_anima` | 237 | — |
 | `core.tooling.handler_delegation` | 260 | — |
@@ -978,7 +978,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 103 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
-| `server.routes.config_routes` | 523 | — |
+| `server.routes.config_routes` | 520 | — |
 | `server.routes.external_tasks` | 261 | — |
 | `server.routes.internal` | 999 | — |
 | `server.routes.logs_routes` | 213 | — |

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 65dd1d0bbcced15062aa125bad45850094d791ee3fa4d0147d18d8392cb70d4f -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 9fb4f45f0aca9d946dfb5311810700b0de0b50b720d1b27c291973c23f0d284f -->
 
 # CLI リファレンス: `animaworks`
 
@@ -452,7 +452,7 @@ Get a config value
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
-| key | positional | — | — | Dot-notation key (e.g. system.gateway.port) |
+| key | positional | — | — | Dot-notation key (e.g. system.timezone) |
 | --show-secrets | flag | false | — | Show API key values |
 
 ## `config list`
@@ -489,22 +489,6 @@ cli.cost_help
 | --days | option | 30 | — | Number of days to aggregate (default: 30) |
 | --today | flag | false | — | Show today only |
 | --json | flag | false | — | Output as JSON |
-
-## `create-anima`
-
-指定した設定やテンプレートから新しい anima を作成します。
-
-`usage: animaworks create-anima [-h] [--name NAME] [--template TEMPLATE]
-                               [--from-md PATH] [--supervisor SUPERVISOR]
-                               [--role {engineer,researcher,manager,writer,ops,general}]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| --name | option | — | — | Anima name (required for blank, optional for template/md) |
-| --template | option | — | — | Create from a named template |
-| --from-md | option | — | — | Create from an MD file |
-| --supervisor | option | — | — | Supervisor anima name (overrides character sheet) |
-| --role | option | — | engineer, researcher, manager, writer, ops, general | Role template to apply (default: general) |
 
 ## `cron-guard`
 
@@ -553,16 +537,6 @@ Run the 3-agent demo team (no API key needed if Claude Code or Codex is logged i
 | --port | option | 18501 | — | — |
 | --host | option | "0.0.0.0" | — | — |
 | --reset | flag | false | — | — |
-
-## `gateway`
-
-==SUPPRESS==
-
-`usage: animaworks gateway [-h]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
 
 ## `heartbeat`
 
@@ -725,16 +699,6 @@ Create or archive a channel
 | action | positional | — | create, archive | Action |
 | channel | positional | — | — | Channel name |
 
-## `list`
-
-List all animas
-
-`usage: animaworks list [-h] [--local]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| --local | flag | false | — | Scan filesystem directly |
-
 ## `logs`
 
 View anima logs
@@ -764,8 +728,7 @@ Run a stdio MCP server for an anima
 
 実行時データに必要なマイグレーションを実行します。
 
-`usage: animaworks migrate [-h] [--dry-run] [--verbose] [--list] [--force]
-                          [--resync-db]`
+`usage: animaworks migrate [-h] [--dry-run] [--verbose] [--list] [--force]`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
@@ -773,17 +736,6 @@ Run a stdio MCP server for an anima
 | --verbose | flag | false | — | Show detailed file-level changes |
 | --list | flag | false | — | List all migration steps and their status |
 | --force | flag | false | — | Re-apply all migrations regardless of state |
-| --resync-db | flag | false | — | Resync SQLite prompt DB only |
-
-## `migrate-cron`
-
-Migrate cron.md files from Japanese format to standard cron expressions
-
-`usage: animaworks migrate-cron [-h]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
 
 ## `models`
 
@@ -1572,13 +1524,3 @@ Store a key-value pair
 | key | positional | — | — | Key to store |
 | value | positional | — | — | Value to store (Anima-scoped compatibility mode only) |
 | --shared | flag | false | — | Store in the shared section, reading the value from stdin or a hidden prompt |
-
-## `worker`
-
-==SUPPRESS==
-
-`usage: animaworks worker [-h]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |

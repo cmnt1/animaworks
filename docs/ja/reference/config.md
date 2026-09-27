@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: ee36247128c0c09f9bdbc047255ef663475b6791096ecdfd0da5c0ed5138e60e -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 57e8c3203301c8c575bfe4698d022f38976ba6be49017ca771167efbb06a0c2b -->
 
 # 設定リファレンス
 
@@ -16,16 +16,6 @@
 | `system.mode` | `str` | `"server"` | — |
 | `system.log_level` | `str` | `"INFO"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
-| `system.gateway` | `GatewaySystemConfig` | `{GatewaySystemConfig}` | — |
-| `system.gateway.host` | `str` | `"0.0.0.0"` | — |
-| `system.gateway.port` | `int` | `18500` | — |
-| `system.gateway.redis_url` | `str \| None` | `null` | — |
-| `system.gateway.worker_heartbeat_timeout` | `int` | `45` | — |
-| `system.worker` | `WorkerSystemConfig` | `{WorkerSystemConfig}` | — |
-| `system.worker.gateway_url` | `str` | `"http://localhost:18500"` | — |
-| `system.worker.redis_url` | `str \| None` | `null` | — |
-| `system.worker.listen_port` | `int` | `18501` | — |
-| `system.worker.heartbeat_interval` | `int` | `15` | — |
 | `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | 外部モデル・サービスの認証情報。 |
 | `credentials.type` | `str` | `"api_key"` | — |
 | `credentials.api_key` | `str` | `""` | — |
@@ -107,7 +97,6 @@
 | `rag.embedding_max_seq_length` | `int` | `2048` | Cap on the embedding model's max sequence length (tokens). Long-context models like ruri-v3 default to 8192, which blows up GPU activation memory during bulk encode. 0 = use model default. |
 | `rag.use_gpu` | `bool` | `false` | — |
 | `rag.enable_spreading_activation` | `bool` | `true` | — |
-| `rag.enable_file_watcher` | `bool` | `true` | Deprecated: no effect (file watcher removed 2026-07). Kept for config.json compatibility. |
 | `rag.graph_cache_enabled` | `bool` | `true` | — |
 | `rag.implicit_link_threshold` | `float` | `0.75` | — |
 | `rag.spreading_memory_types` | `list[str]` | `["knowledge","episodes"]` | — |
@@ -226,7 +215,6 @@
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
 | `interaction` | `InteractionConfig` | `{InteractionConfig}` | anima 間の対話とメッセージ処理。 |
 | `interaction.default_approver_ids` | `list[str]` | `[]` | Default Slack user IDs merged with per-call call_human allowed_users. |
-| `interaction.ttl_days` | `int` | `7` | — |
 | `interaction.web_base_url` | `str` | `""` | — |
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP サーバー、認証、利用量制御の設定。 |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
@@ -351,7 +339,6 @@
 | `background_task.result_retention_hours` | `int` | `24` | disk cleanup retention (cleanup is explicitly invoked) |
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
-| `background_task.max_parallel_llm_tasks` | `int` | `3` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
 | `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | 操作・活動ログの保存設定。 |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
@@ -364,8 +351,6 @@
 | `logging.redaction_enabled` | `bool` | `true` | Mask secrets in log output; disable for raw-log debugging. |
 | `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | 定期的な heartbeat の実行設定。 |
 | `heartbeat.interval_minutes` | `int` | `30` | — |
-| `heartbeat.orphan_grace_multiplier` | `float` | `3.0` | Orphan reaper grace = heartbeat interval (min) * this multiplier |
-| `heartbeat.orphan_grace_min_seconds` | `int` | `1800` | Lower bound for the orphan reaper grace, in seconds |
 | `heartbeat.current_state_max_chars` | `int` | `8000` | Max chars for current_state.md before trim; 0 = disabled |
 | `heartbeat.current_state_cleanup_chars` | `int` | `2000` | Soft cleanup threshold for current_state.md; 0 = 80% of current_state_max_chars |
 | `heartbeat.heartbeat_md_max_bytes` | `int` | `8000` | Max bytes of heartbeat.md before a compaction instruction is injected into the heartbeat prompt; 0 = disabled |
