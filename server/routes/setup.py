@@ -153,7 +153,7 @@ def create_setup_router() -> APIRouter:
         from core.platform.claude_code import is_claude_code_available
 
         claude_available = is_claude_code_available()
-        claude_auth_status = get_claude_auth_status()
+        claude_auth_status = await asyncio.to_thread(get_claude_auth_status)
         codex_available = is_codex_cli_available()
         codex_logged_in = is_codex_login_available()
 
@@ -193,12 +193,12 @@ def create_setup_router() -> APIRouter:
         api_key = body.api_key
 
         if provider == "claude_code":
-            return _validate_claude_code_login()
+            return await _validate_claude_code_login()
         elif provider == "codex":
             return _validate_codex_login()
         elif provider == "anthropic":
             if body.auth_mode == "claude_code_login":
-                return _validate_claude_code_login()
+                return await _validate_claude_code_login()
             return await _validate_anthropic_key(api_key)
         elif provider == "openai":
             if body.auth_mode == "codex_login":
@@ -551,13 +551,13 @@ def _validate_codex_login() -> dict[str, Any]:
     return {"valid": True, "code": "ready", "message": "Codex login is available"}
 
 
-def _validate_claude_code_login() -> dict[str, Any]:
+async def _validate_claude_code_login() -> dict[str, Any]:
     """Validate that Claude Code CLI is installed and logged in."""
     from core.platform.claude_code import is_claude_code_available
 
     if not is_claude_code_available():
         return {"valid": False, "code": "not_installed", "message": "Claude Code CLI is not installed"}
-    auth_status = get_claude_auth_status()
+    auth_status = await asyncio.to_thread(get_claude_auth_status)
     if not auth_status["logged_in"]:
         return {
             "valid": False,

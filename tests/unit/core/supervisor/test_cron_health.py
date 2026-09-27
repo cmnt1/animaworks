@@ -85,7 +85,7 @@ class TestCheckCronParseHealth:
     def test_template_documentation_does_not_trigger_warning(
         self, scheduler_mgr: SchedulerManager, tmp_path: Path
     ) -> None:
-        from core.schedule_parser import parse_cron_md
+        from core.supervisor.schedule_parser import parse_cron_md
 
         template_path = Path(__file__).parents[4] / "templates" / "ja" / "anima_templates" / "_blank" / "cron.md"
         raw = template_path.read_text(encoding="utf-8").replace("{name}", "test_anima")

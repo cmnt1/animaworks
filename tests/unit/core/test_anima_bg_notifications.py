@@ -237,7 +237,7 @@ class TestDrainBackgroundNotifications:
 
     def test_chat_assembly_includes_header_and_removes_notification(self, tmp_path):
         """A chat turn receives the standard header and drains the task file."""
-        from core._anima_messaging import _build_chat_background_notification_context
+        from core.anima.messaging import _build_chat_background_notification_context
 
         anima_dir = tmp_path / "animas" / "test"
         notif_dir = anima_dir / "state" / "background_notifications"

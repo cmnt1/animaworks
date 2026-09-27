@@ -16,8 +16,8 @@ import httpx
 import pytest
 
 from core.integrations._base import ToolConfigError
-from core.integrations.image_gen import (
 from core.integrations._image_pipeline import _append_image_error
+from core.integrations.image_gen import (
     FluxKontextClient,
     ImageGenPipeline,
     MeshyClient,

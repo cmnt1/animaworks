@@ -84,7 +84,7 @@ class PipelineResult:
 def _append_image_error(result: PipelineResult, step: str, exc: BaseException) -> None:
     """Append a user-facing image error and retain retry metadata."""
     from core.i18n import t
-    from core.tools.image.codex import codex_retry_after, is_codex_usage_limit
+    from core.integrations.image.codex import codex_retry_after, is_codex_usage_limit
 
     raw = str(exc)
     raw_lower = raw.lower()

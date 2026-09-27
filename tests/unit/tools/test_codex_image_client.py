@@ -160,7 +160,7 @@ class TestCodexImageClient:
             return result
 
         with (
-            patch("core.tools.image.codex.subprocess.run", side_effect=_run),
+            patch("core.integrations.image.codex.subprocess.run", side_effect=_run),
             pytest.raises(RuntimeError, match="ERROR: You've hit your usage limit; try again at 12:06 PM."),
         ):
             client.generate_fullbody(prompt="x")
@@ -252,7 +252,7 @@ class TestCodexFirstClient:
             return result
 
         with (
-            patch("core.tools.image.codex.subprocess.run", side_effect=_run),
+            patch("core.integrations.image.codex.subprocess.run", side_effect=_run),
             pytest.raises(RuntimeError) as caught,
         ):
             client.generate_fullbody(prompt="x")
