@@ -252,7 +252,7 @@ class TestHeartbeatDelegationInjection:
         assert "STALE" in result
         assert "OVERDUE" not in result
         assert "委任" in result
-        assert "部下からの報告" in result
+        assert "部下の稼働報告" in result
         assert "activity_log" in result
 
     def test_template_contains_delegation_checklist(self):

@@ -38,7 +38,7 @@ def _write_file_with_frontmatter(
 def _fake_load_prompt(name: str, **kwargs: object) -> str:
     """Minimal load_prompt mock returning empty for most templates."""
     if name == "memory_guide":
-        return "knowledge={knowledge_count} procedures={procedure_count}".format(**kwargs)
+        return "memory_guide anima_dir={anima_dir}".format(anima_dir=kwargs.get("anima_dir", ""))
     return ""
 
 
@@ -90,7 +90,7 @@ class TestDKPromptInjectionRemovalE2E:
         assert "Docker deployment steps" not in prompt_without_skill_catalog
         assert "API patterns for REST design." not in prompt
         assert "Step-by-step deploy guide." not in prompt
-        assert "knowledge=1 procedures=1" in prompt
+        assert "memory_guide anima_dir=" in prompt
 
     def test_procedures_keyword_and_vector_search_scope(
         self,

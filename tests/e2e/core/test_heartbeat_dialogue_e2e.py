@@ -581,8 +581,8 @@ class TestCurrentStateEmphasis:
         prompt = build_system_prompt(mm)
 
         # B-1: emphasized header must be present
-        assert "⚠️ 進行中タスク" in prompt
-        assert "MUST: 最優先で確認すること" in prompt
+        assert "## 進行中（current_state.md）" in prompt
+        assert "idle と判定する前に確認" in prompt
         assert "Deploy v2.0 to production" in prompt
 
         # Cleanup caches
@@ -633,7 +633,7 @@ class TestCurrentStateEmphasis:
 
         # Normal header, not the emphasized one
         assert "## 現在の状態" in prompt
-        assert "⚠️ 進行中タスク" not in prompt
+        assert "## 進行中（current_state.md）" not in prompt
 
         invalidate_cache()
         _prompt_cache.clear()

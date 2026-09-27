@@ -383,26 +383,16 @@ class TestSpecialtyPromptInjection:
 
         assert injection_content, "injection.md should have content"
         assert specialty_content, "specialty_prompt.md should have content"
-        assert permissions_content, "permissions.md should have content"
-
-        # Find the positions in the assembled prompt
-        # Use a distinctive string from each section
-        injection_marker = "テスト用の行動方針です"
-        specialty_marker = "エンジニア専門ガイドライン"
-        permissions_marker = "Permissions"
-
-        injection_pos = prompt.find(injection_marker)
-        specialty_pos = prompt.find(specialty_marker)
-        permissions_pos = prompt.find(permissions_marker)
-
-        assert injection_pos >= 0, f"Injection marker '{injection_marker}' not found in prompt"
-        assert specialty_pos >= 0, f"Specialty marker '{specialty_marker}' not found in prompt"
-        assert permissions_pos >= 0, f"Permissions marker '{permissions_marker}' not found in prompt"
-
-        # Verify ordering: injection < specialty < permissions
-        assert injection_pos < specialty_pos < permissions_pos, (
-            f"Incorrect ordering: injection@{injection_pos}, specialty@{specialty_pos}, permissions@{permissions_pos}"
-        )
+        # Default (open) permissions render no section; ordering only applies when present.
+        injection_pos = prompt.find("テスト用の行動方針です")
+        specialty_pos = prompt.find("エンジニア専門ガイドライン")
+        assert injection_pos >= 0, "Injection marker not found in prompt"
+        assert specialty_pos >= 0, "Specialty marker not found in prompt"
+        assert injection_pos < specialty_pos
+        if permissions_content:
+            permissions_pos = prompt.find("Permissions")
+            assert permissions_pos >= 0, "Permissions marker not found in prompt"
+            assert specialty_pos < permissions_pos
 
     def test_general_role_specialty_prompt_in_system_prompt(self, data_dir: Path, tmp_path: Path):
         """General role specialty prompt should also appear in system prompt."""

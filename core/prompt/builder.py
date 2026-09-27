@@ -962,7 +962,7 @@ def _build_group4(
                     )
                 )
 
-        catalog_entries = _limit_skill_catalog_entries(catalog_entries, settings.max_items)
+        catalog_entries = _limit_skill_catalog_entries(catalog_entries, getattr(settings, "max_items", 3))
         if catalog_entries or not (settings.enabled and message.strip()):
             out.extend(_skill_catalog_sections(catalog_entries, mode_b=execution_mode == "b"))
 

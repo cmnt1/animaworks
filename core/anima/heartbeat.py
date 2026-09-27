@@ -264,7 +264,7 @@ class HeartbeatMixin:
             if isinstance(value, int) and not isinstance(value, bool):
                 return value
         except Exception:
-            pass
+            logger.debug("Could not read heartbeat.recent_dialogue_max_age_hours", exc_info=True)
         return 6
 
     def _dialogue_is_recent(self, turns: list[Any]) -> bool:

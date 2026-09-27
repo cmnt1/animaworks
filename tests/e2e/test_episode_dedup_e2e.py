@@ -244,4 +244,4 @@ class TestResolutionPropagationE2E:
         assert "解決済み案件" in prompt
         assert "ネットワーク障害修正" in prompt
         assert "DBマイグレーション完了" in prompt
-        assert "再調査・再報告は不要" in prompt
+        assert "再調査・再報告不要" in prompt
