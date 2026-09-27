@@ -120,11 +120,11 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert "escapeAttr" in page_resp.text
     assert "_renderToken" in page_resp.text
     assert "if (!_container || token !== _renderToken) return;" in page_resp.text
-    assert 'method: "PATCH"' in page_resp.text
-    assert "position: (index + 1) * 1000" in page_resp.text
-    assert 'reasonRequired: action === "expire" || action === "tombstone"' in page_resp.text
+    assert 'method: "POST"' in page_resp.text
+    assert "reasonRequired: true, confirmRequired: true" in page_resp.text
     assert 'setCustomValidity(t("taskboard.reason_required"))' in page_resp.text
-    assert 'confirmRequired: action === "tombstone"' in page_resp.text
+    assert 't("taskboard.confirm_cancel")' in page_resp.text
+    assert "canonical_task_id || task.task_id" in page_resp.text
     assert "const hasVisibleTask = (column)" in page_resp.text
     assert "COLUMNS.find(hasVisibleTask)" in page_resp.text
     assert "taskboard.mark_done" not in page_resp.text
@@ -132,10 +132,11 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
     assert "../pages/board" not in page_resp.text
 
     assert utils_resp.status_code == 200
-    assert 'if (action === "archive") return "archived";' in utils_resp.text
-    assert 'if (action === "tombstone") return "tombstoned";' in utils_resp.text
-    assert "toISOString().slice(0, 16)" not in utils_resp.text
-    assert "getHours()" in utils_resp.text
+    assert 'export const COLUMNS = ["todo", "running", "waiting", "done"]' in utils_resp.text
+    assert "export function isCancellable(task)" in utils_resp.text
+    static_assets = page_resp.text + utils_resp.text + css_resp.text
+    for removed_ui in ("snooze", "tombstone", "PATCH"):
+        assert removed_ui not in static_assets
     assert css_resp.status_code == 200
     assert "@media (max-width: 720px)" in css_resp.text
     assert ".taskboard-mobile-tabs" in css_resp.text
@@ -158,21 +159,7 @@ def test_taskboard_mobile_active_column_logic_uses_visible_tasks(tmp_path: Path)
         textwrap.dedent(
             f"""
             import assert from "node:assert/strict";
-            const COLUMNS = ["todo", "running", "blocked", "waiting", "review", "done", "suppressed"];
-            const SUPPRESSED_VISIBILITIES = new Set(["expired", "archived", "tombstoned"]);
-            const api = async () => ({{}});
-            const escapeAttr = (value) => String(value);
-            const escapeHtml = (value) => String(value);
-            const t = (key) => key;
-            const ageText = () => "";
-            const deadlineText = () => "";
-            const defaultLocalDateTime = () => "";
-            const isOverdue = () => false;
-            const shortId = (value) => value;
-            const statusClassSuffix = (value) => value || "";
-            const taskKey = (task) => `${{task.anima_name || ""}}:${{task.task_id || ""}}`;
-            const visibilityLabel = (value) => value || "";
-            const visibilityPayload = (value) => value;
+            const COLUMNS = ["todo", "running", "waiting", "done"];
             globalThis.document = {{ visibilityState: "visible" }};
             globalThis.window = {{}};
             {module_body}
@@ -184,7 +171,7 @@ def test_taskboard_mobile_active_column_logic_uses_visible_tasks(tmp_path: Path)
             }}
             assert.equal(choose("todo", [{{ column: "running" }}]), "running");
             assert.equal(choose("running", [{{ column: "running" }}]), "running");
-            assert.equal(choose("not-a-column", [{{ column: "review" }}]), "review");
+            assert.equal(choose("not-a-column", [{{ column: "waiting" }}]), "waiting");
             assert.equal(choose("waiting", []), "todo");
             """
         ),
@@ -293,7 +280,7 @@ async def test_taskboard_base_path_strips_websocket_scope() -> None:
     assert captured_scope["raw_path"] == b"/ws/voice/alice"
 
 
-async def test_taskboard_ui_actions_do_not_modify_board_channels(tmp_path: Path) -> None:
+async def test_taskboard_cancel_changes_canonical_status_without_modifying_board_channels(tmp_path: Path) -> None:
     app = _create_app(tmp_path, ["alice", "bob"])
     alice_task_id, _bob_task_id = _seed_taskboard(app)
     channel_path = app.state.shared_dir / "channels" / "general.jsonl"
@@ -311,10 +298,17 @@ async def test_taskboard_ui_actions_do_not_modify_board_channels(tmp_path: Path)
             f"/api/task-board/alice/{alice_task_id}/cancel",
             json={"reason": "obsolete from dashboard"},
         )
+        board_resp = await client.get("/api/task-board", params={"include_archived": "true"})
         channels_resp = await client.get("/api/channels")
 
     assert cancel_resp.status_code == 200
     assert cancel_resp.json()["result"]["status"] == "cancelled"
+    assert board_resp.status_code == 200
+    board_rows = board_resp.json()["tasks"]
+    assert {row["canonical_task_id"] for row in board_rows if row["queue_status"] == "cancelled"} == {alice_task_id}
+    canonical_row = next(row for row in board_rows if row["canonical_task_id"] == alice_task_id)
+    assert canonical_row["queue_status"] == "cancelled"
+    assert canonical_row["visibility"] == "archived"
     assert channel_path.read_bytes() == before
     assert channels_resp.status_code == 200
     assert channels_resp.json()[0]["name"] == "general"
