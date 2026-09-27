@@ -20,10 +20,9 @@ def test_project_engine_paths_and_default_compatibility(tmp_path: Path) -> None:
 
     assert project_engine.episodes_dir == tmp_path / "episodes" / "projects" / "foo"
     assert project_engine.knowledge_dir == tmp_path / "knowledge" / "projects" / "foo"
-    assert project_engine.phase_b_carryover_path() == (tmp_path / "state" / "consolidation_phase_b_carryover_foo.json")
     assert default_engine.episodes_dir == tmp_path / "episodes"
     assert default_engine.knowledge_dir == tmp_path / "knowledge"
-    assert default_engine.phase_b_carryover_path() == tmp_path / "state" / "consolidation_phase_b_carryover.json"
+    assert not (tmp_path / "state").exists()
 
 
 @pytest.mark.parametrize("project", ["../outside", 123])

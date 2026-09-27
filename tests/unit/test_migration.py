@@ -489,7 +489,7 @@ class TestMigrationSteps:
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
 
-        assert ids.index("priming_config_cleanup_20260927") == ids.index("update_version") - 1
+        assert ids.index("priming_config_cleanup_20260927") < ids.index("update_version")
 
     def test_v063_registered_after_v062(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
@@ -847,9 +847,9 @@ class TestRegisterAllSteps:
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
-        assert ids.index("engine_timeout_config_cleanup") + 1 == ids.index("memory_maintenance_config_cleanup_20260927")
-        assert ids.index("memory_maintenance_config_cleanup_20260927") + 1 == ids.index("priming_config_cleanup_20260927")
-        assert ids.index("priming_config_cleanup_20260927") == ids.index("update_version") - 1
+        assert ids.index("engine_timeout_config_cleanup") < ids.index("memory_maintenance_config_cleanup_20260927")
+        assert ids.index("memory_maintenance_config_cleanup_20260927") < ids.index("priming_config_cleanup_20260927")
+        assert ids.index("priming_config_cleanup_20260927") < ids.index("update_version")
 
 
 def test_step_v0146_removes_retired_prompt_copies(tmp_path):

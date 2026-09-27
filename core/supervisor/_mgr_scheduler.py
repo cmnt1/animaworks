@@ -271,13 +271,6 @@ class SchedulerMixin:
         per_episode = float(
             getattr(consolidation_cfg, "ipc_timeout_per_episode_seconds", defaults.ipc_timeout_per_episode_seconds)
         )
-        per_carryover = float(
-            getattr(
-                consolidation_cfg,
-                "ipc_timeout_per_carryover_item_seconds",
-                defaults.ipc_timeout_per_carryover_item_seconds,
-            )
-        )
         max_seconds = float(getattr(consolidation_cfg, "ipc_timeout_max_seconds", defaults.ipc_timeout_max_seconds))
         if gate is None:
             return min(max_seconds, base)
@@ -285,7 +278,6 @@ class SchedulerMixin:
             base
             + float(getattr(gate, "activity_count", 0)) * per_activity
             + float(getattr(gate, "episode_count", 0)) * per_episode
-            + float(getattr(gate, "carryover_count", 0)) * per_carryover
         )
         return min(max_seconds, max(base, estimate))
 
@@ -329,7 +321,7 @@ class SchedulerMixin:
                 except TimeoutError:
                     timed_out = True
                     logger.warning(
-                        "consolidation_timeout anima=%s project=%s phase=phase_b type=%s timeout_s=%.0f",
+                        "consolidation_timeout anima=%s project=%s phase=project type=%s timeout_s=%.0f",
                         anima_name,
                         project,
                         consolidation_type,
@@ -422,11 +414,10 @@ class SchedulerMixin:
             )
             if not gate.should_run:
                 logger.info(
-                    "Daily consolidation skipped for %s: activity=%d episodes=%d carryover=%d threshold=%d",
+                    "Daily consolidation skipped for %s: activity=%d episodes=%d threshold=%d",
                     anima_name,
                     gate.activity_count,
                     gate.episode_count,
-                    gate.carryover_count,
                     gate.threshold,
                 )
                 await self._run_project_archive_consolidations(
@@ -460,7 +451,7 @@ class SchedulerMixin:
                 except TimeoutError:
                     _timed_out = True
                     logger.warning(
-                        "consolidation_timeout anima=%s phase=phase_b type=daily timeout_s=%.0f",
+                        "consolidation_timeout anima=%s phase=phase_a type=daily timeout_s=%.0f",
                         anima_name,
                         timeout_s,
                     )
