@@ -94,9 +94,6 @@ class PrimingMixin:
                 from core.paths import get_shared_dir
 
                 self._priming_engine = PrimingEngine(self.anima_dir, get_shared_dir())
-                # Inject callback for active parallel tasks (DAG scheduler)
-                if hasattr(self, "_active_parallel_tasks_getter"):
-                    self._priming_engine._get_active_parallel_tasks = self._active_parallel_tasks_getter
 
             result = await self._priming_engine.prime_memories(
                 message,

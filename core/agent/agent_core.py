@@ -294,12 +294,6 @@ class AgentCore(
 
     # ── Model / mode helpers ───────────────────────────────
 
-    def _is_claude_model(self, model_config: ModelConfig | None = None) -> bool:
-        """True if the configured model is a Claude model usable with Agent SDK."""
-        cfg = model_config or self.model_config
-        m = cfg.model
-        return m.startswith("claude-") or m.startswith("anthropic/")
-
     @property
     def execution_mode(self) -> str:
         """Public access to the resolved execution mode."""

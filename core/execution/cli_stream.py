@@ -244,7 +244,6 @@ class CLIStreamExecutor(BaseExecutor):
             replied_to_from_transcript=replied_to,
             tool_call_records=records,
             usage=result_usage,
-            session_rotated=bool(final_event.get("session_rotated", False)),
             session_rotation_pending=bool(final_event.get("session_rotation_pending", False)),
             truncated=self._stream_result_truncated(final_event),
             error=bool(error_message or final_event.get("error", False)),

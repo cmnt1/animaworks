@@ -864,7 +864,6 @@ class TestTurnRotation:
             result = await executor.execute(prompt="hello", system_prompt="You are helpful", trigger="chat")
 
         assert result.text == "Fresh!"
-        assert result.session_rotated is True
         assert result.session_rotation_pending is False
         flat_cmd = captured_cmds[0]
         assert "--resume" not in flat_cmd
@@ -903,7 +902,6 @@ class TestTurnRotation:
         ):
             result = await executor.execute(prompt="last turn", trigger="chat")
 
-        assert result.session_rotated is False
         assert result.session_rotation_pending is True
         _, tc = _load_chat_id(anima_dir, "chat")
         assert tc == _MAX_RESUME_TURNS
@@ -938,7 +936,6 @@ class TestTurnRotation:
         ):
             result = await executor.execute(prompt="mid session", trigger="chat")
 
-        assert result.session_rotated is False
         assert result.session_rotation_pending is False
         _, tc = _load_chat_id(anima_dir, "chat")
         assert tc == 4

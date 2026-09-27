@@ -79,20 +79,6 @@ class TestResolveExecutionMode:
         assert agent._resolve_execution_mode() == "a"
 
 
-class TestIsClaude:
-    def test_claude_prefix(self, tmp_path):
-        agent = _make_agent(tmp_path, model="claude-sonnet-4-6")
-        assert agent._is_claude_model() is True
-
-    def test_anthropic_prefix(self, tmp_path):
-        agent = _make_agent(tmp_path, model="anthropic/claude-haiku-3.5")
-        assert agent._is_claude_model() is True
-
-    def test_non_claude(self, tmp_path):
-        agent = _make_agent(tmp_path, model="openai/gpt-4o")
-        assert agent._is_claude_model() is False
-
-
 # ── Mode C fallback ───────────────────────────────────────
 
 

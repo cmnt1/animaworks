@@ -22,7 +22,6 @@ from core.agent.session_compactor import (
 )
 from core.config.models import HeartbeatConfig
 from core.execution.engines.claude._sdk_session import _load_session_id
-from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
 from core.memory.conversation.compression import CompressionResult
 from core.schemas import ModelConfig
 
@@ -285,61 +284,6 @@ class TestCompactSdkSessionLogLevel:
                         if isinstance(stmt, ast.Attribute) and stmt.attr == "error":
                             return
         pytest.fail("Expected logger.error in except Exception block of compact_sdk_session")
-
-
-# ── CodexSDKExecutor.discard_thread ───────────────────────────────────────────
-
-
-class TestCodexSDKExecutorDiscardThread:
-    """CodexSDKExecutor.discard_thread deletes thread file."""
-
-    @pytest.fixture
-    def anima_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / "animas" / "test-codex"
-        d.mkdir(parents=True)
-        (d / "shortterm" / "chat").mkdir(parents=True)
-        (d / "shortterm" / "heartbeat").mkdir(parents=True)
-        return d
-
-    @pytest.fixture
-    def model_config(self) -> ModelConfig:
-        return ModelConfig(
-            model="codex/o4-mini",
-            max_tokens=4096,
-            credential="openai",
-            api_key="test-key",
-        )
-
-    def test_discard_thread_deletes_file(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """discard_thread() removes the thread ID file."""
-        thread_file = anima_dir / "shortterm" / "chat" / "codex_thread_id.txt"
-        thread_file.parent.mkdir(parents=True, exist_ok=True)
-        thread_file.write_text("thread-abc-123", encoding="utf-8")
-        assert thread_file.exists()
-
-        executor = CodexSDKExecutor(
-            model_config=model_config,
-            anima_dir=anima_dir,
-        )
-        executor.discard_thread(session_type="chat")
-
-        assert not thread_file.exists()
-
-    def test_discard_thread_with_custom_thread_id(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """discard_thread() with chat_thread_id deletes per-thread file."""
-        thread_dir = anima_dir / "shortterm" / "chat" / "my-thread"
-        thread_dir.mkdir(parents=True)
-        thread_file = thread_dir / "codex_thread_id.txt"
-        thread_file.write_text("thread-xyz", encoding="utf-8")
-        assert thread_file.exists()
-
-        executor = CodexSDKExecutor(
-            model_config=model_config,
-            anima_dir=anima_dir,
-        )
-        executor.discard_thread(session_type="chat", chat_thread_id="my-thread")
-
-        assert not thread_file.exists()
 
 
 # ── Mode-specific compaction ─────────────────────────────────────────────────────

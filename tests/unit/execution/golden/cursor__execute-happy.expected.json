@@ -19,7 +19,6 @@
     "truncated": false,
     "error": false,
     "reason": "",
-    "session_rotated": false,
     "session_rotation_pending": false,
     "force_chain": false,
     "task_compact_requested": false,

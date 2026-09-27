@@ -146,7 +146,6 @@ def _serialise_result(result) -> dict:
         "truncated": result.truncated,
         "error": result.error,
         "reason": result.reason,
-        "session_rotated": result.session_rotated,
         "session_rotation_pending": result.session_rotation_pending,
         "force_chain": result.force_chain,
         "task_compact_requested": result.task_compact_requested,

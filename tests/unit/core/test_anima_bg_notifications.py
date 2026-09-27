@@ -31,7 +31,6 @@ class TestDrainBackgroundNotifications:
 
         anima.agent = mock_agent
         anima.name = "test-anima"
-        anima._ws_broadcast = None
         return anima
 
     def test_no_notifications_dir(self, tmp_path):
@@ -275,7 +274,6 @@ class TestOnBackgroundTaskComplete:
 
         anima.agent = mock_agent
         anima.name = "test-anima"
-        anima._ws_broadcast = None
         return anima
 
     async def test_writes_notification_file_on_completed(self, tmp_path):

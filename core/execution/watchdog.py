@@ -129,11 +129,6 @@ async def engine_events(source: AsyncIterable[_T]) -> AsyncIterator[_T]:
             return
 
 
-def current_watchdog() -> Watchdog | None:
-    """Return the watchdog active for the current public engine stream."""
-    return _current_watchdog.get()
-
-
 def install_watchdog(watchdog: Watchdog) -> contextvars.Token[Watchdog | None]:
     """Install a watchdog in the current async context."""
     return _current_watchdog.set(watchdog)

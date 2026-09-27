@@ -58,7 +58,6 @@
         "cache_write_tokens": 0
       },
       "stop_kind": "normal",
-      "session_rotated": false,
       "session_rotation_pending": false
     }
   ],

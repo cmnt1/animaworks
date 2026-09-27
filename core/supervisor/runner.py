@@ -278,11 +278,6 @@ class AnimaRunner:
             from core.tasks.wake import register_wake
 
             register_wake(self.anima_name, self._pending_executor.wake)
-            # Wire active parallel tasks getter for Priming channel E
-            if hasattr(self.anima, "_set_active_parallel_tasks_getter"):
-                self.anima._set_active_parallel_tasks_getter(lambda: self.anima._active_parallel_tasks)
-            else:
-                self.anima.agent._active_parallel_tasks_getter = lambda: self.anima._active_parallel_tasks
             self._streaming_handler = StreamingIPCHandler(
                 anima=self.anima,
                 anima_name=self.anima_name,

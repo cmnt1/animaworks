@@ -569,12 +569,10 @@ class ExecutionResult:
     text: str
     result_message: SessionResultLike | None = field(default=None, repr=False)
     replied_to_from_transcript: set[str] = field(default_factory=set)
-    unconfirmed_sends: list[dict] = field(default_factory=list)
     tool_call_records: list[ToolCallRecord] = field(default_factory=list)
     force_chain: bool = False
     task_compact_requested: bool = False
     usage: TokenUsage | None = None
-    session_rotated: bool = False
     session_rotation_pending: bool = False
     truncated: bool = False
     error: bool = False

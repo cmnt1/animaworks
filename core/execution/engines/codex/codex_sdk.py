@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 from core.execution.base import (
-    ExecutionResult,
     StreamDisconnectedError,
     TokenUsage,
     ToolCallRecord,
@@ -185,49 +184,6 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
         error.usage_already_emitted = False
         error.tool_call_records = evidence.to_dicts()
 
-    async def _execute_via_cli_exec(
-        self,
-        prompt: str,
-        system_prompt: str,
-        tracker: ContextTracker | None = None,
-        trigger: str = "",
-    ) -> ExecutionResult:
-        """Blocking wrapper around the CLI exec fallback path."""
-        tracker = tracker or ContextTracker(model=self._model_config.model)
-        final_event: dict[str, Any] | None = None
-        usage_acc = TokenUsage()
-        tool_evidence = ToolEvidence()
-        try:
-            async for ev in self._execute_streaming_via_cli_exec(system_prompt, prompt, tracker, trigger=trigger):
-                tool_evidence.observe(ev)
-                if ev.get("type") == "usage":
-                    usage_acc.merge(events._token_usage(ev.get("usage") or {}))
-                elif ev.get("type") == "done":
-                    final_event = ev
-                    if not ev.get("usage_already_emitted"):
-                        usage_acc.merge(events._token_usage(ev.get("usage") or {}))
-        except BaseException as exc:
-            if isinstance(exc, (Exception, asyncio.CancelledError)):
-                exc.usage = usage_acc.to_dict()
-                exc.usage_already_emitted = False
-                tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
-                exc.tool_call_records = tool_evidence.to_dicts()
-            raise
-        if final_event is None:
-            return ExecutionResult(
-                text="[Codex CLI exec fallback returned no result]",
-                usage=usage_acc,
-                error=True,
-                tool_call_records=[ToolCallRecord(**record) for record in tool_evidence.to_dicts()],
-            )
-        return ExecutionResult(
-            text=str(final_event.get("full_text", "")),
-            result_message=final_event.get("result_message"),
-            replied_to_from_transcript=final_event.get("replied_to_from_transcript", set()),
-            tool_call_records=[ToolCallRecord(**record) for record in tool_evidence.to_dicts()],
-            usage=usage_acc,
-        )
-
     async def _start_or_resume_thread(
         self,
         codex: Any,
@@ -255,20 +211,6 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
         thread = await setup._maybe_await(codex.thread_start(**thread_kwargs))
         logger.info("Started fresh Codex thread")
         return thread
-
-    def discard_thread(
-        self,
-        session_type: str = "chat",
-        chat_thread_id: str = "default",
-    ) -> None:
-        """Discard Codex thread ID so next session starts fresh."""
-        _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
-        logger.info(
-            "Discarded Codex thread for %s (session=%s, thread=%s)",
-            self._anima_dir.name,
-            session_type,
-            chat_thread_id,
-        )
 
     @stream_events
     async def execute_streaming(

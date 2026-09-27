@@ -40,7 +40,6 @@
         }
       ],
       "usage": null,
-      "session_rotated": false,
       "session_rotation_pending": false,
       "truncated": false,
       "stop_kind": "normal"

@@ -37,8 +37,6 @@ def _anima_double(tmp_path: Path, *, pool_size: int = 1) -> MagicMock:
     anima._status_slots = {"background": "idle"}
     anima._task_slots = {"background": ""}
     anima._active_background_workers = {}
-    anima._active_parallel_tasks = {}
-    anima._task_semaphore = None
     anima._keepalive_while_busy = None
     return anima
 

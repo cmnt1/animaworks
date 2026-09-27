@@ -125,10 +125,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "cursor-agentセッションの復元に失敗しました（chatId={chat_id}）。新規セッションで再試行します。",
         "en": "Failed to resume cursor-agent session (chatId={chat_id}). Retrying with a fresh session.",
     },
-    "cursor_agent.session_rotated": {
-        "ja": "cursor-agentセッションをローテーションしました（ターン{turn_count}）。新規セッションを開始します。",
-        "en": "Rotated cursor-agent session (turn {turn_count}). Starting fresh session.",
-    },
     "cursor_agent.timeout": {
         "ja": "[cursor-agent タイムアウト: {timeout}秒以内に完了しませんでした]",
         "en": "[cursor-agent timeout: did not complete within {timeout} seconds]",

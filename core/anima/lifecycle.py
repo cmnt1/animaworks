@@ -393,23 +393,6 @@ class LifecycleMixin:
 
         return (episodes_summary, resolved_events_summary, activity_log_summary, reflections_summary)
 
-    def count_recent_episodes(self, hours: int = 24) -> int:
-        """Count recent episode entries within the given time window.
-
-        Used by lifecycle.py to skip consolidation when no episodes exist.
-
-        Args:
-            hours: Number of hours to look back.
-
-        Returns:
-            Number of episode entries found.
-        """
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(self.anima_dir, self.name)
-        episodes = engine._collect_recent_episodes(hours=hours)
-        return len(episodes)
-
     async def run_consolidation(
         self,
         consolidation_type: str = "daily",

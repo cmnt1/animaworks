@@ -12,8 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from core.config.file_access_policy import find_denied_root, load_denied_roots
@@ -83,34 +82,13 @@ def _resolved_readable_path(path: Path, denied_roots: tuple[Path, ...]) -> Path 
     return resolved if find_denied_root(resolved, denied_roots) is None else None
 
 
-def format_elapsed(started_at: str) -> str:
-    """Format elapsed time from an ISO timestamp."""
-    if not started_at:
-        return ""
-    try:
-        start = datetime.fromisoformat(started_at)
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        elapsed_s = (datetime.now(UTC) - start).total_seconds()
-        if elapsed_s < 60:
-            return f"{int(elapsed_s)}s"
-        if elapsed_s < 3600:
-            return f"{int(elapsed_s / 60)}m"
-        return f"{elapsed_s / 3600:.1f}h"
-    except (ValueError, TypeError):
-        return ""
-
-
 async def channel_e_pending_tasks(
     anima_dir: Path,
-    get_active_parallel_tasks: Callable[[], dict[str, dict]] | None,
 ) -> str:
-    """Channel E: Pending task queue summary + active parallel tasks.
+    """Channel E: Pending task queue summary.
 
     Retrieves pending tasks from the persistent task queue.
     Human-origin tasks are marked with 🔴 HIGH priority.
-    Also includes currently running parallel tasks (Level 2 format:
-    title + description summary + status + elapsed time).
     Collection is intentionally untrimmed here; the engine applies its scaled
     budget to whole task items after cross-channel consolidation.
 
@@ -146,21 +124,6 @@ async def channel_e_pending_tasks(
                 parts.append(queue_summary)
         except Exception:
             logger.debug("Channel E (pending_tasks) failed", exc_info=True)
-
-    active = get_active_parallel_tasks() if get_active_parallel_tasks else {}
-    if active:
-        lines = [t("priming.active_parallel_tasks_header")]
-        for tid, info in active.items():
-            task_updates[tid] = str(info.get("started_at", "") or "")
-            elapsed = format_elapsed(info.get("started_at", ""))
-            status = info.get("status", "running")
-            deps = info.get("depends_on", [])
-            dep_str = f", depends_on: {','.join(deps)}" if deps else ""
-            lines.append(f"- [{tid}] {info.get('title', '?')} ({status} {elapsed}{dep_str})")
-            desc = info.get("description", "")
-            if desc:
-                lines.append(f"  {desc[:100]}")
-        parts.append("\n".join(lines))
 
     # ── Overflow inbox summary ──
     overflow_dir = _resolved_readable_path(anima_dir / "state" / "overflow_inbox", denied_roots)

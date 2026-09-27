@@ -79,7 +79,7 @@ async def test_channel_e_omits_denied_task_result(tmp_path: Path) -> None:
     denied_result.write_text("DENIED TASK RESULT CANARY", encoding="utf-8")
     _write_permissions(anima_dir, [denied_result])
 
-    result = await channel_e_pending_tasks(anima_dir, None)
+    result = await channel_e_pending_tasks(anima_dir)
 
     assert "DENIED TASK RESULT CANARY" not in result
     assert "secret.md" not in result

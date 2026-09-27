@@ -369,7 +369,6 @@ class CursorAgentExecutor(CLIStreamExecutor):
         decision = load_turn_limited_session(self._anima_dir, "cursor", trigger, thread_id)
         is_resumable = decision.resumable
         turn_count = decision.turn_count
-        session_rotated = decision.rotated
         resume_chat_id = decision.session_id
 
         # ── Build combined prompt ──────────────────────────
@@ -417,7 +416,6 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 resume_chat_id=None,
                 event_sink=_event_sink,
             )
-            session_rotated = True
             rotated_during_run = True
 
         # ── Persist session state ──────────────────────────
@@ -437,7 +435,6 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 thread_id,
             )
 
-        result.session_rotated = session_rotated
         result.session_rotation_pending = rotation_pending
 
         return result
@@ -493,7 +490,6 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 "replied_to_from_transcript": result.replied_to_from_transcript,
                 "tool_call_records": [record.__dict__ for record in result.tool_call_records],
                 "usage": result.usage.to_dict() if result.usage else None,
-                "session_rotated": result.session_rotated,
                 "session_rotation_pending": result.session_rotation_pending,
                 "truncated": result.truncated,
                 "stop_kind": "interrupted" if self._check_interrupted() else "normal",

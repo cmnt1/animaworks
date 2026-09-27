@@ -43,7 +43,6 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     mock_anima._status_slots = {"background": "idle"}
     mock_anima._task_slots = {"background": ""}
     mock_anima.messenger = MagicMock()
-    mock_anima._task_semaphore = None
 
     return PendingTaskExecutor(
         anima=mock_anima,
