@@ -30,6 +30,7 @@ from typing import Any
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
 from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS
+from core.execution.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
 from core.execution.session_context import _resolve_session_type
@@ -60,8 +61,7 @@ __all__ = [
 # ACP NDJSON lines carry whole tool outputs / context blobs in one line;
 # asyncio's default 64KiB StreamReader limit truncates them (LimitOverrunError).
 _STDOUT_LIMIT_BYTES = 16 * 1024 * 1024
-_MAX_RESUME_TURNS = 10
-_RESUMABLE_TRIGGERS = frozenset({"chat"})
+_MAX_RESUME_TURNS = MAX_RESUME_TURNS
 _AUTH_ERROR_WORDS = (
     "auth",
     "login",
@@ -219,6 +219,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
     """Execute Grok Build CLI turns through ACP stdio (Mode X)."""
 
     engine_mode = "X"
+    session_engine = "grok"
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -994,17 +995,11 @@ class GrokCLIExecutor(CLIStreamExecutor):
 
         self._ensure_workspace()
         session_type = _resolve_session_type(trigger)
-        is_resumable = session_type in _RESUMABLE_TRIGGERS
-        resume_session_id: str | None = None
-        turn_count = 0
-        session_rotated = False
-        if is_resumable:
-            resume_session_id, turn_count = _load_session_id(self._anima_dir, session_type, thread_id)
-            if resume_session_id and SessionStore.turn_limit_reached(turn_count, _MAX_RESUME_TURNS):
-                _clear_session_id(self._anima_dir, session_type, thread_id)
-                resume_session_id = None
-                turn_count = 0
-                session_rotated = True
+        decision = load_turn_limited_session(self._anima_dir, "grok", trigger, thread_id)
+        is_resumable = decision.resumable
+        resume_session_id = decision.session_id
+        session_rotated = decision.rotated
+        rotated_during_run = False
 
         state = _RunState()
         async for event in self._run_acp(
@@ -1023,6 +1018,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
             _clear_session_id(self._anima_dir, session_type, thread_id)
             state = _RunState()
             session_rotated = True
+            rotated_during_run = True
             async for event in self._run_acp(
                 prompt,
                 system_prompt,
@@ -1067,8 +1063,13 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 tracker.update_from_usage(state.usage.to_dict())
 
         new_turn = 0
+        rotation_pending = False
         if state.completed and state.session_id and is_resumable:
-            new_turn = 1 if session_rotated or not resume_session_id else turn_count + 1
+            new_turn, rotation_pending = next_turn_count(
+                decision,
+                resumed=resume_session_id is not None,
+                rotated_during_run=rotated_during_run,
+            )
             _save_session_id(
                 self._anima_dir,
                 state.session_id,
@@ -1079,7 +1080,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
         elif state.completed:
             new_turn = 1
 
-        rotation_pending = is_resumable and not session_rotated and new_turn >= _MAX_RESUME_TURNS
         yield self._done_event(
             state.full_text,
             state.tool_records,

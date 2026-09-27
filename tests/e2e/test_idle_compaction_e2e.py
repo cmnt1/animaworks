@@ -170,7 +170,7 @@ async def test_activity_log_records_idle_compaction_event(anima) -> None:
     """Run compaction; activity_log contains 'idle_compaction' event."""
     # Mock ConversationMemory to avoid LLM
     with patch(
-        "core.agent.session_compactor._compact_mode_a",
+        "core.agent.session_compactor._compact_conversation",
         new_callable=AsyncMock,
         return_value=True,
     ):

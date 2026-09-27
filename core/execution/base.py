@@ -19,12 +19,14 @@ from collections.abc import AsyncGenerator, Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 # ── Streaming error ──────────────────────────────────────────
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
 from core.execution.events import stream_events
 from core.execution.reminder import SystemReminderQueue
+from core.execution.session_store import SessionEngine
+from core.execution.session_types import is_resumable_trigger, resolve_runtime_session_type
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -602,6 +604,8 @@ class BaseExecutor(ABC):
       handle_session_chaining().
     """
 
+    session_engine: ClassVar[SessionEngine | None] = None
+
     def __init__(
         self,
         model_config: ModelConfig,
@@ -618,6 +622,23 @@ class BaseExecutor(ABC):
     def set_task_cwd(self, cwd: Path | None) -> None:
         """Set override cwd for TaskExec sessions."""
         self._task_cwd = cwd
+
+    def clear_session(self, trigger: str, thread_id: str = "default") -> None:
+        """Clear this executor's persisted session for a runtime trigger."""
+        if self.session_engine is None:
+            return
+        from core.execution.engine_session import clear_engine_session
+
+        clear_engine_session(
+            self._anima_dir,
+            self.session_engine,
+            resolve_runtime_session_type(trigger),
+            thread_id,
+        )
+
+    def is_resumable(self, trigger: str) -> bool:
+        """Return whether this engine can resume the trigger's session."""
+        return self.session_engine is not None and is_resumable_trigger(trigger)
 
     def _load_hb_soft_timeout(self) -> int:
         """Load heartbeat soft_timeout_seconds from config (cached at init)."""

@@ -1,8 +1,8 @@
 """Tests for agent.py retry logic: fresh session forced on retry_count == 1.
 
 Verifies that:
-  - retry_count == 1: _clear_session_id("chat") is called
-  - retry_count == 2: _clear_session_id is NOT called again (only first retry)
+  - retry_count == 1: executor.clear_session is called
+  - retry_count == 2: clear_session is NOT called again (only first retry)
   - The retry emits a retry_start event
 """
 # AnimaWorks - Digital Anima Framework
@@ -86,11 +86,13 @@ class TestRetryFreshSession:
         """retry_count == 1: _clear_session_id('chat') is called."""
         agent = _make_agent(tmp_path)
 
-        # Track _clear_session_id calls
-        clear_calls: list[tuple[Path, str]] = []
+        # Track executor session cleanup calls.
+        clear_calls: list[tuple[str, str]] = []
 
-        def _spy_clear(anima_dir_arg, session_type, thread_id="default"):
-            clear_calls.append((anima_dir_arg, session_type))
+        def _spy_clear(trigger, thread_id="default"):
+            clear_calls.append((trigger, thread_id))
+
+        agent._executor.clear_session = MagicMock(side_effect=_spy_clear)
 
         # The executor will: first call → StreamDisconnectedError,
         # second call (retry) → yield a "done" event.
@@ -138,11 +140,7 @@ class TestRetryFreshSession:
             ):
                 events.append(event)
 
-        # _clear_session_id should have been called with "chat"
-        chat_clears = [st for _, st in clear_calls if st == "chat"]
-        assert len(chat_clears) >= 1, (
-            f"Expected _clear_session_id('chat') to be called on retry_count==1, but clear_calls = {clear_calls}"
-        )
+        assert clear_calls == [("chat", "default")]
 
     @pytest.mark.asyncio
     async def test_retry_start_event_emitted(self, tmp_path: Path) -> None:
@@ -201,11 +199,12 @@ class TestRetryFreshSession:
         """retry_count == 2 does NOT call _clear_session_id again."""
         agent = _make_agent(tmp_path)
 
-        clear_calls: list[tuple[Path, str]] = []
+        clear_calls: list[tuple[str, str]] = []
 
-        def _spy_clear(anima_dir_arg, session_type, thread_id="default"):
-            clear_calls.append((anima_dir_arg, session_type))
+        def _spy_clear(trigger, thread_id="default"):
+            clear_calls.append((trigger, thread_id))
 
+        agent._executor.clear_session = MagicMock(side_effect=_spy_clear)
         call_count = [0]
 
         async def _executor_stream(*args, **kwargs):
@@ -250,12 +249,7 @@ class TestRetryFreshSession:
             ):
                 events.append(event)
 
-        # _clear_session_id should be called exactly once (only at retry_count == 1)
-        chat_clears = [st for _, st in clear_calls if st == "chat"]
-        assert len(chat_clears) == 1, (
-            "Expected _clear_session_id('chat') to be called exactly once "
-            f"(retry_count==1 only), but got {len(chat_clears)} calls"
-        )
+        assert clear_calls == [("chat", "default")]
 
 
 # ── retry exhausted path ──────────────────────────────────────
@@ -355,7 +349,6 @@ class TestTerminalErrorChunk:
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution.engines.codex.codex_sdk.clear_codex_thread_ids") as mock_clear,
             patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt")
@@ -375,7 +368,7 @@ class TestTerminalErrorChunk:
 
         assert call_count == 1
         assert not any(e.get("type") == "retry_start" for e in events)
-        mock_clear.assert_not_called()
+        agent._executor.clear_session.assert_not_called()
         cycle_done = next(e for e in events if e.get("type") == "cycle_done")
         assert cycle_done["cycle_result"]["action"] == "error"
         assert cycle_done["cycle_result"]["summary"] == ("[Codex turn failed: usageLimitExceeded]")
