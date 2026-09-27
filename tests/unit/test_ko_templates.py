@@ -1,16 +1,7 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for Korean (ko) locale template completeness.
-
-Validates:
-1. File inventory — every file under templates/ko/ is listed (sorted); ko may omit some en-only files
-2. Placeholder consistency — {placeholder} variables in ko/ match those in en/
-3. Directory structure — expected subdirectories exist
-4. Heading validation — each .md file has ## or deeper headings
-
-Pattern follows tests/unit/core/test_system_reference_documents.py (ja template tests).
-"""
+"""Unit tests for Japanese, English, and Korean locale template parity."""
 
 from __future__ import annotations
 
@@ -20,251 +11,60 @@ from pathlib import Path
 import pytest
 
 _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
+_JA_DIR = _TEMPLATES_DIR / "ja"
 _EN_DIR = _TEMPLATES_DIR / "en"
 _KO_DIR = _TEMPLATES_DIR / "ko"
+
+
+def _ja_files() -> list[str]:
+    return sorted(path.relative_to(_JA_DIR).as_posix() for path in _JA_DIR.rglob("*") if path.is_file())
+
+
+def _markdown_files() -> list[str]:
+    return [path for path in _ja_files() if path.endswith(".md")]
+
+
+_PLACEHOLDER_RE = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_.]*)\}(?!\})")
+
+
+def _strip_code_blocks(text: str) -> str:
+    """Remove fenced code blocks, where placeholders are illustrative text."""
+    return re.sub(r"```.*?```|~~~.*?~~~", "", text, flags=re.DOTALL)
+
+
+def _extract_placeholders(text: str) -> set[str]:
+    return set(_PLACEHOLDER_RE.findall(_strip_code_blocks(text)))
 
 
 @pytest.mark.parametrize("locale", ["ja", "en", "ko"])
 def test_environment_enforces_worktree_and_credential_resolver(locale: str) -> None:
     repo_rules = (_TEMPLATES_DIR / locale / "prompts" / "builder" / "repo_work_rules.md").read_text(encoding="utf-8")
     behavior = (_TEMPLATES_DIR / locale / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
-
     assert "git worktree" in repo_rules
     assert "main" in repo_rules and "clean" in repo_rules
     assert "secrets.json" in behavior
 
 
-# All expected files (sorted; must match templates/ko/ exactly)
-_EXPECTED_FILES = [
-    "anima_templates/_blank/cron.md",
-    "anima_templates/_blank/heartbeat.md",
-    "anima_templates/_blank/identity.md",
-    "anima_templates/_blank/injection.md",
-    "anima_templates/_blank/permissions.json",
-    "anima_templates/_blank/skills/newstaff/SKILL.md",
-    "anima_templates/_blank/skills/worker_management/SKILL.md",
-    "bootstrap.md",
-    "common_knowledge/00_index.md",
-    "common_knowledge/anatomy/essentials.md",
-    "common_knowledge/anatomy/task-architecture.md",
-    "common_knowledge/anatomy/what-is-anima.md",
-    "common_knowledge/communication/board-guide.md",
-    "common_knowledge/communication/call-human-guide.md",
-    "common_knowledge/communication/sending-limits.md",
-    "common_knowledge/operations/action-rules-guide.md",
-    "common_knowledge/operations/action-rule-memory-write-destination.md",
-    "common_knowledge/operations/background-tasks.md",
-    "common_knowledge/operations/report-formats.md",
-    "common_knowledge/operations/task-board-guide.md",
-    "common_knowledge/operations/task-delegation-guide.md",
-    "common_knowledge/operations/workspace-guide.md",
-    "common_knowledge/organization/hierarchy-rules.md",
-    "common_knowledge/security/prompt-injection-awareness.md",
-    "common_skills/agent-browser/SKILL.md",
-    "common_skills/animaworks-guide/SKILL.md",
-    "common_skills/aws-collector-tool/SKILL.md",
-    "common_skills/chatwork-tool/SKILL.md",
-    "common_skills/cron-management/SKILL.md",
-    "common_skills/github-tool/SKILL.md",
-    "common_skills/gmail-tool/SKILL.md",
-    "common_skills/google-calendar-tool/SKILL.md",
-    "common_skills/google-tasks-tool/SKILL.md",
-    "common_skills/image-gen-tool/SKILL.md",
-    "common_skills/image-posting/SKILL.md",
-    "common_skills/local-llm-tool/SKILL.md",
-    "common_skills/notion-tool/SKILL.md",
-    "common_skills/skill-creator/SKILL.md",
-    "common_skills/skill-creator/references/description_guide.md",
-    "common_skills/skill-creator/scripts/lint_skill.py",
-    "common_skills/skill-creator/templates/skill_template.md",
-    "common_skills/slack-tool/SKILL.md",
-    "common_skills/subagent-cli/SKILL.md",
-    "common_skills/subordinate-management/SKILL.md",
-    "common_skills/tool-creator/SKILL.md",
-    "common_skills/transcribe-tool/SKILL.md",
-    "common_skills/web-search-tool/SKILL.md",
-    "common_skills/workspace-manager/SKILL.md",
-    "common_skills/x-search-tool/SKILL.md",
-    "common_skills/zoom-meeting-scribe/SKILL.md",
-    "company/vision.md",
-    "prompts/a_reflection.md",
-    "prompts/behavior_rules.md",
-    "prompts/first_meeting.md",
-    "prompts/builder/emotion_instruction.md",
-    "prompts/builder/fallbacks.md",
-    "prompts/builder/heartbeat_tool_instruction.md",
-    "prompts/builder/human_notification.md",
-    "prompts/builder/light_tier_org.md",
-    "prompts/builder/org_context_toplevel.md",
-    "prompts/builder/repo_work_rules.md",
-    "prompts/builder/resolution_registry.md",
-    "prompts/builder/sections.md",
-    "prompts/builder/task_in_progress.md",
-    "prompts/builder/task_queue.md",
-    "prompts/character_design_guide.md",
-    "prompts/chat_message.md",
-    "prompts/chat_message_with_history.md",
-    "prompts/communication_rules.md",
-    "prompts/cron_task.md",
-    "prompts/environment.md",
-    "prompts/fragments/asset_synthesis_system.md",
-    "prompts/fragments/asset_synthesis_system_realistic.md",
-    "prompts/fragments/bg_task_notification.md",
-    "prompts/fragments/command_output.md",
-    "prompts/fragments/cron_rejected_notice.md",
-    "prompts/fragments/curator_report_review.md",
-    "prompts/fragments/recent_dialogue.md",
-    "prompts/fragments/recent_reflections.md",
-    "prompts/fragments/recovery_note_header.md",
-    "prompts/fragments/stale_task_scoreboard.md",
-    "prompts/greet.md",
-    "prompts/heartbeat.md",
-    "prompts/heartbeat_default_checklist.md",
-    "prompts/heartbeat_history.md",
-    "prompts/heartbeat_subordinate_check.md",
-    "prompts/inbox_message.md",
-    "prompts/memory/classification.md",
-    "prompts/memory/consolidation_instruction.md",
-    "prompts/memory/conversation_compression.md",
-    "prompts/memory/episode_extraction.md",
-    "prompts/memory/knowledge_revision.md",
-    "prompts/memory/procedure_from_resolved.md",
-    "prompts/memory/procedure_revision.md",
-    "prompts/memory/session_summary.md",
-    "prompts/memory/weekly_consolidation_instruction.md",
-    "prompts/memory/weekly_pattern.md",
-    "prompts/memory_guide.md",
-    "prompts/messaging.md",
-    "prompts/messaging_s.md",
-    "prompts/org_context.md",
-    "prompts/task_complete_notify.md",
-    "prompts/task_exec.md",
-    "prompts/tool_descriptions/Bash.md",
-    "prompts/tool_descriptions/Edit.md",
-    "prompts/tool_descriptions/Glob.md",
-    "prompts/tool_descriptions/Grep.md",
-    "prompts/tool_descriptions/Read.md",
-    "prompts/tool_descriptions/WebFetch.md",
-    "prompts/tool_descriptions/WebSearch.md",
-    "prompts/tool_descriptions/Write.md",
-    "prompts/tool_descriptions/archive_memory_file.md",
-    "prompts/tool_descriptions/backlog_task.md",
-    "prompts/tool_descriptions/call_human.md",
-    "prompts/tool_descriptions/create_anima.md",
-    "prompts/tool_descriptions/list_tasks.md",
-    "prompts/tool_descriptions/post_channel.md",
-    "prompts/tool_descriptions/read_channel.md",
-    "prompts/tool_descriptions/read_dm_history.md",
-    "prompts/tool_descriptions/read_memory_file.md",
-    "prompts/tool_descriptions/report_knowledge_outcome.md",
-    "prompts/tool_descriptions/report_procedure_outcome.md",
-    "prompts/tool_descriptions/search_memory.md",
-    "prompts/tool_descriptions/send_message.md",
-    "prompts/tool_descriptions/update_task.md",
-    "prompts/tool_descriptions/write_memory_file.md",
-    "prompts/tool_guides/non_s.md",
-    "prompts/tool_guides/s_builtin.md",
-    "prompts/tool_guides/s_mcp.md",
-    "prompts/unread_messages.md",
-    "reference/00_index.md",
-    "reference/anatomy/anima-anatomy.md",
-    "reference/anatomy/environment-layout.md",
-    "reference/anatomy/memory-system.md",
-    "reference/anatomy/priming-channels.md",
-    "reference/anatomy/working-memory.md",
-    "reference/communication/instruction-patterns.md",
-    "reference/communication/messaging-guide.md",
-    "reference/communication/reporting-guide.md",
-    "reference/communication/slack-bot-token-guide.md",
-    "reference/internals/common-knowledge-access-paths.md",
-    "reference/operations/browser-automation-guide.md",
-    "reference/operations/heartbeat-cron-guide.md",
-    "reference/operations/memory-writing-guide.md",
-    "reference/operations/mode-s-auth-guide.md",
-    "reference/operations/model-guide.md",
-    "reference/operations/project-setup.md",
-    "reference/operations/task-management.md",
-    "reference/operations/tool-usage-overview.md",
-    "reference/operations/voice-chat-guide.md",
-    "reference/organization/roles.md",
-    "reference/organization/structure.md",
-    "reference/troubleshooting/common-issues.md",
-    "reference/troubleshooting/escalation-flowchart.md",
-    "reference/troubleshooting/gmail-credential-setup.md",
-    "reference/usecases/usecase-communication.md",
-    "reference/usecases/usecase-customer-support.md",
-    "reference/usecases/usecase-development.md",
-    "reference/usecases/usecase-knowledge.md",
-    "reference/usecases/usecase-monitoring.md",
-    "reference/usecases/usecase-overview.md",
-    "reference/usecases/usecase-research.md",
-    "reference/usecases/usecase-secretary.md",
-    "roles/engineer/permissions.json",
-    "roles/engineer/specialty_prompt.md",
-    "roles/general/permissions.json",
-    "roles/general/specialty_prompt.md",
-    "roles/manager/permissions.json",
-    "roles/manager/specialty_prompt.md",
-    "roles/ops/permissions.json",
-    "roles/ops/specialty_prompt.md",
-    "roles/researcher/permissions.json",
-    "roles/researcher/specialty_prompt.md",
-    "roles/writer/permissions.json",
-    "roles/writer/specialty_prompt.md",
-]
-
-# Regex to extract {placeholder} variables (ignoring {{ escaped braces }})
-_PLACEHOLDER_RE = re.compile(r"(?<!\{)\{(\w+)\}(?!\})")
-
-
-def _strip_code_blocks(text: str) -> str:
-    """Remove fenced code blocks (``` ... ```) from text.
-
-    Placeholders inside code blocks are example text, not runtime variables.
-    Both en and ko localize these freely (e.g., en: {task_name} → ko: {태스크명}).
-    """
-    return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-
-
-def _extract_placeholders(text: str) -> set[str]:
-    """Extract all {placeholder} names from template text, excluding code blocks."""
-    return set(_PLACEHOLDER_RE.findall(_strip_code_blocks(text)))
-
-
-# ── 1. File existence ────────────────────────────────────────
-
-
 class TestKoTemplateFilesExist:
-    """Verify all expected Korean template files are present."""
+    """Every Japanese source file must have exactly one Korean counterpart."""
 
-    @pytest.mark.parametrize("rel_path", _EXPECTED_FILES)
-    def test_expected_file_exists(self, rel_path: str):
-        full_path = _KO_DIR / rel_path
-        assert full_path.exists(), f"Missing ko template: {rel_path}"
+    @pytest.mark.parametrize("rel_path", _ja_files())
+    def test_expected_file_exists(self, rel_path: str) -> None:
+        assert (_KO_DIR / rel_path).is_file(), f"Missing ko template: {rel_path}"
 
-    def test_total_file_count(self):
-        """File count in ko/ should match _EXPECTED_FILES."""
-        all_files = sorted(str(f.relative_to(_KO_DIR)) for f in _KO_DIR.rglob("*") if f.is_file())
-        assert len(all_files) == len(_EXPECTED_FILES), (
-            f"Expected {len(_EXPECTED_FILES)} files, found {len(all_files)}. "
-            f"Extra: {set(all_files) - set(_EXPECTED_FILES)}, "
-            f"Missing: {set(_EXPECTED_FILES) - set(all_files)}"
+    def test_locale_file_sets_match_ja(self) -> None:
+        ja_files = set(_ja_files())
+        en_files = {path.relative_to(_EN_DIR).as_posix() for path in _EN_DIR.rglob("*") if path.is_file()}
+        ko_files = {path.relative_to(_KO_DIR).as_posix() for path in _KO_DIR.rglob("*") if path.is_file()}
+        assert ko_files == ja_files, (
+            f"ko file set differs from ja. Extra: {ko_files - ja_files}; missing: {ja_files - ko_files}"
         )
-
-    def test_no_extra_files(self):
-        """ko/ should not contain files that are not in en/."""
-        en_files = {str(f.relative_to(_EN_DIR)) for f in _EN_DIR.rglob("*") if f.is_file()}
-        ko_files = {str(f.relative_to(_KO_DIR)) for f in _KO_DIR.rglob("*") if f.is_file()}
-        extra = ko_files - en_files
-        assert not extra, f"ko/ has extra files not in en/: {extra}"
-
-
-# ── 2. Directory structure ───────────────────────────────────
+        assert en_files == ja_files, (
+            f"en file set differs from ja. Extra: {en_files - ja_files}; missing: {ja_files - en_files}"
+        )
 
 
 class TestKoDirectoryStructure:
-    """Expected subdirectories should exist."""
-
     _EXPECTED_DIRS = [
         "prompts",
         "prompts/builder",
@@ -291,17 +91,12 @@ class TestKoDirectoryStructure:
         "company",
     ]
 
+    @pytest.mark.parametrize("locale", ["en", "ko"])
     @pytest.mark.parametrize("subdir", _EXPECTED_DIRS)
-    def test_directory_exists(self, subdir: str):
-        assert (_KO_DIR / subdir).is_dir(), f"Missing ko directory: {subdir}"
+    def test_directory_exists(self, locale: str, subdir: str) -> None:
+        assert (_TEMPLATES_DIR / locale / subdir).is_dir(), f"Missing {locale} directory: {subdir}"
 
 
-# ── 3. Heading validation ───────────────────────────────────
-
-
-# Files that may legitimately have no ## headings (short fragments, placeholders)
-# Files without ## headings in en/ source — exempt from heading check.
-# Generated by: for f in $(find templates/en -name "*.md"); do grep -qL "^##" "$f" && echo; done
 _HEADING_EXEMPT = {
     "anima_templates/_blank/identity.md",
     "anima_templates/_blank/injection.md",
@@ -336,58 +131,36 @@ _HEADING_EXEMPT = {
 }
 
 
-class TestKoTemplateHeadings:
-    """Each template file should have ## level headings."""
-
-    @pytest.mark.parametrize(
-        "rel_path",
-        [
-            f
-            for f in _EXPECTED_FILES
-            if f not in _HEADING_EXEMPT and not f.startswith("prompts/tool_descriptions/") and f.endswith(".md")
-        ],
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        path
+        for path in _markdown_files()
+        if path not in _HEADING_EXEMPT and not path.startswith("prompts/tool_descriptions/")
+    ],
+)
+def test_ko_markdown_has_heading(rel_path: str) -> None:
+    text = (_KO_DIR / rel_path).read_text(encoding="utf-8")
+    assert any(line.startswith(("## ", "### ", "#### ", "##### ", "###### ")) for line in text.splitlines()), (
+        f"{rel_path} has no ## or deeper headings"
     )
-    def test_file_has_headings(self, rel_path: str):
-        full_path = _KO_DIR / rel_path
-        if not full_path.exists():
-            pytest.skip(f"File not found: {rel_path}")
-        content = full_path.read_text(encoding="utf-8")
-        has_heading = any(
-            line.startswith("## ") or line.startswith("### ") or line.startswith("#### ")
-            for line in content.splitlines()
-        )
-        assert has_heading, f"{rel_path} has no ## or deeper headings"
 
 
-# ── 4. Placeholder consistency ───────────────────────────────
+@pytest.mark.parametrize("rel_path", _markdown_files())
+def test_placeholders_match_ja(rel_path: str) -> None:
+    ja_placeholders = _extract_placeholders((_JA_DIR / rel_path).read_text(encoding="utf-8"))
+    ko_placeholders = _extract_placeholders((_KO_DIR / rel_path).read_text(encoding="utf-8"))
+    assert ko_placeholders == ja_placeholders, (
+        f"{rel_path}: ko placeholders differ from ja; missing={ja_placeholders - ko_placeholders}, "
+        f"extra={ko_placeholders - ja_placeholders}"
+    )
 
 
-class TestKoPlaceholderConsistency:
-    """Placeholder variables in ko/ should match those in en/.
-
-    Only checks files under prompts/ — these are loaded by load_prompt() and
-    have real runtime placeholders substituted via _SafeFormatDict.
-    Files under common_knowledge/, reference/, etc. contain example/template
-    placeholders (e.g., {task description}) that are meant to be localized.
-    """
-
-    _PROMPT_FILES = [f for f in _EXPECTED_FILES if f.startswith("prompts/")]
-
-    @pytest.mark.parametrize("rel_path", _PROMPT_FILES)
-    def test_placeholders_match(self, rel_path: str):
-        en_path = _EN_DIR / rel_path
-        ko_path = _KO_DIR / rel_path
-        if not ko_path.exists():
-            pytest.skip(f"ko file not found: {rel_path}")
-
-        en_text = en_path.read_text(encoding="utf-8")
-        ko_text = ko_path.read_text(encoding="utf-8")
-
-        en_placeholders = _extract_placeholders(en_text)
-        ko_placeholders = _extract_placeholders(ko_text)
-
-        missing = en_placeholders - ko_placeholders
-        extra = ko_placeholders - en_placeholders
-
-        assert not missing, f"{rel_path}: ko is missing placeholders from en: {missing}"
-        assert not extra, f"{rel_path}: ko has extra placeholders not in en: {extra}"
+@pytest.mark.parametrize("rel_path", _markdown_files())
+def test_en_placeholders_match_ja(rel_path: str) -> None:
+    ja_placeholders = _extract_placeholders((_JA_DIR / rel_path).read_text(encoding="utf-8"))
+    en_placeholders = _extract_placeholders((_EN_DIR / rel_path).read_text(encoding="utf-8"))
+    assert en_placeholders == ja_placeholders, (
+        f"{rel_path}: en placeholders differ from ja; missing={ja_placeholders - en_placeholders}, "
+        f"extra={en_placeholders - ja_placeholders}"
+    )

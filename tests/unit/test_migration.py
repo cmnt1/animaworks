@@ -490,6 +490,7 @@ class TestMigrationSteps:
         ids = [item["id"] for item in runner.list_steps()]
 
         assert ids.index("priming_config_cleanup_20260927") < ids.index("update_version")
+
     def test_step_taskboard_metadata_retire(self, data_dir: Path) -> None:
         import sqlite3
 
@@ -930,6 +931,59 @@ class TestRegisterAllSteps:
         assert ids.index("priming_config_cleanup_20260927") < ids.index("update_version")
         assert ids.index("engine_timeout_config_cleanup") < ids.index("taskboard_metadata_retire")
         assert ids.index("taskboard_metadata_retire") < ids.index("update_version")
+
+
+def test_i18n_template_resync_aggregates_runtime_copy_steps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import core.migrations.steps as migration_steps
+
+    calls: list[tuple[str, Path, bool, bool]] = []
+
+    def fake_step(name: str, result: StepResult):
+        def run(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+            calls.append((name, data_dir, dry_run, verbose))
+            return result
+
+        run.__name__ = name
+        return run
+
+    monkeypatch.setattr(
+        migration_steps,
+        "step_common_knowledge_resync",
+        fake_step("common_knowledge", StepResult(changed=2, skipped=0, details=["knowledge copied"])),
+    )
+    monkeypatch.setattr(
+        migration_steps,
+        "step_common_skills_resync",
+        fake_step("common_skills", StepResult(changed=3, skipped=1, details=["skills copied"])),
+    )
+    monkeypatch.setattr(
+        migration_steps,
+        "step_reference_resync",
+        fake_step("reference", StepResult(changed=4, skipped=0, details=["reference copied"], error="copy failed")),
+    )
+
+    result = migration_steps.step_i18n_regenerated_templates_resync(tmp_path, dry_run=True, verbose=True)
+
+    assert [name for name, *_ in calls] == ["common_knowledge", "common_skills", "reference"]
+    assert all(data_dir == tmp_path and dry_run and verbose for _, data_dir, dry_run, verbose in calls)
+    assert result.changed == 9
+    assert result.skipped == 1
+    assert result.details == ["knowledge copied", "skills copied", "reference copied"]
+    assert result.error == "reference: copy failed"
+
+
+def test_i18n_template_resync_registered_after_dependencies_and_before_version(tmp_path: Path) -> None:
+    from core.migrations.steps import register_all_steps
+
+    runner = MigrationRunner(tmp_path)
+    register_all_steps(runner)
+    ids = [item["id"] for item in runner.list_steps()]
+    step_id = "20260927_i18n_regenerated_templates_resync"
+
+    assert ids.index("common_knowledge_resync") < ids.index(step_id)
+    assert ids.index("common_skills_resync") < ids.index(step_id)
+    assert ids.index("reference_resync") < ids.index(step_id)
+    assert ids.index(step_id) < ids.index("update_version")
 
 
 def test_step_v0146_removes_retired_prompt_copies(tmp_path):

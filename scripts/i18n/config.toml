@@ -1,0 +1,48 @@
+[engines.local]
+kind = "openai"
+base_url = "http://100.95.241.88:8888/v1"
+model = "deepseek-v4-flash"
+api_key_env = "I18N_LOCAL_API_KEY"
+temperature = 0.0
+max_output_tokens = 16000
+timeout_seconds = 600
+
+[engines.luna]
+kind = "azure_openai"
+endpoint_env = "AZURE_OPENAI_ENDPOINT"
+api_key_env = "AZURE_OPENAI_API_KEY"
+deployment = "gpt-6-luna"
+api_version = "2025-04-01-preview"
+temperature = 0.0
+max_output_tokens = 16000
+timeout_seconds = 600
+
+[defaults]
+engine = "local"
+fallback_engine = ""
+langs = ["en", "ko"]
+concurrency = 4
+batch_chars = 6000
+
+[[targets]]
+name = "docs"
+src = "docs/ja"
+dst = "docs/{lang}"
+include = ["**/*.md"]
+header = "html_comment"
+
+[[targets]]
+name = "templates"
+src = "templates/ja"
+dst = "templates/{lang}"
+include = ["**/*.md"]
+copy = ["**/*.json", "**/*.py"]
+header = "none"
+
+[[targets]]
+name = "readme"
+src = "README_ja.md"
+dst = { en = "README.md", ko = "README_ko.md", zh = "README_zh.md" }
+include = ["README_ja.md"]
+header = "html_comment"
+link_rewrite = [["docs/ja/", "docs/{lang}/"], ["README_ja.md", "{readme}"]]
