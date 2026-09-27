@@ -40,6 +40,7 @@ from core.execution.session_types import is_persistent_codex_session
 from core.execution.tool_evidence import ToolEvidence
 from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import ContextTracker
+from core.prompt.tokens import estimate_tokens
 from core.schemas import ImageData, ModelConfig
 
 from . import events, setup
@@ -134,6 +135,11 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
     engine_mode = "C"
     session_engine = "codex"
     errors_always_terminal = False
+
+    def prepare_tracker(self, tracker: ContextTracker, system_prompt: str, prompt: str) -> None:
+        """Estimate Codex prompt tokens before execution for context tracking."""
+        estimated_tokens = estimate_tokens(system_prompt) + estimate_tokens(prompt)
+        tracker.update({"input_tokens": estimated_tokens}, include_output_in_ratio=False)
 
     def __init__(
         self,

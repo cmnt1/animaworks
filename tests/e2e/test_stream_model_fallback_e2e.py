@@ -35,6 +35,9 @@ def _terminal_quota_executor():
         def __init__(self) -> None:
             self.execute_streaming = execute_streaming
 
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
+
     return _MockExecutor()
 
 
@@ -56,6 +59,9 @@ def _success_executor(text: str):
 
         def __init__(self) -> None:
             self.execute_streaming = execute_streaming
+
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
 
     return _MockExecutor()
 

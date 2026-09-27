@@ -31,7 +31,6 @@ from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 from core.prompt.builder import build_system_prompt, inject_shortterm  # noqa: F401
 from core.prompt.context import ContextTracker
-from core.prompt.tokens import estimate_tokens
 from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso, now_local
 
@@ -39,15 +38,6 @@ logger = logging.getLogger("animaworks.agent")
 
 
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
-
-
-def _update_tracker_from_prompt_estimate(
-    tracker: ContextTracker,
-    system_prompt: str,
-    prompt: str,
-) -> None:
-    estimated_tokens = estimate_tokens(system_prompt) + estimate_tokens(prompt)
-    tracker.update({"input_tokens": estimated_tokens}, include_output_in_ratio=False)
 
 
 def _merge_stream_usage(acc: dict[str, int], chunk_usage: dict[str, int] | None) -> None:
@@ -114,19 +104,48 @@ def _log_session_token_usage(
         logger.debug("Failed to log token usage", exc_info=True)
 
 
+def _save_handoff_shortterm(
+    shortterm: ShortTermMemory,
+    *,
+    result_text: str,
+    tool_records: list[Any],
+    session_id: str,
+    turn_count: int,
+    trigger: str,
+    prompt: str,
+    tracker: ContextTracker,
+) -> None:
+    """Persist response and tool history when a chat session must be handed off."""
+    from dataclasses import asdict, is_dataclass
+
+    tool_uses = [asdict(record) if is_dataclass(record) else dict(record) for record in tool_records]
+    shortterm.save(
+        SessionState(
+            session_id=session_id,
+            timestamp=now_iso(),
+            trigger=trigger,
+            original_prompt=prompt,
+            accumulated_response=result_text,
+            tool_uses=tool_uses,
+            context_usage_ratio=tracker.usage_ratio,
+            turn_count=turn_count,
+        )
+    )
+
+
 class CycleMixin:
     """Mixin: blocking and streaming execution cycles + session chaining."""
 
     async def _guard_chat_sdk_session(
         self,
         *,
-        mode: str,
+        executor: Any,
         uses_chat_session: bool,
         active_model_config: ModelConfig,
         thread_id: str,
     ) -> Any | None:
-        """Recycle an overgrown or over-aged Mode S session before resume."""
-        if mode != "s" or not uses_chat_session:
+        """Recycle an overgrown or over-aged SDK session before resume."""
+        if getattr(executor, "tracks_sdk_session_state", False) is not True or not uses_chat_session:
             return None
         from core.execution.engines.claude._sdk_session import SESSION_TYPE_CHAT, load_session_state
 
@@ -542,7 +561,7 @@ class CycleMixin:
         session_type = resolve_runtime_session_type(trigger)
         uses_chat_session = trigger_uses_chat_session(trigger)
         session_state = await self._guard_chat_sdk_session(
-            mode=mode,
+            executor=active_executor,
             uses_chat_session=uses_chat_session,
             active_model_config=active_model_config,
             thread_id=thread_id,
@@ -565,7 +584,9 @@ class CycleMixin:
             baseline_tokens=session_state.baseline_tokens if session_state is not None else 0,
             context_window_overrides=self._load_context_window_overrides(),
             anima_dir=self.anima_dir,
-            session_type=session_type if mode == "s" and uses_chat_session else "",
+            session_type=session_type
+            if getattr(active_executor, "tracks_sdk_session_state", False) is True and uses_chat_session
+            else "",
             thread_id=thread_id,
             session_id=session_state.session_id if session_state is not None else "",
             session_created_at=session_state.created_at if session_state is not None else "",
@@ -624,313 +645,7 @@ class CycleMixin:
             tool_schemas=_tool_schemas,
         )
 
-        # ── Helper: convert ExecutionResult tool records to dicts ──
-        def _tool_records_to_dicts(result: ExecutionResult) -> list[dict]:
-            from dataclasses import asdict as _asdict
-
-            return [_asdict(r) for r in result.tool_call_records]
-
-        # ── Mode C: Codex SDK ─────────────────────────────
-        if mode == "c":
-            _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
-            try:
-                result = await active_executor.execute(
-                    prompt=prompt,
-                    system_prompt=system_prompt,
-                    tracker=tracker,
-                    trigger=trigger,
-                    images=images,
-                    thread_id=thread_id,
-                )
-            except (Exception, asyncio.CancelledError) as exc:
-                # Blocking collectors attach the usage observed before an
-                # interruption. Cancellation must still propagate unchanged.
-                observed = getattr(exc, "usage", None)
-                if isinstance(observed, dict):
-                    _log_session_token_usage(
-                        self.anima_dir,
-                        model=active_model_config.model,
-                        mode=mode,
-                        trigger=trigger,
-                        usage=observed,
-                        duration_ms=int((time.monotonic() - start) * 1000),
-                    )
-                raise
-            if result.replied_to_from_transcript:
-                self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
-            _save_prompt_log_end(
-                self.anima_dir,
-                session_id=self._tool_handler.session_id,
-                tool_call_count=len(result.tool_call_records),
-            )
-            if tracker.threshold_exceeded and uses_chat_session:
-                shortterm.clear()
-                shortterm.save(
-                    SessionState(
-                        session_id=result.result_message.session_id if result.result_message else "",
-                        timestamp=now_iso(),
-                        trigger=trigger,
-                        original_prompt=prompt,
-                        accumulated_response=result.text,
-                        context_usage_ratio=tracker.usage_ratio,
-                        turn_count=result.result_message.num_turns if result.result_message else 0,
-                    )
-                )
-                active_executor.clear_session(trigger, thread_id)
-            elif uses_chat_session:
-                shortterm.clear()
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (c) trigger=%s duration_ms=%d response_len=%d",
-                trigger,
-                duration_ms,
-                len(result.text),
-            )
-            _c_usage = result.usage.to_dict() if result.usage else None
-            c_turns = getattr(result.result_message, "num_turns", 0)
-            c_turns = c_turns if isinstance(c_turns, int) else 0
-            _log_session_token_usage(
-                self.anima_dir,
-                model=active_model_config.model,
-                mode="c",
-                trigger=trigger,
-                usage=_c_usage,
-                duration_ms=duration_ms,
-                turns=c_turns,
-            )
-            is_error = result.error is True
-            error_reason = result.reason if isinstance(result.reason, str) else ""
-            error_category = _resolve_error_category(error_reason, result.text) if is_error else None
-            return CycleResult(
-                trigger=trigger,
-                action="error" if is_error else "responded",
-                stop_kind="stream_error" if is_error else "normal",
-                reason=(error_category or "unknown") if is_error else "",
-                error_category=error_category,
-                summary=result.text,
-                duration_ms=duration_ms,
-                context_usage_ratio=tracker.usage_ratio,
-                context_window=tracker.context_window,
-                context_threshold=tracker.threshold,
-                tool_call_records=_tool_records_to_dicts(result),
-                usage=_c_usage,
-                total_turns=c_turns,
-                truncated=result.truncated,
-            )
-
-        # ── Mode D: Cursor Agent CLI ─────────────────────
-        if mode == "d":
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                trigger=trigger,
-                images=images,
-                thread_id=thread_id,
-            )
-            if result.replied_to_from_transcript:
-                self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
-            _save_prompt_log_end(
-                self.anima_dir,
-                session_id=self._tool_handler.session_id,
-                tool_call_count=len(result.tool_call_records),
-            )
-            if result.session_rotation_pending and uses_chat_session:
-                from dataclasses import asdict as _d_asdict
-
-                shortterm.save(
-                    SessionState(
-                        timestamp=now_iso(),
-                        trigger=trigger,
-                        original_prompt=prompt,
-                        accumulated_response=result.text[-2000:] if result.text else "",
-                        tool_uses=[_d_asdict(r) for r in result.tool_call_records],
-                        turn_count=0,
-                    )
-                )
-                logger.info("Mode D rotation pending — saved shortterm for next turn")
-            elif uses_chat_session:
-                shortterm.clear()
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (d) trigger=%s duration_ms=%d response_len=%d",
-                trigger,
-                duration_ms,
-                len(result.text),
-            )
-            _d_usage = result.usage.to_dict() if result.usage else None
-            _log_session_token_usage(
-                self.anima_dir,
-                model=active_model_config.model,
-                mode="d",
-                trigger=trigger,
-                usage=_d_usage,
-                duration_ms=duration_ms,
-            )
-            return CycleResult(
-                trigger=trigger,
-                action="responded",
-                summary=result.text,
-                duration_ms=duration_ms,
-                context_usage_ratio=tracker.usage_ratio,
-                context_window=tracker.context_window,
-                context_threshold=tracker.threshold,
-                tool_call_records=_tool_records_to_dicts(result),
-                usage=_d_usage,
-                truncated=result.truncated,
-            )
-
-        # ── Mode G: Gemini CLI ─────────────────────────────
-        if mode == "g":
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                trigger=trigger,
-                images=images,
-                thread_id=thread_id,
-            )
-            if result.replied_to_from_transcript:
-                self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
-            _save_prompt_log_end(
-                self.anima_dir,
-                session_id=self._tool_handler.session_id,
-                tool_call_count=len(result.tool_call_records),
-            )
-            if uses_chat_session:
-                shortterm.clear()
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (g) trigger=%s duration_ms=%d response_len=%d",
-                trigger,
-                duration_ms,
-                len(result.text),
-            )
-            _g_usage = result.usage.to_dict() if result.usage else None
-            _log_session_token_usage(
-                self.anima_dir,
-                model=active_model_config.model,
-                mode="g",
-                trigger=trigger,
-                usage=_g_usage,
-                duration_ms=duration_ms,
-            )
-            return CycleResult(
-                trigger=trigger,
-                action="responded",
-                summary=result.text,
-                duration_ms=duration_ms,
-                context_usage_ratio=tracker.usage_ratio,
-                context_window=tracker.context_window,
-                context_threshold=tracker.threshold,
-                tool_call_records=_tool_records_to_dicts(result),
-                usage=_g_usage,
-                truncated=result.truncated,
-            )
-
-        # ── Mode X: Grok Build CLI ─────────────────────────
-        if mode == "x":
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                trigger=trigger,
-                images=images,
-                thread_id=thread_id,
-            )
-            if result.replied_to_from_transcript:
-                self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
-            _save_prompt_log_end(
-                self.anima_dir,
-                session_id=self._tool_handler.session_id,
-                tool_call_count=len(result.tool_call_records),
-            )
-            if uses_chat_session:
-                shortterm.clear()
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (x) trigger=%s duration_ms=%d response_len=%d",
-                trigger,
-                duration_ms,
-                len(result.text),
-            )
-            _x_usage = result.usage.to_dict() if result.usage else None
-            _log_session_token_usage(
-                self.anima_dir,
-                model=active_model_config.model,
-                mode="x",
-                trigger=trigger,
-                usage=_x_usage,
-                duration_ms=duration_ms,
-            )
-            is_error = result.error is True
-            error_reason = result.reason if isinstance(result.reason, str) else ""
-            return CycleResult(
-                trigger=trigger,
-                action="error" if is_error else "responded",
-                stop_kind="stream_error" if is_error else "normal",
-                summary=result.text,
-                reason=error_reason,
-                error_category=(_resolve_error_category(error_reason, result.text) if is_error else None),
-                duration_ms=duration_ms,
-                context_usage_ratio=tracker.usage_ratio,
-                context_window=tracker.context_window,
-                context_threshold=tracker.threshold,
-                tool_call_records=_tool_records_to_dicts(result),
-                usage=_x_usage,
-                truncated=result.truncated is True,
-            )
-
-        # ── Mode A: LiteLLM tool_use loop ─────────────────
-        if mode == "a":
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                shortterm=shortterm if uses_chat_session else None,
-                images=images,
-                prior_messages=prior_messages,
-                thread_id=thread_id,
-                trigger=trigger,
-            )
-            _save_prompt_log_end(
-                self.anima_dir,
-                session_id=self._tool_handler.session_id,
-                tool_call_count=len(result.tool_call_records),
-            )
-            if uses_chat_session and not tracker.threshold_exceeded:
-                shortterm.clear()
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (a) trigger=%s duration_ms=%d response_len=%d",
-                trigger,
-                duration_ms,
-                len(result.text),
-            )
-            _a_usage = result.usage.to_dict() if result.usage else None
-            _log_session_token_usage(
-                self.anima_dir,
-                model=active_model_config.model,
-                mode="a",
-                trigger=trigger,
-                usage=_a_usage,
-                duration_ms=duration_ms,
-            )
-            return CycleResult(
-                trigger=trigger,
-                action="responded",
-                summary=result.text,
-                duration_ms=duration_ms,
-                context_usage_ratio=tracker.usage_ratio,
-                context_window=tracker.context_window,
-                context_threshold=tracker.threshold,
-                tool_call_records=_tool_records_to_dicts(result),
-                usage=_a_usage,
-                truncated=result.truncated,
-            )
-
-        # ── Mode S: Claude Agent SDK ──────────────────────
-        # Pre-flight: check prompt size to prevent Agent SDK buffer overflow
+        # ── Common preflight and executor preparation ──────────
         conv_memory = None
         if uses_chat_session:
             from core.memory.conversation.memory import ConversationMemory
@@ -949,104 +664,159 @@ class CycleMixin:
             thread_id=thread_id,
             shortterm_text=shortterm_text,
         )
-        result = await active_executor.execute(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            tracker=tracker,
+        active_executor.prepare_tracker(tracker, system_prompt, prompt)
+
+        try:
+            result = await active_executor.execute(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                tracker=tracker,
+                trigger=trigger,
+                images=images,
+                thread_id=thread_id,
+                shortterm=(
+                    shortterm
+                    if uses_chat_session and getattr(active_executor, "saves_threshold_shortterm", False) is True
+                    else None
+                ),
+                prior_messages=(
+                    prior_messages if getattr(active_executor, "wants_structured_history", False) is True else None
+                ),
+            )
+        except (Exception, asyncio.CancelledError) as exc:
+            # Preserve usage observed before an interruption for every engine.
+            observed = getattr(exc, "usage", None)
+            if isinstance(observed, dict):
+                _log_session_token_usage(
+                    self.anima_dir,
+                    model=active_model_config.model,
+                    mode=mode,
+                    trigger=trigger,
+                    usage=observed,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                )
+            raise
+
+        return self._finalize_engine_result(
+            result=result,
+            mode=mode,
             trigger=trigger,
-            images=images,
             thread_id=thread_id,
+            prompt=prompt,
+            tracker=tracker,
+            shortterm=shortterm,
+            uses_chat_session=uses_chat_session,
+            active_executor=active_executor,
+            active_model_config=active_model_config,
+            start=start,
         )
-        # Merge transcript-parsed replied_to for S mode
+
+    def _finalize_engine_result(
+        self,
+        *,
+        result: ExecutionResult,
+        mode: str,
+        trigger: str,
+        thread_id: str,
+        prompt: str,
+        tracker: ContextTracker,
+        shortterm: ShortTermMemory,
+        uses_chat_session: bool,
+        active_executor: Any,
+        active_model_config: ModelConfig,
+        start: float,
+    ) -> CycleResult:
+        """Apply engine-independent postprocessing and build the cycle result."""
+        from dataclasses import asdict
+
         if result.replied_to_from_transcript:
             self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
-            logger.info("Merged transcript replied_to: %s", result.replied_to_from_transcript)
-        result_msg = result.result_message
-        accumulated_tool_records = _tool_records_to_dicts(result)
 
-        # Session chaining: if threshold was crossed, continue in a new session.
-        # force_chain is set by S mode mid-session context auto-compact (PreToolUse
-        # hook returned continue_=False).  In that case ResultMessage.usage may
-        # not have updated the tracker, so we force the threshold flag.
-        if result.force_chain and not tracker.threshold_exceeded:
-            tracker.force_threshold()
-            logger.info(
-                "Context auto-compact: forcing threshold_exceeded for session "
-                "chaining (S mode mid-session context budget exceeded)"
-            )
-
-        session_chained = False
-        total_turns = result_msg.num_turns if result_msg else 0
-        chain_count = 0
-        accumulated_text = result.text
-
-        if tracker.threshold_exceeded and uses_chat_session:
-            # Save shortterm for the next system-prompt allocation.
-            # Do NOT chain here — chaining mid-response causes the LLM to produce
-            # unnatural "session handoff" messages.
-            logger.info(
-                "Session context at %.1f%% — saving shortterm, will resume on next message",
-                tracker.usage_ratio * 100,
-            )
-            shortterm.clear()
-            shortterm.save(
-                SessionState(
-                    session_id=result_msg.session_id if result_msg else "",
-                    timestamp=now_iso(),
-                    trigger=trigger,
-                    original_prompt=prompt,
-                    accumulated_response=accumulated_text,
-                    context_usage_ratio=tracker.usage_ratio,
-                    turn_count=result_msg.num_turns if result_msg else 0,
-                )
-            )
-            active_executor.clear_session(trigger, thread_id)
-        elif uses_chat_session:
-            shortterm.clear()
-
+        tool_records = [asdict(record) for record in result.tool_call_records]
         _save_prompt_log_end(
             self.anima_dir,
             session_id=self._tool_handler.session_id,
-            tool_call_count=len(accumulated_tool_records),
+            tool_call_count=len(tool_records),
         )
+
+        if result.force_chain and not tracker.threshold_exceeded:
+            tracker.force_threshold()
+            logger.info("Context auto-compact: forcing threshold_exceeded for session handoff")
+
+        result_message = result.result_message
+        session_id = getattr(result_message, "session_id", "") or ""
+        reported_turns = getattr(result_message, "num_turns", 0)
+        total_turns = reported_turns if isinstance(reported_turns, int) else 0
+
+        if uses_chat_session and tracker.threshold_exceeded:
+            logger.info(
+                "Session context at %.1f%% — saving shortterm for next message",
+                tracker.usage_ratio * 100,
+            )
+            if getattr(active_executor, "saves_threshold_shortterm", False) is not True:
+                shortterm.clear()
+                _save_handoff_shortterm(
+                    shortterm,
+                    result_text=result.text,
+                    tool_records=result.tool_call_records,
+                    session_id=session_id,
+                    turn_count=total_turns,
+                    trigger=trigger,
+                    prompt=prompt,
+                    tracker=tracker,
+                )
+            active_executor.clear_session(trigger, thread_id)
+        elif uses_chat_session and result.session_rotation_pending:
+            _save_handoff_shortterm(
+                shortterm,
+                result_text=result.text,
+                tool_records=result.tool_call_records,
+                session_id=session_id,
+                turn_count=total_turns,
+                trigger=trigger,
+                prompt=prompt,
+                tracker=tracker,
+            )
+            logger.info("Session rotation pending — saved shortterm for next turn")
+        elif uses_chat_session:
+            shortterm.clear()
 
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.info(
-            "run_cycle END trigger=%s duration_ms=%d response_len=%d chained=%s",
+            "run_cycle END trigger=%s duration_ms=%d response_len=%d",
             trigger,
             duration_ms,
-            len(accumulated_text),
-            session_chained,
+            len(result.text),
         )
-        _cycle_usage = result.usage.to_dict() if result.usage else None
+        usage = result.usage.to_dict() if result.usage else None
         _log_session_token_usage(
             self.anima_dir,
             model=active_model_config.model,
-            mode="s",
+            mode=mode,
             trigger=trigger,
-            usage=_cycle_usage,
+            usage=usage,
             duration_ms=duration_ms,
             turns=total_turns,
-            chains=chain_count if session_chained else 0,
         )
+
         is_error = result.error is True
         error_reason = result.reason if isinstance(result.reason, str) else ""
-        error_category = _resolve_error_category(error_reason, accumulated_text) if is_error else None
+        error_category = _resolve_error_category(error_reason, result.text) if is_error else None
         return CycleResult(
             trigger=trigger,
             action="error" if is_error else "responded",
             stop_kind="stream_error" if is_error else "normal",
-            summary=accumulated_text,
-            reason=error_category or "unknown" if is_error else "",
+            reason=(error_category or "unknown") if is_error else "",
             error_category=error_category,
+            summary=result.text,
             duration_ms=duration_ms,
             context_usage_ratio=tracker.usage_ratio,
             context_window=tracker.context_window,
             context_threshold=tracker.threshold,
-            session_chained=session_chained,
+            session_chained=False,
             total_turns=total_turns,
-            tool_call_records=accumulated_tool_records,
-            usage=_cycle_usage,
+            tool_call_records=tool_records,
+            usage=usage,
             truncated=result.truncated is True,
         )
 
@@ -1202,7 +972,7 @@ class CycleMixin:
         session_type = resolve_runtime_session_type(trigger)
         uses_chat_session = trigger_uses_chat_session(trigger)
         session_state = await self._guard_chat_sdk_session(
-            mode=mode,
+            executor=active_executor,
             uses_chat_session=uses_chat_session,
             active_model_config=active_model_config,
             thread_id=thread_id,
@@ -1225,7 +995,9 @@ class CycleMixin:
             baseline_tokens=session_state.baseline_tokens if session_state is not None else 0,
             context_window_overrides=self._load_context_window_overrides(),
             anima_dir=self.anima_dir,
-            session_type=session_type if mode == "s" and uses_chat_session else "",
+            session_type=session_type
+            if getattr(active_executor, "tracks_sdk_session_state", False) is True and uses_chat_session
+            else "",
             thread_id=thread_id,
             session_id=session_state.session_id if session_state is not None else "",
             session_created_at=session_state.created_at if session_state is not None else "",
@@ -1280,8 +1052,7 @@ class CycleMixin:
             thread_id=thread_id,
             shortterm_text=shortterm_text,
         )
-        if mode == "c":
-            _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
+        active_executor.prepare_tracker(tracker, system_prompt, prompt)
 
         # ── Prompt log: save full payload for debugging ───
         from core.tooling.schemas import load_all_tool_schemas as _lats
@@ -1317,6 +1088,7 @@ class CycleMixin:
         all_tool_call_records: list[dict] = []
         result_message: Any = None
         _stream_force_chain = False
+        rotation_pending = False
         _stream_usage: dict[str, int] = {
             "input_tokens": 0,
             "output_tokens": 0,
@@ -1355,11 +1127,7 @@ class CycleMixin:
                 self._active_streaming_executor = active_executor
                 try:
                     stream_kwargs: dict[str, Any] = {}
-                    if (
-                        task_compaction_enabled
-                        and mode == "s"
-                        and callable(getattr(active_executor, "compact_session_by_id", None))
-                    ):
+                    if task_compaction_enabled and callable(getattr(active_executor, "compact_session_by_id", None)):
                         stream_kwargs = {
                             "task_compaction_count": task_compaction_count,
                             "resume_session_id": task_resume_session_id,
@@ -1397,6 +1165,8 @@ class CycleMixin:
                                 self._tool_handler.merge_replied_to(transcript_replied)
                             if chunk.get("force_chain", False):
                                 _stream_force_chain = True
+                            if chunk.get("session_rotation_pending", False):
+                                rotation_pending = True
                             if chunk.get("task_compact_requested", False):
                                 attempt_task_compact_requested = True
                             if chunk.get("truncated", False):
@@ -1732,26 +1502,34 @@ class CycleMixin:
             logger.info("Context auto-compact (stream): forcing threshold_exceeded")
 
         if tracker.threshold_exceeded and uses_chat_session:
-            # Save shortterm for the next system-prompt allocation.
-            # Do NOT chain here — chaining mid-response causes the LLM to produce
-            # unnatural "session handoff" messages.
+            # Defer continuation until the next message rather than chaining mid-response.
             logger.info(
                 "Session context at %.1f%% — saving shortterm, will resume on next message (stream)",
                 tracker.usage_ratio * 100,
             )
             shortterm.clear()
-            shortterm.save(
-                SessionState(
-                    session_id=result_message.session_id if result_message else "",
-                    timestamp=now_iso(),
-                    trigger=trigger,
-                    original_prompt=prompt,
-                    accumulated_response="\n".join(full_text_parts),
-                    context_usage_ratio=tracker.usage_ratio,
-                    turn_count=result_message.num_turns if result_message else 0,
-                )
+            _save_handoff_shortterm(
+                shortterm,
+                result_text="\n".join(full_text_parts),
+                tool_records=all_tool_call_records,
+                session_id=getattr(result_message, "session_id", "") or "",
+                turn_count=total_turns,
+                trigger=trigger,
+                prompt=prompt,
+                tracker=tracker,
             )
             active_executor.clear_session(trigger, thread_id)
+        elif uses_chat_session and rotation_pending:
+            _save_handoff_shortterm(
+                shortterm,
+                result_text="\n".join(full_text_parts),
+                tool_records=all_tool_call_records,
+                session_id=getattr(result_message, "session_id", "") or "",
+                turn_count=total_turns,
+                trigger=trigger,
+                prompt=prompt,
+                tracker=tracker,
+            )
         elif uses_chat_session:
             shortterm.clear()
 

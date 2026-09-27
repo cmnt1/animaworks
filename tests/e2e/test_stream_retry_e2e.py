@@ -85,6 +85,9 @@ def _make_streaming_executor(
             self.execute_streaming = execute_streaming
             self.call_count_getter = lambda: call_count
 
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
+
     return _MockExecutor()
 
 
@@ -109,6 +112,9 @@ def _make_always_failing_executor():
 
         def __init__(self) -> None:
             self.execute_streaming = execute_streaming
+
+        def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+            """Match BaseExecutor's engine preparation hook."""
 
     return _MockExecutor()
 
@@ -350,6 +356,9 @@ class TestCheckpointClearedOnSuccess:
         class _ToolExecutor:
             supports_streaming = True
             execute_streaming = staticmethod(execute_streaming_with_tool)
+
+            def prepare_tracker(self, tracker: Any, system_prompt: str, prompt: str) -> None:
+                """Match BaseExecutor's engine preparation hook."""
 
         with patch_agent_sdk_streaming():
             agent = make_agent_core(

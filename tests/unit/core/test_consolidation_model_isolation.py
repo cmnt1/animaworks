@@ -501,6 +501,9 @@ class _FakeExecutor:
     def __init__(self, model_config: ModelConfig) -> None:
         self.model_config = model_config
 
+    def prepare_tracker(self, tracker, system_prompt, prompt) -> None:
+        pass
+
     async def execute(self, **kwargs):
         return ExecutionResult(text=f"blocking:{self.model_config.model}")
 

@@ -329,6 +329,15 @@ class TestExecuteContextTracking:
         assert "Continued" in result.text or "Partial" in result.text
 
 
+async def test_oversized_prompt_returns_structured_context_overflow(executor):
+    with patch.object(executor, "_preflight_clamp_with_compaction", new=AsyncMock(return_value=None)):
+        result = await executor.execute("prompt", system_prompt="system")
+
+    assert result.error is True
+    assert result.reason == "context_overflow"
+    assert "prompt too large" in result.text
+
+
 # ── _partition_tool_calls ────────────────────────────────────
 
 
