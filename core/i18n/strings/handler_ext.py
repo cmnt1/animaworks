@@ -129,10 +129,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "委譲済みタスクはありません",
         "en": "No delegated tasks",
     },
-    "handler.no_file_ops_paths": {
-        "ja": "No allowed paths listed under ファイル操作",
-        "en": "No allowed paths listed under file operations",
-    },
     "handler.no_matching_delegated": {
         "ja": "条件に合う委譲済みタスクはありません (filter={status})",
         "en": "No delegated tasks matching filter ({status})",
@@ -350,9 +346,5 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.tool_creation_denied": {
         "ja": "ツール作成が許可されていません。permissions.md に「ツール作成」セクションを追加してください。",
         "en": "Tool creation is not permitted. Add a tool creation section to permissions.md.",
-    },
-    "handler.tool_creation_keyword": {
-        "ja": "ツール作成",
-        "en": "Tool Creation",
     },
 }

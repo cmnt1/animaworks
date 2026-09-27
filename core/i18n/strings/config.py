@@ -135,10 +135,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("## {ts} ハートビート活動\n\n{summary}"),
         "en": ("## {ts} Heartbeat activity\n\n{summary}"),
     },
-    "anima.heartbeat_error": {
-        "ja": "run_heartbeatエラー: {exc}",
-        "en": "run_heartbeat error: {exc}",
-    },
     "anima.heartbeat_msgs_processed": {
         "ja": ("\n\n（{count}件のメッセージを処理）"),
         "en": ("\n\n({count} messages processed)"),
@@ -162,10 +158,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "anima.msg_received_episode": {
         "ja": ("## {ts} {from_person}からのメッセージ受信\n\n**送信者**: {from_person}\n**内容**:\n{content}"),
         "en": ("## {ts} Message received from {from_person}\n\n**Sender**: {from_person}\n**Content**:\n{content}"),
-    },
-    "anima.no_activity_log": {
-        "ja": "(アクティビティログなし)",
-        "en": "(No activity log)",
     },
     "anima.no_episodes_today": {
         "ja": "(本日のエピソードはありません)",
@@ -201,16 +193,6 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "en": (
             "### Error information\n\n- Error type: {exc_type}\n- Error message: {exc_msg}\n- Occurred at: {ts}\n- Unprocessed message count: {count}"
-        ),
-    },
-    "anima.reflections_header": {
-        "ja": "振り返り（REFLECTION）",
-        "en": "Reflections",
-    },
-    "anima.reflections_intro": {
-        "ja": "エピソード中の [REFLECTION] タグから抽出された意識的な洞察です。優先的に知識化を検討してください。",
-        "en": (
-            "Conscious insights extracted from [REFLECTION] tags in episodes. Prioritize these for knowledge extraction."
         ),
     },
     "anima.response_interrupted": {
@@ -266,10 +248,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "config.anima_registration": {
         "ja": "Anima登録",
         "en": "Anima registration",
-    },
-    "config.anthropic_api_key": {
-        "ja": "Anthropic APIキー",
-        "en": "Anthropic API key",
     },
     "config.anthropic_auth": {
         "ja": "Anthropic APIキー / サブスクリプション認証",

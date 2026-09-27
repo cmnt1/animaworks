@@ -150,43 +150,6 @@ def _notify_server_message_sent(
         logger.debug("Could not notify server of CLI message send", exc_info=True)
 
 
-# ── List ───────────────────────────────────────────────────
-
-
-def cmd_list(args: argparse.Namespace) -> None:
-    """List all animas (from gateway or filesystem)."""
-    if args.local:
-        _list_local()
-    else:
-        from cli._gateway import gateway_request_or_none
-
-        data = gateway_request_or_none(args, "GET", "/api/animas", timeout=10.0)
-        if data is None:
-            print("Gateway not reachable, falling back to filesystem...")
-            _list_local()
-        elif isinstance(data, list):
-            for p in data:
-                name = p.get("name", "unknown")
-                status = p.get("status", "unknown")
-                print(f"  {name} ({status})")
-        else:
-            print(data)
-
-
-def _list_local() -> None:
-    from core.infra.runtime_init import ensure_runtime_dir
-    from core.paths import get_animas_dir
-
-    ensure_runtime_dir()
-    animas_dir = get_animas_dir()
-    if not animas_dir.exists():
-        print("No animas directory found.")
-        return
-    for d in sorted(animas_dir.iterdir()):
-        if d.is_dir() and (d / "identity.md").exists():
-            print(f"  {d.name}")
-
-
 # ── Status ─────────────────────────────────────────────────
 
 

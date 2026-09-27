@@ -15,12 +15,11 @@ import pytest
 if TYPE_CHECKING:
     from core.config.models import PermissionsConfig
 
-from core.tooling.handler import (
+from core.tooling.handler import ToolHandler, _error_result
+from core.tooling.handler_base import (
     _EPISODE_FILENAME_RE,
     _NEEDS_SHELL_RE,
     _READ_FILE_SAFETY_NOTICE,
-    ToolHandler,
-    _error_result,
     _get_blocked_patterns,
     _get_injection_re,
     _is_protected_write,

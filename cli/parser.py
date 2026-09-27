@@ -60,37 +60,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init.set_defaults(func=_lazy_init)
 
-    # ── Create Anima ─────────────────────────────────────
-    p_create = sub.add_parser("create-anima", help="Create a new Digital Anima")
-    p_create.add_argument(
-        "--name",
-        default=None,
-        help="Anima name (required for blank, optional for template/md)",
-    )
-    p_create.add_argument(
-        "--template",
-        default=None,
-        help="Create from a named template",
-    )
-    p_create.add_argument(
-        "--from-md",
-        default=None,
-        metavar="PATH",
-        help="Create from an MD file",
-    )
-    p_create.add_argument(
-        "--supervisor",
-        default=None,
-        help="Supervisor anima name (overrides character sheet)",
-    )
-    p_create.add_argument(
-        "--role",
-        default=None,
-        choices=["engineer", "researcher", "manager", "writer", "ops", "general"],
-        help="Role template to apply (default: general)",
-    )
-    p_create.set_defaults(func=_lazy_create_anima)
-
     # ── Start ─────────────────────────────────────────────
     p_start = sub.add_parser("start", help="Start the AnimaWorks server")
     p_start.add_argument("--host", default="0.0.0.0")
@@ -152,14 +121,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force stop: SIGKILL after SIGTERM timeout, also kill orphan runners",
     )
     p_restart.set_defaults(func=_lazy_restart)
-
-    # ── Gateway (deprecated) ──────────────────────────────
-    p_gw = sub.add_parser("gateway", help=argparse.SUPPRESS)
-    p_gw.set_defaults(func=_lazy_gateway)
-
-    # ── Worker (deprecated) ───────────────────────────────
-    p_wk = sub.add_parser("worker", help=argparse.SUPPRESS)
-    p_wk.set_defaults(func=_lazy_worker)
 
     # ── Chat ──────────────────────────────────────────────
     p_chat = sub.add_parser("chat", help="Chat with an anima")
@@ -262,11 +223,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_board_dm.add_argument("--limit", type=int, default=20, help="Max messages")
     p_board_dm.set_defaults(func=_lazy_board_dm_history)
 
-    # ── List ──────────────────────────────────────────────
-    p_list = sub.add_parser("list", help="List all animas")
-    p_list.add_argument("--local", action="store_true", help="Scan filesystem directly")
-    p_list.set_defaults(func=_lazy_list)
-
     # ── Status ────────────────────────────────────────────
     p_status = sub.add_parser("status", help="Show system status from gateway")
     p_status.set_defaults(func=_lazy_status)
@@ -329,7 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
     config_sub = p_config.add_subparsers(dest="config_command")
 
     p_cfg_get = config_sub.add_parser("get", help="Get a config value")
-    p_cfg_get.add_argument("key", help="Dot-notation key (e.g. system.gateway.port)")
+    p_cfg_get.add_argument("key", help="Dot-notation key (e.g. system.timezone)")
     p_cfg_get.add_argument(
         "--show-secrets",
         action="store_true",
@@ -726,13 +682,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_cost.set_defaults(func=_lazy_cost)
 
-    # ── Migrate Cron ─────────────────────────────────────────
-    p_migrate_cron = sub.add_parser(
-        "migrate-cron",
-        help="Migrate cron.md files from Japanese format to standard cron expressions",
-    )
-    p_migrate_cron.set_defaults(func=_lazy_migrate_cron)
-
     # ── Migrate ────────────────────────────────────────────────
     from cli.commands.migrate_cmd import register_migrate_command
 
@@ -853,15 +802,6 @@ def _lazy_init(args: argparse.Namespace) -> None:
     cmd_init(args)
 
 
-def _lazy_create_anima(args: argparse.Namespace) -> None:
-    import sys
-
-    print("Warning: 'create-anima' is deprecated. Use 'anima create' instead.", file=sys.stderr)
-    from cli.commands.anima import cmd_create_anima
-
-    cmd_create_anima(args)
-
-
 def _lazy_start(args: argparse.Namespace) -> None:
     from cli.commands.server import cmd_start
 
@@ -892,18 +832,6 @@ def _lazy_reset(args: argparse.Namespace) -> None:
     cmd_reset(args)
 
 
-def _lazy_gateway(args: argparse.Namespace) -> None:
-    from cli.commands.server import cmd_gateway
-
-    cmd_gateway(args)
-
-
-def _lazy_worker(args: argparse.Namespace) -> None:
-    from cli.commands.server import cmd_worker
-
-    cmd_worker(args)
-
-
 def _lazy_chat(args: argparse.Namespace) -> None:
     from cli.commands.anima import cmd_chat
 
@@ -920,15 +848,6 @@ def _lazy_send(args: argparse.Namespace) -> None:
     from cli.commands.messaging import cmd_send
 
     cmd_send(args)
-
-
-def _lazy_list(args: argparse.Namespace) -> None:
-    import sys
-
-    print("Warning: 'list' is deprecated. Use 'anima list' instead.", file=sys.stderr)
-    from cli.commands.messaging import cmd_list
-
-    cmd_list(args)
 
 
 def _lazy_anima_restart(args: argparse.Namespace) -> None:
@@ -959,18 +878,6 @@ def _lazy_status(args: argparse.Namespace) -> None:
     from cli.commands.messaging import cmd_status
 
     cmd_status(args)
-
-
-def _lazy_migrate_cron(args: argparse.Namespace) -> None:
-    from core.config.migrate import migrate_all_cron
-    from core.paths import get_data_dir
-
-    animas_dir = get_data_dir() / "animas"
-    count = migrate_all_cron(animas_dir)
-    if count:
-        print(t("cli.migrate_cron_done", count=count))
-    else:
-        print(t("cli.migrate_cron_skipped"))
 
 
 def _lazy_anima_create(args: argparse.Namespace) -> None:

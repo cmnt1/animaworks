@@ -222,34 +222,9 @@ def _default_home_dir() -> str:
 
 
 def _resolve_animaworks_server_url() -> str:
-    """Resolve ANIMAWORKS_SERVER_URL for MCP subprocess env.
-
-    Preference order:
-      1. Existing process env
-      2. system.worker.gateway_url / system.gateway host+port from config
-      3. http://localhost:18500
-    """
+    """Resolve ANIMAWORKS_SERVER_URL for MCP subprocess env."""
     existing = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip()
-    if existing:
-        return existing.rstrip("/")
-    try:
-        from core.config.models import load_config
-
-        cfg = load_config()
-        gw_url = (cfg.system.worker.gateway_url or "").strip()
-        if gw_url:
-            return gw_url.rstrip("/")
-        host = (cfg.system.gateway.host or "localhost").strip()
-        if host in ("0.0.0.0", "::", "[::]"):
-            host = "localhost"
-        port = cfg.system.gateway.port or 18500
-        return f"http://{host}:{port}"
-    except Exception:
-        logger.debug(
-            "Failed to resolve server URL from config; using default",
-            exc_info=True,
-        )
-        return "http://localhost:18500"
+    return existing.rstrip("/") if existing else "http://localhost:18500"
 
 
 def _default_path_env() -> str:

@@ -18,10 +18,7 @@ from core.config.local_llm import (
     normalize_ollama_base_url,
     normalize_ollama_model_name,
 )
-from core.config.model_catalog import (  # noqa: F401
-    validate_chat_model,
-    validate_model_override,
-)
+from core.config.model_catalog import validate_chat_model  # noqa: F401
 from core.config.model_discovery import discover_models
 from core.config.models import (
     DEFAULT_LOCAL_LLM_BASE_URL,

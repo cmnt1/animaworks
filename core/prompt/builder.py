@@ -15,8 +15,8 @@ The heavy lifting is delegated to submodules:
   - :mod:`core.prompt.messaging`  — messaging & notification sections
   - :mod:`core.prompt.assembler`  — budget allocation & XML assembly
 
-This module re-exports every symbol that tests reference via
-``patch("core.prompt.builder.XXX", ...)``.
+This module keeps shared prompt-building entry points and patch targets
+while delegating implementation details to the submodules above.
 """
 
 import logging
@@ -30,26 +30,20 @@ from core.memory import MemoryManager
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.assembler import (
-    _MIN_SYSTEM_BUDGET,  # noqa: F401
     _REFERENCE_WINDOW,
-    PromptBudget,  # noqa: F401
     SectionEntry,  # noqa: F401
     _allocate_sections,
     _assemble_with_tags,
     _compute_system_budget,
-    _normalize_headings,  # noqa: F401
     _split_content_items,
 )
 from core.prompt.messaging import (
     _build_human_notification_guidance,  # noqa: F401
     _build_messaging_section,
-    _load_a_reflection,  # noqa: F401 -- compatibility export
 )
 from core.prompt.org_context import (
-    _build_full_org_tree,  # noqa: F401
     _build_org_context,
     _discover_other_animas,
-    _format_anima_entry,  # noqa: F401
     _is_mcp_mode,
 )
 from core.prompt.sections import (

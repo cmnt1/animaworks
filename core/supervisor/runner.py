@@ -29,7 +29,7 @@ from typing import Any
 import psutil
 
 from core.anima.digital_anima import DigitalAnima
-from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
+from core.exceptions import AnimaNotRunningError, ProcessError  # noqa: F401
 from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock

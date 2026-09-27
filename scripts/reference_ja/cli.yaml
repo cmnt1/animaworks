@@ -1,6 +1,5 @@
 # Japanese overrides keyed by the canonical argparse command path.
 init: runtime ディレクトリを初期化し、必要に応じて anima を作成します。
-create-anima: 指定した設定やテンプレートから新しい anima を作成します。
 anima set-model: 指定した anima の主モデルを変更します。
 task board: タスクボードの項目を確認・操作します。
 migrate: 実行時データに必要なマイグレーションを実行します。

@@ -423,7 +423,7 @@ class TestPromptLogRotation:
     def test_old_files_deleted_recent_kept(self, tmp_path: Path):
         """Log files older than _PROMPT_LOG_RETENTION_DAYS are deleted."""
         import core.agent.prompt_log as _prompt_log_mod
-        from core.agent.agent_core import _rotate_prompt_logs
+        from core.agent.prompt_log import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -469,7 +469,7 @@ class TestPromptLogRotation:
     def test_rotation_runs_once_per_day(self, tmp_path: Path):
         """After rotation runs once, a second call on the same day is a no-op."""
         import core.agent.prompt_log as _prompt_log_mod
-        from core.agent.agent_core import _rotate_prompt_logs
+        from core.agent.prompt_log import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -504,7 +504,7 @@ class TestPromptLogRotation:
     def test_rotation_ignores_non_date_files(self, tmp_path: Path):
         """Files that do not match YYYY-MM-DD.jsonl pattern are not deleted."""
         import core.agent.prompt_log as _prompt_log_mod
-        from core.agent.agent_core import _rotate_prompt_logs
+        from core.agent.prompt_log import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()

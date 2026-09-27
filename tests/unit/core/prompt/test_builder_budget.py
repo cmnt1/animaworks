@@ -10,14 +10,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.prompt.builder import (
+from core.prompt.assembler import (
     _MIN_SYSTEM_BUDGET,
     PromptBudget,
     SectionEntry,
     _allocate_sections,
     _compute_system_budget,
-    build_system_prompt,
 )
+from core.prompt.builder import build_system_prompt
 
 # ── _compute_system_budget ─────────────────────────────────
 

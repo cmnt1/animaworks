@@ -20,7 +20,6 @@ from core.config.models import (
     CommandsPermission,
     CredentialConfig,
     ExternalToolsPermission,
-    GatewaySystemConfig,
     ImageGenConfig,
     LocalLLMConfig,
     PermissionsConfig,
@@ -30,7 +29,6 @@ from core.config.models import (
     SkillsConfig,
     SystemConfig,
     ToolCreationPermission,
-    WorkerSystemConfig,
     _format_permissions_for_prompt,
     _match_pattern_table,
     _normalise_mode,
@@ -56,8 +54,8 @@ class TestSystemConfig:
         sc = SystemConfig()
         assert sc.mode == "server"
         assert sc.log_level == "INFO"
-        assert isinstance(sc.gateway, GatewaySystemConfig)
-        assert isinstance(sc.worker, WorkerSystemConfig)
+        assert not hasattr(sc, "gateway")
+        assert not hasattr(sc, "worker")
 
     def test_prompt_identity_business_exclusions_default(self):
         assert PromptConfig().identity_business_exclude_headings == [
@@ -66,23 +64,6 @@ class TestSystemConfig:
             "Appearance",
             "Basic Profile",
         ]
-
-
-class TestGatewaySystemConfig:
-    def test_defaults(self):
-        gc = GatewaySystemConfig()
-        assert gc.host == "0.0.0.0"
-        assert gc.port == 18500
-        assert gc.redis_url is None
-        assert gc.worker_heartbeat_timeout == 45
-
-
-class TestWorkerSystemConfig:
-    def test_defaults(self):
-        wc = WorkerSystemConfig()
-        assert wc.gateway_url == "http://localhost:18500"
-        assert wc.listen_port == 18501
-        assert wc.heartbeat_interval == 15
 
 
 class TestCredentialConfig:

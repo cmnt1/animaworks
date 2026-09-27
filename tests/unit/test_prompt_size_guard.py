@@ -128,7 +128,7 @@ class TestPreflightSizeCheck:
 
     def test_constants_defined(self):
         """Size limit constants should be defined."""
-        from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
+        from core.agent.prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 
         assert _PROMPT_SOFT_LIMIT_BYTES == 600_000
         assert _PROMPT_HARD_LIMIT_BYTES == 1_200_000

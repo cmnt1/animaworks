@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 from core.i18n import t
-from core.paths import PROJECT_DIR, load_prompt, load_prompt_text
+from core.paths import PROJECT_DIR, load_prompt
 from core.prompt.org_context import _is_mcp_mode
 from core.prompt.sections import _load_fallback_strings
 
@@ -139,15 +139,6 @@ def _build_messaging_section(
         main_py=main_py,
         self_name=self_name,
     )
-
-
-def _load_a_reflection() -> str:
-    """Load the A mode reflection/retry prompt template."""
-    try:
-        return load_prompt_text("a_reflection")
-    except Exception:
-        logger.debug("a_reflection template not found, skipping")
-        return ""
 
 
 def _build_human_notification_guidance(execution_mode: str = "") -> str:

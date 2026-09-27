@@ -28,7 +28,6 @@ from core.config.models import (
     read_anima_supervisor,
     save_config,
 )
-from core.exceptions import AnimaWorksError  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

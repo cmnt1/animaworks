@@ -45,7 +45,6 @@ _SECTION_FILES: dict[str, str] = {
     "messaging_s": "messaging_s.md",
     "messaging": "messaging.md",
     "communication_rules": "communication_rules.md",
-    "a_reflection": "a_reflection.md",
 }
 
 # ── Category 1: Structural migrations ────────────────────────────
@@ -1929,6 +1928,48 @@ def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose:
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_retired_config_keys_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired config.json keys that no longer have runtime behavior."""
+    del verbose
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["config.json not found; skip"])
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(config, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+
+        retired_keys = {
+            "heartbeat": ("orphan_grace_multiplier", "orphan_grace_min_seconds"),
+            "background_task": ("max_parallel_llm_tasks",),
+            "rag": ("enable_file_watcher",),
+            "interaction": ("ttl_days",),
+            "system": ("gateway", "worker"),
+        }
+        removed: list[str] = []
+        for section_name, keys in retired_keys.items():
+            section = config.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            for key in keys:
+                if key in section:
+                    del section[key]
+                    removed.append(f"{section_name}.{key}")
+
+        if not removed:
+            return StepResult(changed=0, skipped=1, details=["No retired config keys found"])
+
+        action = "Would remove" if dry_run else "Removed"
+        details = [f"{action} retired config keys: {', '.join(removed)}"]
+        if not dry_run:
+            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return StepResult(changed=1, skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_retired_config_keys_cleanup failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_remove_process_model_fields(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove retired process topology fields from each anima's status.json."""
     del verbose
@@ -2757,6 +2798,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove Usage Governor state and config",
             "structural",
             step_usage_governor_cleanup,
+        ),
+        MigrationStep(
+            "retired_config_keys_cleanup_20260927",
+            "Remove retired config.json keys",
+            "structural",
+            step_retired_config_keys_cleanup,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

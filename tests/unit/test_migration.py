@@ -118,12 +118,6 @@ class TestMigrationRunner:
         step_results = {s.id: r for s, r in report.steps}
         assert step_results["s1"].changed == 1
 
-    def test_run_resync_db(self, tmp_path: Path) -> None:
-        runner = self._make_runner(tmp_path)
-        report = runner.run_resync_db()
-        assert len(report.steps) == 1
-        assert report.steps[0][0].id == "s3"
-
     def test_dry_run_no_side_effects(self, tmp_path: Path) -> None:
         runner = MigrationRunner(tmp_path)
         runner.register(MigrationStep("dry", "Dry test", "structural", _dry_aware_step))

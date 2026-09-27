@@ -33,14 +33,7 @@ from core.agent.priming import PrimingMixin
 
 # ── Re-exports for backward compatibility ───────────────────────
 # Tests and other modules import these symbols from ``core.agent.agent_core``.
-from core.agent.prompt_log import (  # noqa: F401
-    _PROMPT_HARD_LIMIT_BYTES,
-    _PROMPT_LOG_RETENTION_DAYS,
-    _PROMPT_SOFT_LIMIT_BYTES,
-    _rotate_prompt_logs,
-    _save_prompt_log,
-    _save_prompt_log_end,
-)
+from core.agent.prompt_log import _save_prompt_log  # noqa: F401
 from core.exceptions import AnimaWorksError  # noqa: F401
 from core.memory import MemoryManager
 from core.messaging.messenger import Messenger

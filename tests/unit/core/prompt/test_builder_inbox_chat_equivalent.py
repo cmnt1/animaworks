@@ -145,22 +145,6 @@ class TestInboxPromptIsolation:
             )
         assert '<section name="emotion_instruction">' not in result.system_prompt
 
-    def test_inbox_does_not_inject_redundant_a_reflection(self, tmp_path):
-        memory = _mock_memory(tmp_path)
-
-        reflection_text = "## A-mode reflection\nReflect on past actions."
-
-        with ExitStack() as stack:
-            _apply_patches(stack, tmp_path)
-            stack.enter_context(patch("core.prompt.builder._load_a_reflection", return_value=reflection_text))
-            result = build_system_prompt(
-                memory,
-                execution_mode="a",
-                trigger="inbox:alice",
-                context_window=200_000,
-            )
-        assert "Reflect on past actions" not in result.system_prompt
-
     def test_chat_still_works_identically(self, tmp_path):
         """Regression: chat trigger should still include all sections."""
         memory = _mock_memory(tmp_path, specialty="## Specialty\nI specialize in DevOps.")

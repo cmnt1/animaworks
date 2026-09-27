@@ -39,24 +39,12 @@ from core.notification.notifier import HumanNotifier
 from core.tasks.background import BackgroundTaskManager
 from core.tooling.dispatch import ExternalToolDispatcher
 
-# ── Re-export all handler_base symbols for backward compatibility ──
+# ── Shared handler-base exports used by callers and mixins ──
 from core.tooling.handler_base import (  # noqa: F401
-    _EPISODE_FILENAME_RE,
-    _NEEDS_SHELL_RE,
-    _PROTECTED_DIRS,
-    _PROTECTED_FILES,
-    _READ_FILE_SAFETY_NOTICE,
     MemoryWriteError,
     OnMessageSentFn,
     ToolExecutionError,
     _error_result,
-    _extract_first_heading,
-    _get_blocked_patterns,
-    _get_injection_re,
-    _is_protected_write,
-    _validate_episode_path,
-    _validate_procedure_format,
-    _validate_skill_format,
     active_session_type,
     meeting_mode,
     suppress_board_fanout,

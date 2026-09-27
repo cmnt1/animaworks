@@ -107,9 +107,6 @@ class TestBuildSystemPromptTiers:
         memory = _make_mock_memory(tmp_path, data_dir, **memory_kwargs)
 
         def _load_prompt_section(name: str, *args: object, **kwargs: object) -> str:
-            if name == "builder/light_tier_org":
-                anima_name = kwargs.get("anima_name", "test-anima")
-                return f"あなたは{anima_name}です。"
             return "section"
 
         with (

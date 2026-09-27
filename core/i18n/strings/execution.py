@@ -15,14 +15,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Execution stopped because required instructions, permissions, and task context cannot fit safely ({estimated} estimated tokens / {limit} limit). Shorten the input or configure a model with a larger context window.",
         "ko": "필수 지시, 권한, 태스크 맥락을 보존하면 입력 한도를 초과하여 실행을 중지했습니다(추정 {estimated} / 한도 {limit} 토큰). 입력을 줄이거나 컨텍스트가 더 큰 모델을 설정하세요.",
     },
-    "agent.omitted_rest": {
-        "ja": ("\n\n（以降省略）"),
-        "en": ("\n\n(omitted)"),
-    },
-    "agent.priming_tier_light_header": {
-        "ja": ("## あなたが思い出していること\n\n### {sender_name} について\n\n"),
-        "en": ("## What you recall\n\n### About {sender_name}\n\n"),
-    },
     "agent.recent_dialogue_consider": {
         "ja": "進行中のタスクや指示がある場合、この内容を考慮してください。",
         "en": "Consider this content if there are ongoing tasks or instructions.",
@@ -101,10 +93,6 @@ STRINGS: dict[str, dict[str, str]] = {
             "## 원래 작업 지시\n{original_prompt}"
         ),
     },
-    "assisted.tool_exec_error": {
-        "ja": "ツール実行エラー: {error}",
-        "en": "Tool execution error: {error}",
-    },
     "litellm_context.compact_system": {
         "ja": "以下のAIアシスタントと人間の作業会話を簡潔に要約してください。主要な発見、決定事項、ツール結果、未完了の項目をすべて保持してください。要約のみを出力してください。",
         "en": "Summarize the following work conversation between an AI assistant and a human concisely. Preserve all key findings, decisions, tool results, and pending items. Output only the summary.",
@@ -120,10 +108,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "cursor_agent.not_authenticated": {
         "ja": "cursor-agentが未認証です。`agent login` を実行してCursorアカウントにログインしてください。",
         "en": "cursor-agent is not authenticated. Run `agent login` to sign in to your Cursor account.",
-    },
-    "cursor_agent.session_resume_failed": {
-        "ja": "cursor-agentセッションの復元に失敗しました（chatId={chat_id}）。新規セッションで再試行します。",
-        "en": "Failed to resume cursor-agent session (chatId={chat_id}). Retrying with a fresh session.",
     },
     "cursor_agent.timeout": {
         "ja": "[cursor-agent タイムアウト: {timeout}秒以内に完了しませんでした]",
@@ -217,15 +201,5 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "実行方式 {mode}（{model}）を利用できません。利用可能な fallback_models を設定してください。",
         "en": "Execution mode {mode} ({model}) is unavailable. Configure an available fallback_models route.",
         "ko": "실행 모드 {mode} ({model})를 사용할 수 없습니다. 사용 가능한 fallback_models 경로를 설정하세요.",
-    },
-    "executor.codex_unavailable_no_openai_cred": {
-        "ja": (
-            "Codex SDK が利用できず、フォールバック先 openai/* の認証情報も無いため実行不能。"
-            "openai-codex パッケージの復元が必要"
-        ),
-        "en": (
-            "Codex SDK is unavailable and no credentials for the openai/* fallback; cannot execute. "
-            "Restore the openai-codex package."
-        ),
     },
 }

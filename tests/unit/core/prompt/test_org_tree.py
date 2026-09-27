@@ -6,6 +6,7 @@
 Verifies the indented tree formatting, marker placement, and
 speciality annotations in the organization tree builder.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -27,14 +28,16 @@ class TestBuildFullOrgTree:
     """Tests for _build_full_org_tree formatting."""
 
     def test_simple_hierarchy(self):
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, "経営"),
-            ("rin", "sakura", "開発"),
-            ("kotoha", "sakura", "広報"),
-            ("aoi", "rin", None),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, "経営"),
+                ("rin", "sakura", "開発"),
+                ("kotoha", "sakura", "広報"),
+                ("aoi", "rin", None),
+            ]
+        )
 
         tree = _build_full_org_tree("sakura", animas)
         assert "sakura" in tree
@@ -44,7 +47,7 @@ class TestBuildFullOrgTree:
         assert "← あなた" in tree
 
     def test_single_anima(self):
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
         animas = _make_animas_dict([("sakura", None, None)])
 
@@ -54,13 +57,15 @@ class TestBuildFullOrgTree:
 
     def test_tree_formatting_branch_markers(self):
         """Multiple children should use tree branch markers."""
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, None),
-            ("a", "sakura", None),
-            ("b", "sakura", None),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, None),
+                ("a", "sakura", None),
+                ("b", "sakura", None),
+            ]
+        )
 
         tree = _build_full_org_tree("sakura", animas)
         # First child uses intermediate branch, last uses terminal branch
@@ -69,12 +74,14 @@ class TestBuildFullOrgTree:
 
     def test_you_marker_on_non_root(self):
         """The 'you' marker should appear next to the target anima even if non-root."""
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, "経営"),
-            ("rin", "sakura", "開発"),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, "経営"),
+                ("rin", "sakura", "開発"),
+            ]
+        )
 
         tree = _build_full_org_tree("rin", animas)
         # rin should have the marker, sakura should not
@@ -86,12 +93,14 @@ class TestBuildFullOrgTree:
 
     def test_speciality_annotation(self):
         """Anima entries should include speciality in parentheses."""
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, "経営"),
-            ("rin", "sakura", "開発"),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, "経営"),
+                ("rin", "sakura", "開発"),
+            ]
+        )
 
         tree = _build_full_org_tree("sakura", animas)
         assert "sakura (経営)" in tree
@@ -99,12 +108,14 @@ class TestBuildFullOrgTree:
 
     def test_no_speciality_no_parens(self):
         """Anima entries without speciality should show just the name."""
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, None),
-            ("rin", "sakura", None),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, None),
+                ("rin", "sakura", None),
+            ]
+        )
 
         tree = _build_full_org_tree("sakura", animas)
         # "sakura" should appear without parens (but may have arrow marker)
@@ -114,14 +125,16 @@ class TestBuildFullOrgTree:
 
     def test_deep_hierarchy(self):
         """Three levels of hierarchy should produce proper indentation."""
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, "CEO"),
-            ("rin", "sakura", "CTO"),
-            ("aoi", "rin", "Dev"),
-            ("kotoha", "sakura", "PR"),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, "CEO"),
+                ("rin", "sakura", "CTO"),
+                ("aoi", "rin", "Dev"),
+                ("kotoha", "sakura", "PR"),
+            ]
+        )
 
         tree = _build_full_org_tree("sakura", animas)
         lines = tree.splitlines()
@@ -141,13 +154,15 @@ class TestBuildFullOrgTree:
 
     def test_multiple_roots(self):
         """When there are multiple root animas (supervisor=None), all appear."""
-        from core.prompt.builder import _build_full_org_tree
+        from core.prompt.org_context import _build_full_org_tree
 
-        animas = _make_animas_dict([
-            ("sakura", None, None),
-            ("rin", None, None),
-            ("aoi", "sakura", None),
-        ])
+        animas = _make_animas_dict(
+            [
+                ("sakura", None, None),
+                ("rin", None, None),
+                ("aoi", "sakura", None),
+            ]
+        )
 
         tree = _build_full_org_tree("sakura", animas)
         assert "sakura" in tree
@@ -159,19 +174,19 @@ class TestFormatAnimaEntry:
     """Tests for _format_anima_entry helper."""
 
     def test_with_speciality(self):
-        from core.prompt.builder import _format_anima_entry
+        from core.prompt.org_context import _format_anima_entry
 
         result = _format_anima_entry("rin", "開発")
         assert result == "rin (開発)"
 
     def test_without_speciality(self):
-        from core.prompt.builder import _format_anima_entry
+        from core.prompt.org_context import _format_anima_entry
 
         result = _format_anima_entry("rin", None)
         assert result == "rin"
 
     def test_empty_speciality(self):
-        from core.prompt.builder import _format_anima_entry
+        from core.prompt.org_context import _format_anima_entry
 
         # None means no speciality
         result = _format_anima_entry("rin", None)

@@ -973,16 +973,3 @@ def cmd_restart(args: argparse.Namespace) -> None:
         print(f"  Helper log: {helper_log}")
         print(f"  Daemon log: {daemon_log}")
         sys.exit(1)
-
-
-# ── Deprecated modes ──────────────────────────────────────
-
-
-def cmd_gateway(args: argparse.Namespace) -> None:
-    print("Error: 'gateway' mode has been deprecated. Use 'animaworks start' instead.")
-    sys.exit(1)
-
-
-def cmd_worker(args: argparse.Namespace) -> None:
-    print("Error: 'worker' mode has been deprecated. Use 'animaworks start' instead.")
-    sys.exit(1)
