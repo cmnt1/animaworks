@@ -12,12 +12,18 @@ from unittest.mock import MagicMock
 
 from core.supervisor._mgr_health import HealthMixin
 from core.supervisor._mgr_rag_repair import RAGRepairMixin
+from core.supervisor.restart_state import RestartController
 
 
 class _SupervisorForTest(HealthMixin, RAGRepairMixin):
     def __init__(self, animas_dir: Path) -> None:
         self.animas_dir = animas_dir
-        self._restart_counts: dict[str, int] = {"sora": 2}
+        self._restart_ctl = RestartController(
+            failed_threshold=3,
+            base_delay_sec=30,
+            max_delay_sec=1800,
+            stable_reset_sec=300,
+        )
         self.events: list[tuple[str, dict]] = []
 
     async def _broadcast_event(self, event_type: str, payload: dict) -> None:
@@ -56,6 +62,7 @@ async def test_repair_before_restart_on_sigsegv(monkeypatch, tmp_path):
     (tmp_path / "sora").mkdir(exist_ok=True)
     (tmp_path / "sora" / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     supervisor = _SupervisorForTest(tmp_path)
+    supervisor._restart_ctl.record_failure("sora", "e1")
     repair_calls: list[dict] = []
 
     async def fake_run_repair(anima_name: str, *, reason: str, include_shared: bool):
@@ -81,7 +88,7 @@ async def test_repair_before_restart_on_sigsegv(monkeypatch, tmp_path):
             "include_shared": True,
         },
     ]
-    assert supervisor._restart_counts["sora"] == 0
+    assert supervisor._restart_ctl.get("sora") is None  # reset after repair success
     assert supervisor.events[0][0] == "system.rag_repair"
 
 

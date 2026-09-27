@@ -90,7 +90,8 @@ class RAGRepairMixin:
                 include_shared=True,
             )
             if result["ok"]:
-                self._restart_counts[anima_name] = 0
+                if self._restart_ctl is not None:
+                    self._restart_ctl.reset(anima_name)
                 self._write_rag_repair_state(
                     anima_name,
                     {

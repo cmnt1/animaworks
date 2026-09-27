@@ -51,6 +51,9 @@ class ReconcileMixin:
         self._check_config_freshness()
 
         if not self.animas_dir.exists():
+            if self._restart_ctl is not None:
+                for name in self._restart_ctl.names():
+                    self._restart_ctl.forget(name)
             return
 
         running = set(self.processes.keys())
@@ -73,39 +76,33 @@ class ReconcileMixin:
                 continue
             on_disk[anima_dir.name] = self.read_anima_enabled(anima_dir)
 
-        # permanently failed + enabled → recover after 1-minute cooldown
-        for name in list(self._permanently_failed):
-            if self._shutdown:
-                break
-            handle = self.processes.get(name)
-            if handle is None:
-                self._permanently_failed.discard(name)
-                continue
-            if name not in on_disk or not on_disk[name]:
-                continue
-            now = asyncio.get_running_loop().time()
-            failed_since = self._failed_log_times.get(name, 0)
-            if now - failed_since < 60:
-                continue
-            logger.info(
-                "Reconciliation: recovering permanently failed process %s (cooldown elapsed, resetting retries)",
-                name,
-            )
-            lock = self._lifecycle_locks.setdefault(name, asyncio.Lock())
-            async with lock:
-                self.processes.pop(name, None)
-                self._restart_counts.pop(name, None)
-                self._permanently_failed.discard(name)
-                self._failed_log_times.pop(name, None)
-            try:
-                await self.start_anima(name)
-                if self.on_anima_added:
-                    self.on_anima_added(name)
-            except Exception:
-                logger.exception(
-                    "Reconciliation: failed to recover %s",
-                    name,
-                )
+        # Drop restart state for animas that are disabled or have been removed
+        # from disk, including those with no process to enter the stop loops.
+        if self._restart_ctl is not None:
+            for name in self._restart_ctl.names():
+                if name in on_disk and on_disk[name]:
+                    continue
+                if name in on_disk_incomplete:
+                    continue
+                self._restart_ctl.forget(name)
+
+        # Safety net: ensure a restart worker exists for every known restart
+        # record whose anima is enabled but not running (covers server
+        # restart and any lost worker). Recovery is driven by the unified
+        # RestartController, not by a separate cooldown here.
+        if self._restart_ctl is not None:
+            for name in self._restart_ctl.names():
+                if self._shutdown:
+                    break
+                if name in self.processes:
+                    continue
+                if name in self._restarting:
+                    continue
+                if name not in on_disk or not on_disk[name]:
+                    continue
+                if name in self._starting or name in self._bootstrapping:
+                    continue
+                self._ensure_restart_worker(name)
 
         # Update running set after recovery attempts
         running = set(self.processes.keys())
@@ -192,28 +189,27 @@ class ReconcileMixin:
                 if name in governor_suspended:
                     logger.info("Reconciliation: skipping %s (governor suspended)", name)
                     continue
-                # Cooldown after repeated start failures
-                _fail_time = self._start_failed_times.get(name)
-                if _fail_time is not None:
-                    _elapsed = time.monotonic() - _fail_time
-                    _fail_count = self._start_fail_counts.get(name, 0)
-                    _cooldown = min(300.0, 60.0 * (1 + _fail_count))
-                    if _elapsed < _cooldown:
-                        continue
+                # Respect the restart state machine's backoff window instead of
+                # a separate start-failure cooldown.
+                if (
+                    self._restart_ctl is not None
+                    and self._restart_ctl.get(name) is not None
+                    and not self._restart_ctl.is_due(name)
+                ):
+                    continue
                 logger.info("Reconciliation: starting anima %s", name)
                 try:
                     await self.start_anima(name)
-                    self._start_failed_times.pop(name, None)
-                    self._start_fail_counts.pop(name, None)
                     if self.on_anima_added:
                         self.on_anima_added(name)
-                except Exception:
-                    self._start_failed_times[name] = time.monotonic()
-                    self._start_fail_counts[name] = self._start_fail_counts.get(name, 0) + 1
+                except Exception as exc:
                     logger.exception(
                         "Reconciliation: failed to start %s",
                         name,
                     )
+                    if self._restart_ctl is not None:
+                        self._restart_ctl.record_failure(name, f"{type(exc).__name__}: {exc}")
+                        self._ensure_restart_worker(name)
 
         # disabled + running → stop
         for name, enabled in on_disk.items():
@@ -230,6 +226,8 @@ class ReconcileMixin:
                 )
                 try:
                     await self.stop_anima(name)
+                    if self._restart_ctl is not None:
+                        self._restart_ctl.forget(name)
                     if self.on_anima_removed:
                         self.on_anima_removed(name)
                 except Exception:
@@ -255,6 +253,8 @@ class ReconcileMixin:
                 )
                 try:
                     await self.stop_anima(name)
+                    if self._restart_ctl is not None:
+                        self._restart_ctl.forget(name)
                     if self.on_anima_removed:
                         self.on_anima_removed(name)
                 except Exception:

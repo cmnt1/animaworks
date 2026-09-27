@@ -190,21 +190,16 @@ class TestRespawnDisabledCleanSkip:
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=False)
         supervisor.restart_policy.max_retries = 2
-
-        # Pre-seed counters to prove they are not written by disabled path
-        assert name not in supervisor._start_fail_counts
-        assert name not in supervisor._failure_reasons
-        assert name not in supervisor._permanently_failed
+        supervisor._ensure_restart_worker = MagicMock()
+        supervisor._restart_ctl.record_failure(name, "e1")
 
         with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
-            result = await supervisor._respawn_anima_transaction(name)
+            await supervisor._handle_process_failure(name, MagicMock())
 
-        assert result is None
         MockHandle.assert_not_called()
-        assert name not in supervisor._start_fail_counts
-        assert name not in supervisor._failure_reasons
-        assert name not in supervisor._permanently_failed
+        assert supervisor._restart_ctl.get(name) is None  # disabled -> clean forget
         assert name not in supervisor.processes
+        supervisor._ensure_restart_worker.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_process_failure_disabled_no_restart_count(
@@ -225,30 +220,30 @@ class TestRespawnDisabledCleanSkip:
             supervisor.processes.pop(anima_name, None)
 
         supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+        supervisor._ensure_restart_worker = MagicMock()
 
-        with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
-            await supervisor._handle_process_failure(name, old_handle)
+        await supervisor._handle_process_failure(name, old_handle)
 
         assert name not in supervisor.processes
         assert name not in supervisor._restarting
-        assert name not in supervisor._restart_counts
-        assert name not in supervisor._permanently_failed
-        assert name not in supervisor._start_fail_counts
-        assert name not in supervisor._failure_reasons
+        assert supervisor._restart_ctl.get(name) is None
+        supervisor._ensure_restart_worker.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_process_failure_disabled_at_max_retries_no_permanent(
         self,
         supervisor: ProcessSupervisor,
     ) -> None:
-        """Disabled + already at max retries must not enter _permanently_failed."""
+        """Disabled + already at max retries must not enter a FAILED state."""
         from core.supervisor.process_handle import ProcessState
 
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=False)
         supervisor.restart_policy.max_retries = 3
-        # Already exhausted retries — previously would hit _mark_process_error first
-        supervisor._restart_counts[name] = 3
+        # Already exhausted retries
+        ctl = supervisor._restart_ctl
+        for _ in range(3):
+            ctl.record_failure(name, "e")
 
         old_handle = MagicMock()
         old_handle.state = ProcessState.FAILED
@@ -258,15 +253,15 @@ class TestRespawnDisabledCleanSkip:
             supervisor.processes.pop(anima_name, None)
 
         supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+        supervisor._ensure_restart_worker = MagicMock()
 
-        with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
-            await supervisor._handle_process_failure(name, old_handle)
+        await supervisor._handle_process_failure(name, old_handle)
 
         assert name not in supervisor.processes
         assert name not in supervisor._restarting
-        assert name not in supervisor._permanently_failed
-        assert name not in supervisor._failure_reasons
+        assert ctl.get(name) is None  # disabled -> clean forget
         supervisor.stop_anima.assert_awaited_once_with(name)
+        supervisor._ensure_restart_worker.assert_not_called()
 
 
 class TestShutdownDuringInFlightStart:
@@ -309,37 +304,36 @@ class TestShutdownDuringInFlightStart:
 
 
 class TestDisableMidRespawnCountRollback:
-    """_restart_counts must not stay incremented on a disabled clean-skip."""
+    """The restart record must not stay set on a disabled clean-skip."""
 
     @pytest.mark.asyncio
     async def test_disable_mid_respawn_rolls_back_restart_count(
         self,
         supervisor: ProcessSupervisor,
     ) -> None:
-        """Disable lands between count increment and respawn → count rolled back."""
+        """A disabled anima gets a clean forget of its restart record."""
         from core.supervisor.process_handle import ProcessState
 
         name = "test-anima"
-        _write_status(supervisor.animas_dir, name, enabled=True)
+        _write_status(supervisor.animas_dir, name, enabled=False)
         supervisor.restart_policy.max_retries = 3
-        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)
+        ctl = supervisor._restart_ctl
+        ctl.record_failure(name, "e1")
 
         old_handle = MagicMock()
         old_handle.state = ProcessState.FAILED
+        supervisor.processes[name] = old_handle
 
-        async def respawn_with_disable(anima_name: str):
-            # Simulate disable arriving while respawn is in flight; the
-            # production path then clean-skips and returns None.
-            _write_status(supervisor.animas_dir, anima_name, enabled=False)
-            return None
+        async def mock_stop(anima_name: str, **_kwargs) -> None:
+            supervisor.processes.pop(anima_name, None)
 
-        supervisor._respawn_anima_transaction = AsyncMock(side_effect=respawn_with_disable)
+        supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
+        supervisor._ensure_restart_worker = MagicMock()
 
-        with patch("core.supervisor.manager.asyncio.sleep", new_callable=AsyncMock):
-            await supervisor._handle_process_failure(name, old_handle)
+        await supervisor._handle_process_failure(name, old_handle)
 
-        assert name not in supervisor._restart_counts
-        assert name not in supervisor._permanently_failed
+        assert name not in supervisor.processes
+        assert ctl.get(name) is None  # disabled -> clean forget
         assert name not in supervisor._restarting
 
 
@@ -399,13 +393,18 @@ class TestRespawnDuringShutdown:
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=True)
         supervisor._shutdown = True
+        ctl = supervisor._restart_ctl
+        ctl.record_failure(name, "e1")
 
-        result = await supervisor._respawn_anima_transaction(name)
+        from core.supervisor.process_handle import ProcessState
 
-        assert result is None
-        assert name not in supervisor._permanently_failed
-        assert name not in supervisor._failure_reasons
-        assert name not in supervisor._start_fail_counts
+        handle = MagicMock()
+        await supervisor._handle_process_failure(name, handle)
+
+        # Entrance guard: nothing is touched, no worker is started.
+        assert ctl.get(name) is not None  # record preserved (untouched)
+        assert handle.state != ProcessState.RESTARTING
+        assert name not in supervisor._restarting
 
 
 class TestFailureMachineryNoOpDuringShutdown:
@@ -416,24 +415,25 @@ class TestFailureMachineryNoOpDuringShutdown:
         self,
         supervisor: ProcessSupervisor,
     ) -> None:
-        """Entrance guard blocks the direct _mark_process_error path too."""
+        """Entrance guard blocks the whole failure/restart machinery too."""
         from core.supervisor.process_handle import ProcessState
 
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=True)
         supervisor.restart_policy.max_retries = 3
-        supervisor._restart_counts[name] = 3  # already exhausted
+        ctl = supervisor._restart_ctl
+        for _ in range(3):
+            ctl.record_failure(name, "e")  # already FAILED
         supervisor._shutdown = True
 
         handle = MagicMock()
         handle.state = ProcessState.FAILED
-        supervisor._respawn_anima_transaction = AsyncMock()
+        supervisor._ensure_restart_worker = MagicMock()
 
         await supervisor._handle_process_failure(name, handle)
 
-        supervisor._respawn_anima_transaction.assert_not_awaited()
-        assert name not in supervisor._permanently_failed
-        assert name not in supervisor._failure_reasons
+        supervisor._ensure_restart_worker.assert_not_called()
+        assert ctl.get(name).attempts == 3  # untouched
         assert name not in supervisor._restarting
         # Entrance guard fires before state is flipped to RESTARTING.
         assert handle.state == ProcessState.FAILED
@@ -448,5 +448,4 @@ class TestFailureMachineryNoOpDuringShutdown:
 
         await supervisor._mark_process_error(name, "boom")
 
-        assert name not in supervisor._permanently_failed
-        assert name not in supervisor._failure_reasons
+        assert supervisor._restart_ctl.get(name) is None

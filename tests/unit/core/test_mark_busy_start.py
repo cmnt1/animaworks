@@ -236,10 +236,15 @@ class TestHealthCheckWithFreshProgress:
         sup = object.__new__(HealthMixin)
         sup.health_config = HealthConfig()
         sup._shutdown = False
-        sup._permanently_failed = set()
-        sup._failed_log_times = {}
         sup._restarting = set()
-        sup._restart_counts = {}
+        from core.supervisor.restart_state import RestartController
+
+        sup._restart_ctl = RestartController(
+            failed_threshold=5,
+            base_delay_sec=2.0,
+            max_delay_sec=60.0,
+            stable_reset_sec=300.0,
+        )
         sup.restart_policy = MagicMock()
         sup.restart_policy.max_retries = 5
         sup.restart_policy.backoff_base_sec = 2.0
@@ -293,10 +298,15 @@ class TestHealthCheckWithFreshProgress:
         sup = object.__new__(HealthMixin)
         sup.health_config = HealthConfig()
         sup._shutdown = False
-        sup._permanently_failed = set()
-        sup._failed_log_times = {}
         sup._restarting = set()
-        sup._restart_counts = {}
+        from core.supervisor.restart_state import RestartController
+
+        sup._restart_ctl = RestartController(
+            failed_threshold=5,
+            base_delay_sec=2.0,
+            max_delay_sec=60.0,
+            stable_reset_sec=300.0,
+        )
         sup.restart_policy = MagicMock()
         sup.restart_policy.max_retries = 5
         sup.restart_policy.backoff_base_sec = 2.0
