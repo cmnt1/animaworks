@@ -64,7 +64,7 @@ class TestAtomicWriteText:
         atomic_write_text(target, "original content")
 
         # Patch os.fdopen so the write inside atomic_write_text raises
-        with patch("core.memory._io.os.fdopen", side_effect=OSError("disk full")):
+        with patch("core.platform.atomic_io.os.fdopen", side_effect=OSError("disk full")):
             with pytest.raises(MemoryWriteError, match="disk full"):
                 atomic_write_text(target, "should not appear")
 
@@ -74,7 +74,7 @@ class TestAtomicWriteText:
         """After a failed write, no .tmp files remain in the directory."""
         target = tmp_path / "cleanup.txt"
 
-        with patch("core.memory._io.os.fdopen", side_effect=OSError("fail")):
+        with patch("core.platform.atomic_io.os.fdopen", side_effect=OSError("fail")):
             with pytest.raises(MemoryWriteError):
                 atomic_write_text(target, "boom")
 
@@ -95,7 +95,7 @@ class TestAtomicWriteText:
         target = tmp_path / "replace_test.txt"
         target.write_text("existing", encoding="utf-8")
 
-        with patch("core.memory._io.os.replace", wraps=os.replace) as mock_replace:
+        with patch("core.platform.atomic_io.os.replace", wraps=os.replace) as mock_replace:
             atomic_write_text(target, "new content")
 
         mock_replace.assert_called_once()

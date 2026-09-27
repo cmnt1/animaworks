@@ -18,6 +18,11 @@ STRINGS: dict[str, dict[str, str]] = {
             "API 키는 필요하지 않습니다."
         ),
     },
+    "image_generation.retry_later": {
+        "ja": "後ほど",
+        "en": "later",
+        "ko": "나중에",
+    },
     "image_generation.no_backend": {
         "ja": "{step}: 画像生成には Codex（ChatGPT）へのログイン、または画像生成 API キーの設定が必要です。",
         "en": "{step}: Image generation requires logging in to Codex (ChatGPT) or configuring an image-generation API key.",

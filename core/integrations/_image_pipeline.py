@@ -115,9 +115,9 @@ def _append_image_error(result: PipelineResult, step: str, exc: BaseException) -
 
 def _retry_after_placeholder() -> str:
     """Return a localized placeholder when Codex gives no reset time."""
-    from core.paths import _get_locale
+    from core.i18n import t
 
-    return {"ja": "後ほど", "ko": "나중에"}.get(_get_locale(), "later")
+    return t("image_generation.retry_later")
 
 
 # ── ImageGenPipeline ───────────────────────────────────────

@@ -78,10 +78,10 @@ def test_heartbeat_enabled_propagates_to_runtime_model_config(tmp_path) -> None:
     config_path.exists.return_value = True
 
     with (
-        patch("core.config.get_config_path", return_value=config_path),
-        patch("core.config.load_config", return_value=AnimaWorksConfig()),
-        patch("core.config.resolve_anima_config", return_value=(resolved, credential)),
-        patch("core.config.resolve_execution_mode", return_value="A"),
+        patch("core.config.models.get_config_path", return_value=config_path),
+        patch("core.config.models.load_config", return_value=AnimaWorksConfig()),
+        patch("core.config.models.resolve_anima_config", return_value=(resolved, credential)),
+        patch("core.config.models.resolve_execution_mode", return_value="A"),
     ):
         model_config = ConfigReader(tmp_path).read_model_config()
 

@@ -35,7 +35,7 @@ def observe_pending_publish(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
             published.append(destination)
         real_replace(src, dst)
 
-    monkeypatch.setattr("core.memory._io.os.replace", checked_replace)
+    monkeypatch.setattr("core.platform.atomic_io.os.replace", checked_replace)
     return published
 
 

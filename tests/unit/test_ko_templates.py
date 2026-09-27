@@ -89,6 +89,7 @@ _EXPECTED_FILES = [
     "company/vision.md",
     "prompts/a_reflection.md",
     "prompts/behavior_rules.md",
+    "prompts/first_meeting.md",
     "prompts/builder/emotion_instruction.md",
     "prompts/builder/fallbacks.md",
     "prompts/builder/heartbeat_tool_instruction.md",
