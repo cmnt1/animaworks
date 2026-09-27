@@ -10,33 +10,8 @@ import os
 from core.i18n import t
 
 
-def cli_main() -> None:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    from core.config import load_config
-    from core.infra.logging_config import setup_logging
-    from core.paths import get_data_dir
-    from core.time_utils import configure_timezone
-
-    # Fail-open: a corrupt config must not crash before logging is even set up
-    # (mirrors runner.py). Fall back to the secure default (redaction on).
-    config_path = get_data_dir() / "config.json"
-    try:
-        _cfg = load_config(config_path) if config_path.exists() else None
-    except Exception:
-        _cfg = None
-
-    setup_logging(
-        level=os.environ.get("ANIMAWORKS_LOG_LEVEL", "INFO"),
-        log_dir=get_data_dir() / "logs",
-        redaction_enabled=_cfg.logging.redaction_enabled if _cfg else True,
-    )
-
-    configure_timezone(_cfg.system.timezone if _cfg else "")
-
-    parser = argparse.ArgumentParser(description="AnimaWorks - Digital Anima Framework")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="animaworks", description="AnimaWorks - Digital Anima Framework")
     parser.add_argument("--gateway-url", default=None, help="Gateway URL")
     parser.add_argument(
         "--data-dir",
@@ -837,6 +812,37 @@ def cli_main() -> None:
     from cli.commands.profile import register_profile_command
 
     register_profile_command(sub)
+
+    return parser
+
+
+def cli_main() -> None:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    from core.config import load_config
+    from core.infra.logging_config import setup_logging
+    from core.paths import get_data_dir
+    from core.time_utils import configure_timezone
+
+    # Fail-open: a corrupt config must not crash before logging is even set up
+    # (mirrors runner.py). Fall back to the secure default (redaction on).
+    config_path = get_data_dir() / "config.json"
+    try:
+        _cfg = load_config(config_path) if config_path.exists() else None
+    except Exception:
+        _cfg = None
+
+    setup_logging(
+        level=os.environ.get("ANIMAWORKS_LOG_LEVEL", "INFO"),
+        log_dir=get_data_dir() / "logs",
+        redaction_enabled=_cfg.logging.redaction_enabled if _cfg else True,
+    )
+
+    configure_timezone(_cfg.system.timezone if _cfg else "")
+
+    parser = build_parser()
 
     # Fallback: if first arg looks like an external tool name, forward to cli_dispatch
     import sys as _sys

@@ -82,6 +82,9 @@ jobs:
           ruff check core/ cli/ server/
           ruff format --check core/ cli/ server/
 
+      - name: Check generated reference docs are fresh
+        run: python scripts/gen_reference.py all --check
+
       - name: Run unit tests
         run: |
           pytest tests/unit/ -x -q --timeout=30 -m "not live and not azure and not ollama" --cov=core --cov-report=term-missing --cov-report=xml --cov-fail-under=70

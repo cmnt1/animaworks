@@ -93,8 +93,12 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | フィールド | 型 | デフォルト | 説明 |
 |-----------|-----|----------|------|
 | `supervisor` | `str | None` | None |  |
+| `company` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
 | `model` | `str | None` | None |  |
+| `heartbeat_enabled` | `bool | None` | None |  |
+| `token_budget_monthly` | `int | None` | None |  |
+| `aliases` | `list[str]` | `[]` |  |
 
 #### デフォルト値 (anima_defaults)
 
@@ -102,22 +106,33 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 |-----------|-----|----------|------|
 | `model` | `str` | `"claude-sonnet-4-6"` |  |
 | `fallback_model` | `str | None` | None |  |
+| `fallback_models` | `list[str]` | `[]` |  |
 | `background_model` | `str | None` | None |  |
 | `background_credential` | `str | None` | None |  |
+| `background_thinking_effort` | `str | None` | None |  |
+| `voice_thinking_effort` | `str | None` | None |  |
 | `max_tokens` | `int` | `8192` |  |
-| `max_turns` | `int` | `10000` |  |
 | `credential` | `str` | `"anthropic"` |  |
 | `context_threshold` | `float` | `0.5` |  |
+| `context_absolute_ceiling` | `float` | `0.75` |  |
+| `task_compaction_tokens` | `int` | `0` |  |
+| `task_compaction_max` | `int` | `6` |  |
+| `max_session_age_hours` | `float` | `24.0` |  |
 | `conversation_history_threshold` | `float` | `0.3` |  |
 | `execution_mode` | `str | None` | None |  |
 | `supervisor` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
+| `extra_mcp_servers` | `dict[str, dict]` | `{}` |  |
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `max_outbound_per_hour` | `int | None` | None |  |
 | `max_outbound_per_day` | `int | None` | None |  |
 | `max_recipients_per_run` | `int | None` | None |  |
+| `default_workspace` | `str` | `""` |  |
+| `consolidation_enabled` | `bool` | `True` |  |
+| `heartbeat_enabled` | `bool` | `True` |  |
+| `token_budget_monthly` | `int | None` | None |  |
 
 #### AnimaWorksConfig トップレベル
 
@@ -135,18 +150,37 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `animas` | Anima別設定オーバーライド |
 | `consolidation` | 記憶統合設定 |
 | `rag` | RAG（検索拡張生成）設定 |
+| `gpu` |  |
+| `memory` |  |
+| `skills` |  |
+| `chatwork_tool` |  |
+| `prompt` |  |
 | `priming` | プライミング（自動記憶想起）設定 |
 | `image_gen` | 画像生成設定 |
 | `human_notification` |  |
+| `interaction` |  |
 | `server` |  |
+| `llm_rate_guard` |  |
+| `mcp` |  |
 | `external_messaging` |  |
+| `external_tasks` |  |
+| `github_webhook` |  |
+| `event_export` |  |
 | `background_task` |  |
 | `activity_log` |  |
+| `logging` |  |
 | `heartbeat` |  |
+| `cron_guard` |  |
 | `voice` |  |
 | `housekeeping` |  |
+| `inbox` |  |
+| `local_llm` |  |
+| `workspaces` |  |
+| `github_identities` |  |
+| `channel_company_defaults` |  |
 | `activity_level` |  |
 | `activity_schedule` |  |
+| `icon_url_template` |  |
 | `ui` |  |
 
 <!-- AUTO-GENERATED:END -->
