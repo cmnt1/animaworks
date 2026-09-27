@@ -13,30 +13,20 @@ from typing import Any
 
 from core.prompt.tool_content import apply_prompt_descriptions
 from core.skills.trust_gate import trust_skill_enabled_for_trigger
-from core.tooling.schemas.admin import _AW_CORE_NAMES, ADMIN_TOOLS, CC_TOOLS
+from core.tooling.schemas.admin import _AW_CORE_NAMES, CC_TOOLS
 from core.tooling.schemas.channel import _channel_tools
 from core.tooling.schemas.memory import (
-    FILE_TOOLS,
     KNOWLEDGE_TOOLS,
     MEMORY_TOOLS,
     PROCEDURE_TOOLS,
-    SEARCH_TOOLS,
 )
 from core.tooling.schemas.notification import _notification_tools
 from core.tooling.schemas.session_todo import _session_todo_tools
 from core.tooling.schemas.skill import (
-    DISCOVERY_TOOLS,
-    TOOL_MANAGEMENT_TOOLS,
-    USE_TOOL,
     _create_skill_schemas,
     _curator_skill_schemas,
 )
-from core.tooling.schemas.supervisor import (
-    _background_task_tools,
-    _check_permissions_tools,
-    _supervisor_tools,
-    _vault_tools,
-)
+from core.tooling.schemas.supervisor import _supervisor_tools
 from core.tooling.schemas.task import _submit_tasks_tools, _task_tools
 from core.tooling.schemas.workspace import WORKSPACE_TOOLS
 
@@ -78,94 +68,6 @@ def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
 def _skill_authoring_schemas_for_trigger(trigger: str) -> list[dict[str, Any]]:
     allow_trust = trust_skill_enabled_for_trigger(trigger)
     return [t for t in _create_skill_schemas() if allow_trust or t["name"] != "trust_skill"]
-
-
-def build_tool_list(
-    *,
-    include_file_tools: bool = False,
-    include_search_tools: bool = False,
-    include_discovery_tools: bool = False,
-    include_use_tool: bool = False,
-    include_notification_tools: bool = False,
-    include_admin_tools: bool = False,
-    include_supervisor_tools: bool = False,
-    include_tool_management: bool = False,
-    include_task_tools: bool = False,
-    include_submit_tasks: bool = False,
-    include_background_task_tools: bool = False,
-    include_vault_tools: bool = False,
-    include_create_skill: bool = False,
-    external_schemas: list[dict[str, Any]] | None = None,
-    trigger: str = "",
-) -> list[dict[str, Any]]:
-    """Assemble a tool list from canonical definitions.
-
-    Args:
-        include_file_tools: Include file/command operation tools (for Mode A).
-        include_search_tools: Include search_code/list_directory tools.
-        include_discovery_tools: Include discover_tools tool (deprecated, now empty).
-        include_use_tool: Include use_tool unified external tool dispatcher.
-        include_notification_tools: Include call_human tool (for top-level Animas).
-        include_admin_tools: Include admin tools (create_anima etc.).
-        include_supervisor_tools: Include supervisor tools (disable/enable subordinate).
-        include_tool_management: Include refresh_tools/share_tool tools.
-        include_task_tools: Include task queue tools (backlog_task, update_task, list_tasks).
-        include_submit_tasks: Include submit_tasks DAG batch submission tool
-            only for explicit background task-authoring triggers.
-        include_background_task_tools: Include background task check/list tools.
-        include_vault_tools: Include credential vault tools (get/store/list).
-        include_create_skill: Include create_skill tool.
-        external_schemas: Additional tool schemas in canonical format.
-        trigger: Execution trigger (e.g. ``"consolidation:daily"``).
-
-    Returns:
-        Combined list in canonical format.
-    """
-    is_consolidation = trigger.startswith("consolidation:")
-
-    tools: list[dict[str, Any]] = list(MEMORY_TOOLS)
-    tools.extend(_channel_tools())
-    tools.extend(PROCEDURE_TOOLS)
-    tools.extend(KNOWLEDGE_TOOLS)
-    if not is_consolidation:
-        tools.extend(WORKSPACE_TOOLS)
-    tools.extend(_check_permissions_tools())
-    if include_file_tools:
-        tools.extend(FILE_TOOLS)
-    if include_search_tools:
-        tools.extend(SEARCH_TOOLS)
-    if include_discovery_tools:
-        tools.extend(DISCOVERY_TOOLS)
-    if include_use_tool:
-        tools.extend(USE_TOOL)
-    if include_notification_tools:
-        tools.extend(_notification_tools())
-    if include_admin_tools:
-        tools.extend(ADMIN_TOOLS)
-    if include_supervisor_tools and not is_consolidation:
-        tools.extend(_supervisor_tools())
-    if include_tool_management:
-        tools.extend(TOOL_MANAGEMENT_TOOLS)
-    if include_task_tools:
-        tools.extend(_task_tools())
-    if include_submit_tasks and submit_tasks_enabled_for_trigger(trigger) and not is_consolidation:
-        tools.extend(_submit_tasks_tools())
-    if include_background_task_tools:
-        tools.extend(_background_task_tools())
-    if include_vault_tools:
-        tools.extend(_vault_tools())
-    if external_schemas:
-        tools.extend(external_schemas)
-
-    if is_consolidation:
-        tools = [t for t in tools if t["name"] not in _CONSOLIDATION_BLOCKED_TOOLS]
-
-    tools = apply_prompt_descriptions(tools)
-
-    if include_create_skill:
-        tools.extend(_skill_authoring_schemas_for_trigger(trigger))
-        tools.extend(_curator_skill_schemas())
-    return tools
 
 
 def build_unified_tool_list(

@@ -17,7 +17,7 @@ from core.skills.index import SkillIndex
 from core.skills.promotion import ProcedureToSkillConverter
 from core.time_utils import now_iso
 from core.tooling.handler import ToolHandler
-from core.tooling.schemas import build_tool_list
+from core.tooling.schemas import _create_skill_schemas
 
 
 def _write_procedure(anima_dir: Path) -> None:
@@ -162,7 +162,7 @@ def test_tool_handler_promotes_and_approves_procedure(tmp_path: Path) -> None:
 
 
 def test_tool_schema_exposes_promotion_tool() -> None:
-    tools = build_tool_list(include_create_skill=True)
+    tools = _create_skill_schemas()
     names = {tool["name"] for tool in tools}
     assert "create_skill" in names
     assert "promote_procedure_to_skill" in names

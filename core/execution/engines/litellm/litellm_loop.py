@@ -157,7 +157,6 @@ class LiteLLMExecutor(
         litellm.modify_params = True
 
         tools = self._build_base_tools(trigger=trigger)
-        _active_categories: set[str] = set()
         context_window = self._resolve_cw()
 
         messages = self._build_initial_messages(
@@ -562,7 +561,6 @@ class LiteLLMExecutor(
                 parsed_calls,
                 messages,
                 tools,
-                _active_categories,
                 context_window=context_window,
             ):
                 if "record" in _event:

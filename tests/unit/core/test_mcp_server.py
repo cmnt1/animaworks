@@ -701,27 +701,6 @@ class TestResolveToolTimeout:
         monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
         assert _resolve_tool_timeout("search_memory") == 120.0
 
-    def test_search_code_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """search_code is capped at 120s."""
-        from core.mcp.server import _resolve_tool_timeout
-
-        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
-        assert _resolve_tool_timeout("search_code") == 120.0
-
-    def test_execute_command_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """execute_command gets a 1900s outer cap."""
-        from core.mcp.server import _resolve_tool_timeout
-
-        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
-        assert _resolve_tool_timeout("execute_command") == 1900.0
-
-    def test_use_tool_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """use_tool gets a 1900s outer cap."""
-        from core.mcp.server import _resolve_tool_timeout
-
-        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
-        assert _resolve_tool_timeout("use_tool") == 1900.0
-
     def test_create_anima_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """create_anima is allowed 1800s."""
         from core.mcp.server import _resolve_tool_timeout
@@ -1048,7 +1027,7 @@ class TestLoadPermittedCategories:
 
     def test_no_permissions_file_returns_all(self, tmp_path: Path) -> None:
         """Without permissions.md, all tools are returned."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         with (
             patch(
@@ -1062,7 +1041,7 @@ class TestLoadPermittedCategories:
 
     def test_no_external_tools_section_returns_all(self, tmp_path: Path) -> None:
         """When permissions.md has no 外部ツール section, returns all."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text("## 実行できるコマンド\n- git: OK\n", encoding="utf-8")
@@ -1076,7 +1055,7 @@ class TestLoadPermittedCategories:
 
     def test_whitelist_mode(self, tmp_path: Path) -> None:
         """Individual allow entries produce a whitelist."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text(
@@ -1094,7 +1073,7 @@ class TestLoadPermittedCategories:
 
     def test_all_yes_mode(self, tmp_path: Path) -> None:
         """'all: yes' enables all tools."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text("## 外部ツール\n- all: yes\n", encoding="utf-8")
@@ -1108,7 +1087,7 @@ class TestLoadPermittedCategories:
 
     def test_all_yes_with_deny(self, tmp_path: Path) -> None:
         """'all: yes' with individual deny entries."""
-        from core.mcp.server import _load_permitted_categories
+        from core.tooling.standalone import _load_permitted_categories
 
         perms = tmp_path / "permissions.md"
         perms.write_text("## 外部ツール\n- all: yes\n- gmail: no\n", encoding="utf-8")

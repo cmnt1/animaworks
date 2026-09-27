@@ -15,15 +15,11 @@ from core.tooling.schemas.admin import _AW_CORE_NAMES, ADMIN_TOOLS, CC_TOOLS
 from core.tooling.schemas.builder import (
     _COMPACT_COMM_TOOLS,
     _CONSOLIDATION_BLOCKED_TOOLS,
-    build_tool_list,
     build_unified_tool_list,
     submit_tasks_enabled_for_trigger,
 )
 from core.tooling.schemas.channel import _channel_tools
-from core.tooling.schemas.converters import (
-    to_anthropic_format,
-    to_litellm_format,
-)
+from core.tooling.schemas.converters import to_litellm_format
 from core.tooling.schemas.loader import (
     _normalise_schema,
     load_all_tool_schemas,
@@ -32,17 +28,12 @@ from core.tooling.schemas.loader import (
     load_personal_tool_schemas,
 )
 from core.tooling.schemas.memory import (
-    FILE_TOOLS,
     KNOWLEDGE_TOOLS,
     MEMORY_TOOLS,
     PROCEDURE_TOOLS,
-    SEARCH_TOOLS,
 )
 from core.tooling.schemas.notification import _notification_tools
 from core.tooling.schemas.skill import (
-    DISCOVERY_TOOLS,
-    TOOL_MANAGEMENT_TOOLS,
-    USE_TOOL,
     _create_skill_schemas,
     _curator_skill_schemas,
 )
@@ -58,16 +49,11 @@ from core.tooling.schemas.workspace import WORKSPACE_TOOLS
 __all__ = [
     "ADMIN_TOOLS",
     "CC_TOOLS",
-    "DISCOVERY_TOOLS",
-    "FILE_TOOLS",
     "KNOWLEDGE_TOOLS",
     "MEMORY_TOOLS",
     "PROCEDURE_TOOLS",
-    "SEARCH_TOOLS",
     "SUBMIT_TASKS_TOOLS",
     "_submit_tasks_tools",
-    "TOOL_MANAGEMENT_TOOLS",
-    "USE_TOOL",
     "WORKSPACE_TOOLS",
     "_AW_CORE_NAMES",
     "_COMPACT_COMM_TOOLS",
@@ -83,13 +69,11 @@ __all__ = [
     "_task_tools",
     "_vault_tools",
     "apply_prompt_descriptions",
-    "build_tool_list",
     "build_unified_tool_list",
     "load_all_tool_schemas",
     "load_external_schemas",
     "load_external_schemas_by_category",
     "load_personal_tool_schemas",
-    "to_anthropic_format",
     "to_litellm_format",
     "submit_tasks_enabled_for_trigger",
 ]

@@ -12,18 +12,6 @@ from __future__ import annotations
 from typing import Any
 
 
-def to_anthropic_format(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert canonical schemas to Anthropic API format (``input_schema``)."""
-    return [
-        {
-            "name": t["name"],
-            "description": t["description"],
-            "input_schema": t["parameters"],
-        }
-        for t in tools
-    ]
-
-
 def to_litellm_format(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert canonical schemas to LiteLLM/OpenAI function calling format."""
     return [

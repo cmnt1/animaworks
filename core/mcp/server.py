@@ -178,15 +178,6 @@ def _coerce_integers(
     return arguments
 
 
-def _load_permitted_categories(anima_dir: Path) -> set[str]:
-    """Load permitted external tool categories from permissions.json."""
-    from core.config.models import load_permissions
-    from core.tooling.permissions import get_permitted_tools
-
-    config = load_permissions(anima_dir)
-    return get_permitted_tools(config)
-
-
 def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     """Convert canonical AnimaWorks schemas to MCP Tool objects.
 
@@ -282,86 +273,6 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
 MCP_TOOLS: list[Tool]
 _EXPOSED_NAMES: frozenset[str]
 MCP_TOOLS, _EXPOSED_NAMES = _build_mcp_tools()
-
-# ── BackgroundTaskManager for MCP ────────────────────────
-
-
-def _build_background_manager(anima_dir: Path) -> Any:
-    """Build a BackgroundTaskManager for the MCP server process.
-
-    Mirrors ``AgentCore._build_background_manager()`` but operates
-    without the full AgentCore.  Returns None when disabled in config.
-    """
-    try:
-        from core.config.models import load_config
-
-        config = load_config()
-        if not config.background_task.enabled:
-            return None
-
-        from core.integrations import TOOL_MODULES
-        from core.integrations._base import load_execution_profiles
-        from core.tasks.background import BackgroundTaskManager
-
-        profiles = load_execution_profiles(TOOL_MODULES)
-        config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
-
-        mgr = BackgroundTaskManager.from_profiles(
-            anima_dir=anima_dir,
-            anima_name=anima_dir.name,
-            profiles=profiles,
-            config_eligible=config_eligible or None,
-        )
-
-        mgr.on_complete = _make_on_complete_callback(anima_dir)
-        logger.info("BackgroundTaskManager initialised for MCP (anima=%s)", anima_dir.name)
-        return mgr
-
-    except Exception:
-        logger.debug("BackgroundTaskManager init skipped in MCP", exc_info=True)
-        return None
-
-
-def _make_on_complete_callback(anima_dir: Path) -> Any:
-    """Create an on_complete callback that writes notification files.
-
-    In the MCP subprocess we don't have access to WebSocket or
-    HumanNotifier, so we only write a notification file under
-    ``state/background_notifications/`` for the next heartbeat to pick up.
-    """
-    from core.i18n import t as _t
-
-    async def _on_complete(task: Any) -> None:
-        try:
-            subject = _t("anima.bg_task_done", tool=task.tool_name)
-            if task.status.value == "failed":
-                subject = _t("anima.bg_task_failed", tool=task.tool_name)
-
-            notif_dir = anima_dir / "state" / "background_notifications"
-            notif_dir.mkdir(parents=True, exist_ok=True)
-            notif_path = notif_dir / f"{task.task_id}.md"
-            notif_content = (
-                f"# {subject}\n\n"
-                f"- task_id: {task.task_id}\n"
-                f"- tool: {task.tool_name}\n"
-                f"- status: {task.status.value}\n"
-                f"- result: {task.summary()}\n"
-            )
-            notif_path.write_text(notif_content, encoding="utf-8")
-            logger.info(
-                "MCP bg task notification written: %s (tool=%s, status=%s)",
-                task.task_id,
-                task.tool_name,
-                task.status.value,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to write MCP bg task notification for %s",
-                task.task_id,
-            )
-
-    return _on_complete
-
 
 # ── Lazy ToolHandler initialisation ──────────────────────
 
@@ -469,84 +380,9 @@ def _get_tool_handler() -> Any:
             logger.error(_init_error)
             return None
 
-        # ── MemoryManager ──
-        from core.memory import MemoryManager
+        from core.tooling.standalone import build_standalone_tool_handler
 
-        memory = MemoryManager(anima_dir)
-
-        # ── Messenger ──
-        from core.messaging.messenger import Messenger
-        from core.paths import get_shared_dir
-
-        shared_dir = get_shared_dir()
-        messenger = Messenger(shared_dir=shared_dir, anima_name=anima_dir.name)
-
-        # ── HumanNotifier (optional) ──
-        human_notifier = None
-        try:
-            from core.config.models import load_config
-            from core.notification.notifier import HumanNotifier
-
-            config = load_config()
-            human_notifier = HumanNotifier.from_config(config.human_notification)
-            if human_notifier.channel_count == 0:
-                human_notifier = None
-        except Exception:
-            logger.debug("HumanNotifier init skipped", exc_info=True)
-
-        # ── Tool registry and personal tools (filesystem discovery) ──
-        tool_registry: list[str] = []
-        personal_tools: dict[str, str] = {}
-        try:
-            from core.integrations import (
-                discover_common_tools,
-                discover_personal_tools,
-            )
-
-            permitted = _load_permitted_categories(anima_dir)
-            tool_registry = sorted(permitted)
-            common = discover_common_tools()
-            personal = discover_personal_tools(anima_dir)
-            personal_tools = {**common, **personal}
-        except Exception:
-            logger.debug("Tool discovery failed", exc_info=True)
-
-        # ── ToolHandler ──
-        from core.tooling.handler import ToolHandler
-
-        # Check debug_superuser flag from status.json
-        _superuser = False
-        _status_path = anima_dir / "status.json"
-        if "ANIMAWORKS_MCP_TOOLS" not in os.environ and _status_path.is_file():
-            try:
-                import json as _json_mod
-
-                _su_data = _json_mod.loads(_status_path.read_text(encoding="utf-8"))
-                _superuser = bool(_su_data.get("debug_superuser"))
-            except (ValueError, OSError):
-                pass
-
-        # ── BackgroundTaskManager ──
-        bg_manager = _build_background_manager(anima_dir)
-
-        _tool_handler = ToolHandler(
-            anima_dir=anima_dir,
-            memory=memory,
-            messenger=messenger,
-            tool_registry=tool_registry,
-            personal_tools=personal_tools,
-            on_message_sent=None,
-            on_schedule_changed=None,
-            human_notifier=human_notifier,
-            background_manager=bg_manager,
-            superuser=_superuser,
-        )
-
-        logger.info(
-            "ToolHandler initialised for anima '%s' (%s)",
-            anima_dir.name,
-            anima_dir,
-        )
+        _tool_handler = build_standalone_tool_handler(anima_dir, for_mcp=True)
         return _tool_handler
 
     except Exception as exc:
@@ -580,13 +416,9 @@ def _wrap_result(tool_name: str, result: str) -> str:
 # the entire anima cycle indefinitely.
 _DEFAULT_TOOL_TIMEOUT_S = 600.0  # 10 minutes
 
-# Per-tool overrides.  Search tools are cut short (hangs observed in prod);
-# tools with internal command timeouts need a longer outer cap.
+# Per-tool overrides.  MCP 公開ツールのうち長時間のものだけをここで延長する。
 _TOOL_TIMEOUT_OVERRIDES: dict[str, float] = {
     "search_memory": 120.0,
-    "search_code": 120.0,
-    "execute_command": 1900.0,
-    "use_tool": 1900.0,
     "create_anima": 1800.0,
     "curate_skills": 1800.0,
 }

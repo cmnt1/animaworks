@@ -139,7 +139,6 @@ class StreamingMixin:
         litellm.modify_params = True
 
         tools = self._build_base_tools(trigger=trigger)
-        _active_categories: set[str] = set()
         context_window = self._resolve_cw()
 
         messages = self._build_initial_messages(system_prompt, prompt, images, prior_messages=prior_messages)
@@ -852,7 +851,6 @@ class StreamingMixin:
                     parsed_calls,
                     messages,
                     tools,
-                    _active_categories,
                     context_window=context_window,
                 ):
                     if "record" in event:
@@ -920,7 +918,6 @@ class StreamingMixin:
         import litellm
 
         tools = self._build_base_tools(trigger=trigger)
-        _active_categories: set[str] = set()
         context_window = self._resolve_cw()
 
         messages = self._build_initial_messages(system_prompt, prompt, images, prior_messages=prior_messages)
@@ -1357,7 +1354,6 @@ class StreamingMixin:
                     parsed_calls,
                     messages,
                     tools,
-                    _active_categories,
                     context_window=context_window,
                 ):
                     if "record" in event:
