@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: a417691e23837145503b42c75209beaa4fc7c1c19b9772f4ad1155d87c456582 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 65c891d708e78f8f172016027a0a6698fff2f185305e0039663a90e8d2c38868 -->
 
 # 設定リファレンス
 
@@ -248,7 +248,8 @@
 | `server.runner_warmup_seconds` | `int` | `180` | — |
 | `server.spawn_timeout` | `int` | `300` | — |
 | `server.supervisor_respawn_max_retries` | `int` | `3` | — |
-| `server.supervisor_respawn_retry_interval_seconds` | `float` | `30.0` | — |
+| `server.supervisor_respawn_retry_interval_seconds` | `float` | `30.0` | base backoff interval (seconds) |
+| `server.supervisor_respawn_backoff_max_seconds` | `float` | `1800.0` | max backoff (seconds) |
 | `server.stream_checkpoint_enabled` | `bool` | `true` | save tool results during streaming |
 | `server.stream_retry_max` | `int` | `3` | max automatic retries on stream disconnect |
 | `server.stream_retry_delay_s` | `float` | `5.0` | delay between retries (seconds) |

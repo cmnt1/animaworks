@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 7e7e6529db4fea3e0fd60cd333b8c16e2395bca202cc7a1e3891f8169afc995b -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: c7b482f3362b924eb41545b8f633259437ff21675f58623fa3b5381e14f258ef -->
 
 # モジュール一覧
 
@@ -169,7 +169,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 123 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1464 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1467 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -822,7 +822,7 @@ anima の監督、委任、実行調整。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.supervisor` | 35 | Process isolation supervisor package. |
-| `core.supervisor._mgr_health（非公開）` | 480 | Health check mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_health（非公開）` | 500 | Health check mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_rag_repair（非公開）` | 245 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_reconcile（非公開）` | 337 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1056 | System scheduler mixin for ProcessSupervisor. |
@@ -830,9 +830,10 @@ anima の監督、委任、実行調整。
 | `core.supervisor.inbox_rate_limiter` | 419 | Inbox rate limiting, cascade detection, and deferred trigger management. |
 | `core.supervisor.ipc` | 535 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 430 | Persistent duplex IPC v2 used between an anima root and task runners. |
-| `core.supervisor.manager` | 1139 | Process Supervisor - Manages lifecycle of Anima child processes. |
+| `core.supervisor.manager` | 1098 | Process Supervisor - Manages lifecycle of Anima child processes. |
 | `core.supervisor.memory_service` | 667 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 754 | Process handle for managing child Anima processes. |
+| `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1277 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
 | `core.supervisor.scheduler_manager` | 1115 | APScheduler management for heartbeat and cron tasks. |
