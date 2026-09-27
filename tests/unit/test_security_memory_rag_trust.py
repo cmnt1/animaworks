@@ -249,12 +249,38 @@ class TestMinTrustSeenSDKHook:
     """PreToolUse hook tracks min_trust_seen in session_stats."""
 
     def test_sdk_hook_trust_tracking(self):
-        """Verify _SDK_TOOL_TRUST mappings are consistent."""
-        from core.execution._sanitize import TOOL_TRUST_LEVELS
+        """SDK and MCP tools resolve through the canonical trust table."""
+        from core.execution._sanitize import resolve_tool_trust
 
-        assert TOOL_TRUST_LEVELS.get("web_search") == "untrusted"
-        assert TOOL_TRUST_LEVELS.get("search_memory") == "trusted"
-        assert TOOL_TRUST_LEVELS.get("read_file") == "medium"
+        assert resolve_tool_trust("WebSearch") == "untrusted"
+        assert resolve_tool_trust("mcp__aw__search_memory") == "trusted"
+        assert resolve_tool_trust("Read") == "medium"
+
+    @pytest.mark.asyncio
+    async def test_sdk_hook_persists_trust_by_runtime_session(self, tmp_path):
+        from core.execution._sanitize import read_session_trust
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        anima_dir = tmp_path / "animas" / "hook-test"
+        anima_dir.mkdir(parents=True)
+        ctx = RuntimeSessionContext.create(session_type="chat", thread_id="thread", trigger="chat")
+        stats = {
+            "tool_call_count": 0,
+            "total_result_bytes": 0,
+            "system_prompt_tokens": 0,
+            "user_prompt_tokens": 0,
+            "trigger": "chat",
+            "min_trust_seen": 2,
+        }
+        hook = _build_pre_tool_hook(anima_dir, session_stats=stats)
+
+        with runtime_session_scope(ctx):
+            await hook({"tool_name": "WebSearch", "tool_input": {}}, "tool-use", MagicMock())
+
+        assert stats["min_trust_seen"] == 0
+        assert read_session_trust(anima_dir, ctx.tool_session_id) == 0
+        assert not (anima_dir / "run" / "min_trust_seen").exists()
 
 
 # ── Phase 3: knowledge origin propagation ─────────────────────
@@ -355,16 +381,19 @@ class TestKnowledgeOriginFrontmatter:
         assert not written.startswith("---\norigin:")
 
     def test_mode_s_file_trust_fallback(self, tmp_path):
-        """When _min_trust_seen is 2 (default) but run/min_trust_seen file says 0."""
+        """A session's isolated trust-state file contributes to the write origin."""
+        from core.execution._sanitize import record_session_trust
+        from core.execution.session_context import RuntimeSessionContext
+
         handler = _make_handler(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")
+        handler.bind_runtime_session(ctx)
         handler._min_trust_seen = 2
 
         anima_dir = handler._anima_dir
         knowledge_dir = anima_dir / "knowledge"
         knowledge_dir.mkdir(parents=True, exist_ok=True)
-        run_dir = anima_dir / "run"
-        run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "min_trust_seen").write_text("0", encoding="utf-8")
+        record_session_trust(anima_dir, ctx.tool_session_id, 0)
 
         handler.handle(
             "write_memory_file",

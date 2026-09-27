@@ -769,6 +769,33 @@ def step_current_task_rename(data_dir: Path, dry_run: bool, verbose: bool) -> St
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_trust_state_per_session(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove the legacy anima-wide trust state file."""
+    details: list[str] = []
+    changed = 0
+    try:
+        for anima_dir in _iter_anima_dirs(data_dir):
+            legacy_state = anima_dir / "run" / "min_trust_seen"
+            if not legacy_state.is_file():
+                continue
+            changed += 1
+            if dry_run:
+                details.append(f"{anima_dir.name}: would remove run/min_trust_seen")
+                continue
+            try:
+                legacy_state.unlink()
+                details.append(f"{anima_dir.name}: removed run/min_trust_seen")
+            except OSError as exc:
+                changed -= 1
+                details.append(f"{anima_dir.name}: failed to remove run/min_trust_seen - {exc}")
+        if not details:
+            details.append("No shared run/min_trust_seen files found")
+        return StepResult(changed=changed, skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_trust_state_per_session failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_pending_merge(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Merge pending.md into current_state.md for each anima."""
     details: list[str] = []
@@ -1718,6 +1745,12 @@ def register_all_steps(runner: Any) -> None:
         MigrationStep("shortterm_layout", "shortterm/session_state → chat/", "per_anima", step_shortterm_layout),
         MigrationStep("cron_format", "cron.md Japanese → cron expressions", "per_anima", step_cron_format),
         MigrationStep("knowledge_frontmatter", "Repair knowledge frontmatter", "per_anima", step_knowledge_frontmatter),
+        MigrationStep(
+            "trust_state_per_session",
+            "Remove shared run/min_trust_seen (now per tool session)",
+            "per_anima",
+            step_trust_state_per_session,
+        ),
         MigrationStep("procedure_frontmatter", "Ensure procedure frontmatter", "per_anima", step_procedure_frontmatter),
         MigrationStep(
             "current_task_references", "Replace current_task refs in config", "per_anima", step_current_task_references

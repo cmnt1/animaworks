@@ -993,6 +993,17 @@ class MemoryToolsMixin:
                 hint = f"\nAvailable files in {parent.name}/:\n" + "\n".join(f"  - {s}" for s in siblings)
         return f"File not found: {rel}{hint}"
 
+    def _resolve_write_origin(self) -> str:
+        """Return the conservative origin for knowledge written this session."""
+        from core.execution._sanitize import read_session_trust
+
+        min_trust = getattr(self, "_min_trust_seen", 2)
+        runtime_context = getattr(self, "_runtime_session_context", None)
+        tool_session_id = getattr(runtime_context, "tool_session_id", "")
+        if tool_session_id:
+            min_trust = min(min_trust, read_session_trust(self._anima_dir, tool_session_id))
+        return {0: "external_web", 1: "mixed"}.get(min_trust, "")
+
     def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
         raw_path = args["path"]
         norm = _normalize_memory_path(raw_path, self._anima_dir)
@@ -1094,6 +1105,7 @@ class MemoryToolsMixin:
             )
 
         content = args["content"]
+        write_origin = self._resolve_write_origin() if rel.startswith("knowledge/") and rel.endswith(".md") else ""
 
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1156,6 +1168,8 @@ class MemoryToolsMixin:
                                 _meta_hw.setdefault("created_at", _existing_meta["created_at"])
                         except OSError:
                             pass
+                    if write_origin:
+                        _meta_hw["origin"] = write_origin
                     _validate_fm_hw(_meta_hw, path)
                     _meta_hw["updated_at"] = _now_local_hw().isoformat()
                     _fm_hw = _yaml_km_fm.dump(_meta_hw, default_flow_style=False, allow_unicode=True)
@@ -1183,6 +1197,8 @@ class MemoryToolsMixin:
                                 _fallback_meta["created_at"] = _existing_meta_fb["created_at"]
                         except OSError:
                             pass
+                    if write_origin:
+                        _fallback_meta["origin"] = write_origin
                     _fm_fb = _yaml_km_fm.dump(
                         _fallback_meta,
                         default_flow_style=False,
@@ -1228,21 +1244,8 @@ class MemoryToolsMixin:
                     "auto_consolidated": False,
                     "version": 1,
                 }
-                _trust_rank_map_pre = {0: "external_web", 1: "mixed"}
-                _min_trust_pre = getattr(self, "_min_trust_seen", 2)
-                if _min_trust_pre >= 2:
-                    _trust_file_pre = self._anima_dir / "run" / "min_trust_seen"
-                    try:
-                        if _trust_file_pre.exists():
-                            _min_trust_pre = min(
-                                _min_trust_pre,
-                                int(_trust_file_pre.read_text(encoding="utf-8").strip()),
-                            )
-                    except (ValueError, OSError):
-                        pass
-                _origin_pre = _trust_rank_map_pre.get(_min_trust_pre, "")
-                if _origin_pre:
-                    metadata["origin"] = _origin_pre
+                if write_origin:
+                    metadata["origin"] = write_origin
                 _clean = strip_content_frontmatter(content)
                 _fm = _yaml_km.dump(metadata, default_flow_style=False, allow_unicode=True)
                 path.write_text(f"---\n{_fm}---\n\n{_clean}", encoding="utf-8")
@@ -1250,6 +1253,32 @@ class MemoryToolsMixin:
             elif mode == "append":
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(content)
+                if write_origin and path.is_file():
+                    from core.execution._sanitize import ORIGIN_TRUST_MAP, TRUST_RANK
+                    from core.memory.frontmatter import parse_frontmatter
+
+                    current_text = path.read_text(encoding="utf-8")
+                    if current_text.startswith("---"):
+                        current_meta, current_body = parse_frontmatter(current_text)
+                        if current_meta:
+                            current_origin = current_meta.get("origin")
+                            current_trust = ORIGIN_TRUST_MAP.get(str(current_origin), "untrusted")
+                            next_trust = ORIGIN_TRUST_MAP.get(write_origin, "untrusted")
+                            current_rank = TRUST_RANK.get(current_trust, 0)
+                            next_rank = TRUST_RANK.get(next_trust, 0)
+                            # Both mixed and external_web currently map to untrusted;
+                            # prefer the more specific external_web label on a tie.
+                            should_downgrade = (
+                                not current_origin
+                                or current_rank > next_rank
+                                or (current_origin == "mixed" and write_origin == "external_web")
+                            )
+                            if should_downgrade:
+                                import yaml
+
+                                current_meta["origin"] = write_origin
+                                fm = yaml.dump(current_meta, default_flow_style=False, allow_unicode=True)
+                                path.write_text(f"---\n{fm}---\n\n{current_body.lstrip()}", encoding="utf-8")
             else:
                 path.write_text(content, encoding="utf-8")
         finally:
@@ -1329,31 +1358,17 @@ class MemoryToolsMixin:
                     logger.warning("Failed to update RAG index for %s: %s", rel, e)
             self._update_longterm_bm25_source(rel)
 
-        # Auto-update RAG index for knowledge writes + origin frontmatter
-        # (skip origin injection when auto-frontmatter already handled it)
+        # Auto-update RAG index for knowledge writes.
         if rel.startswith("knowledge/") and rel.endswith(".md"):
-            _trust_rank_map = {0: "external_web", 1: "mixed"}
-            min_trust = getattr(self, "_min_trust_seen", 2)
-
-            # Also check file-based trust (Mode S writes via MCP subprocess)
-            if min_trust >= 2:
-                _trust_file = self._anima_dir / "run" / "min_trust_seen"
+            origin = write_origin
+            if not origin:
                 try:
-                    if _trust_file.exists():
-                        file_val = int(_trust_file.read_text(encoding="utf-8").strip())
-                        min_trust = min(min_trust, file_val)
-                except (ValueError, OSError):
-                    pass
+                    from core.memory.frontmatter import parse_frontmatter
 
-            origin = _trust_rank_map.get(min_trust, "")
-
-            if origin and mode != "append" and not auto_frontmatter_applied:
-                current = path.read_text(encoding="utf-8")
-                if not current.startswith("---\norigin:"):
-                    path.write_text(
-                        f"---\norigin: {origin}\n---\n\n{current}",
-                        encoding="utf-8",
-                    )
+                    current_meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+                    origin = str(current_meta.get("origin", ""))
+                except OSError:
+                    origin = ""
 
             indexer = self._memory._get_indexer()
             if indexer:

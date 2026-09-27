@@ -20,6 +20,10 @@ provenance-aware trust resolution (Phase 1 foundation).
 
 import logging
 import re
+import time
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any, Final
 
 logger = logging.getLogger("animaworks.execution.sanitize")
 
@@ -47,8 +51,9 @@ ORIGIN_TRUST_MAP: dict[str, str] = {
 
 MAX_ORIGIN_CHAIN_LENGTH: int = 10
 
-_TRUST_RANK: dict[str, int] = {"trusted": 2, "medium": 1, "untrusted": 0}
-_RANK_TRUST: dict[int, str] = {v: k for k, v in _TRUST_RANK.items()}
+TRUST_RANK: Final[dict[str, int]] = {"trusted": 2, "medium": 1, "untrusted": 0}
+_TRUST_RANK = TRUST_RANK
+_RANK_TRUST: dict[int, str] = {v: k for k, v in TRUST_RANK.items()}
 
 # Boundary tag names used by wrap_* helpers. Only these tag-like strings
 # are neutralized in content (leading "<" → fullwidth "＜").
@@ -170,11 +175,45 @@ TOOL_TRUST_LEVELS: dict[str, str] = {
     "set_subordinate_model": "trusted",
     "restart_subordinate": "trusted",
     "call_human": "trusted",
+    "delegate_task": "trusted",
+    "submit_tasks": "trusted",
+    "todo_write": "trusted",
+    "task_tracker": "trusted",
+    "grant_workspace_access": "trusted",
+    "ping_subordinate": "trusted",
+    "org_dashboard": "trusted",
+    "set_subordinate_background_model": "trusted",
+    "manage_channel": "trusted",
+    "check_permissions": "trusted",
+    "list_background_tasks": "trusted",
+    "vault_get": "trusted",
+    "vault_store": "trusted",
+    "vault_list": "trusted",
+    "trust_skill": "trusted",
+    "archive_skill": "trusted",
+    "restore_skill": "trusted",
+    "block_skill": "trusted",
+    "unblock_skill": "trusted",
+    "delete_skill": "trusted",
+    "curate_skills": "trusted",
+    "set_skill_lifecycle": "trusted",
     "read_file": "medium",
     "search_code": "medium",
     "write_file": "medium",
     "edit_file": "medium",
     "execute_command": "medium",
+    "Read": "medium",
+    "Write": "medium",
+    "Edit": "medium",
+    "Bash": "medium",
+    "Grep": "medium",
+    "Glob": "medium",
+    "read_subordinate_state": "medium",
+    "audit_subordinate": "medium",
+    "WebFetch": "untrusted",
+    "WebSearch": "untrusted",
+    "check_background_task": "untrusted",
+    "use_tool": "untrusted",
     "web_fetch": "untrusted",
     "read_channel": "untrusted",
     "read_dm_history": "untrusted",
@@ -204,6 +243,73 @@ TOOL_TRUST_LEVELS: dict[str, str] = {
     "google_tasks_update_tasklist": "untrusted",
     "local_llm": "untrusted",
 }
+
+_TOOL_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_TRUST_STATE_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def resolve_tool_trust(tool_name: str, args: Mapping[str, Any] | None = None) -> str:
+    """Resolve a tool's trust level from the canonical trust table.
+
+    MCP names are normalized by removing the ``mcp__aw__`` prefix.  The
+    generic ``use_tool`` dispatcher is resolved using its concrete module
+    and action, and defaults to untrusted when that pair is not registered.
+    """
+    effective_name = tool_name.removeprefix("mcp__aw__")
+    if effective_name == "use_tool":
+        tool = args.get("tool_name") if args is not None else None
+        action = args.get("action") if args is not None else None
+        if isinstance(tool, str) and isinstance(action, str) and tool and action:
+            effective_name = f"{tool}_{action}"
+        else:
+            return "untrusted"
+    return TOOL_TRUST_LEVELS.get(effective_name, "untrusted")
+
+
+def trust_state_path(anima_dir: Path, tool_session_id: str) -> Path:
+    """Return the trust-state file path for one tool session."""
+    if not _TOOL_SESSION_ID_RE.fullmatch(tool_session_id):
+        raise ValueError("invalid tool_session_id")
+    return anima_dir / "run" / "min_trust" / tool_session_id
+
+
+def record_session_trust(anima_dir: Path, tool_session_id: str, rank: int) -> None:
+    """Persist the minimum trust rank seen by one tool session."""
+    try:
+        state_path = trust_state_path(anima_dir, tool_session_id)
+    except ValueError:
+        return
+    if rank not in (0, 1, 2):
+        return
+
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        current = read_session_trust(anima_dir, tool_session_id)
+        state_path.write_text(str(min(current, rank)), encoding="utf-8")
+        cutoff = time.time() - _TRUST_STATE_MAX_AGE_SECONDS
+        for sibling in state_path.parent.iterdir():
+            if sibling == state_path or not sibling.is_file():
+                continue
+            try:
+                if sibling.stat().st_mtime < cutoff:
+                    sibling.unlink()
+            except OSError:
+                logger.debug("Failed to clean stale trust-state file %s", sibling, exc_info=True)
+    except OSError:
+        logger.debug("Failed to persist session trust for %s", tool_session_id, exc_info=True)
+
+
+def read_session_trust(anima_dir: Path, tool_session_id: str) -> int:
+    """Read the minimum trust rank recorded for one session, defaulting trusted."""
+    try:
+        state_path = trust_state_path(anima_dir, tool_session_id)
+    except ValueError:
+        return 2
+    try:
+        value = int(state_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return 2
+    return value if value in (0, 1, 2) else 2
 
 
 # ── Boundary wrappers ──────────────────────────────────────────
@@ -237,7 +343,7 @@ def wrap_tool_result(
     if origin is not None:
         trust = resolve_trust(origin, origin_chain)
     else:
-        trust = TOOL_TRUST_LEVELS.get(tool_name, "untrusted")
+        trust = resolve_tool_trust(tool_name)
 
     attrs = f'tool="{tool_name}" trust="{trust}"'
     if origin:
