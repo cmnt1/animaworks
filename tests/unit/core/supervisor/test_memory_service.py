@@ -641,6 +641,70 @@ async def test_repeated_collection_initialization_is_idempotent_through_root(tmp
         await service.close()
 
 
+async def test_memory_service_owner_busy_does_not_request_startup_repair(tmp_path: Path, monkeypatch) -> None:
+    from core.memory.rag.owner_lock import VectorOwnerLock
+
+    anima_dir = tmp_path / "sakura"
+    other_owner = VectorOwnerLock(anima_dir, "cli:index")
+    other_owner.acquire()
+    opener = MagicMock(return_value=_store())
+    service = MemoryService("sakura", anima_dir, opener=opener)
+    service._request_startup_repair = MagicMock()  # type: ignore[method-assign]
+    try:
+        await service.start()
+        assert service._store is None
+        assert not service._started
+        opener.assert_not_called()
+        service._request_startup_repair.assert_not_called()
+        with pytest.raises(MemoryServiceUnavailable, match="sakura"):
+            await service.handle("memory.list_collections_checked", {})
+    finally:
+        other_owner.release()
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_retries_owner_after_backoff(tmp_path: Path, monkeypatch) -> None:
+    import core.supervisor.memory_service as memory_service_module
+    from core.memory.rag.owner_lock import VectorOwnerLock
+
+    anima_dir = tmp_path / "sakura"
+    other_owner = VectorOwnerLock(anima_dir, "cli:index")
+    other_owner.acquire()
+    store = _store()
+    service = MemoryService("sakura", anima_dir, opener=lambda: store)
+    try:
+        await service.start()
+        retry_at = service._owner_retry_at
+        other_owner.release()
+        monkeypatch.setattr(memory_service_module, "monotonic", lambda: retry_at + 0.1)
+
+        result = await service.handle("memory.list_collections_checked", {})
+
+        assert result == {"collections": ["sakura_knowledge"]}
+        assert service._owner_lock.held
+    finally:
+        other_owner.release()
+        await service.close()
+    from core.memory.rag.owner_lock import is_owner_lock_held
+
+    assert not is_owner_lock_held(anima_dir)
+
+
+@pytest.mark.asyncio
+async def test_memory_service_close_releases_owner_lock(tmp_path: Path) -> None:
+    from core.memory.rag.owner_lock import is_owner_lock_held
+
+    anima_dir = tmp_path / "sakura"
+    service = MemoryService("sakura", anima_dir, opener=_store)
+    await service.start()
+
+    assert is_owner_lock_held(anima_dir)
+    await service.close()
+    assert not is_owner_lock_held(anima_dir)
+
+
+@pytest.mark.asyncio
 async def test_metadata_recall_before_initial_indexing_is_empty_through_root(tmp_path: Path) -> None:
     from core.memory.rag.store import ChromaVectorStore
 

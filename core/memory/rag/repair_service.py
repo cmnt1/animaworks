@@ -326,15 +326,13 @@ class RAGRepairService:
         )
 
     def list_repairable_animas(self, *, animas_dir: Path | None = None) -> list[str]:
-        """Return enabled anima names still owned by the global vector worker."""
+        """Return enabled anima names whose vector stores can be repaired."""
         if animas_dir is None:
             from core.paths import get_animas_dir
 
             animas_dir = get_animas_dir()
         if not animas_dir.is_dir():
             return []
-        from core.config import resolver as _resolver
-
         repairable: list[str] = []
         for anima_dir in sorted(animas_dir.iterdir()):
             if (
@@ -342,9 +340,6 @@ class RAGRepairService:
                 or not (anima_dir / "identity.md").is_file()
                 or not self._anima_enabled(anima_dir)
             ):
-                continue
-            # R07: 非 phase3 分岐ごと削除予定
-            if _resolver.is_root_memory_owner(anima_dir):
                 continue
             repairable.append(anima_dir.name)
         return repairable

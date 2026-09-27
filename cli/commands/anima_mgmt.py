@@ -1322,12 +1322,13 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
             print(f"  Updated status.json for {status_updated} anima(s) with supervisor reference")
 
         # ── RAG: cleanup old collections ──
-        _cleanup_rag_collections(
-            new_dir,
-            old_name,
-            vector_url=f"{gateway_url}/api/internal/vector" if server_running else None,
-        )
-        print("  Cleared RAG index (will re-index on next startup)")
+        repair_queued = _cleanup_rag_collections(new_dir, old_name)
+        if repair_queued:
+            from core.i18n import t
+
+            print(f"  {t('rag.cli_rename_repair_queued')}")
+        else:
+            print("  Cleared RAG index (will re-index on next startup)")
 
         # ── Server: reload + restart ──
         if server_running:
@@ -1387,10 +1388,8 @@ def _rename_dm_logs(shared_dir: Path, old_name: str, new_name: str) -> int:
     return count
 
 
-def _cleanup_rag_collections(anima_dir: Path, old_name: str, *, vector_url: str | None = None) -> None:
-    """Delete old RAG collections and reset index_meta for re-indexing."""
-    import os
-
+def _cleanup_rag_collections(anima_dir: Path, old_name: str) -> bool:
+    """Delete old RAG collections, queuing a rebuild if ownership is busy."""
     from core.memory.rag.shared_meta import clear_shared_meta
 
     index_meta = anima_dir / "index_meta.json"
@@ -1400,40 +1399,36 @@ def _cleanup_rag_collections(anima_dir: Path, old_name: str, *, vector_url: str 
 
     vectordb_dir = anima_dir / "vectordb"
     if not vectordb_dir.is_dir():
-        return
+        return False
 
-    previous_url_present = "ANIMAWORKS_VECTOR_URL" in os.environ
-    previous_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
-    temp_worker = None
+    from core.memory.rag import repair_state
+    from core.memory.rag.cli_access import open_vector_access
+    from core.memory.rag.owner_lock import VectorOwnerBusy
+
     try:
-        if vector_url:
-            os.environ["ANIMAWORKS_VECTOR_URL"] = vector_url
-        elif not os.environ.get("ANIMAWORKS_VECTOR_URL"):
-            from core.memory.rag.vector_worker_client import start_temporary_vector_worker
-
-            temp_worker = start_temporary_vector_worker()
-
-        from core.memory.rag.singleton import get_vector_store
-
-        store = get_vector_store(anima_dir.name)
-        if store is None:
-            logger.warning("RAG cleanup skipped for %s: vector worker unavailable", anima_dir.name)
-            return
-        for suffix in ("knowledge", "episodes", "procedures", "skills", "common_knowledge", "conversation_summary"):
-            collection_name = f"{old_name}_{suffix}"
-            try:
-                store.delete_collection(collection_name)
-            except Exception:
-                logger.debug("Failed to delete stale RAG collection %s", collection_name, exc_info=True)
+        with open_vector_access(anima_dir.name, anima_dir, purpose="rename") as access:
+            # Best effort: most suffixes do not exist for a given anima, and
+            # delete_collection() returns False for a missing collection.
+            for suffix in ("knowledge", "episodes", "procedures", "skills", "common_knowledge", "conversation_summary"):
+                collection_name = f"{old_name}_{suffix}"
+                try:
+                    access.store.delete_collection(collection_name)
+                except Exception:
+                    logger.debug("Failed to delete stale RAG collection %s", collection_name, exc_info=True)
+            return False
+    except VectorOwnerBusy as exc:
+        logger.info("Vector owner is busy during rename cleanup for %s: %s", anima_dir.name, exc)
     except Exception:
-        logger.warning("RAG collection cleanup failed for renamed anima %s", anima_dir.name, exc_info=True)
-    finally:
-        if temp_worker is not None:
-            temp_worker.stop()
-        elif previous_url_present and previous_url is not None:
-            os.environ["ANIMAWORKS_VECTOR_URL"] = previous_url
-        else:
-            os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
+        logger.warning("RAG cleanup failed for renamed anima %s", anima_dir.name, exc_info=True)
+
+    repair_state.write_repair_request_state(
+        anima_dir.name,
+        reason="anima_renamed",
+        collection=None,
+        source="cli",
+        include_shared=True,
+    )
+    return True
 
 
 def cmd_anima_list(args: argparse.Namespace) -> None:

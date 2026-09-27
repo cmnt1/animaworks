@@ -239,3 +239,54 @@ def test_anima_merge_phase3_dry_run_leaves_external_state_and_db_unchanged(tmp_p
     assert result.dry_run is True
     assert {str(path): path.read_bytes() for path in observed} == before
     assert not (data_dir / "state" / "merge_journal_source_target.json").exists()
+
+
+def test_merge_rebuild_uses_temporary_owner_and_releases_before_enable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from core.memory.rag import cli_access
+
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    events: list[str] = []
+    access = SimpleNamespace(
+        mode="owner",
+        store=MagicMock(),
+        repair=MagicMock(
+            return_value={"ok": True, "status": "success", "chunks_indexed": 9, "archive_path": "/archive/vectordb"}
+        ),
+    )
+    context = MagicMock()
+    context.__enter__.return_value = access
+    context.__exit__.side_effect = lambda *_args: events.append("owner_closed")
+    monkeypatch.setattr(cli_access, "open_vector_access", MagicMock(return_value=context))
+    service = AnimaMergeService(data_dir, "source", "target")
+
+    result = service._rebuild_vectordb()
+
+    assert result == {"chunks_indexed": 9, "archived_vectordb": "/archive/vectordb"}
+    access.repair.assert_called_once_with(include_shared=True)
+    assert service._target_access is not None
+
+    service._server_running = lambda: True
+    service._pid_path_alive = lambda _path: True
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+    def post(url: str, **_kwargs):
+        assert events == ["owner_closed"]
+        assert url.endswith("/api/animas/target/enable")
+        return Response()
+
+    with patch("requests.post", side_effect=post) as request:
+        result = service._smoke_check_target()
+
+    request.assert_called_once()
+    assert result["status"] == "passed"
+    assert service._target_access is None
+    service._close_target_access()

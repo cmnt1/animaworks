@@ -9,9 +9,48 @@ import argparse
 import json
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+def test_rename_rag_cleanup_deletes_old_collections_through_owner(tmp_path: Path) -> None:
+    from cli.commands.anima_mgmt import _cleanup_rag_collections
+
+    anima_dir = tmp_path / "animas" / "new_name"
+    (anima_dir / "vectordb").mkdir(parents=True)
+    store = MagicMock()
+    store.delete_collection.return_value = True
+    access_context = MagicMock()
+    access_context.__enter__.return_value = SimpleNamespace(store=store)
+    with patch("core.memory.rag.cli_access.open_vector_access", return_value=access_context) as open_access:
+        assert _cleanup_rag_collections(anima_dir, "old_name") is False
+
+    open_access.assert_called_once_with("new_name", anima_dir, purpose="rename")
+    assert store.delete_collection.call_args_list[0].args == ("old_name_knowledge",)
+    assert store.delete_collection.call_count == 6
+
+
+def test_rename_rag_cleanup_queues_rebuild_when_owner_is_busy(tmp_path: Path) -> None:
+    from cli.commands.anima_mgmt import _cleanup_rag_collections
+    from core.memory.rag.owner_lock import VectorOwnerBusy
+
+    anima_dir = tmp_path / "animas" / "new_name"
+    (anima_dir / "vectordb").mkdir(parents=True)
+    with (
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=VectorOwnerBusy("busy")),
+        patch("core.memory.rag.repair_state.write_repair_request_state") as write_request,
+    ):
+        assert _cleanup_rag_collections(anima_dir, "old_name") is True
+
+    write_request.assert_called_once_with(
+        "new_name",
+        reason="anima_renamed",
+        collection=None,
+        source="cli",
+        include_shared=True,
+    )
 
 
 class TestCmdAnimaDelete:
@@ -26,23 +65,20 @@ class TestCmdAnimaDelete:
         anima_dir = animas_dir / name
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text("# Alice", encoding="utf-8")
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8"
-        )
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
         # Create config.json with the anima registered
         config = {
             "version": 1,
             "animas": {name: {}},
         }
-        (data_dir / "config.json").write_text(
-            json.dumps(config), encoding="utf-8"
-        )
+        (data_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
         return data_dir
 
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
     def test_delete_not_found(self, mock_data_dir, mock_animas_dir, tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_delete
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -58,6 +94,7 @@ class TestCmdAnimaDelete:
     @patch("core.paths.get_data_dir")
     def test_delete_with_archive(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_delete
+
         data_dir = self._make_anima_dir(tmp_path, "alice")
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = data_dir / "animas"
@@ -79,6 +116,7 @@ class TestCmdAnimaDelete:
     @patch("core.paths.get_data_dir")
     def test_delete_no_archive(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_delete
+
         data_dir = self._make_anima_dir(tmp_path, "alice")
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = data_dir / "animas"
@@ -95,6 +133,7 @@ class TestCmdAnimaDelete:
     @patch("core.paths.get_data_dir")
     def test_delete_aborted_by_user(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_delete
+
         data_dir = self._make_anima_dir(tmp_path, "alice")
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = data_dir / "animas"
@@ -112,6 +151,7 @@ class TestCmdAnimaDelete:
     @patch("core.paths.get_data_dir")
     def test_delete_unregisters_from_config(self, mock_data_dir, mock_animas_dir, tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_delete
+
         data_dir = self._make_anima_dir(tmp_path, "alice")
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = data_dir / "animas"
@@ -126,15 +166,14 @@ class TestCmdAnimaDelete:
     @patch("core.paths.get_data_dir")
     def test_delete_warns_orphan_supervisor(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_delete
+
         data_dir = self._make_anima_dir(tmp_path, "sakura")
         animas_dir = data_dir / "animas"
         # Create a subordinate that references sakura as supervisor
         sub_dir = animas_dir / "kotoha"
         sub_dir.mkdir()
         (sub_dir / "identity.md").write_text("# Kotoha", encoding="utf-8")
-        (sub_dir / "status.json").write_text(
-            json.dumps({"enabled": True, "supervisor": "sakura"}), encoding="utf-8"
-        )
+        (sub_dir / "status.json").write_text(json.dumps({"enabled": True, "supervisor": "sakura"}), encoding="utf-8")
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = animas_dir
 
@@ -153,6 +192,7 @@ class TestCmdAnimaDisable:
     @patch("core.paths.get_data_dir")
     def test_disable_not_found(self, mock_data_dir, mock_animas_dir, tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_disable
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -168,6 +208,7 @@ class TestCmdAnimaDisable:
     @patch("core.paths.get_data_dir")
     def test_disable_offline(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_disable
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -198,6 +239,7 @@ class TestCmdAnimaEnable:
     @patch("core.paths.get_data_dir")
     def test_enable_not_found(self, mock_data_dir, mock_animas_dir, tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_enable
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -213,6 +255,7 @@ class TestCmdAnimaEnable:
     @patch("core.paths.get_data_dir")
     def test_enable_offline(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_enable
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -242,6 +285,7 @@ class TestCmdAnimaList:
     @patch("core.paths.get_data_dir")
     def test_list_local_empty(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_list
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -259,6 +303,7 @@ class TestCmdAnimaList:
     @patch("core.paths.get_data_dir")
     def test_list_local_with_animas(self, mock_data_dir, mock_animas_dir, tmp_path, capsys):
         from cli.commands.anima_mgmt import cmd_anima_list
+
         data_dir = tmp_path / ".animaworks"
         data_dir.mkdir()
         animas_dir = data_dir / "animas"
@@ -289,10 +334,12 @@ class TestUnregisterAnimaFromConfig:
     def setup_method(self):
         """Invalidate config cache before each test."""
         from core.config.models import invalidate_cache
+
         invalidate_cache()
 
     def test_unregister_existing(self, tmp_path):
         from core.config.models import unregister_anima_from_config
+
         config = {"version": 1, "animas": {"alice": {}, "bob": {}}}
         (tmp_path / "config.json").write_text(json.dumps(config))
 
@@ -304,6 +351,7 @@ class TestUnregisterAnimaFromConfig:
 
     def test_unregister_not_present(self, tmp_path):
         from core.config.models import unregister_anima_from_config
+
         config = {"version": 1, "animas": {"bob": {}}}
         (tmp_path / "config.json").write_text(json.dumps(config))
 
@@ -312,6 +360,7 @@ class TestUnregisterAnimaFromConfig:
 
     def test_unregister_no_config(self, tmp_path):
         from core.config.models import unregister_anima_from_config
+
         result = unregister_anima_from_config(tmp_path, "alice")
         assert result is False
 
@@ -406,9 +455,7 @@ class TestCmdAnimaCodexYolo:
         sakura_permissions = json.loads(
             (data_dir / "animas" / "sakura" / "permissions.json").read_text(encoding="utf-8")
         )
-        mei_permissions = json.loads(
-            (data_dir / "animas" / "mei" / "permissions.json").read_text(encoding="utf-8")
-        )
+        mei_permissions = json.loads((data_dir / "animas" / "mei" / "permissions.json").read_text(encoding="utf-8"))
         assert sakura_permissions["file_roots"] == [str(tmp_path / "workspaces" / "sakura")]
         assert mei_permissions["file_roots"] == [str(tmp_path / "workspaces" / "mei")]
         assert (data_dir / "animas" / "sakura" / ".codex_home" / "config.toml").is_file()
