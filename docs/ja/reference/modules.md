@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 0d0441510ea47d9f7c8f4eec7cd97b9ebc7b70ad1562613d6e281425bb1bbca8 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 611fce0c35e6f1fcbee61b59796240d00c7d8c8f13f154c861a3517fc428a88f -->
 
 # モジュール一覧
 
@@ -285,7 +285,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.i18n.strings.config` | 310 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 376 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler` | 384 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 350 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 384 | Domain-specific i18n strings. |
@@ -320,7 +320,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.infra.event_export` | 379 | — |
 | `core.infra.gpu` | 173 | — |
 | `core.infra.logging_config` | 530 | Centralized logging configuration for AnimaWorks. |
-| `core.infra.runtime_init` | 395 | First-launch initialization: copy templates to runtime data directory. |
+| `core.infra.runtime_init` | 436 | First-launch initialization: copy templates to runtime data directory. |
 | `core.infra.startup_progress` | 191 | — |
 | `core.infra.tmp_cleanup` | 254 | — |
 
@@ -623,7 +623,8 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
 | `core.migrations.registry` | 149 | — |
-| `core.migrations.steps` | 2887 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 2276 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.template_sync` | 133 | — |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 
