@@ -151,6 +151,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "External tools (via `animaworks-tool <name>`): {categories}",
         "ko": "외부 도구 (`animaworks-tool <name>` 경유): {categories}",
     },
+    "builder.external_tools.personal_count": {
+        "ja": "個人ツール: {count}件（一覧は `animaworks-tool --help`）",
+        "en": "Personal tools: {count} (list with `animaworks-tool --help`)",
+        "ko": "개인 도구: {count}개 (목록은 `animaworks-tool --help`)",
+    },
     "builder.external_tools.direct": {
         "ja": "ツール一覧に専用の外部ツールがあれば、そのツール名で直接呼び出す。",
         "en": "If a dedicated external tool is visible in your tool list, call it directly by name.",
