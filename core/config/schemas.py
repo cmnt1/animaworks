@@ -634,6 +634,11 @@ class GitHubWebhookConfig(BaseModel):
     # Treated like bot_login for comment exclusion.
     reviewer_login: str = ""
     quiet_seconds: float = Field(default=180, ge=0)
+    # Thin out auto-detected bot noise (logins ending in "[bot]"): drop
+    # notifications whose body is empty or is only a "Review thread
+    # resolved" auto-reply, while still delivering bots with a real body.
+    # Independent of bot_login/reviewer_login (those are filtered outright).
+    drop_bot_noise: bool = True
 
 
 class EventExportConfig(BaseModel):
@@ -937,6 +942,14 @@ class HeartbeatConfig(BaseModel):
         description=(
             "Max bytes of heartbeat.md before a compaction instruction is "
             "injected into the heartbeat prompt; 0 = disabled"
+        ),
+    )
+    recent_dialogue_max_age_hours: int = Field(
+        default=6,
+        ge=0,
+        description=(
+            "Include recent chat dialogue in heartbeat context only when the "
+            "last turn is younger than this many hours; 0 = always include"
         ),
     )
     soft_timeout_seconds: int = Field(

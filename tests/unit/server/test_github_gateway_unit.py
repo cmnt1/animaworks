@@ -19,6 +19,8 @@ REVIEWER_LOGIN = "example-reviewer"
 OTHER_REPO = "elsewhere/project"
 SHA_1 = "1" * 40
 SHA_2 = "2" * 40
+# An auto-detected bot whose login ends with GitHub's "[bot]" marker.
+BOT_SUFFIX_LOGIN = "coderabbitai[bot]"
 
 
 def _pr_payload(
@@ -465,6 +467,107 @@ class TestReviewAndCommentDispatch:
         await manager.start()
         try:
             await manager.handle_event("issue_comment", _comment_payload(event="issue_comment", author=BOT_LOGIN))
+        finally:
+            await manager.stop()
+        assert len(sends) == 1
+
+
+class TestBotNoiseDropping:
+    """B1: thin out auto-detected [bot] noise while keeping real content."""
+
+    async def test_empty_body_bot_review_is_dropped(self, gateway) -> None:
+        manager, sends, _state = gateway
+        await manager.handle_event(
+            "pull_request_review",
+            _review_payload(author=BOT_SUFFIX_LOGIN, state="commented", body="   \n \t"),
+        )
+        assert sends == []
+
+    async def test_resolved_bot_auto_reply_is_dropped(self, gateway) -> None:
+        manager, sends, _state = gateway
+        body = "_You are interacting with an AI system._\n\n✅ Review thread resolved."
+        await manager.handle_event(
+            "pull_request_review",
+            _review_payload(author=BOT_SUFFIX_LOGIN, state="commented", body=body),
+        )
+        assert sends == []
+
+    async def test_bot_with_meaningful_body_is_delivered(self, gateway) -> None:
+        manager, sends, _state = gateway
+        await manager.handle_event(
+            "pull_request_review",
+            _review_payload(author=BOT_SUFFIX_LOGIN, state="changes_requested", body="Please fix this finding."),
+        )
+        assert len(sends) == 1
+        assert "Please fix this finding." in sends[0]["content"]
+
+    async def test_human_review_is_still_delivered(self, gateway) -> None:
+        manager, sends, _state = gateway
+        await manager.handle_event(
+            "pull_request_review",
+            _review_payload(author="human-developer", state="approved", body="LGTM"),
+        )
+        assert len(sends) == 1
+
+    @pytest.mark.parametrize("event", ["issue_comment", "pull_request_review_comment"])
+    async def test_empty_body_bot_comment_is_dropped(self, gateway, event: str) -> None:
+        manager, sends, _state = gateway
+        await manager.handle_event(
+            event,
+            _comment_payload(event=event, author=BOT_SUFFIX_LOGIN, body="  "),
+        )
+        assert sends == []
+
+    @pytest.mark.parametrize("event", ["issue_comment", "pull_request_review_comment"])
+    async def test_resolved_bot_comment_is_dropped(self, gateway, event: str) -> None:
+        manager, sends, _state = gateway
+        await manager.handle_event(
+            event,
+            _comment_payload(event=event, author=BOT_SUFFIX_LOGIN, body="✅ Review thread resolved."),
+        )
+        assert sends == []
+
+    async def test_noise_lines_are_removed_from_excerpt(self, gateway) -> None:
+        manager, sends, _state = gateway
+        body = (
+            "_You are interacting with an AI system._\n"
+            "Here is the real finding.\n"
+            "<!-- This is an auto-generated reply by CodeRabbit -->\n"
+            "Tail end."
+        )
+        await manager.handle_event("pull_request_review", _review_payload(body=body))
+        assert len(sends) == 1
+        content = sends[0]["content"]
+        assert "_You are interacting" not in content
+        assert "auto-generated reply" not in content
+        assert "Here is the real finding." in content
+
+    async def test_closing_delegate_line_is_removed(self, gateway) -> None:
+        manager, sends, _state = gateway
+        await manager.handle_event("pull_request_review", _review_payload(body="A review."))
+        assert len(sends) == 1
+        content = sends[0]["content"]
+        assert "対応が必要なら" not in content
+        assert "If this needs action" not in content
+        assert "delegate_task" not in content
+
+    async def test_drop_bot_noise_can_be_disabled(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        shared_dir = tmp_path / "shared"
+        state_file = shared_dir / github_gateway.STATE_FILENAME
+        config = GitHubWebhookConfig(enabled=True, repos=[REPO], drop_bot_noise=False)
+        manager = GitHubWebhookManager(config=config, shared_dir=shared_dir, state_file=state_file)
+        sends: list[dict[str, str]] = []
+        monkeypatch.setattr(
+            manager,
+            "_send",
+            lambda to, content, kind, key: sends.append({"to": to, "content": content, "kind": kind, "key": key}),
+        )
+        await manager.start()
+        try:
+            await manager.handle_event(
+                "pull_request_review",
+                _review_payload(author=BOT_SUFFIX_LOGIN, body="  "),
+            )
         finally:
             await manager.stop()
         assert len(sends) == 1
