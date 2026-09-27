@@ -450,6 +450,7 @@ class PromptConfig(BaseModel):
     skill_catalog_router_include_body: bool = True
     skill_catalog_router_dense_enabled: bool = True
     skill_catalog_router_dense_weight: float = Field(default=8.0, ge=0.0)
+    skill_catalog_max_items: int = Field(default=3, ge=1)
 
 
 class PrimingConfig(BaseModel):

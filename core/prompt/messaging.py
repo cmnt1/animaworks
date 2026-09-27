@@ -13,6 +13,7 @@ import logging
 import os
 from pathlib import Path
 
+from core.i18n import t
 from core.paths import PROJECT_DIR, load_prompt, load_prompt_text
 from core.prompt.org_context import _is_mcp_mode
 from core.prompt.sections import _load_fallback_strings
@@ -99,43 +100,23 @@ def _build_board_channel_guidance(anima_dir: Path) -> str:
             ordered_channels.append(fallback)
     ordered_channels.extend(ch for ch in open_channels if ch not in {"general", "ops"})
 
-    visible_channels = ", ".join(f"#{name}" for name in ordered_channels) if ordered_channels else "(none)"
-    preferred_channels = ", ".join(f"#{name}" for name in team_channels) if team_channels else ""
-
+    visible_names = ", ".join(f"#{name}" for name in ordered_channels[:5])
     locale = _get_prompt_locale()
-    if locale == "en":
-        if preferred_channels:
-            return (
-                f"- Available Board channels for you: {visible_channels}\n"
-                f"- Routine work reports and task completion updates should go to your restricted team channel(s) first: {preferred_channels}\n"
-                "- Use `general` only for org-wide sharing, and `ops` only for cross-team operations/infrastructure updates."
-            )
-        return (
-            f"- Available Board channels for you: {visible_channels}\n"
-            "- No restricted team channel is currently available to you, so use the most relevant shared channel: `general` for org-wide sharing, `ops` for operations/infrastructure."
+    if len(ordered_channels) > 5:
+        visible_names += t(
+            "builder.board_channels_more",
+            locale=locale,
+            count=len(ordered_channels) - 5,
         )
+    visible_channels = visible_names or t("builder.board_channels_none", locale=locale)
+    preferred_channels = ", ".join(f"#{name}" for name in team_channels)
 
-    if locale == "ko":
-        if preferred_channels:
-            return (
-                f"- 현재 접근 가능한 Board 채널: {visible_channels}\n"
-                f"- 일반적인 작업 보고와 완료 보고는 제한된 팀/부서 채널을 우선 사용: {preferred_channels}\n"
-                "- `general`은 전체 공유용, `ops`는 팀을 넘는 운영/인프라 공유용으로만 사용."
-            )
-        return (
-            f"- 현재 접근 가능한 Board 채널: {visible_channels}\n"
-            "- 현재 제한된 팀 채널이 없으므로 가장 관련 있는 공유 채널을 사용: `general`은 전체 공유, `ops`는 운영/인프라 공유."
-        )
-
-    if preferred_channels:
-        return (
-            f"- 現在アクセスできるBoardチャネル: {visible_channels}\n"
-            f"- 通常の作業報告・完了報告は、所属部門/チームの限定チャネルを優先: {preferred_channels}\n"
-            "- `general` は全体共有、`ops` は部門横断の運用・インフラ共有に限定して使う。"
-        )
-    return (
-        f"- 現在アクセスできるBoardチャネル: {visible_channels}\n"
-        "- 参加中の限定チャネルが見当たらないため、最も関連性の高い共有チャネルを使う: `general` は全体共有、`ops` は運用・インフラ共有。"
+    key = "builder.board_guidance_with_team" if team_channels else "builder.board_guidance_without_team"
+    return t(
+        key,
+        locale=locale,
+        team_channels=preferred_channels,
+        visible_channels=visible_channels,
     )
 
 

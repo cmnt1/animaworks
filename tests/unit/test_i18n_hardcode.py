@@ -90,7 +90,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # model catalog "note" descriptions (最高性能・推奨, etc.)
     "core/config/model_mode.py": 30,
     # cron instruction prompt to Anima
-    "core/prompt/messaging.py": 2,
+    "core/prompt/messaging.py": 0,
     "core/prompt/org_context.py": 3,
     "core/anima/response_normalize.py": 15,
     # orphan reaper — Japanese notification body sent to the owning anima (plan-specified wording)

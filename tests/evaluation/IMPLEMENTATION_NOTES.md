@@ -30,10 +30,7 @@ Phase 1 of the memory evaluation framework provides the core infrastructure for 
 ```python
 # Condition D: Hybrid + Priming
 config = ExperimentConfig.create_condition_d(
-    experiment_id="exp_001",
-    participants=30,
-    memory_size=MemorySize.MEDIUM,
-    priming_budget=2000
+    experiment_id="exp_001", participants=30, memory_size=MemorySize.MEDIUM, priming_budget=2000
 )
 ```
 
@@ -108,6 +105,7 @@ async def create_agent(self, participant_id: int):
     # return DigitalPerson(person_dir, search_config)
     pass
 
+
 # TODO: Replace with actual priming call
 async def _measure_priming(self, agent, message):
     # result, latency = await agent.priming_engine.prime_memories(...)
@@ -138,11 +136,7 @@ See `scripts/example_usage.py` for complete examples:
 
 ```python
 # Example 1: Single participant experiment
-config = ExperimentConfig.create_condition_d(
-    experiment_id="example_001",
-    participants=1,
-    priming_budget=2000
-)
+config = ExperimentConfig.create_condition_d(experiment_id="example_001", participants=1, priming_budget=2000)
 
 experiment = MemoryExperiment(config, output_dir=Path("results/raw"))
 experiment.scenarios = create_sample_scenarios()

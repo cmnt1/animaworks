@@ -148,6 +148,7 @@ class _SkillCatalogRouterSettings:
     include_body: bool = True
     dense_enabled: bool = True
     dense_weight: float = 8.0
+    max_items: int = 3
 
 
 # ── Per-group section builders ────────────────────────────────
@@ -408,6 +409,58 @@ def _collapse_superseded_notes(state: str) -> str:
     return "".join(parts)
 
 
+def _related_resolution_resolvers(anima_dir: Path) -> set[str]:
+    """Return this Anima, its supervisor, and its direct subordinates."""
+    related = {anima_dir.name}
+    try:
+        from core.config.file_access_policy import load_denied_roots
+        from core.prompt.org_context import _filter_company_visible_animas, _scan_all_animas
+
+        denied_roots = load_denied_roots(anima_dir)
+        all_animas = _scan_all_animas(anima_dir.parent, denied_roots)
+        all_animas = _filter_company_visible_animas(anima_dir.name, all_animas, anima_dir.parent)
+        current = all_animas.get(anima_dir.name)
+        if current is None:
+            return related
+        if current.supervisor:
+            related.add(current.supervisor)
+        related.update(name for name, config in all_animas.items() if config.supervisor == anima_dir.name)
+    except Exception:
+        logger.debug("Failed to determine related resolution owners", exc_info=True)
+    return related
+
+
+def _filter_relevant_resolutions(anima_dir: Path, resolutions: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep only recent resolutions owned by this Anima or its direct reports."""
+    related = _related_resolution_resolvers(anima_dir)
+    return [resolution for resolution in resolutions if resolution.get("resolver", "") in related]
+
+
+def _build_resolution_registry_section(anima_dir: Path, memory: MemoryManager) -> str:
+    """Build the recent resolution registry for this Anima's direct org scope."""
+    try:
+        resolutions = memory.read_resolutions(days=7)
+        if not resolutions:
+            return ""
+        resolutions = memory.filter_resolutions_by_company(resolutions)
+        resolutions = _filter_relevant_resolutions(anima_dir, resolutions)
+        if not resolutions:
+            return ""
+        seen: dict[str, dict[str, str]] = {}
+        for resolution in resolutions:
+            seen[resolution.get("issue", "")] = resolution
+        deduped = sorted(seen.values(), key=lambda item: item.get("ts", ""))
+        lines = [
+            f"- [{resolution.get('ts', '')[:16]}] {resolution.get('resolver', 'unknown')}: "
+            f"{resolution.get('issue', '')}"
+            for resolution in deduped[-10:]
+        ]
+        return load_prompt("builder/resolution_registry", res_lines="\n".join(lines))
+    except Exception:
+        logger.debug("Failed to inject resolution registry", exc_info=True)
+        return ""
+
+
 def _build_group3(
     pd: Path,
     memory: MemoryManager,
@@ -477,27 +530,9 @@ def _build_group3(
     except Exception:
         logger.debug("Failed to inject resolved approvals section", exc_info=True)
 
-    try:
-        resolutions = memory.read_resolutions(days=7)
-        if resolutions:
-            resolutions = memory.filter_resolutions_by_company(resolutions)
-        if resolutions:
-            seen: dict[str, dict] = {}
-            for r in resolutions:
-                seen[r.get("issue", "")] = r
-            deduped = sorted(seen.values(), key=lambda x: x.get("ts", ""))
-            lines = [
-                f"- [{r.get('ts', '')[:16]}] {r.get('resolver', 'unknown')}: {r.get('issue', '')}"
-                for r in deduped[-10:]
-            ]
-            _add(
-                load_prompt("builder/resolution_registry", res_lines="\n".join(lines)),
-                "resolution_registry",
-                2,
-                "rigid",
-            )
-    except Exception:
-        logger.debug("Failed to inject resolution registry", exc_info=True)
+    resolution_block = _build_resolution_registry_section(pd, memory)
+    if resolution_block:
+        _add(resolution_block, "resolution_registry", 2, "rigid")
 
     if priming_section:
         # Explicit source contracts survive recall trimming. Never infer safety
@@ -555,6 +590,7 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
             include_body=bool(getattr(prompt_cfg, "skill_catalog_router_include_body", True)),
             dense_enabled=bool(getattr(prompt_cfg, "skill_catalog_router_dense_enabled", True)),
             dense_weight=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_dense_weight", 8.0))),
+            max_items=max(1, int(getattr(prompt_cfg, "skill_catalog_max_items", 3))),
         )
     except Exception:
         logger.debug("Failed to load skill catalog router settings", exc_info=True)
@@ -566,6 +602,45 @@ def _skill_catalog_pointer(meta: Any) -> str:
     from core.skills.router import _pointer_path
 
     return _pointer_path(meta)
+
+
+def _dedupe_skill_catalog_metas(metas: list[Any]) -> list[Any]:
+    """Deduplicate catalog entries by description, preferring local skills."""
+    source_priority = {
+        "skills/": 0,
+        "procedures/": 1,
+        "common_skills/": 2,
+        "external/": 3,
+    }
+    ordered = sorted(
+        enumerate(metas),
+        key=lambda item: (
+            next(
+                (
+                    priority
+                    for prefix, priority in source_priority.items()
+                    if _skill_catalog_pointer(item[1]).startswith(prefix)
+                ),
+                len(source_priority),
+            ),
+            item[0],
+        ),
+    )
+    deduped: list[Any] = []
+    seen_descriptions: set[str] = set()
+    for _, meta in ordered:
+        description = str(getattr(meta, "description", "") or "").strip()[:60]
+        if description:
+            if description in seen_descriptions:
+                continue
+            seen_descriptions.add(description)
+        deduped.append(meta)
+    return deduped
+
+
+def _limit_skill_catalog_entries(entries: list[str], max_items: int) -> list[str]:
+    """Apply the configured catalog ceiling without changing router order."""
+    return entries[: max(1, max_items)]
 
 
 def _format_skill_catalog_line(
@@ -768,11 +843,13 @@ def _build_group4(
         common_label = t("skill.label_common")
         procedure_label = t("skill.label_procedure")
         settings = _load_skill_catalog_router_settings()
-        all_skills = [
-            meta
-            for meta in skill_index.all_skills
-            if _skill_visible_in_prompt_context(meta, is_background_auto=is_background_auto)
-        ]
+        all_skills = _dedupe_skill_catalog_metas(
+            [
+                meta
+                for meta in skill_index.all_skills
+                if _skill_visible_in_prompt_context(meta, is_background_auto=is_background_auto)
+            ]
+        )
         catalog_entries: list[str] = []
 
         if settings.enabled and message.strip():
@@ -835,6 +912,7 @@ def _build_group4(
                     )
                 )
 
+        catalog_entries = _limit_skill_catalog_entries(catalog_entries, settings.max_items)
         if catalog_entries or not (settings.enabled and message.strip()):
             out.extend(_skill_catalog_sections(catalog_entries, mode_b=execution_mode == "b"))
 
