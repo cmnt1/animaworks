@@ -86,8 +86,6 @@ export function render(container) {
         </div>
       </div>
     </div>
-    <div id="usageGovernorBar" style="display:none;"></div>
-
     <div class="home-status-bar" id="homeStatusBar" role="status">
       <span class="home-status-dot" aria-hidden="true"></span>
       <span class="home-status-label" id="homeStatusLabel">--</span>
@@ -738,39 +736,6 @@ function _renderNanogptUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
-function _renderGovernor(gov) {
-  const el = document.getElementById("usageGovernorBar");
-  if (!el) return;
-  if (!gov || !gov.active) {
-    el.style.display = "none";
-    return;
-  }
-  const suspended = (gov.suspended_animas || []).join(", ") || "none";
-  const reason = gov.reason || "throttling";
-  const needsRelogin = /rate_limited|unauthorized|no_credentials/.test(reason);
-  el.style.display = "block";
-  el.innerHTML = `
-    <div class="governor-bar governor-bar--active">
-      <span class="governor-icon">&#x26A0;</span>
-      <span class="governor-text">
-        <strong>Usage Governor</strong>: ${escapeHtml(reason)}
-      </span>
-      <span class="governor-suspended">${escapeHtml(suspended)}</span>
-      ${needsRelogin ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="margin-left:0.75rem;font-size:0.78rem;padding:3px 10px;">Claude 再認証</button>` : ""}
-    </div>
-  `;
-  if (needsRelogin) {
-    const btn = document.getElementById("govReloginBtn");
-    btn?.addEventListener("click", async () => {
-      btn.disabled = true;
-      btn.textContent = "...";
-      await _runUsageRelogin("claude");
-      btn.disabled = false;
-      btn.textContent = "Claude 再認証";
-    });
-  }
-}
-
 async function _loadUsage(forceRefresh = false) {
   try {
     const url = forceRefresh ? "/api/usage?skip_cache=true" : "/api/usage";
@@ -809,7 +774,6 @@ async function _loadUsage(forceRefresh = false) {
     if (data.claude) _renderClaudeUsage(data.claude);
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
-    _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
     _updateUsageLastUpdated(Date.now(), serverFetchedAt);
   } catch (err) {

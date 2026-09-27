@@ -1,10 +1,7 @@
-"""E2E tests for task staleness detection and delegation workflow.
+"""E2E tests for task staleness formatting and delegation workflow.
 
-Verifies the full lifecycle:
-1. Task creation without the retired deadline field
-2. format_for_priming output with elapsed / STALE markers
-3. get_stale_tasks returns correct results
-4. Heartbeat delegation prompt injection for animas with subordinates
+Verifies task creation, format_for_priming output with elapsed / STALE markers,
+and heartbeat delegation prompt injection for animas with subordinates.
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -18,10 +15,7 @@ from pathlib import Path
 import pytest
 
 from core.paths import _prompt_cache, load_prompt
-from core.tasks.queue import (
-    _STALE_TASK_THRESHOLD_SEC,
-    TaskQueueManager,
-)
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -121,90 +115,6 @@ class TestFullTaskLifecycleWithStaleness:
         for line in lines:
             if "Fresh task" in line:
                 assert "STALE" not in line, "Fresh task should not be marked as STALE"
-
-    def test_get_stale_tasks_returns_old_task_only(
-        self,
-        task_queue: TaskQueueManager,
-        anima_dir: Path,
-    ):
-        """get_stale_tasks returns only tasks updated 30+ minutes ago."""
-        # Fresh task via API
-        task_queue.add_task(
-            source="human",
-            original_instruction="Fresh",
-            assignee="test-anima",
-            summary="Fresh task",
-        )
-
-        # Old task: updated 45 minutes ago
-        old_updated = (now_jst() - timedelta(minutes=45)).isoformat()
-        _seed_canonical_task_entry(
-            task_queue.queue_path,
-            task_id="stale_task_01",
-            source="anima",
-            summary="Stale task",
-            assignee="test-anima",
-            updated_at=old_updated,
-            ts=old_updated,
-        )
-
-        stale = task_queue.get_stale_tasks()
-        assert len(stale) == 1
-        assert stale[0].task_id == "stale_task_01"
-
-    def test_get_stale_tasks_empty_when_all_fresh(
-        self,
-        task_queue: TaskQueueManager,
-    ):
-        """No stale tasks when all tasks were just created."""
-        task_queue.add_task(
-            source="human",
-            original_instruction="Just created",
-            assignee="test-anima",
-            summary="Brand new",
-        )
-        assert task_queue.get_stale_tasks() == []
-
-    def test_stale_threshold_boundary(
-        self,
-        task_queue: TaskQueueManager,
-        anima_dir: Path,
-    ):
-        """Task updated exactly at the threshold boundary is stale."""
-        # Exactly 30 minutes ago (the threshold)
-        boundary_updated = (now_jst() - timedelta(seconds=_STALE_TASK_THRESHOLD_SEC)).isoformat()
-        _seed_canonical_task_entry(
-            task_queue.queue_path,
-            task_id="boundary_task",
-            source="human",
-            summary="Boundary task",
-            assignee="test-anima",
-            updated_at=boundary_updated,
-        )
-
-        stale = task_queue.get_stale_tasks()
-        assert len(stale) == 1
-        assert stale[0].task_id == "boundary_task"
-
-    def test_done_tasks_not_in_stale_results(
-        self,
-        task_queue: TaskQueueManager,
-        anima_dir: Path,
-    ):
-        """Completed tasks should not appear in stale results even if old."""
-        old_updated = (now_jst() - timedelta(hours=2)).isoformat()
-        _seed_canonical_task_entry(
-            task_queue.queue_path,
-            task_id="done_old_task",
-            source="human",
-            summary="Old done task",
-            assignee="test-anima",
-            status="done",
-            updated_at=old_updated,
-        )
-
-        stale = task_queue.get_stale_tasks()
-        assert len(stale) == 0
 
     # ── Test 4: Heartbeat delegation prompt injection ────────────
 

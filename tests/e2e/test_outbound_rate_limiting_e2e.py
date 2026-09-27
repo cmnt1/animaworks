@@ -155,7 +155,7 @@ class TestPostChannelRateLimitingE2E:
 @pytest.mark.e2e
 class TestCascadeLimiterFileBasedE2E:
     """activity_log に JSONL を書き込み、
-    depth_limiter が正しくカウントすることを確認する。
+    会話深度制限が正しく判定されることを確認する。
     """
 
     def test_cascade_limiter_file_based_e2e(self, tmp_path: Path) -> None:
@@ -195,10 +195,6 @@ class TestCascadeLimiterFileBasedE2E:
         # ── Should block (count == max_depth) ──
         assert limiter.check_depth("alice", "bob", anima_dir) is False
 
-        # ── current_depth should report correct count ──
-        depth = limiter.current_depth("alice", "bob", anima_dir)
-        assert depth == max_depth
-
         # ── With higher limit, should allow ──
         with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
@@ -225,9 +221,9 @@ class TestCascadeLimiterFileBasedE2E:
             encoding="utf-8",
         )
 
-        # depth should still be max_depth (old entries are outside window)
-        depth_after = limiter.current_depth("alice", "bob", anima_dir)
-        assert depth_after == max_depth
+        # The existing entries still allow sending under the higher limit;
+        # prepended entries are outside the configured window.
+        assert limiter_lenient.check_depth("alice", "bob", anima_dir) is True
 
 
 # ── E2E Test: priming outbound section ──────────────────────

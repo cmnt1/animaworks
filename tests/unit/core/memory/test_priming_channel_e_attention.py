@@ -171,19 +171,10 @@ async def test_channel_e_preserves_delegated_status_section(tmp_path: Path) -> N
         for subdir in ["episodes", "knowledge", "skills", "state"]:
             (directory / subdir).mkdir(parents=True, exist_ok=True)
 
-    subordinate_task = TaskQueueManager(subordinate_dir).add_task(
-        source="human",
-        original_instruction="subordinate work",
-        assignee="hinata",
-        summary="subordinate work",
-        task_id="child1234",
+    subordinate_task = TaskQueueManager(subordinate_dir).submit(
+        {"task_id": "child1234", "title": "subordinate work", "description": "subordinate work"}
     )
-    TaskQueueManager(anima_dir).add_delegated_task(
-        original_instruction="delegated board work",
-        assignee="sakura",
-        summary="delegated board work",
-        meta={"delegated_to": "hinata", "delegated_task_id": subordinate_task.task_id},
-    )
+    TaskQueueManager(anima_dir).store.alias("sakura", "delegated1234", "hinata", subordinate_task.task_id)
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 

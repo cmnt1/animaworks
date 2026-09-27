@@ -503,16 +503,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "⏱️ {minutes}分経過",
         "en": "⏱️ {minutes}m elapsed",
     },
-    "task_queue.sync_done": {
-        "ja": "{orig} (→{target}: 完了)",
-        "en": "{orig} (→{target}: done)",
-        "ko": "{orig} (→{target}: 완료)",
-    },
-    "task_queue.sync_cancelled": {
-        "ja": "{orig} (→{target}: 部下タスクがキャンセルされた)",
-        "en": "{orig} (→{target}: subordinate task was cancelled)",
-        "ko": "{orig} (→{target}: 부하 태스크가 취소됨)",
-    },
     "task_queue.delegated_unknown": {
         "ja": "不明",
         "en": "unknown",

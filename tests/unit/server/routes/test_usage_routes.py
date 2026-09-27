@@ -5,6 +5,9 @@ import json
 import urllib.error
 from pathlib import Path
 
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from server.routes import usage_routes
 
 
@@ -146,3 +149,20 @@ def test_fetch_openai_usage_refreshes_after_401(monkeypatch):
     assert result["5h"]["remaining"] == 88
     assert result["Week"]["remaining"] == 66
     assert len(calls) == 2
+
+
+async def test_usage_response_contains_only_provider_fields(monkeypatch, tmp_path: Path) -> None:
+    app = FastAPI()
+    app.include_router(usage_routes.create_usage_router(), prefix="/api")
+    monkeypatch.setattr(usage_routes, "_fetch_claude_usage", lambda **kwargs: {"provider": "claude"})
+    monkeypatch.setattr(usage_routes, "_fetch_openai_usage", lambda **kwargs: {"provider": "openai"})
+    monkeypatch.setattr(usage_routes, "_fetch_nanogpt_usage", lambda **kwargs: {"provider": "nanogpt"})
+    monkeypatch.setattr(usage_routes, "_merge_usage_snapshot", lambda payload: payload)
+    monkeypatch.setattr(usage_routes, "_usage_snapshot_path", lambda: tmp_path / "usage_snapshot.json")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/usage?skip_cache=true")
+
+    assert response.status_code == 200
+    assert set(response.json()) == {"claude", "openai", "nanogpt", "cached_at", "snapshot_path"}

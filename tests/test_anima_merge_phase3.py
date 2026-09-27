@@ -145,8 +145,6 @@ def test_anima_merge_rewrite_refs_updates_all_external_surfaces(
         json.loads((data_dir / "run" / "discord_thread_map.json").read_text(encoding="utf-8"))["message"]["anima"]
         == "target"
     )
-    usage = json.loads((data_dir / "usage_governor_state.json").read_text(encoding="utf-8"))
-    assert usage["suspended_animas"] == ["target"]
     assert json.loads((data_dir / "animas" / ".bootstrap_retries.json").read_text(encoding="utf-8")) == {"target": 1}
     assert not (data_dir / "run" / "events" / "source").exists()
     assert not (data_dir / "run" / "animas" / "source.lock").exists()
@@ -234,7 +232,6 @@ def test_anima_merge_phase3_dry_run_leaves_external_state_and_db_unchanged(tmp_p
         data_dir / "shared" / "inbox" / "source" / "message.json",
         data_dir / "animas" / "worker" / "status.json",
         data_dir / "run" / "notification_map.json",
-        data_dir / "usage_governor_state.json",
     ]
     before = {str(path): path.read_bytes() for path in observed}
 

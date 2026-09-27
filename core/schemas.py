@@ -107,18 +107,6 @@ class ModelConfig(BaseModel):
     extra_mcp_servers: dict[str, dict] = Field(default_factory=dict)
 
 
-class AnimaConfig(BaseModel):
-    name: str
-    base_dir: Path
-    identity: str = ""
-    injection: str = ""
-    permissions: str = ""
-    heartbeat_interval: int = 30  # minutes
-    active_hours: tuple[int, int] | None = (9, 22)  # None = 24h, e.g. (9, 22) for daytime only
-    cron_tasks: list[CronTask] = []
-    model_config_data: ModelConfig = Field(default_factory=ModelConfig)
-
-
 EXTERNAL_PLATFORM_SOURCES: frozenset[str] = frozenset({"slack", "chatwork", "googlechat", "discord", "zoom"})
 """Message ``source`` values representing external platforms (Slack, Chatwork, Discord, Zoom, etc.)."""
 

@@ -62,9 +62,6 @@ class TestAnimaMergeRuntimeRefs:
     async def test_rewrites_all_live_caches(self):
         app = _make_test_app()
         app.state.supervisor._bootstrap_retry_counts = {"source": 3, "target": 1}
-        governor = MagicMock()
-        governor.state.suspended_animas = ["source", "target"]
-        app.state.usage_governor = governor
         webhook_manager = MagicMock()
         webhook_manager.rewrite_anima_reference.return_value = 2
         room_manager = MagicMock()
@@ -87,7 +84,6 @@ class TestAnimaMergeRuntimeRefs:
         assert response.status_code == 200
         assert response.json() == {
             "discord_mappings_updated": 2,
-            "usage_state_updated": True,
             "bootstrap_retry_removed": True,
             "rooms_reloaded": 2,
             "discord_gateway_reloaded": True,
@@ -95,8 +91,6 @@ class TestAnimaMergeRuntimeRefs:
             "config_reloaded": True,
         }
         webhook_manager.rewrite_anima_reference.assert_called_once_with("source", "target")
-        assert governor.state.suspended_animas == ["target"]
-        governor.state.save.assert_called_once_with()
         assert app.state.supervisor._bootstrap_retry_counts == {"target": 1}
         app.state.supervisor._save_bootstrap_retries.assert_called_once_with()
         room_manager.load_all_rooms.assert_called_once_with()

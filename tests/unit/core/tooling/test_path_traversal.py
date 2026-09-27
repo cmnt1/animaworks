@@ -238,6 +238,25 @@ class TestReferenceWriteRejected:
         assert not (ref_dir / "tech_spec.md").exists()
 
 
+# ── descendant state read permissions ─────────────────────
+
+
+class TestDescendantStateReadPermissions:
+    def test_supervisor_can_read_plans_but_not_pending(self, tmp_path: Path):
+        handler = _make_handler(tmp_path, anima_name="supervisor")
+        worker_dir = tmp_path / "animas" / "worker"
+        plans_dir = worker_dir / "state" / "plans"
+        plans_dir.mkdir(parents=True)
+        (worker_dir / "state" / "pending").mkdir()
+        handler._descendant_state_dirs = [plans_dir]
+
+        from core.config.schemas import PermissionsConfig
+
+        kwargs = {"config": PermissionsConfig(), "denied_roots": ()}
+        assert handler._check_file_permission(str(plans_dir / "x.md"), **kwargs) is None
+        assert handler._check_file_permission(str(worker_dir / "state" / "pending" / "x.json"), **kwargs) is not None
+
+
 # ── create_anima path traversal ──────────────────────────
 
 

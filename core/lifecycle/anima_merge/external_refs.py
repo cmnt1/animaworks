@@ -340,17 +340,6 @@ class ExternalRefsRewriter:
         if discord_updates:
             changed_files.append("run/discord_thread_map.json")
 
-        usage_updated = False
-        usage_path = self.data_dir / "usage_governor_state.json"
-        if usage_path.is_file():
-            usage = _read_json_object(usage_path)
-            suspended, changed = _replace_list(usage.get("suspended_animas"), self.source, self.target)
-            if changed:
-                usage["suspended_animas"] = suspended
-                _write_json(usage_path, usage)
-                usage_updated = True
-                changed_files.append(self._relative(usage_path))
-
         bootstrap_removed = False
         bootstrap_path = self.animas_dir / ".bootstrap_retries.json"
         if bootstrap_path.is_file():
@@ -379,7 +368,6 @@ class ExternalRefsRewriter:
         return {
             "notification_mappings_updated": notification_updates,
             "discord_mappings_updated": discord_updates,
-            "usage_state_updated": usage_updated,
             "bootstrap_retry_removed": bootstrap_removed,
             "removed_run_paths": removed_run_paths,
             "changed_files": changed_files,

@@ -84,8 +84,6 @@ class PermissionsMixin:
             file_read.append(t("handler.descendant_activity"))
         if self._descendant_state_files:
             file_read.append(t("handler.descendant_state"))
-        if self._descendant_state_dirs:
-            file_read.append(t("handler.descendant_pending"))
         if self._peer_activity_dirs:
             file_read.append(t("handler.peer_activity"))
 
@@ -265,7 +263,7 @@ class PermissionsMixin:
                 if resolved == desc_state:
                     return None
 
-        # Supervisor can read any descendant's state/pending/ and state/plans/ directories
+        # Supervisor can read any descendant's state/plans/ directory
         if not write:
             for desc_state_dir in self._descendant_state_dirs:
                 if resolved.is_relative_to(desc_state_dir):

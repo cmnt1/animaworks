@@ -1145,19 +1145,6 @@ def create_system_router() -> APIRouter:
 
         discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
 
-        governor_updated = False
-        governor = getattr(request.app.state, "usage_governor", None)
-        if governor is not None:
-            suspended: list[str] = []
-            for name in governor.state.suspended_animas:
-                mapped = target if name == source else name
-                if mapped not in suspended:
-                    suspended.append(mapped)
-            governor_updated = suspended != governor.state.suspended_animas
-            if governor_updated:
-                governor.state.suspended_animas = suspended
-                governor.state.save()
-
         bootstrap_retry_removed = False
         supervisor = getattr(request.app.state, "supervisor", None)
         if supervisor is not None and source in supervisor._bootstrap_retry_counts:  # noqa: SLF001
@@ -1193,7 +1180,6 @@ def create_system_router() -> APIRouter:
 
         result = {
             "discord_mappings_updated": discord_updated,
-            "usage_state_updated": governor_updated,
             "bootstrap_retry_removed": bootstrap_retry_removed,
             "rooms_reloaded": rooms_reloaded,
             "discord_gateway_reloaded": discord_gateway_reloaded,

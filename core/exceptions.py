@@ -34,10 +34,6 @@ class LLMAPIError(ExecutionError):
     """LLM API call failure (network, auth, rate limit)."""
 
 
-class LLMTimeoutError(ExecutionError):
-    """LLM API timeout."""
-
-
 class StreamDisconnectedError(ExecutionError):
     """Streaming session disconnected unexpectedly.
 
@@ -81,10 +77,6 @@ class ToolExecutionError(ToolError):
     """Tool execution failure at runtime."""
 
 
-class ToolNotFoundError(ToolError):
-    """Requested tool not found or not available."""
-
-
 # ── Memory I/O ───────────────────────────────────────────────
 
 
@@ -92,16 +84,8 @@ class MemoryIOError(AnimaWorksError):
     """Memory subsystem I/O errors."""
 
 
-class MemoryReadError(MemoryIOError):
-    """Failed to read from memory storage."""
-
-
 class MemoryWriteError(MemoryIOError):
     """Failed to write to memory storage."""
-
-
-class MemoryCorruptedError(MemoryIOError):
-    """Memory data is corrupted (JSON decode failure, schema mismatch)."""
 
 
 class TaskPersistenceError(MemoryIOError):
@@ -136,10 +120,6 @@ class ConfigError(AnimaWorksError):
 
 class ConfigNotFoundError(ConfigError):
     """Configuration file not found."""
-
-
-class ConfigValidationError(ConfigError):
-    """Configuration validation failure."""
 
 
 # ── Messaging ────────────────────────────────────────────────

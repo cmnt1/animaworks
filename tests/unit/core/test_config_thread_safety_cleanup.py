@@ -12,14 +12,13 @@ from __future__ import annotations
 Covers:
 - reminder.py push_sync/drain_sync are thread-safe
 - get_depth_limiter() reloads config on each call
-- check_and_record emits DeprecationWarning
 - resolution_tracker.read_resolutions() uses tail-only parsing
 """
 
 import json
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -124,29 +123,6 @@ class TestGetDepthLimiterReloadsConfig:
 
             get_depth_limiter()
             assert mock_cfg.call_count > initial_count
-
-
-@pytest.mark.unit
-class TestCheckAndRecordDeprecationWarning:
-    """check_and_record emits DeprecationWarning."""
-
-    def test_emits_deprecation_warning(self):
-        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
-            mock_heartbeat = MagicMock()
-            mock_heartbeat.depth_window_s = 600
-            mock_heartbeat.max_depth = 6
-            mock_heartbeat.max_messages_per_hour = 30
-            mock_heartbeat.max_messages_per_day = 100
-            mock_cfg.return_value.heartbeat = mock_heartbeat
-
-            from core.messaging.cascade_limiter import ConversationDepthLimiter
-
-            limiter = ConversationDepthLimiter()
-
-            with pytest.warns(DeprecationWarning, match="check_and_record is deprecated"):
-                result = limiter.check_and_record("alice", "bob")
-
-            assert result is True
 
 
 @pytest.mark.unit

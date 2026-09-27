@@ -282,38 +282,47 @@ class TestCheckA1FileAccess:
 
     # ── descendant_read_dirs (read-only directory) ──
 
-    def test_read_descendant_pending_dir_allowed(
+    def test_read_descendant_plans_dir_allowed(
         self,
         anima_dir: Path,
         other_anima_dir: Path,
     ):
-        pending_dir = other_anima_dir / "state" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
-        desc_dirs = [pending_dir]
-        path = str(pending_dir / "task_001.json")
+        plans_dir = other_anima_dir / "state" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        path = str(plans_dir / "plan.md")
         result = _check_a1_file_access(
             path,
             anima_dir,
             write=False,
-            descendant_read_dirs=desc_dirs,
+            descendant_read_dirs=[plans_dir],
         )
         assert result is None
 
-    def test_write_descendant_pending_dir_blocked(
+    def test_write_descendant_plans_dir_blocked(
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
+    ):
+        plans_dir = other_anima_dir / "state" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        path = str(plans_dir / "plan.md")
+        result = _check_a1_file_access(
+            path,
+            anima_dir,
+            write=True,
+            descendant_read_dirs=[plans_dir],
+        )
+        assert result is not None
+
+    def test_read_descendant_pending_dir_denied(
         self,
         anima_dir: Path,
         other_anima_dir: Path,
     ):
         pending_dir = other_anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
-        desc_dirs = [pending_dir]
         path = str(pending_dir / "task_001.json")
-        result = _check_a1_file_access(
-            path,
-            anima_dir,
-            write=True,
-            descendant_read_dirs=desc_dirs,
-        )
+        result = _check_a1_file_access(path, anima_dir, write=False, descendant_read_dirs=[])
         assert result is not None
 
 

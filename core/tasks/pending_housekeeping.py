@@ -27,10 +27,7 @@ def cleanup_pending_failed(
     cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
     total_deleted = 0
 
-    failed_subdirs = (
-        Path("state") / "pending" / "failed",
-        Path("state") / "background_tasks" / "pending" / "failed",
-    )
+    failed_subdirs = (Path("state") / "background_tasks" / "pending" / "failed",)
 
     for anima_dir in sorted(animas_dir.iterdir()):
         if not anima_dir.is_dir():

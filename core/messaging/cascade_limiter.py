@@ -214,64 +214,6 @@ class ConversationDepthLimiter:
             return False
         return True
 
-    def current_depth(
-        self,
-        a: str,
-        b: str,
-        anima_dir: Path,
-    ) -> int:
-        """Return current exchange count for a pair within the active window.
-
-        Args:
-            a: First Anima name.
-            b: Second Anima name (the peer).
-            anima_dir: Path to Anima ``a``'s directory.
-        """
-        try:
-            from core.memory.activity.logger import ActivityLogger
-
-            activity = ActivityLogger(anima_dir)
-            entries = activity.recent(
-                days=1,
-                limit=200,
-                types=["dm_sent", "dm_received"],
-                involving=b,
-            )
-        except Exception:
-            return 0
-
-        cutoff = now_local() - timedelta(seconds=self._window_s)
-        count = 0
-        for e in entries:
-            try:
-                ts = ensure_aware(datetime.fromisoformat(e.ts))
-                if ts >= cutoff:
-                    count += 1
-            except (ValueError, TypeError):
-                continue
-        return count
-
-    # ── Backward-compatible aliases ────────────────────────────
-    def check_and_record(self, sender: str, receiver: str) -> bool:
-        """Legacy API -- always returns True (no-op).
-
-        .. deprecated::
-            Use :meth:`check_depth` with ``sender_anima_dir`` instead.
-        """
-        import warnings
-
-        warnings.warn(
-            "check_and_record is deprecated; use check_depth with sender_anima_dir",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        logger.debug(
-            "Deprecated check_and_record() called for %s -> %s; use check_depth() with sender_anima_dir instead",
-            sender,
-            receiver,
-        )
-        return True
-
 
 def get_depth_limiter() -> ConversationDepthLimiter:
     """Return a ConversationDepthLimiter with current config.
@@ -280,7 +222,3 @@ def get_depth_limiter() -> ConversationDepthLimiter:
     take effect without process restart.
     """
     return ConversationDepthLimiter()
-
-
-# Backward-compatible alias (deprecated)
-depth_limiter = get_depth_limiter()

@@ -1005,39 +1005,6 @@
   }
 }
 
-/* ── Governor Bar ────────────────────────────── */
-
-.governor-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  margin-bottom: 1rem;
-}
-
-.governor-bar--active {
-  background: var(--aw-color-warning-bg, #fef3c7);
-  border: 1px solid var(--aw-color-warning, #d97706);
-  color: var(--aw-color-warning-text, #92400e);
-}
-
-.governor-icon {
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-
-.governor-text {
-  flex: 1;
-}
-
-.governor-suspended {
-  font-size: 0.75rem;
-  opacity: 0.8;
-  white-space: nowrap;
-}
-
 /* ── Empty State ─────────────────────────────── */
 
 .empty-state {

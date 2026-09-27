@@ -235,15 +235,17 @@ class TestListTasksExecutability:
         handler = _make_handler(anima_dir)
         manager = TaskQueueManager(anima_dir)
 
-        delegated = manager.add_delegated_task(
-            original_instruction="handed off",
-            assignee="rin",
-            summary="delegated",
+        rin_dir = anima_dir.parent / "rin"
+        (rin_dir / "state").mkdir(parents=True)
+        child = TaskQueueManager(rin_dir).submit(
+            {"task_id": "delegated-child", "title": "delegated", "description": "handed off"}
         )
+        manager.store.alias(anima_dir.name, "delegated-tracking", rin_dir.name, child.task_id)
+        delegated_id = "delegated-tracking"
 
         data = json.loads(handler.handle("list_tasks", {}))
         by_id = {item["task_id"]: item for item in data}
-        item = by_id[delegated.task_id]
+        item = by_id[delegated_id]
         assert "executable" not in item
         assert "executable_note" not in item
 

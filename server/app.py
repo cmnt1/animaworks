@@ -467,30 +467,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         except Exception:
             logger.exception("Frontmatter migration failed (non-fatal)")
 
-        # Exclude governor-suspended animas from startup (only when Governor is enabled).
-        _gov_excluded: set[str] = set()
-        try:
-            from core.config.models import load_config as _lc_gov
-
-            if _lc_gov().server.usage_governor.enabled:
-                import json as _json
-
-                from core.paths import get_data_dir as _get_dd
-
-                _gsp = _get_dd() / "usage_governor_state.json"
-                if _gsp.is_file():
-                    _gsd = _json.loads(_gsp.read_text("utf-8"))
-                    _gov_excluded = set(_gsd.get("suspended_animas", []))
-                    if _gov_excluded:
-                        logger.info(
-                            "Startup: skipping %d governor-suspended animas: %s",
-                            len(_gov_excluded),
-                            ", ".join(sorted(_gov_excluded)),
-                        )
-        except Exception:
-            logger.debug("Failed to read governor state at startup", exc_info=True)
-
-        _names_to_start = [n for n in app.state.anima_names if n not in _gov_excluded]
+        _names_to_start = list(app.state.anima_names)
 
         # Do not choose a new task authority while legacy writers may be live.
         from core.tasks.board.readiness import require_task_store_ready
@@ -661,20 +638,6 @@ def _prepare_child_env_urls(app: FastAPI) -> None:
     app.state.supervisor.child_env_urls = app.state.child_env_urls
 
 
-async def _start_usage_governor_if_enabled(app: FastAPI) -> None:
-    from core.config.models import load_config as _load_cfg_gov
-
-    if _load_cfg_gov().server.usage_governor.enabled:
-        from core.paths import get_data_dir
-        from server.usage_governor import UsageGovernor
-
-        governor = UsageGovernor(app, get_data_dir(), app.state.animas_dir)
-        app.state.usage_governor = governor
-        await governor.start()
-    else:
-        logger.info("Usage Governor is disabled (server.usage_governor.enabled=false)")
-
-
 async def _run_startup_initialization(app: FastAPI) -> None:
     """Run heavyweight startup work after the ASGI app is accepting requests."""
     app.state.worker_services_ready = False
@@ -697,7 +660,6 @@ async def _run_startup_initialization(app: FastAPI) -> None:
             total_count=len(getattr(app.state, "anima_names", []) or []),
         )
         await _startup_animas_background(app, suppress_errors=False)
-        await _start_usage_governor_if_enabled(app)
         startup_progress.set_phase("ready", detail=t("startup.detail_ready"), reset_counts=True)
         logger.info("Server startup initialization complete")
     except asyncio.CancelledError:
@@ -994,9 +956,6 @@ async def lifespan(app: FastAPI):
             await app.state.zoom_gateway_manager.stop()
         if getattr(app.state, "github_gateway_manager", None):
             await app.state.github_gateway_manager.stop()
-        governor = getattr(app.state, "usage_governor", None)
-        if governor:
-            await governor.stop()
         await app.state.supervisor.shutdown_all()
         from core.memory.rag.vector_registry import configure_server_vector_access
 

@@ -6,12 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from core.schemas import TaskEntry
-from core.tasks.queue import (
-    _STALE_TASK_THRESHOLD_SEC,
-    TaskQueueManager,
-    _elapsed_seconds,
-    _format_elapsed_from_sec,
-)
+from core.tasks.queue import TaskQueueManager, _elapsed_seconds, _format_elapsed_from_sec
 
 JST = timezone(timedelta(hours=9))
 
@@ -161,25 +156,6 @@ class TestGetPending:
         task_queue.update_status(e1.task_id, "in_progress")
         pending = task_queue.get_pending()
         assert len(pending) == 1
-
-
-class TestGetHumanTasks:
-    def test_get_human_tasks_filters_source(self, task_queue):
-        task_queue.add_task(
-            source="human",
-            original_instruction="t1",
-            assignee="a",
-            summary="s1",
-        )
-        task_queue.add_task(
-            source="anima",
-            original_instruction="t2",
-            assignee="b",
-            summary="s2",
-        )
-        human = task_queue.get_human_tasks()
-        assert len(human) == 1
-        assert human[0].source == "human"
 
 
 class TestFormatForPriming:
@@ -444,76 +420,6 @@ class TestFormatForPrimingWithStaleness:
             output = task_queue.format_for_priming()
 
         assert "Bad timestamp task" in output
-
-
-# ── New tests: get_stale_tasks ───────────────────────────────
-
-
-class TestGetStaleTasks:
-    """Tests for the get_stale_tasks() method."""
-
-    def _write_task_entry(self, task_queue, *, updated_at, status="pending"):
-        """Seed a canonical task entry with controlled timestamps."""
-        import uuid
-
-        task_id = uuid.uuid4().hex[:12]
-        entry = {
-            "task_id": task_id,
-            "ts": updated_at,
-            "source": "human",
-            "original_instruction": "test",
-            "assignee": "rin",
-            "status": status,
-            "summary": "Stale test task",
-            "deadline": "2026-03-01T23:59:59",
-            "relay_chain": [],
-            "updated_at": updated_at,
-        }
-        task_queue.store.apply(task_queue.anima_dir.name, entry)
-        return task_id
-
-    def test_returns_stale_tasks(self, task_queue):
-        """Tasks with updated_at older than 30 minutes should be returned."""
-        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
-        old_time = (now - timedelta(minutes=45)).isoformat()
-        task_id = self._write_task_entry(task_queue, updated_at=old_time)
-
-        with patch("core.tasks.queue.now_local", return_value=now):
-            stale = task_queue.get_stale_tasks()
-
-        assert len(stale) == 1
-        assert stale[0].task_id == task_id
-
-    def test_excludes_recent_tasks(self, task_queue):
-        """Recently updated tasks should not be returned as stale."""
-        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
-        recent_time = (now - timedelta(minutes=10)).isoformat()
-        self._write_task_entry(task_queue, updated_at=recent_time)
-
-        with patch("core.tasks.queue.now_local", return_value=now):
-            stale = task_queue.get_stale_tasks()
-
-        assert len(stale) == 0
-
-    def test_empty_queue_returns_empty(self, task_queue):
-        """An empty task queue should return an empty list."""
-        stale = task_queue.get_stale_tasks()
-        assert stale == []
-
-    def test_excludes_done_tasks(self, task_queue):
-        """Done tasks should not appear in stale results (get_pending filters them)."""
-        now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
-        old_time = (now - timedelta(minutes=45)).isoformat()
-        self._write_task_entry(task_queue, updated_at=old_time, status="done")
-
-        with patch("core.tasks.queue.now_local", return_value=now):
-            stale = task_queue.get_stale_tasks()
-
-        assert len(stale) == 0
-
-    def test_stale_threshold_is_30_minutes(self):
-        """Verify the stale threshold constant is 1800 seconds (30 minutes)."""
-        assert _STALE_TASK_THRESHOLD_SEC == 1800
 
 
 # ── New tests: helper function unit tests ────────────────────
