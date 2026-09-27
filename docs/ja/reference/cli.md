@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 799be3f274a38e73d1705e7aaf85e42c07826fd39bef93bafdf1254ce3954380 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: c042c974880ab96fbb961fb26b395b49ad3e216ae017912bb532cc7d844d800f -->
 
 # CLI リファレンス: `animaworks`
 
@@ -1087,7 +1087,7 @@ Regenerate character assets using Vibe Transfer to match the art style of a refe
 
 ## `repair-rag`
 
-Stop target animas before running this command in production.
+Rebuild RAG through the active phase3 vector owner.
 
 `usage: animaworks repair-rag [-h]
                              [--anima ANIMA | --all | --suspect-only | --list-suspects]
@@ -1101,7 +1101,7 @@ Stop target animas before running this command in production.
 | --suspect-only | flag | false | — | Repair animas with recent RAG corruption evidence |
 | --list-suspects | flag | false | — | List suspected corrupt RAG DBs without repairing |
 | --full | flag | false | — | Required confirmation for destructive quarantine and full rebuild |
-| --shared | flag | false | — | Reindex shared common_knowledge and common_skills into this anima DB |
+| --shared | flag | false | — | Accepted for compatibility; phase3 always rebuilds shared collections too |
 | --window-minutes | option | — | — | Lookback window for --suspect-only/--list-suspects (default: repair config window) |
 | --reason | option | "manual_repair_rag_cli" | — | ==SUPPRESS== |
 

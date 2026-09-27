@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 6a3e40e1ad613acbc71efcf2320b6213544c84dd733c7293a1664ea4ab628c02 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: a9781c20f62e33d0e829ad37fe3fde863e6743d789f87f22a83cf9e69546b8f2 -->
 
 # モジュール一覧
 
@@ -26,14 +26,14 @@
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
 | `cli.commands.anima_communities` | 77 | CLI commands for Neo4j community maintenance. |
-| `cli.commands.anima_merge` | 85 | — |
-| `cli.commands.anima_mgmt` | 1518 | CLI commands for anima process management. |
+| `cli.commands.anima_merge` | 72 | — |
+| `cli.commands.anima_mgmt` | 1513 | CLI commands for anima process management. |
 | `cli.commands.board` | 188 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
 | `cli.commands.cron_guard` | 93 | CLI commands for inspecting and re-enabling cron guard tasks. |
 | `cli.commands.import_cmd` | 88 | — |
-| `cli.commands.index_cmd` | 483 | — |
+| `cli.commands.index_cmd` | 454 | — |
 | `cli.commands.init_cmd` | 150 | — |
 | `cli.commands.internal_cmd` | 347 | — |
 | `cli.commands.logs` | 206 | CLI commands for viewing anima logs. |
@@ -47,7 +47,7 @@
 | `cli.commands.profile` | 332 | — |
 | `cli.commands.rag_repair_status` | 148 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
-| `cli.commands.repair_rag_cmd` | 154 | — |
+| `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 1100 | — |
 | `cli.commands.skills` | 155 | — |
 | `cli.commands.supervisor_cmd` | 246 | — |
@@ -289,7 +289,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.i18n.strings.handler` | 420 | Domain-specific i18n strings (handler part 1). |
 | `core.i18n.strings.handler_ext` | 362 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 140 | Domain-specific i18n strings. |
-| `core.i18n.strings.memory` | 379 | Domain-specific i18n strings. |
+| `core.i18n.strings.memory` | 404 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 94 | — |
 | `core.i18n.strings.misc` | 536 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 12 | Domain-specific i18n strings (legacy route modules). |
@@ -403,7 +403,7 @@ anima の起動、停止、初期化のライフサイクル。
 | `core.lifecycle.anima_merge.external_refs` | 456 | — |
 | `core.lifecycle.anima_merge.finalize` | 457 | — |
 | `core.lifecycle.anima_merge.journal` | 187 | — |
-| `core.lifecycle.anima_merge.service` | 1733 | — |
+| `core.lifecycle.anima_merge.service` | 1753 | — |
 | `core.lifecycle.anima_merge.task_refs` | 402 | — |
 | `core.lifecycle.anima_merge.taskboard_refs` | 162 | — |
 | `core.lifecycle.anima_merge.verification` | 268 | — |
@@ -504,6 +504,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.priming.policy` | 39 | — |
 | `core.memory.priming.result` | 76 | — |
 | `core.memory.priming.utils` | 308 | — |
+| `core.memory.rag.cli_access` | 224 | CLI access to phase3 vector stores through the active owner or server. |
 | `core.memory.rag.contextual_header` | 163 | — |
 | `core.memory.rag.direct_access` | 42 | — |
 | `core.memory.rag.entity_graph` | 319 | — |
@@ -515,10 +516,11 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.index_signature` | 27 | Compatibility diagnostics for an existing embedding index signature. |
 | `core.memory.rag.indexer` | 1621 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
+| `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
 | `core.memory.rag.owner_transport` | 60 | In-process owner transport for a phase3 root's own MemoryService. |
 | `core.memory.rag.repair` | 33 | — |
 | `core.memory.rag.repair_rebuild` | 571 | — |
-| `core.memory.rag.repair_service` | 956 | — |
+| `core.memory.rag.repair_service` | 951 | — |
 | `core.memory.rag.repair_snapshot` | 152 | Private inputs and metadata publication for the existing RAG rebuild path. |
 | `core.memory.rag.repair_state` | 150 | Persistent repair-state helpers for RAG auto-repair. |
 | `core.memory.rag.repair_types` | 27 | — |
@@ -819,7 +821,7 @@ anima の監督、委任、実行調整。
 |---|---:|---|
 | `core.supervisor` | 35 | Process isolation supervisor package. |
 | `core.supervisor._mgr_health（非公開）` | 484 | Health check mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_rag_repair（非公開）` | 594 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_rag_repair（非公開）` | 597 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_reconcile（非公開）` | 337 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1090 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
@@ -827,7 +829,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor.ipc` | 535 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 430 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1132 | Process Supervisor - Manages lifecycle of Anima child processes. |
-| `core.supervisor.memory_service` | 637 | Root-owned vector memory service. |
+| `core.supervisor.memory_service` | 667 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 746 | Process handle for managing child Anima processes. |
 | `core.supervisor.runner` | 1226 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
