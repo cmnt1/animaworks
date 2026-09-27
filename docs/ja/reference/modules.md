@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 09686b6b86a5226045ccf14b66d4d7477a78d93c3670f8c8f0192fd94a861ba7 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 467d5d1c14667d6a005ad0d9a3632e6abe786603ba536371f833ad85b0929e9d -->
 
 # モジュール一覧
 
@@ -129,7 +129,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 1009 | — |
 | `core.anima.inbox_overflow` | 130 | — |
-| `core.anima.lifecycle` | 1220 | — |
+| `core.anima.lifecycle` | 1185 | — |
 | `core.anima.messaging` | 1596 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -406,7 +406,7 @@ anima の起動、停止、初期化のライフサイクル。
 | `core.lifecycle.anima_merge.taskboard_refs` | 162 | — |
 | `core.lifecycle.anima_merge.verification` | 268 | — |
 | `core.lifecycle.knowledge_correction` | 127 | — |
-| `core.lifecycle.system_consolidation` | 437 | — |
+| `core.lifecycle.system_consolidation` | 249 | — |
 
 ## `core.lifecycle.anima_merge`
 
@@ -454,8 +454,8 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.config` | 110 | — |
-| `core.memory.facts.entity_index` | 457 | — |
-| `core.memory.facts.extraction` | 466 | — |
+| `core.memory.facts.entity_index` | 452 | — |
+| `core.memory.facts.extraction` | 435 | — |
 | `core.memory.facts.extractor` | 328 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.facts.invalidation` | 497 | — |
 | `core.memory.facts.invalidation_llm` | 109 | — |
@@ -465,9 +465,9 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.prompts.ja` | 78 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 443 | — |
-| `core.memory.maintenance.consolidation` | 1454 | — |
+| `core.memory.maintenance.consolidation` | 901 | — |
 | `core.memory.maintenance.cron_logger` | 190 | — |
-| `core.memory.maintenance.distillation` | 715 | — |
+| `core.memory.maintenance.distillation` | 542 | — |
 | `core.memory.maintenance.forgetting` | 499 | — |
 | `core.memory.maintenance.housekeeping` | 1691 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
@@ -623,7 +623,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
 | `core.migrations.registry` | 159 | — |
-| `core.migrations.steps` | 2764 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 2795 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 
