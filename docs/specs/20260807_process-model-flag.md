@@ -1,5 +1,7 @@
 # process_model flag・status.json保護仕様
 
+> **状態（2026-09 時点）**: 撤廃済み。R05 により process topology は phase3 に固定され、`process_model` runtime flag は現行設定で使用されない。現行の構成は [docs/ja/architecture/process.md](../ja/architecture/process.md) を参照。
+
 ## 1. 正本とschema
 
 animaごとのprocess topologyの正本は `<anima_dir>/status.json` とする（B-07/B-08）。`config.json`、環境変数、DB、in-memory値を正本にしてはならない。

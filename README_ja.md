@@ -205,7 +205,7 @@ animaworks start
 |  | AnimaWorks | CrewAI | LangGraph | OpenClaw | OpenAI Agents |
 |--|-----------|--------|-----------|----------|---------------|
 | **設計思想** | 自律エージェントの組織 | ロールベースのチーム | グラフワークフロー | 個人アシスタント | 軽量SDK |
-| **記憶** | 脳科学ベース: ハイブリッドRAG（ベクトル＋BM25＋グラフ）・atomic facts・統合・能動的忘却・自動想起 | Cognitive Memory（手動forget） | チェックポイント＋cross-threadストア | SuperMemory知識グラフ | セッション内のみ |
+| **記憶** | 脳科学ベース: ベクトル＋BM25＋facts/エンティティ検索、必要に応じたグラフ拡散、記憶統合・能動的忘却・自動想起 | Cognitive Memory（手動forget） | チェックポイント＋cross-threadストア | SuperMemory知識グラフ | セッション内のみ |
 | **自律性** | Heartbeat（観察→計画→振返り）+ Cron + TaskExec + GitHubイベントゲートウェイ — 24/7稼働 | 人間がキック | 人間がキック | Cron + heartbeat | 人間がキック |
 | **組織構造** | 上司→部下の階層・委譲・監査・ダッシュボード | Crew内フラットロール | — | 単一エージェント | Handoffのみ |
 | **プロセス** | エージェント毎に独立OSプロセス・IPC・自動再起動 | 共有プロセス | 共有プロセス | 単一プロセス | 共有プロセス |
@@ -253,12 +253,12 @@ Web UIは6つの画面（ハッシュルーター `#/…`）とWorkspaceアプ�
 
 従来のAIエージェントは、コンテキストウィンドウに入る分しか覚えていません。AnimaWorksのAnimaはファイルベースの長期記憶を持ち、必要な時に検索して思い出します。すべてを毎回詰め込むのではなく、今の会話や行動に関係する記憶だけを取り出します。
 
-- **自動想起（Priming）** — メッセージが届くと6チャンネルが並列で動きます: 送信者プロファイル、直近活動、重要知識、関連知識、保留タスク、エピソード（Neo4jバックエンドではグラフ文脈も）。取得した記憶は決定論的なゲートが、本文・ポインタ・根拠・抑制のどれで出すかを決めます
+- **自動想起（Priming）** — メッセージが届くと6チャンネルが並列で動きます: 送信者プロファイル、直近活動、重要知識、関連知識、保留タスク、エピソード。関連知識の検索では設定に応じて legacy NetworkX グラフの拡散も利用できます。取得した記憶は決定論的なゲートが、本文・ポインタ・根拠・抑制のどれで出すかを決めます
 - **意図的想起** — 自動想起で足りない時は、Anima自身が `search_memory` や `read_memory_file` で記憶を探します。検索はハイブリッド（ベクトル＋BM25＋atomic facts＋エンティティレジストリ）で、確信度ゲート付きです
 - **行動前のアクションルール照合** — 外部送信など副作用のある操作の前に、関連するアクションルールを照合して提示します。必要な記憶を読むまで実行を保留する設定も可能です
-- **統合（Consolidation）** — 毎晩、Anima自身が2相のパスを回します（エピソード抽出→自分のツールループでの知識抽出）。フレームワークは後処理としてインデックス再構築と活性度調整を行います。週次では重複・矛盾する知識のマージ候補を提示し、検索インデックスを再構築します
-- **忘却（Forgetting）** — 数ヶ月使われない記憶は低活性化マークを経て月次でアーカイブされます。重要な知識と成熟した手順は保護されます。失敗をきっかけに、機能しなくなった手順を改訂する再統合もあります
-- **プラグイン式バックエンド** — 安定既定は `legacy`（隔離vector worker経由のChromaDB。破損時は自動隔離・再構築）。Neo4jグラフバックエンド（エンティティ抽出・コミュニティ検出・グラフ想起）は実験的なオプトインです
+- **統合（Consolidation）** — 日次処理でエピソードをまとめ、Anima がツールループで知識を抽出します。フレームワークは索引保守や候補収集を支援します。週次処理では重複・矛盾の可能性がある知識を確認候補として提示し、Anima が内容を判断します
+- **忘却（Forgetting）** — 日次処理で低活性の記憶を候補としてマークし、週次処理で保管を検討する記憶を Anima に提示します。候補は自動削除されず、重要な記憶や成熟した手順には保護規則が適用されます。失敗をきっかけに手順を見直す再固定化もあります
+- **記憶検索** — legacy vector worker 経由のベクトル検索と BM25 を組み合わせます。設定に応じて NetworkX のグラフ拡散を検索結果の補助に使います
 
 <p align="center">
   <img src="docs/images/chat-memory.png" alt="AnimaWorks チャット — 複数Animaとのマルチスレッド会話" width="720">
@@ -277,9 +277,8 @@ Web UIは6つの画面（ハッシュルーター `#/…`）とWorkspaceアプ�
 | G (Gemini CLI) | Gemini CLI | `gemini/*` モデル | stream-json パース・ツールループ |
 | X (Grok Build) | Grok Build CLI ラッパー（ACP stdio） | `grok/*` モデル | ACP stdio 経由の Grok Build エージェントループ |
 | A (Autonomous) | LiteLLM + tool_use | GPT, Gemini, Mistral, Bedrock, Vertex, xAI, DeepSeek 等 | CC 互換（Read/Write/Edit/Bash/Grep/Glob、**WebSearch/WebFetch**）＋記憶・メッセージ・タスク・**todo_write**・スキル作成など |
-| B (Basic) | LiteLLM 1ショット | tool_use が不安定なローカル系（例: 小型 Ollama） | プロンプト内の擬似ツール呼び出しでループ。フレームワークが記憶I/O を代行 |
 
-モード解決は `status.json` の `execution_mode` が最優先、次に `models.json` のテーブル、最後に組み込みのモデル名パターン（`fnmatch`）。tool_use対応のOllamaモデル（例: `ollama/qwen3:14b`, `ollama/glm-4.7*`）はA、それ以外の `ollama/*` はBに割り当てられます。各CLIエンジンにはLiteLLMまで落ちるフォールバック連鎖があります（Codex/Grokはレートガード連動）。Heartbeat・Cron・Inbox はメインとは別の **background_model** で回せます（コスト最適化）。拡張思考（Extended thinking）にも対応しています。
+モード解決は `status.json` の `execution_mode`、`models.json` のテーブル、組み込みのモデル名パターンの順です。未知のモデルはAに割り当てられます。フォールバックはエンジンごとの設定とエラー分類に従います。Heartbeat・Cron・Inbox はメインとは別の **background_model** で実行できます（コスト最適化）。拡張思考（Extended thinking）にも対応しています。
 
 ### 音声チャット
 
@@ -341,7 +340,7 @@ Web UIは6つの画面（ハッシュルーター `#/…`）とWorkspaceアプ�
 
 **Grok Build（Mode X）** は Grok Build CLI ラッパー（ACP stdio）経由で `grok/*` モデルを利用します。事前に `grok` CLI をインストールし、`grok login` を実行してください。
 
-**Azure OpenAI**、**Vertex AI (Gemini)**、**AWS Bedrock**、**vLLM** は `config.json` の `credentials` セクションで設定します。詳細は[技術仕様](docs/spec.ja.md)を参照してください。
+**Azure OpenAI**、**Vertex AI (Gemini)**、**AWS Bedrock**、**vLLM** は `config.json` の `credentials` セクションで設定します。詳細は[アーキテクチャ](docs/ja/architecture/index.md)を参照してください。
 
 **Ollama** 等のローカルモデルはAPIキー不要です。`OLLAMA_SERVERS`（デフォルト: `http://localhost:11434`）で接続先を指定します。
 
@@ -369,13 +368,13 @@ Web UIは6つの画面（ハッシュルーター `#/…`）とWorkspaceアプ�
 
 | キー | サービス | 取得先 |
 |-----|---------|--------|
-| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack（ツール＋Socket Mode受信） | [セットアップガイド](docs/slack-socket-mode-setup.ja.md) |
+| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack（ツール＋Socket Mode受信） | [セットアップガイド](docs/ja/integrations/slack.md) |
 | `CHATWORK_API_TOKEN` | Chatwork（ツール＋Webhook受信） | [chatwork.com](https://www.chatwork.com/) |
 | `DISCORD_BOT_TOKEN`（または Anima 単位 `DISCORD_BOT_TOKEN__<名前>`） | Discord（ツール＋Gateway受信＋通知） | [Discord Developer Portal](https://discord.com/developers/applications) |
 | `NOTION_API_TOKEN`（または `NOTION_API_TOKEN__<名前>`） | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
 | `GITHUB_WEBHOOK_SECRET` ＋ `gh auth login` | GitHub Webhookゲートウェイ（CI/レビュー/コンフリクト→タスク化） | リポジトリ設定 |
 
-Gmail / Google Calendar / Google Sheets / Google Tasks / X検索 / AWSコレクタ / Zoom会議取り込み（RTMS）/ ローカルLLMツールは `config.json` の `credentials`（OAuth またはサービスアカウント）で設定します。人間への通知チャネル: Slack, Chatwork, Discord, LINE, Telegram, ntfy。詳細は [技術仕様](docs/spec.ja.md) を参照してください。
+Gmail / Google Calendar / Google Sheets / Google Tasks / X検索 / AWSコレクタ / Zoom会議取り込み（RTMS）/ ローカルLLMツールは `config.json` の `credentials`（OAuth またはサービスアカウント）で設定します。人間への通知チャネル: Slack, Chatwork, Discord, LINE, Telegram, ntfy。詳細は [アーキテクチャ](docs/ja/architecture/index.md) を参照してください。
 
 </details>
 
@@ -421,7 +420,7 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X検索 / AWSコレク�
 | **アウトバウンドルーティング** | 未知の宛先はfail-closed。明示的な設定なしに任意の外部送信は不可 |
 | **エージェント間メッセージの完全性** | 送信者名の名簿照合と、中継メッセージ全件のorigin chain追跡 |
 
-詳細: **[セキュリティアーキテクチャ](docs/security.ja.md)**
+詳細: **[セキュリティ](docs/ja/security.md)**
 
 </details>
 
@@ -505,7 +504,7 @@ CLIはパワーユーザーと自動化向けです。日常操作はWeb UIで�
 | リアルタイム | WebSocket（ダッシュボード・音声）、SSE（チャット・ミーティング）、`StreamRegistry` でストリーム寿命管理 |
 | タスクスケジュール | APScheduler（ハートビート・cron・統合・死活監視・RAG修復） |
 | タスク管理 | タスクキュー（JSONL）＋PR単位排他キー付きpendingタスク実行器＋TaskBoard（SQLite） |
-| 記憶基盤 | ChromaDB（隔離vector worker経由）＋BM25＋sentence-transformers＋NetworkX＋atomic facts＋エンティティレジストリ。オプションでNeo4jグラフバックエンド |
+| 記憶基盤 | ChromaDB（隔離 vector worker 経由）＋BM25＋sentence-transformers＋legacy NetworkX グラフ＋atomic facts＋エンティティレジストリ |
 | 設定・マイグレーション | Pydantic 2.0+ / JSON / Markdown、`core/migrations/`（起動時マイグレーション） |
 | 国際化 | `core/i18n` の `t()`。ウィザード17言語・ダッシュボード ja/en/ko |
 | スキル基盤 | Skill Hub、明示的skill activation、router、curator、procedure-to-skill promotion |
@@ -561,16 +560,16 @@ animaworks/
 
 ## ドキュメント
 
-**[ドキュメント総合インデックス](docs/README.ja.md)** — 読む順序の案内、アーキテクチャ詳説、設計仕様の一覧。
+**[ドキュメント総合インデックス](docs/ja/README.md)** — 読む順序の案内、アーキテクチャ詳説、設計仕様の一覧。
 
 | ドキュメント | 説明 |
 |-------------|------|
-| [設計理念](docs/vision.ja.md) | 「不完全な個の協働」という根本思想 |
-| [機能一覧](docs/features.ja.md) | AnimaWorksで何ができるかの全体像 |
-| [記憶システム](docs/memory.ja.md) | エピソード記憶・意味記憶・手続き記憶・プライミング・能動的忘却 |
-| [セキュリティ](docs/security.ja.md) | 多層防御モデル、データ出自追跡、敵対的脅威分析 |
-| [脳科学マッピング](docs/brain-mapping.ja.md) | 各モジュールと人間の脳の対応関係 |
-| [技術仕様](docs/spec.ja.md) | 実行モード、プロンプト構築、設定解決 |
+| [設計理念](docs/ja/vision.md) | 「不完全な個の協働」という根本思想 |
+| [機能概観](docs/ja/overview.md) | AnimaWorksで何ができるかの全体像 |
+| [記憶システム](docs/ja/memory/index.md) | エピソード記憶・意味記憶・手続き記憶・プライミング・能動的忘却 |
+| [セキュリティ](docs/ja/security.md) | 権限境界、データの出自、セキュリティ運用 |
+| [脳科学マッピング](docs/ja/brain-mapping.md) | 各モジュールと人間の脳の対応関係 |
+| [アーキテクチャ](docs/ja/architecture/index.md) | 実行モード、プロンプト構築、設定解決 |
 
 ## ライセンス
 
