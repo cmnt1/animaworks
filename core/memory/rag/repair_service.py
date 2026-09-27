@@ -333,7 +333,7 @@ class RAGRepairService:
             animas_dir = get_animas_dir()
         if not animas_dir.is_dir():
             return []
-        from core.config.resolver import resolve_process_model_config
+        from core.config import resolver as _resolver
 
         repairable: list[str] = []
         for anima_dir in sorted(animas_dir.iterdir()):
@@ -343,8 +343,8 @@ class RAGRepairService:
                 or not self._anima_enabled(anima_dir)
             ):
                 continue
-            process_config = resolve_process_model_config(anima_dir)
-            if process_config.valid and process_config.process_model == "phase3":
+            # R07: 非 phase3 分岐ごと削除予定
+            if _resolver.is_root_memory_owner(anima_dir):
                 continue
             repairable.append(anima_dir.name)
         return repairable

@@ -46,11 +46,20 @@ async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> N
 
     sup.stop_anima = AsyncMock()
     sup.start_anima = AsyncMock()
+    sup.send_request = AsyncMock(return_value={"ok": True, "status": "success"})
     sup._run_rag_repair_cli_process = repair_cli
 
     await sup._run_supervised_rag_repair("sora", requested)
 
-    assert calls == ["repair:sora:sqlite_malformed:True"]
+    assert calls == []
+    sup.send_request.assert_awaited_once()
+    request = sup.send_request.await_args
+    assert request.args == (
+        "sora",
+        "repair_memory",
+        {"reason": "sqlite_malformed", "include_shared": True},
+    )
+    assert request.kwargs["timeout"] > 0
     sup.stop_anima.assert_not_awaited()
     sup.start_anima.assert_not_awaited()
     assert "sora" in sup.processes

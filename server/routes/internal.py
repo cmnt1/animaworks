@@ -412,13 +412,13 @@ def create_internal_router() -> APIRouter:
         anima_name = getattr(body, "anima_name", None)
         if isinstance(anima_name, str) and anima_name:
             from core.anima.factory import validate_anima_name
-            from core.config.resolver import resolve_process_model_config
+            from core.config import resolver as _resolver
             from core.paths import get_animas_dir
 
             if validate_anima_name(anima_name) is not None:
                 return JSONResponse(status_code=422, content={"detail": t("rag.invalid_anima_name")})
-            process_config = resolve_process_model_config(get_animas_dir() / anima_name)
-            if process_config.valid and process_config.process_model == "phase3":
+            # R07: 非 phase3 分岐ごと削除予定
+            if _resolver.is_root_memory_owner(get_animas_dir() / anima_name):
                 # MCP/CLI subprocesses cannot share a task runner's Python IPC
                 # requester. This is transport forwarding only: the phase3
                 # root retains the sole native handle, queue and repair fence.

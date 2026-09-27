@@ -98,32 +98,27 @@ def _global_permissions_for_unit_tests(tmp_path: Path) -> None:
     GlobalPermissionsCache.reset()
 
 
-# ── Default-topology shim ─────────────────────────────────────────────
-# Production default topology is ``phase3`` (missing status.json resolves to
-# root DB ownership).  Legacy-path tests use ad-hoc anima dirs without a
-# status.json; resolve those to ``legacy`` so pre-existing fixtures keep
-# exercising the legacy worker/in-process paths.  Tests that write an explicit
-# status.json keep the real resolver behaviour.
+# ── Temporary root-ownership shim (remove with the old RAG branches in R07) ──
+import json as _json_topology
+
 import pytest as _pytest_topology
 
 import core.config.resolver as _resolver_module
-from core.config.resolver import resolve_process_model_config as _real_resolve_pm
-from core.config.schemas import (
-    ResolvedProcessModelConfig as _RPMC,
-)
-from core.config.schemas import (
-    TaskProcessIsolationConfig as _TPIC,
-)
 
 
 @_pytest_topology.fixture(autouse=True)
 def _legacy_topology_for_fixtureless_animas(monkeypatch):
     from pathlib import Path as _Path
 
-    def _resolve(anima_dir):
-        if (_Path(anima_dir) / "status.json").is_file():
-            return _real_resolve_pm(anima_dir)
-        return _RPMC(process_model="legacy", task_process_isolation=_TPIC())
+    def _is_root_memory_owner(anima_dir):
+        status_path = _Path(anima_dir) / "status.json"
+        if not status_path.is_file():
+            return False
+        try:
+            status = _json_topology.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, _json_topology.JSONDecodeError):
+            return False
+        return isinstance(status, dict) and status.get("process_model", "phase3") == "phase3"
 
-    monkeypatch.setattr(_resolver_module, "resolve_process_model_config", _resolve)
+    monkeypatch.setattr(_resolver_module, "is_root_memory_owner", _is_root_memory_owner)
     yield

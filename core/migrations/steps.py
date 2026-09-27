@@ -1769,6 +1769,68 @@ def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose:
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_remove_process_model_fields(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired process topology fields from each anima's status.json."""
+    del verbose
+    from core.memory._io import atomic_write_text
+
+    details: list[str] = []
+    errors: list[str] = []
+    changed = 0
+    skipped = 0
+
+    for anima_dir in _iter_anima_dirs(data_dir):
+        status_path = anima_dir / "status.json"
+        if not status_path.is_file():
+            skipped += 1
+            continue
+        try:
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+            skipped += 1
+            details.append(f"{anima_dir.name}: skipped invalid status.json ({exc})")
+            continue
+        if not isinstance(status, dict):
+            skipped += 1
+            details.append(f"{anima_dir.name}: skipped status.json because it is not an object")
+            continue
+
+        removed_fields = [key for key in ("process_model", "task_process_isolation") if key in status]
+        if not removed_fields:
+            skipped += 1
+            continue
+
+        old_process_model = status.get("process_model")
+        for key in removed_fields:
+            del status[key]
+        relative_path = status_path.relative_to(data_dir)
+        action = "Would remove" if dry_run else "Removed"
+        details.append(f"{action} {', '.join(removed_fields)} from {relative_path}")
+        if old_process_model in ("legacy", "phase2"):
+            details.append(f"{anima_dir.name}: process_model={old_process_model} removed (now phase3)")
+
+        if dry_run:
+            changed += 1
+            continue
+        try:
+            atomic_write_text(status_path, json.dumps(status, ensure_ascii=False, indent=2) + "\n")
+        except Exception as exc:
+            skipped += 1
+            error = f"{anima_dir.name}: failed to update status.json: {exc}"
+            errors.append(error)
+            details.append(error)
+            logger.exception("step_remove_process_model_fields failed for %s", status_path)
+            continue
+        changed += 1
+
+    return StepResult(
+        changed=changed,
+        skipped=skipped,
+        details=details,
+        error="; ".join(errors) if errors else None,
+    )
+
+
 def step_update_version(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """No-op step for display; version update is handled by runner."""
     return StepResult(changed=1, skipped=0, details=["migration_state.json"])
@@ -2165,6 +2227,12 @@ def register_all_steps(runner: Any) -> None:
             "Map retired execution mode B to A in config.json and status.json",
             "structural",
             step_retired_mode_to_a,
+        ),
+        MigrationStep(
+            "remove_process_model_fields",
+            "Remove retired process_model/task_process_isolation from status.json",
+            "per_anima",
+            step_remove_process_model_fields,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]
