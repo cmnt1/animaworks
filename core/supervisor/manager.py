@@ -33,7 +33,7 @@ from core.supervisor._mgr_rag_repair import RAGRepairMixin
 from core.supervisor._mgr_reconcile import ReconcileMixin
 from core.supervisor._mgr_scheduler import SchedulerMixin
 from core.supervisor.ipc import IPCResponse
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.supervisor.process_handle import INTERNAL_AUTH_ENV, ProcessHandle, ProcessState
 from core.supervisor.restart_state import RestartController
 from core.time_utils import ensure_aware, now_local
 
@@ -363,7 +363,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                     log_dir=self.log_dir,
                     child_env_urls=self.child_env_urls,
                     internal_auth_env=(
-                        {ProcessHandle.INTERNAL_AUTH_ENV: self.internal_auth.token_for_anima(anima_name)}
+                        {INTERNAL_AUTH_ENV: self.internal_auth.token_for_anima(anima_name)}
                         if self.internal_auth is not None
                         else {}
                     ),
