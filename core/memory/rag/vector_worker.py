@@ -503,11 +503,11 @@ def _clear_owner_write_circuit_breakers(anima_name: str | None) -> None:
 
 def _phase3_owner_guard(anima_name: str | None) -> JSONResponse | None:
     if anima_name:
-        from core.config.resolver import resolve_process_model_config
+        from core.config import resolver as _resolver
         from core.paths import get_animas_dir
 
-        process_config = resolve_process_model_config(get_animas_dir() / anima_name)
-        if process_config.valid and process_config.process_model == "phase3":
+        # R07: 非 phase3 分岐ごと削除予定
+        if _resolver.is_root_memory_owner(get_animas_dir() / anima_name):
             return JSONResponse(
                 status_code=409,
                 content={"detail": f"Vector worker disabled for phase3 anima: {anima_name}"},

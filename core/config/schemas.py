@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger("animaworks.config")
 
@@ -69,38 +69,6 @@ class AnimaModelConfig(BaseModel):
     token_budget_monthly: int | None = None
     aliases: list[str] = []
     """Alternative names (e.g. Japanese) that resolve to this anima's canonical name."""
-
-
-ProcessModel = Literal["legacy", "phase2", "phase3"]
-
-
-class TaskProcessIsolationConfig(BaseModel):
-    """Strict Phase 2 lane isolation flags stored in ``status.json``."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    cron: StrictBool = False
-    heartbeat: StrictBool = False
-    task: StrictBool = False
-    background: StrictBool = False
-
-
-def _phase3_isolation() -> TaskProcessIsolationConfig:
-    return TaskProcessIsolationConfig(cron=True, heartbeat=True, task=True, background=True)
-
-
-class ResolvedProcessModelConfig(BaseModel):
-    """Validated process topology resolution result.
-
-    The default topology is ``phase3`` (task-runner isolation + root DB
-    ownership); ``legacy``/``phase2`` remain available as explicit opt-outs.
-    """
-
-    process_model: ProcessModel = "phase3"
-    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=_phase3_isolation)
-    valid: bool = True
-    error: str | None = None
-    warnings: tuple[str, ...] = ()
 
 
 # ── Default model names (single source of truth) ─────────────────────────────

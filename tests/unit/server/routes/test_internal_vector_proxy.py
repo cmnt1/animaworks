@@ -141,10 +141,7 @@ async def test_phase3_http_proxy_routes_only_to_named_native_owner(path, method,
     app.state.vector_worker = worker
     app.state.supervisor = supervisor
     app.include_router(create_internal_router(), prefix="/api")
-    with patch(
-        "core.config.resolver.resolve_process_model_config",
-        return_value=SimpleNamespace(valid=True, process_model="phase3"),
-    ):
+    with patch("core.config.resolver.is_root_memory_owner", return_value=True):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/internal/vector/" + path, json={"anima_name": "sakura", **payload})
     assert response.status_code == 200
@@ -165,10 +162,7 @@ async def test_phase3_proxy_does_not_report_failed_write_as_success(result):
     app.state.supervisor = SimpleNamespace(send_request=sender)
     app.state.vector_worker = _RecordingVectorWorker()
     app.include_router(create_internal_router(), prefix="/api")
-    with patch(
-        "core.config.resolver.resolve_process_model_config",
-        return_value=SimpleNamespace(valid=True, process_model="phase3"),
-    ):
+    with patch("core.config.resolver.is_root_memory_owner", return_value=True):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/internal/vector/upsert",
@@ -185,10 +179,7 @@ async def test_phase3_reset_cannot_open_second_native_owner():
     app.state.vector_worker = _RecordingVectorWorker()
     app.state.supervisor = SimpleNamespace(send_request=AsyncMock())
     app.include_router(create_internal_router(), prefix="/api")
-    with patch(
-        "core.config.resolver.resolve_process_model_config",
-        return_value=SimpleNamespace(valid=True, process_model="phase3"),
-    ):
+    with patch("core.config.resolver.is_root_memory_owner", return_value=True):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/internal/vector/reset-store", json={"anima_name": "sakura"})
     assert response.status_code == 409
@@ -200,8 +191,8 @@ async def test_phase3_reset_cannot_open_second_native_owner():
 async def test_vector_proxy_rejects_anima_path_traversal_before_resolving():
     app = FastAPI()
     app.include_router(create_internal_router(), prefix="/api")
-    with patch("core.config.resolver.resolve_process_model_config") as resolver:
+    with patch("core.config.resolver.is_root_memory_owner") as owner_check:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/internal/vector/list-collections", json={"anima_name": "../other"})
     assert response.status_code == 422
-    resolver.assert_not_called()
+    owner_check.assert_not_called()

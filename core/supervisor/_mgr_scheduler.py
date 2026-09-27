@@ -706,10 +706,10 @@ class SchedulerMixin:
                     logger.warning("Skipping daily RAG indexing for %s: RAG repair lock is held", anima_name)
                     continue
 
-                from core.config.resolver import resolve_process_model_config
+                from core.config import resolver as _resolver
 
-                process_config = resolve_process_model_config(anima_dir)
-                if process_config.valid and process_config.process_model == "phase3":
+                # R07: 非 phase3 分岐ごと削除予定
+                if _resolver.is_root_memory_owner(anima_dir):
                     from core.memory.rag.http_store import HttpVectorStore
                     from core.memory.rag.vector_ops import supervisor_transport
 

@@ -179,10 +179,10 @@ def _is_anima_enabled(anima_dir: Path) -> bool:
 
 
 def _uses_root_vector_store(anima_dir: Path) -> bool:
-    from core.config.resolver import resolve_process_model_config
+    from core.config import resolver as _resolver
 
-    config = resolve_process_model_config(anima_dir)
-    return config.valid and config.process_model == "phase3"
+    # R07: 非 phase3 分岐ごと削除予定
+    return _resolver.is_root_memory_owner(anima_dir)
 
 
 def _index_shared_collections(

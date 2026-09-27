@@ -30,10 +30,10 @@ class RAGRepairMixin:
     ) -> bool:
         """Run RAG repair before restart when failure correlates with RAG corruption."""
         try:
-            from core.config.resolver import resolve_process_model_config
+            from core.config import resolver as _resolver
 
-            process_config = resolve_process_model_config(self.animas_dir / anima_name)
-            if process_config.valid and process_config.process_model == "phase3":
+            # R07: 非 phase3 分岐ごと削除予定
+            if _resolver.is_root_memory_owner(self.animas_dir / anima_name):
                 return False
 
             from core.memory.rag.repair import classify_corruption_error, get_repair_service
@@ -551,10 +551,10 @@ class RAGRepairMixin:
             return 1800
 
     def _phase3_repair_owned_by_root(self, anima_name: str) -> bool:
-        from core.config.resolver import resolve_process_model_config
+        from core.config import resolver as _resolver
 
-        process_config = resolve_process_model_config(self.animas_dir / anima_name)
-        return bool(process_config.valid and process_config.process_model == "phase3")
+        # R07: 非 phase3 分岐ごと削除予定
+        return _resolver.is_root_memory_owner(self.animas_dir / anima_name)
 
     def _rag_repair_stop_anima(self) -> bool:
         try:

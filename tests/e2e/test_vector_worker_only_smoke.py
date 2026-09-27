@@ -2,19 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
 from tests.conftest import CHROMADB_AVAILABLE
 
 
 @pytest.mark.e2e
-def test_temporary_vector_worker_http_store_roundtrip(data_dir: Path) -> None:
-    """E2E smoke: parent process uses HttpVectorStore while worker owns Chroma."""
+def test_temporary_vector_worker_rejects_per_anima_operations_in_phase3(data_dir: Path) -> None:
+    """The phase3-fixed worker refuses per-anima native ownership, even for legacy status data."""
     if not CHROMADB_AVAILABLE:
         pytest.skip("ChromaDB is not installed")
 
-    from core.memory.rag.store import Document
-    from core.memory.rag.singleton import get_vector_store
     from core.memory.rag.vector_worker_client import start_temporary_vector_worker
 
     anima_dir = data_dir / "animas" / "worker_smoke"
@@ -22,24 +21,13 @@ def test_temporary_vector_worker_http_store_roundtrip(data_dir: Path) -> None:
     (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     worker = start_temporary_vector_worker(log_dir=data_dir / "logs")
     try:
-        store = get_vector_store("worker_smoke")
-        assert store is not None
-        assert store.create_collection("worker_smoke_knowledge")
-        assert store.upsert(
-            "worker_smoke_knowledge",
-            [
-                Document(
-                    id="doc-1",
-                    content="worker only",
-                    embedding=[0.1, 0.2, 0.3],
-                    metadata={"kind": "smoke"},
-                )
-            ],
+        assert worker.manager.base_url is not None
+        response = httpx.post(
+            f"{worker.manager.base_url}/create-collection",
+            json={"anima_name": "worker_smoke", "collection": "worker_smoke_knowledge"},
+            timeout=10.0,
         )
-
-        docs = store.get_by_ids("worker_smoke_knowledge", ["doc-1"])
+        assert response.status_code == 409
+        assert response.json() == {"detail": "Vector worker disabled for phase3 anima: worker_smoke"}
     finally:
         worker.stop()
-
-    assert [doc.id for doc in docs] == ["doc-1"]
-    assert docs[0].content == "worker only"
