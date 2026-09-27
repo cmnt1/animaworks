@@ -238,9 +238,10 @@ class StreamingMixin:
                     error_msg = f"[Error: prompt too large for {self._model_config.model}]"
                     yield {"type": "text_delta", "text": error_msg}
                     yield {
-                        "type": "done",
-                        "full_text": error_msg,
-                        "result_message": None,
+                        "type": "error",
+                        "terminal": True,
+                        "reason": "context_overflow",
+                        "message": error_msg,
                     }
                     return
 
@@ -995,9 +996,10 @@ class StreamingMixin:
                     error_msg = f"[Error: prompt too large for {self._model_config.model}]"
                     yield {"type": "text_delta", "text": error_msg}
                     yield {
-                        "type": "done",
-                        "full_text": error_msg,
-                        "result_message": None,
+                        "type": "error",
+                        "terminal": True,
+                        "reason": "context_overflow",
+                        "message": error_msg,
                     }
                     return
 

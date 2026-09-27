@@ -112,6 +112,9 @@ class LiteLLMExecutor(
       - ``StreamingMixin``       — token-level & iteration-level streaming
     """
 
+    saves_threshold_shortterm = True
+    wants_structured_history = True
+
     def __init__(
         self,
         model_config: ModelConfig,
@@ -252,6 +255,8 @@ class LiteLLMExecutor(
                 return ExecutionResult(
                     text=f"[Error: prompt too large for {self._model_config.model}]",
                     tool_call_records=all_tool_records,
+                    error=True,
+                    reason="context_overflow",
                 )
 
             call_kwargs: dict[str, Any] = {

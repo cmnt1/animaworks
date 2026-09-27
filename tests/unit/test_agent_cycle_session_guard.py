@@ -59,7 +59,7 @@ async def test_guard_recycles_session(tmp_path: Path, reason: str) -> None:
     ):
         result = await CycleMixin._guard_chat_sdk_session(
             owner,
-            mode="s",
+            executor=SimpleNamespace(tracks_sdk_session_state=True),
             uses_chat_session=True,
             active_model_config=config,
             thread_id="default",
@@ -81,7 +81,7 @@ async def test_guard_keeps_healthy_session(tmp_path: Path) -> None:
 
     result = await CycleMixin._guard_chat_sdk_session(
         owner,
-        mode="s",
+        executor=SimpleNamespace(tracks_sdk_session_state=True),
         uses_chat_session=True,
         active_model_config=config,
         thread_id="default",
@@ -98,7 +98,7 @@ async def test_guard_does_not_touch_non_sdk_session(tmp_path: Path) -> None:
 
     result = await CycleMixin._guard_chat_sdk_session(
         owner,
-        mode="a",
+        executor=SimpleNamespace(tracks_sdk_session_state=False),
         uses_chat_session=True,
         active_model_config=config,
         thread_id="default",

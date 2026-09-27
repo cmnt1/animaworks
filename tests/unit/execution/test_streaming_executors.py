@@ -383,6 +383,24 @@ class TestIsOllamaModelDetection:
         assert ex._is_ollama_model is False
 
 
+@pytest.mark.parametrize("executor_name", ["litellm_executor", "ollama_executor"])
+async def test_oversized_prompt_yields_terminal_context_overflow(executor_name, request):
+    executor = request.getfixturevalue(executor_name)
+    tracker = ContextTracker(model=executor._model_config.model)
+    with patch.object(executor, "_preflight_clamp_with_compaction", new=AsyncMock(return_value=None)):
+        events = await _collect_events(
+            executor.execute_streaming(
+                system_prompt="sys",
+                prompt="prompt",
+                tracker=tracker,
+            )
+        )
+
+    assert [event["type"] for event in events] == ["text_delta", "error"]
+    assert events[-1]["terminal"] is True
+    assert events[-1]["reason"] == "context_overflow"
+
+
 class TestA2TokenLevelTextOnly:
     """Token-level streaming with text-only response (no tool calls)."""
 

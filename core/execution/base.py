@@ -605,6 +605,12 @@ class BaseExecutor(ABC):
     """
 
     session_engine: ClassVar[SessionEngine | None] = None
+    tracks_sdk_session_state: ClassVar[bool] = False
+    """Whether this engine owns an SDK session state tracked by ContextTracker."""
+    saves_threshold_shortterm: ClassVar[bool] = False
+    """Whether execute() saves threshold handoff state itself."""
+    wants_structured_history: ClassVar[bool] = False
+    """Whether blocking execution consumes structured prior conversation history."""
 
     def __init__(
         self,
@@ -639,6 +645,10 @@ class BaseExecutor(ABC):
     def is_resumable(self, trigger: str) -> bool:
         """Return whether this engine can resume the trigger's session."""
         return self.session_engine is not None and is_resumable_trigger(trigger)
+
+    def prepare_tracker(self, tracker: ContextTracker, system_prompt: str, prompt: str) -> None:
+        """Prepare context accounting for engine-specific prompt/session state."""
+        return None
 
     def _load_hb_soft_timeout(self) -> int:
         """Load heartbeat soft_timeout_seconds from config (cached at init)."""
