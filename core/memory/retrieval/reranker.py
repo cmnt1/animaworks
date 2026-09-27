@@ -9,7 +9,6 @@ CrossEncoder model locally.  HTTP failures skip rerank (original order is
 kept) rather than falling back to a local model load.
 """
 
-import asyncio
 import logging
 import threading
 import time
@@ -229,39 +228,6 @@ class CrossEncoderReranker:
             texts = [str(item.get(text_field, "")) for item in items]
 
         scores = self._score_sync(query, texts)
-        if scores is None:
-            return [dict(item) for item in items[:top_k]]
-
-        scored = list(zip(items, scores, strict=False))
-        scored.sort(key=lambda x: x[1], reverse=True)
-
-        result: list[dict] = []
-        for item, score in scored[:top_k]:
-            row = dict(item)
-            row["ce_score"] = score
-            row["score"] = score
-            row["search_method"] = "cross_encoder"
-            result.append(row)
-        return result
-
-    async def rerank(
-        self,
-        query: str,
-        items: list[dict],
-        *,
-        text_field: str | Callable[[dict], str] = "fact",
-        top_k: int = 10,
-    ) -> list[dict]:
-        """Async rerank for Neo4j hybrid search."""
-        if not items:
-            return []
-
-        if callable(text_field):
-            texts = [str(text_field(item)) for item in items]
-        else:
-            texts = [str(item.get(text_field, "")) for item in items]
-
-        scores = await asyncio.to_thread(self._score_sync, query, texts)
         if scores is None:
             return [dict(item) for item in items[:top_k]]
 

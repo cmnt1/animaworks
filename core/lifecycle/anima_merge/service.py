@@ -6,7 +6,6 @@ from __future__ import annotations
 
 """Collision-safe, resumable Anima memory merge through index rebuilding."""
 
-import asyncio
 import hashlib
 import json
 import os
@@ -23,7 +22,6 @@ from typing import Any
 
 from core.anima.factory import validate_anima_name
 from core.memory._io import atomic_write_text
-from core.memory.backend.registry import resolve_backend_type
 from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_iso, now_local
@@ -157,7 +155,6 @@ class AnimaMergeService:
                     "manifest_json": str(manifest_json),
                     "manifest_markdown": str(manifest_markdown),
                     "warnings": issues,
-                    "memory_backend": manifest["memory_backend"],
                 },
             )
             self._run_phase(journal, MergePhase.QUIESCE, self.quiesce)
@@ -269,14 +266,6 @@ class AnimaMergeService:
         if errors:
             raise AnimaMergeError("Preflight failed:\n- " + "\n- ".join(errors))
 
-        source_backend = resolve_backend_type(self.source_dir)
-        target_backend = resolve_backend_type(self.target_dir)
-        if source_backend != target_backend:
-            raise AnimaMergeError(
-                f"Preflight failed: memory backend mismatch ({self.source}={source_backend}, "
-                f"{self.target}={target_backend})"
-            )
-
         dangerous: list[str] = []
         for anima_dir in (self.source_dir, self.target_dir):
             prefix = f"animas/{anima_dir.name}"
@@ -333,15 +322,12 @@ class AnimaMergeService:
         return sorted(set(path for path in matches if path.is_file()))
 
     def build_manifest(self, warnings: list[str] | None = None) -> dict[str, Any]:
-        source_backend = resolve_backend_type(self.source_dir)
-        target_backend = resolve_backend_type(self.target_dir)
         return {
             "version": 1,
             "generated_at": now_iso(),
             "source": self.source,
             "target": self.target,
             "mode": "dry-run",
-            "memory_backend": {"source": source_backend, "target": target_backend},
             "tree_summary": {
                 "source": self._tree_summary(self.source_dir),
                 "target": self._tree_summary(self.target_dir),
@@ -350,7 +336,7 @@ class AnimaMergeService:
             "task_id_collisions": self._task_id_collisions(),
             "thread_id_collisions": self._thread_id_collisions(),
             "external_references": self._external_references(),
-            "rebuild_indexes": self._rebuild_estimate(target_backend),
+            "rebuild_indexes": self._rebuild_estimate(),
             "verify": self._verify_estimate(),
             "preflight_warnings": list(warnings or []),
         }
@@ -372,7 +358,7 @@ class AnimaMergeService:
             "smoke_check": "run_if_server_online",
         }
 
-    def _rebuild_estimate(self, backend: str) -> dict[str, Any]:
+    def _rebuild_estimate(self) -> dict[str, Any]:
         """Estimate target rebuild inputs without mutating either Anima."""
         categories: dict[str, int] = {}
         for memory_type, pattern in (
@@ -399,8 +385,7 @@ class AnimaMergeService:
         return {
             "target": self.target,
             "estimated_inputs": categories,
-            "substeps": ["vectordb", "entities", "bm25", "graph_cache", "neo4j"],
-            "neo4j_action": "reingest_target_group" if backend == "neo4j" else "skip_not_configured",
+            "substeps": ["vectordb", "entities", "bm25", "graph_cache"],
         }
 
     @staticmethod
@@ -572,7 +557,6 @@ class AnimaMergeService:
             f"# Anima merge dry-run: {manifest['source']} → {manifest['target']}",
             "",
             f"Generated: {manifest['generated_at']}",
-            f"Memory backend: {manifest['memory_backend']['source']}",
             "",
             "## Tree summary",
             "",
@@ -607,7 +591,7 @@ class AnimaMergeService:
         estimate = manifest["rebuild_indexes"]
         for category, count in estimate["estimated_inputs"].items():
             lines.append(f"- {category}: {count}")
-        lines.extend([f"- Neo4j: {estimate['neo4j_action']}", "", "## VERIFY plan", ""])
+        lines.extend(["", "## VERIFY plan", ""])
         verify = manifest["verify"]
         for category, count in verify["probe_categories"].items():
             lines.append(f"- {category}: {count}")
@@ -1044,15 +1028,6 @@ class AnimaMergeService:
         self._run_rebuild_substep(journal, "bm25", self._rebuild_bm25)
         self._run_rebuild_substep(journal, "graph_cache", self._rebuild_graph_cache)
 
-        if resolve_backend_type(self.target_dir) == "neo4j":
-            self._run_rebuild_substep(journal, "neo4j", self._rebuild_neo4j)
-        elif not journal.is_substep_completed(MergePhase.REBUILD_INDEXES, "neo4j"):
-            journal.skip_substep(
-                MergePhase.REBUILD_INDEXES,
-                "neo4j",
-                "Target memory backend is not Neo4j",
-            )
-
         substeps = journal.data.get("phases", {}).get(MergePhase.REBUILD_INDEXES.value, {}).get("substeps", {})
         return {
             "rebuild_target": self.target,
@@ -1148,60 +1123,6 @@ class AnimaMergeService:
             indexer,
         )
         return {"rebuilt": rebuilt}
-
-    def _rebuild_neo4j(self) -> dict[str, Any]:
-        return asyncio.run(self._rebuild_neo4j_async())
-
-    async def _rebuild_neo4j_async(self) -> dict[str, Any]:
-        """Reset only the target group and ingest all merged canonical inputs."""
-        from core.memory.backend.registry import get_backend
-
-        backend = get_backend("neo4j", self.target_dir)
-        files = 0
-        facts = 0
-        chunks = 0
-        try:
-            await backend.reset()
-            for memory_type, pattern in (
-                ("knowledge", "*.md"),
-                ("episodes", "*.md"),
-                ("procedures", "*.md"),
-                ("skills", "SKILL.md"),
-            ):
-                root = self.target_dir / memory_type
-                if not root.is_dir():
-                    continue
-                for path in sorted(root.rglob(pattern)):
-                    if path.is_file():
-                        chunks += await backend.ingest_file(path)
-                        files += 1
-
-            for record in iter_fact_records(self.target_dir, include_expired=True):
-                chunks += await backend.ingest_text(
-                    record.text,
-                    source=f"fact:{record.fact_id}",
-                    metadata={
-                        "stable_key": f"fact:{record.fact_id}",
-                        "fact_id": record.fact_id,
-                        "valid_at": record.valid_at,
-                        "source_episode": record.source_episode,
-                    },
-                )
-                facts += 1
-
-            conversation_path = self.target_dir / "state" / "conversation.json"
-            if self._has_conversation_summary(conversation_path):
-                conversation = _read_json(conversation_path)
-                summary = str(conversation.get("compressed_summary", "")).strip()
-                chunks += await backend.ingest_text(
-                    summary,
-                    source="conversation_summary",
-                    metadata={"stable_key": f"conversation_summary:{self.target}"},
-                )
-                files += 1
-        finally:
-            await backend.close()
-        return {"files_ingested": files, "facts_ingested": facts, "chunks_created": chunks}
 
     # ── VERIFY and TOMBSTONE ──────────────────────────────────
 

@@ -173,16 +173,6 @@ async def run_daily_consolidation_post_processing(
         model=model,
     )
 
-    try:
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        await engine.ingest_recent_to_backend(hours=48)
-    except Exception:
-        logger.exception("Neo4j ingest failed for anima=%s", anima_name)
-
-    await detect_communities_if_neo4j(anima_dir, anima_name)
-
 
 async def run_weekly_integration_post_processing(
     anima_name: str,
@@ -194,16 +184,6 @@ async def run_weekly_integration_post_processing(
     """Run framework-side weekly integration post-processing."""
     if getattr(consolidation_cfg, "weekly_distillation_enabled", False) is True:
         await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
-
-    try:
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        await engine.ingest_recent_to_backend(hours=168)
-    except Exception:
-        logger.exception("Neo4j ingest failed for anima=%s", anima_name)
-
-    await detect_communities_if_neo4j(anima_dir, anima_name)
 
 
 async def run_weekly_pattern_distillation(
@@ -268,48 +248,6 @@ async def run_knowledge_self_correction_if_enabled(
         logger.info("Knowledge self-correction post-processing for %s: %s", anima_name, result)
     except Exception:
         logger.exception("Knowledge self-correction failed for anima=%s", anima_name)
-
-
-async def detect_communities_if_neo4j(anima_dir: Path, anima_name: str) -> None:
-    """Run batch community detection if the anima uses the Neo4j backend."""
-    backend = None
-    try:
-        from core.memory.backend.registry import get_backend, resolve_backend_type
-
-        backend_type = resolve_backend_type(anima_dir)
-        if backend_type != "neo4j":
-            return
-
-        backend = get_backend(backend_type, anima_dir)
-        driver = await backend._ensure_driver()
-
-        from core.memory.graph.community import CommunityDetector
-
-        bg_model, _, bg_credential = backend._resolve_extraction_config()
-        detector = CommunityDetector(
-            driver,
-            backend._group_id,
-            model=bg_model,
-            locale=backend._resolve_locale(),
-            credential=bg_credential,
-        )
-        communities = await detector.detect_and_store()
-        stats = await detector.get_community_stats()
-        logger.info(
-            "Community detection for %s: detected=%d stored=%d memberships=%d",
-            anima_name,
-            len(communities),
-            stats["communities"],
-            stats["memberships"],
-        )
-    except Exception:
-        logger.exception("Community detection failed for anima=%s", anima_name)
-    finally:
-        if backend is not None:
-            try:
-                await backend.close()
-            except Exception:
-                logger.debug("Failed to close Neo4j backend after community detection", exc_info=True)
 
 
 class SystemConsolidationMixin:
@@ -483,8 +421,6 @@ class SystemConsolidationMixin:
                     }
                 )
 
-    # ── Community detection helper ────────────────────────────
-
     @staticmethod
     async def _run_knowledge_self_correction_if_enabled(
         anima,  # noqa: ANN001
@@ -499,8 +435,3 @@ class SystemConsolidationMixin:
             consolidation_cfg,
             model=model,
         )
-
-    @staticmethod
-    async def _detect_communities_if_neo4j(anima) -> None:  # noqa: ANN001
-        """Run batch community detection if Neo4j backend is active."""
-        await detect_communities_if_neo4j(anima.memory.anima_dir, anima.name)

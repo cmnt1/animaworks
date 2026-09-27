@@ -31,6 +31,7 @@ class FinalizePhase(StrEnum):
     PREFLIGHT = "PREFLIGHT"
     ARCHIVE_SOURCE = "ARCHIVE_SOURCE"
     REMOVE_CONFIG = "REMOVE_CONFIG"
+    # Retired; retained only to deserialize and resume pre-removal journals.
     PURGE_NEO4J = "PURGE_NEO4J"
     PURGE_RESIDUALS = "PURGE_RESIDUALS"
     VERIFY_REMOVAL = "VERIFY_REMOVAL"

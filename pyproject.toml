@@ -45,7 +45,6 @@ dependencies = [
     "tzlocal>=5.0",
     "psutil>=5.9.0",
     "rank-bm25>=0.2",
-    "datasketch>=1.1.3",
     # mcp 2.x (pulled transitively via claude-agent-sdk) removed Server.list_tools
     # and breaks core/mcp integration + test_mcp_server; pin until migrated.
     # [tool.uv].constraint-dependencies is uv-only; this direct dep also constrains pip.
@@ -70,7 +69,6 @@ gmail = ["google-api-python-client>=2.0", "google-auth-oauthlib>=1.0", "google-a
 transcribe = ["faster-whisper>=1.0"]
 aws = ["boto3>=1.34"]
 rag = ["networkx>=3.0", "watchdog>=3.0.0"]
-neo4j = ["neo4j>=5.20.0", "datasketch>=1.6.5"]
 # Always use `uv sync --all-extras` (or --frozen --all-extras); a narrow sync strips codex/claude packages and breaks Mode C/S fleets.
 codex = ["openai-codex>=0.1.0b3,<0.2", "openai-codex-cli-bin==0.137.0a4"]
 all-tools = ["animaworks[claude,communication,gmail,transcribe,aws,rag,notification,zoom,tui]"]
@@ -118,7 +116,6 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "e2e: marks tests as end-to-end tests",
-    "neo4j: tests requiring a reachable Neo4j service",
     "live: tests making real API calls (skip with --mock or no API key)",
     "azure: tests requiring Azure OpenAI API key",
     "ollama: tests requiring Ollama server access",

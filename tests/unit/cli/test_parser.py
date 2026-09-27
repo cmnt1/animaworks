@@ -14,6 +14,16 @@ import pytest
 class TestParserCommands:
     """Test that argparse correctly parses all subcommands."""
 
+    def test_removed_memory_commands_are_invalid_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from cli.parser import build_parser
+
+        parser = build_parser()
+        for arguments in (("memory", "status"), ("anima", "set-memory-backend"), ("anima", "detect-communities")):
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(list(arguments))
+            assert exc_info.value.code == 2
+            assert "invalid choice" in capsys.readouterr().err
+
     def _parse(self, *args: str) -> argparse.Namespace:
         """Parse args by calling cli_main internals directly."""
         # We can't call cli_main() directly because it calls args.func().

@@ -802,7 +802,6 @@ def _write_export_readme(
         "- [ ] Place `animas/`, `companies/`, `common_knowledge/`, and `common_skills/` under the new data_dir.",
         "- [ ] Review `config.export.json`, save it as `config.json`, and insert real credential values through a secure channel.",
         "- [ ] Migrate the required vault keys separately; no vault secret values are included here.",
-        "- [ ] Export and import the Neo4j subgraph for every member, using the Anima name as `group_id`.",
         "- [ ] Rebuild every vectordb/index with the commands listed below.",
         "- [ ] Create and enable the systemd units for the new installation.",
         "- [ ] Verify file ownership and permissions, startup, messaging, company boundaries, memory search, and scheduled work.",
@@ -819,9 +818,6 @@ def _write_export_readme(
         lines.extend(f"- `{reference}`" for reference in sorted(vault_references))
     else:
         lines.append("- (none detected; inspect the source vault and deployment secrets separately)")
-    lines.extend(["", "## Neo4j migration", ""])
-    for member in members:
-        lines.append(f"- [ ] Export and import records for `group_id={member}` (the group_id is the Anima name).")
     lines.extend(["", "## Vectordb rebuild", ""])
     lines.extend(f"- [ ] `animaworks index --anima {member}`" for member in members)
     lines.extend(["", "## systemd and verification", ""])
@@ -829,7 +825,7 @@ def _write_export_readme(
         [
             "- [ ] Create environment-specific systemd unit files and enable/start them.",
             "- [ ] Confirm every exported Anima starts and can read only its own Company layer.",
-            "- [ ] Confirm credentials, Neo4j retrieval, indexes, messaging, and scheduled jobs work.",
+            "- [ ] Confirm credentials, indexes, messaging, and scheduled jobs work.",
             "",
             "## Skipped symlinks",
             "",

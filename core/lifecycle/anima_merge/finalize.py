@@ -6,7 +6,6 @@ from __future__ import annotations
 
 """Explicit, resumable removal of an Anima merge tombstone."""
 
-import asyncio
 import json
 import os
 import re
@@ -72,7 +71,16 @@ class AnimaMergeFinalizeService:
                         "rollback_deadline": merge["rollback_deadline"],
                         "rollback_ready": merge["rollback_ready"],
                         "archive_path": str(archive),
-                        "steps": [phase.value for phase in FinalizePhase if phase is not FinalizePhase.DONE],
+                        "steps": [
+                            phase.value
+                            for phase in (
+                                FinalizePhase.PREFLIGHT,
+                                FinalizePhase.ARCHIVE_SOURCE,
+                                FinalizePhase.REMOVE_CONFIG,
+                                FinalizePhase.PURGE_RESIDUALS,
+                                FinalizePhase.VERIFY_REMOVAL,
+                            )
+                        ],
                     },
                 )
 
@@ -93,11 +101,6 @@ class AnimaMergeFinalizeService:
                 lambda: self._archive_source(archive_path),
             )
             self._run_phase(journal, FinalizePhase.REMOVE_CONFIG, self._remove_source_config)
-            self._run_phase(
-                journal,
-                FinalizePhase.PURGE_NEO4J,
-                lambda: self._purge_neo4j(archive_path),
-            )
             self._run_phase(
                 journal,
                 FinalizePhase.PURGE_RESIDUALS,
@@ -265,29 +268,6 @@ class AnimaMergeFinalizeService:
                 json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             )
         return {"config_path": str(config_path), "entry_removed": removed}
-
-    def _source_backend(self) -> str:
-        merge = self._load_merge_journal()
-        backend = (
-            merge.get("phases", {}).get(MergePhase.PREFLIGHT.value, {}).get("artifacts", {}).get("memory_backend", {})
-        )
-        return str(backend.get("source", "legacy")) if isinstance(backend, dict) else "legacy"
-
-    def _purge_neo4j(self, archive_path: Path) -> dict[str, Any]:
-        if self._source_backend() != "neo4j":
-            return {"status": "skipped_not_configured", "group_id": self.source}
-
-        async def reset() -> None:
-            from core.memory.backend.registry import get_backend
-
-            backend = get_backend("neo4j", archive_path, group_id=self.source)
-            try:
-                await backend.reset()
-            finally:
-                await backend.close()
-
-        asyncio.run(reset())
-        return {"status": "purged", "group_id": self.source}
 
     def _purge_residuals(self, archive_path: Path) -> dict[str, Any]:
         return {
