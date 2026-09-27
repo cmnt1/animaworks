@@ -239,6 +239,16 @@ STRINGS: dict[str, dict[str, str]] = {
             "Check external_messaging.user_aliases and use call_human if needed."
         ),
     },
+    "handler.call_human_confirm_required": {
+        "ja": (
+            "まだ送信していません。送る前に、この通知の内容について、全てチャットワーク、Slackなど外部で解決済みでないか必ず調査してください。"
+            '調査して、それでも人間への通知が必要な内容だけを残し、call_human を sha="{sha}" 付きで再実行してください。'
+        ),
+        "en": (
+            "Not sent yet. Before sending, you must check whether everything in this notification has already been resolved "
+            'externally (Chatwork, Slack, etc.). Keep only what still needs a human, then call call_human again with sha="{sha}".'
+        ),
+    },
     "handler.send_msg_non_chat_hint": {
         "ja": (
             "宛先 '{to}' には send_message で送信できません。人間への連絡は call_human を使用してください。send_message は他のAnima宛てにのみ使用してください。"

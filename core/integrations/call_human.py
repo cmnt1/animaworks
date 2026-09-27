@@ -215,6 +215,27 @@ def _persist_interaction_slack_ts(callback_id: str, ts_val: str) -> None:
     update_interaction_message_ts_resilient(callback_id, "slack", ts_val)
 
 
+def _check_confirm_key_via_server(anima_name: str, session_id: str, sha: str) -> str:
+    """Return the key to hand out if *sha* is not this session's key, else ``""``.
+
+    The key lives in server memory (a CLI process cannot keep it across calls).
+    Fails open when the server is unreachable so escalations are never lost.
+    """
+    from core.notification.interactive import _server_base_url
+
+    try:
+        resp = httpx.post(
+            f"{_server_base_url()}/api/internal/call-human/confirm",
+            json={"anima_name": anima_name, "session_id": session_id, "sha": sha},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        return str(resp.json().get("sha") or "")
+    except Exception:
+        logger.warning("call_human confirmation check unavailable; sending without it", exc_info=True)
+        return ""
+
+
 def get_cli_guide() -> str:
     """Return CLI guide text for the tool guide injection."""
     return """\
@@ -227,6 +248,8 @@ animaworks-tool call_human "件名" "本文" [--priority PRIORITY]
 ```
 
 **優先度 (--priority):** `low` / `normal`（デフォルト）/ `high` / `urgent`
+
+**確認キー (--sha):** 各セッションの初回は送信されずに8桁のキーが返る。指示どおり調査してから `--sha キー` を付けて再実行する
 
 **例:**
 ```bash
@@ -278,7 +301,21 @@ def cli_main(args: list[str]) -> None:
         default="approval",
         help="Interaction category label",
     )
+    parser.add_argument(
+        "--sha",
+        default="",
+        help="Confirmation key returned by the first call in this session",
+    )
     ns = parser.parse_args(args)
+
+    # Same confirmation as the call_human tool, so Bash is not a bypass.
+    # Only Anima-launched processes carry a tool session id; humans pass freely.
+    session_id = os.environ.get("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
+    if session_id:
+        issued_key = _check_confirm_key_via_server(_resolve_cli_anima_name(), session_id, ns.sha)
+        if issued_key:
+            print(t("handler.call_human_confirm_required", sha=issued_key).replace("sha=", "--sha "), file=sys.stderr)
+            sys.exit(2)
 
     cfg = _load_config()
     hn_cfg = cfg.get("human_notification", {})

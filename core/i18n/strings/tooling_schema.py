@@ -78,6 +78,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "通知の優先度（デフォルト: normal）",
         "en": "Notification priority (default: normal)",
     },
+    "schema.call_human.sha": {
+        "ja": "確認キー（8桁）。初回の呼び出しで返されるので、そのセッションでは以降これを付ける",
+        "en": "Confirmation key (8 hex chars). Returned by the first call; include it on later calls in the same session",
+    },
     "schema.call_human.subject": {
         "ja": "通知の件名（簡潔に）",
         "en": "Notification subject (keep it brief)",

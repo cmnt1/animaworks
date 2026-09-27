@@ -30,6 +30,10 @@ def _notification_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.call_human.body"),
                     },
+                    "sha": {
+                        "type": "string",
+                        "description": _t("schema.call_human.sha"),
+                    },
                     "priority": {
                         "type": "string",
                         "enum": ["low", "normal", "high", "urgent"],

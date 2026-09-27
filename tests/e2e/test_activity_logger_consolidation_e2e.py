@@ -189,6 +189,7 @@ class TestToolHandlerActivityLogging:
         handler._pending_notifications = []
         handler._replied_to = set()
         handler._session_id = "test12345678"
+        handler._last_call_human_denied = False
         handler._external = MagicMock()
         handler._dispatch = {}
         return handler

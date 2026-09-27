@@ -34,6 +34,7 @@ from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity.logger import ActivityLogger
 from core.messaging.messenger import Messenger
+from core.notification import CallHumanKeys
 from core.notification.notifier import HumanNotifier
 from core.tasks.background import BackgroundTaskManager
 from core.tooling.dispatch import ExternalToolDispatcher
@@ -135,6 +136,8 @@ class ToolHandler(
         self._process_supervisor = process_supervisor
         self._pending_notifications: list[dict[str, Any]] = []
         self._last_call_human_callback_id: str | None = None
+        self._last_call_human_denied = False
+        self._call_human_keys = CallHumanKeys()
         self._replied_to: dict[str, set[str]] = {
             "chat": set(),
             "heartbeat": set(),
@@ -650,6 +653,9 @@ class ToolHandler(
         """Record tool usage in unified activity log."""
         try:
             activity_type = self._ACTIVITY_TYPE_MAP.get(name)
+            if name == "call_human" and self._last_call_human_denied:
+                activity_type = None
+                self._last_call_human_denied = False
             meta: dict[str, Any] = {}
             if tool_use_id:
                 meta["tool_use_id"] = tool_use_id

@@ -120,6 +120,12 @@ class InteractionCreateRequest(BaseModel):
     callback_id: str = ""
 
 
+class CallHumanConfirmRequest(BaseModel):
+    anima_name: str
+    session_id: str
+    sha: str = ""
+
+
 class InteractionMessageTsRequest(BaseModel):
     callback_id: str
     platform: str = "slack"
@@ -192,7 +198,10 @@ class SubmitTasksPersistRequest(BaseModel):
 
 
 def create_internal_router() -> APIRouter:
+    from core.notification import CallHumanKeys
+
     router = APIRouter()
+    _call_human_keys = CallHumanKeys()
 
     @router.get("/internal/company/boundary")
     async def internal_company_boundary(from_anima: str, to_anima: str):
@@ -536,6 +545,12 @@ def create_internal_router() -> APIRouter:
             callback_id=body.callback_id,
         )
         return {"ok": ok}
+
+    @router.post("/internal/call-human/confirm")
+    async def internal_call_human_confirm(body: CallHumanConfirmRequest):
+        """Check the CLI ``call_human`` confirmation key; keys live in server memory only."""
+        issued_key = _call_human_keys.check(body.anima_name, body.session_id, body.sha)
+        return {"ok": issued_key is None, "sha": issued_key or ""}
 
     @router.post("/internal/interaction/create")
     async def internal_interaction_create(body: InteractionCreateRequest):

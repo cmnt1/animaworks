@@ -19,6 +19,14 @@ from core.tooling.handler import ToolHandler
 # ── Mock Channel ──────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _call_human_preconfirmed(monkeypatch):
+    """These tests cover delivery; the confirmation key is tested in test_call_human_confirm."""
+    from core.notification import CallHumanKeys
+
+    monkeypatch.setattr(CallHumanKeys, "check", lambda self, *args: None)
+
+
 class StubChannel(NotificationChannel):
     """A stub channel that records calls."""
 
