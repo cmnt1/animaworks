@@ -2497,6 +2497,48 @@ def step_memory_dead_prompt_cleanup_20260927(data_dir: Path, dry_run: bool, verb
 # ── Category 4: Database sync ────────────────────────────────────
 
 
+def step_retired_config_keys_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired config.json keys that no longer have runtime behavior."""
+    del verbose
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["config.json not found; skip"])
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(config, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+
+        retired_keys = {
+            "heartbeat": ("orphan_grace_multiplier", "orphan_grace_min_seconds"),
+            "background_task": ("max_parallel_llm_tasks",),
+            "rag": ("enable_file_watcher",),
+            "interaction": ("ttl_days",),
+            "system": ("gateway", "worker"),
+        }
+        removed: list[str] = []
+        for section_name, keys in retired_keys.items():
+            section = config.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            for key in keys:
+                if key in section:
+                    del section[key]
+                    removed.append(f"{section_name}.{key}")
+
+        if not removed:
+            return StepResult(changed=0, skipped=1, details=["No retired config keys found"])
+
+        action = "Would remove" if dry_run else "Removed"
+        details = [f"{action} retired config keys: {', '.join(removed)}"]
+        if not dry_run:
+            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return StepResult(changed=1, skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_retired_config_keys_cleanup failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
     steps = [
@@ -2788,6 +2830,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove runtime prompts retired with classify_and_distill",
             "template_sync",
             step_memory_dead_prompt_cleanup_20260927,
+        ),
+        MigrationStep(
+            "retired_config_keys_cleanup_20260927",
+            "Remove retired config.json keys",
+            "structural",
+            step_retired_config_keys_cleanup,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

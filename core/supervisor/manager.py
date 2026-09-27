@@ -25,7 +25,6 @@ from core.exceptions import (  # noqa: F401
     ConfigError,
     ConfigNotFoundError,
     IPCConnectionError,
-    MemoryIOError,
     ProcessError,
 )
 from core.platform.process import kill_tree, snapshot_descendants

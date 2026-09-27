@@ -8,7 +8,7 @@ from core.memory.priming.constants import (
     _DEFAULT_MAX_PRIMING_TOKENS,
 )
 from core.memory.priming.engine import PrimingEngine
-from core.prompt.tokens import estimate_tokens, tokens_to_chars_hint, truncate_to_tokens
+from core.prompt.tokens import estimate_tokens, truncate_to_tokens
 
 
 def test_estimate_ascii_calibration() -> None:
@@ -56,12 +56,6 @@ def test_single_line_is_cut_by_character() -> None:
 def test_empty_text_estimates_zero() -> None:
     assert estimate_tokens("") == 0
     assert truncate_to_tokens("", 100) == ""
-
-
-def test_tokens_to_chars_hint_uses_sample_language_mix() -> None:
-    assert tokens_to_chars_hint(114, "日本語") == 100
-    assert tokens_to_chars_hint(31, "ascii") == 100
-    assert tokens_to_chars_hint(100) > 0
 
 
 @pytest.mark.asyncio

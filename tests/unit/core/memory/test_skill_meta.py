@@ -23,7 +23,7 @@ from core.memory.manager import (
     match_skills_by_description,
 )
 from core.schemas import SkillMeta
-from core.tooling.handler import _validate_skill_format
+from core.tooling.handler_base import _validate_skill_format
 
 # ── _extract_skill_meta ──────────────────────────────────
 

@@ -340,7 +340,7 @@ async def test_oversized_prompt_returns_structured_context_overflow(executor):
 
 class TestPartitionToolCalls:
     def test_all_reads_are_parallel(self):
-        from core.execution.engines.litellm.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm._litellm_tools import _partition_tool_calls
 
         tc1 = make_tool_call("read_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("search_memory", {"query": "x"}, "call_2")
@@ -349,7 +349,7 @@ class TestPartitionToolCalls:
         assert serial == []
 
     def test_writes_to_different_paths_are_parallel(self):
-        from core.execution.engines.litellm.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm._litellm_tools import _partition_tool_calls
 
         tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("write_file", {"path": "/b"}, "call_2")
@@ -358,7 +358,7 @@ class TestPartitionToolCalls:
         assert serial == []
 
     def test_writes_to_same_path_serialised(self):
-        from core.execution.engines.litellm.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm._litellm_tools import _partition_tool_calls
 
         tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("write_file", {"path": "/a"}, "call_2")

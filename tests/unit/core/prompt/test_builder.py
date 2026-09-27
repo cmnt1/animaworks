@@ -8,16 +8,16 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+from core.prompt.assembler import _normalize_headings
 from core.prompt.builder import (
     BuildResult,
     _build_messaging_section,
     _build_org_context,
     _discover_other_animas,
-    _format_anima_entry,
-    _normalize_headings,
     build_system_prompt,
     inject_shortterm,
 )
+from core.prompt.org_context import _format_anima_entry
 
 _MOCK_SECTIONS = (
     "[group1_header]: 1. 動作環境と行動ルール\n"
@@ -25,13 +25,10 @@ _MOCK_SECTIONS = (
     "[group2_header]: 2. あなた自身\n"
     "[group3_header]: 6. 現在の状況\n"
     "[current_state_header]: ## 現在の状態\n"
-    "[pending_tasks_header]: ## 未完了タスク\n"
     "[group4_header]: 3. 記憶と能力\n"
     "[group5_header]: 4. 組織とコミュニケーション\n"
     "[group6_header]: 5. メタ設定\n"
     "[you_marker]:   ← あなた\n"
-    "[common_label]: (共通スキル)\n"
-    "[recent_tool_results_header]: ## Recent Tool Results\n"
 )
 
 _MOCK_FALLBACKS = (
@@ -54,8 +51,6 @@ def _mock_load_prompt_with_builder(default: str = "section"):
             return _MOCK_FALLBACKS
         if name == "builder/task_in_progress":
             return f"## ⚠️ 進行中タスク\n\n{kwargs.get('state', '')}"
-        if name == "builder/task_queue":
-            return f"## 未完了タスク\n\n{kwargs.get('task_summary', '')}"
         if name == "skills_guide":
             return "## スキルと手順書\n\nスキルと手順書はあなたが持つ能力・作業手順です。\n使用する際はskillツールで読み込んでから実行してください。"
         return default

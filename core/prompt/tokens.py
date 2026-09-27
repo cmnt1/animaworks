@@ -16,7 +16,6 @@ from typing import Literal
 CJK_TOKENS_PER_CHAR = 1.14
 OTHER_TOKENS_PER_CHAR = 0.31
 
-_DEFAULT_CJK_RATIO = 0.4
 _OMISSION_MARKER = "..."
 _CJK_RE = re.compile(r"[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef]")
 
@@ -91,12 +90,3 @@ def truncate_to_tokens(
     if retained:
         return _OMISSION_MARKER + retained
     return _truncate_chars(lines[-1], max_tokens, keep=keep)
-
-
-def tokens_to_chars_hint(max_tokens: int, sample: str = "") -> int:
-    """Convert a token budget to a character limit using a sample's CJK ratio."""
-    if max_tokens <= 0:
-        return 0
-    cjk_ratio = _cjk_char_count(sample) / len(sample) if sample else _DEFAULT_CJK_RATIO
-    tokens_per_char = cjk_ratio * CJK_TOKENS_PER_CHAR + (1 - cjk_ratio) * OTHER_TOKENS_PER_CHAR
-    return int(max_tokens / tokens_per_char)

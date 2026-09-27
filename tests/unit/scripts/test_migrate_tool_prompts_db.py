@@ -120,7 +120,7 @@ def test_rendered_emotion_json_is_escaped_for_template_loading(tmp_path: Path) -
         assert load_prompt("builder/emotion_instruction", locale="en").strip() == rendered
 
 
-def test_reflection_json_examples_are_preserved_by_raw_loading(tmp_path: Path) -> None:
+def test_raw_section_json_examples_are_preserved_by_raw_loading(tmp_path: Path) -> None:
     db_path = tmp_path / "prompts.sqlite3"
     templates = tmp_path / "templates"
     _create_db(db_path)
@@ -128,17 +128,17 @@ def test_reflection_json_examples_are_preserved_by_raw_loading(tmp_path: Path) -
     rendered = 'Never expose {"status": "raw"}'
     connection.execute(
         "INSERT INTO system_sections VALUES (?, ?, ?, ?)",
-        ("a_reflection", rendered, None, "now"),
+        ("communication_rules", rendered, None, "now"),
     )
     connection.commit()
     connection.close()
 
     migrate(db_path, templates, locale="en")
 
-    target = templates / "en/prompts/a_reflection.md"
+    target = templates / "en/prompts/communication_rules.md"
     assert '{"status": "raw"}' in target.read_text(encoding="utf-8")
     with patch("core.paths.TEMPLATES_DIR", templates):
-        assert load_prompt_text("a_reflection", locale="en").strip() == rendered
+        assert load_prompt_text("communication_rules", locale="en").strip() == rendered
 
 
 def test_custom_json_in_descriptions_and_guides_survives_migration(tmp_path: Path) -> None:

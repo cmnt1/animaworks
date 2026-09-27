@@ -161,41 +161,41 @@ class TestListProcedureMetas:
 
 class TestValidateProcedureFormat:
     def test_valid_procedure(self) -> None:
-        from core.tooling.handler import _validate_procedure_format
+        from core.tooling.handler_base import _validate_procedure_format
 
         content = "---\ndescription: Good procedure\ntags: [ops]\n---\n\n# Steps\n1. Do stuff"
         assert _validate_procedure_format(content) == ""
 
     def test_missing_frontmatter(self) -> None:
-        from core.tooling.handler import _validate_procedure_format
+        from core.tooling.handler_base import _validate_procedure_format
 
         content = "# No frontmatter\n\nJust content"
         result = _validate_procedure_format(content)
         assert "フロントマター" in result
 
     def test_missing_description(self) -> None:
-        from core.tooling.handler import _validate_procedure_format
+        from core.tooling.handler_base import _validate_procedure_format
 
         content = "---\ntags: [test]\n---\n\n# Content"
         result = _validate_procedure_format(content)
         assert "description" in result
 
     def test_incomplete_frontmatter(self) -> None:
-        from core.tooling.handler import _validate_procedure_format
+        from core.tooling.handler_base import _validate_procedure_format
 
         content = "---\nno closing"
         result = _validate_procedure_format(content)
         assert "フロントマター" in result
 
     def test_description_with_embedded_dashes_keeps_frontmatter_intact(self) -> None:
-        from core.tooling.handler import _validate_procedure_format
+        from core.tooling.handler_base import _validate_procedure_format
 
         content = '---\ndescription: "A---B"\n---\n\n# Procedure'
         assert _validate_procedure_format(content) == ""
 
     def test_missing_frontmatter_terminator_uses_short_warning(self) -> None:
         from core.i18n import t
-        from core.tooling.handler import _validate_procedure_format
+        from core.tooling.handler_base import _validate_procedure_format
 
         content = "---\ndescription: procedure\n"
         assert _validate_procedure_format(content) == t("handler.procedure_frontmatter_recommended_short")

@@ -184,8 +184,6 @@ class TestBuilderTemplateParse:
             "group2_header",
             "group3_header",
             "current_state_header",
-            "pending_tasks_header",
-            "available_tools_header",
         }
         for key in expected:
             assert key in result

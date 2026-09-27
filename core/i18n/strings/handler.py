@@ -86,10 +86,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "═══ 組織タイムライン (直近{hours}h) — {count}名 ═══",
         "en": "═══ Org Timeline (last {hours}h) — {count} animas ═══",
     },
-    "handler.audit_merged_title_since": {
-        "ja": "═══ 組織タイムライン ({since}〜) — {count}名 ═══",
-        "en": "═══ Org Timeline (since {since}) — {count} animas ═══",
-    },
     "handler.audit_merged_tool_header": {
         "ja": "■ ツール使用サマリー",
         "en": "■ Tool Usage Summary",
@@ -108,34 +104,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "═══ {name} — 行動レポート (直近{hours}h) ═══",
         "en": "═══ {name} — Activity Report (last {hours}h) ═══",
     },
-    "handler.audit_report_title_since": {
-        "ja": "═══ {name} — 行動レポート ({since}〜) ═══",
-        "en": "═══ {name} — Activity Report (since {since}) ═══",
-    },
-    "handler.audit_report_truncated": {
-        "ja": "  ... 他{remaining}件省略",
-        "en": "  ... {remaining} more entries omitted",
-    },
-    "handler.audit_section_actions": {
-        "ja": "■ コミュニケーション・タスク",
-        "en": "■ Communication & Tasks",
-    },
-    "handler.audit_section_errors": {
-        "ja": "■ エラー詳細",
-        "en": "■ Error Details",
-    },
-    "handler.audit_section_errors_report": {
-        "ja": "■ エラー",
-        "en": "■ Errors",
-    },
-    "handler.audit_section_responses": {
-        "ja": "■ 対話・応答",
-        "en": "■ Dialogue & Responses",
-    },
-    "handler.audit_section_thinking": {
-        "ja": "■ 思考・判断（ハートビート / 振り返り）",
-        "en": "■ Thinking & Decisions (Heartbeat / Reflection)",
-    },
     "handler.audit_section_tool_summary": {
         "ja": "■ ツール使用サマリー（全{count}回）",
         "en": "■ Tool Usage Summary ({count} total)",
@@ -151,10 +119,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.background_task_started": {
         "ja": "タスクをバックグラウンドで実行開始しました (task_id: {task_id})",
         "en": "Task started in background (task_id: {task_id})",
-    },
-    "handler.bg_cmd_started": {
-        "ja": "コマンドをバックグラウンドで実行開始しました。進捗は出力ファイルをReadで確認できます。",
-        "en": "Command started in background. Read the output file to check progress.",
     },
     "handler.bg_invalid_status": {
         "ja": "Error: 無効なステータス: {status}。有効値: running, completed, failed, pending",
@@ -321,10 +285,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": (
             "Error: intent='delegation' has been deprecated. Use the delegate_task tool to assign tasks to subordinates. send_message only supports 'report' and 'question' intents."
         ),
-    },
-    "handler.delegation_summary": {
-        "ja": "[委譲] {summary}",
-        "en": "[Delegated] {summary}",
     },
     "handler.descendant_activity": {
         "ja": "配下のactivity_log",

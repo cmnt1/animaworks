@@ -106,7 +106,6 @@ _MAIN_CLI_COMMANDS: frozenset[str] = frozenset(
         "chat",
         "heartbeat",
         "send",
-        "list",
         "status",
         "logs",
         "board",
@@ -118,11 +117,9 @@ _MAIN_CLI_COMMANDS: frozenset[str] = frozenset(
         "vault",
         "models",
         "cost",
-        "migrate-cron",
         "optimize-assets",
         "remake",
         "profile",
-        "create-anima",
     }
 )
 

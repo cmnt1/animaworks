@@ -28,13 +28,7 @@ from typing import Any
 
 from core.agent.agent_core import AgentCore
 from core.agent.session_compactor import SessionCompactor
-from core.exceptions import (  # noqa: F401
-    AnimaWorksError,
-    ExecutionError,
-    LLMAPIError,
-    MemoryIOError,
-    ToolError,
-)
+from core.exceptions import ExecutionError  # noqa: F401
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity.logger import ActivityLogger
@@ -58,12 +52,7 @@ class BackgroundWorkerSlot:
 
 
 # ── Mixin imports ───────────────────────────────────────────────
-from core.anima.heartbeat import (  # noqa: F401
-    _MIN_REFLECTION_LENGTH,
-    _RE_REFLECTION,
-    HeartbeatMixin,
-    _extract_reflection,
-)
+from core.anima.heartbeat import HeartbeatMixin
 
 # ── Re-exports for backward compatibility ───────────────────────
 # Tests and other modules import these symbols from ``core.anima.digital_anima``.

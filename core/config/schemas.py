@@ -25,30 +25,10 @@ logger = logging.getLogger("animaworks.config")
 # ---------------------------------------------------------------------------
 
 
-class GatewaySystemConfig(BaseModel):
-    """Deprecated: Gateway configuration retained for config.json compatibility."""
-
-    host: str = "0.0.0.0"
-    port: int = 18500
-    redis_url: str | None = None
-    worker_heartbeat_timeout: int = 45
-
-
-class WorkerSystemConfig(BaseModel):
-    """Deprecated: Worker configuration retained for config.json compatibility."""
-
-    gateway_url: str = "http://localhost:18500"
-    redis_url: str | None = None
-    listen_port: int = 18501
-    heartbeat_interval: int = 15
-
-
 class SystemConfig(BaseModel):
     mode: str = "server"
     log_level: str = "INFO"
     timezone: str = ""  # IANA TZ name; empty = auto-detect from system
-    gateway: GatewaySystemConfig = GatewaySystemConfig()
-    worker: WorkerSystemConfig = WorkerSystemConfig()
 
 
 class CredentialConfig(BaseModel):
@@ -248,10 +228,6 @@ class RAGConfig(BaseModel):
     )
     use_gpu: bool = False
     enable_spreading_activation: bool = True
-    enable_file_watcher: bool = Field(
-        default=True,
-        description="Deprecated: no effect (file watcher removed 2026-07). Kept for config.json compatibility.",
-    )
     graph_cache_enabled: bool = True
     implicit_link_threshold: float = 0.75
     spreading_memory_types: list[str] = ["knowledge", "episodes"]
@@ -481,7 +457,6 @@ class InteractionConfig(BaseModel):
         default_factory=list,
         description="Default Slack user IDs merged with per-call call_human allowed_users.",
     )
-    ttl_days: int = 7
     web_base_url: str = ""
 
     @field_validator("default_approver_ids", mode="before")
@@ -728,7 +703,6 @@ class BackgroundTaskConfig(BaseModel):
     result_retention_hours: int = 24  # disk cleanup retention (cleanup is explicitly invoked)
     result_memory_retention_minutes: int = Field(default=60, ge=0)  # in-process result cache
     max_completed_tasks_in_memory: int = Field(default=200, ge=0)
-    max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
     # The task-control keys retired with the teardown are deliberately absent.
     # This model ignores unknown keys, so an older config.json that still
@@ -852,22 +826,6 @@ class HeartbeatConfig(BaseModel):
     interval_minutes: int = Field(
         default=30, ge=1, le=1440
     )  # heartbeat interval (config-driven, not parsed from heartbeat.md)
-    # Orphan reaper: grace period before a descriptor-less pending row is
-    # cancelled. Must always be longer than this anima's heartbeat so a run
-    # that ended without a completion declaration can be re-submitted by the
-    # anima's own heartbeat before it gets reaped. grace = heartbeat interval
-    # (minutes) * orphan_grace_multiplier, floored at orphan_grace_min_seconds.
-    orphan_grace_multiplier: float = Field(
-        default=3.0,
-        ge=1.0,
-        le=24.0,
-        description="Orphan reaper grace = heartbeat interval (min) * this multiplier",
-    )
-    orphan_grace_min_seconds: int = Field(
-        default=1800,
-        ge=60,
-        description="Lower bound for the orphan reaper grace, in seconds",
-    )
     current_state_max_chars: int = Field(
         default=8000,
         ge=0,
@@ -1403,7 +1361,6 @@ __all__ = [
     "ExternalMessagingConfig",
     "ExternalTasksConfig",
     "ExternalTasksSourcesConfig",
-    "GatewaySystemConfig",
     "GitHubWebhookConfig",
     "GPUConfig",
     "HeartbeatConfig",
@@ -1435,6 +1392,5 @@ __all__ = [
     "UserAliasConfig",
     "VoiceConfig",
     "VoicevoxConfig",
-    "WorkerSystemConfig",
     "resolve_outbound_limits",
 ]

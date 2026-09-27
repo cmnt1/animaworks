@@ -22,66 +22,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "フィルタ（all: 全件, active: 進行中, completed: 完了済み）。デフォルト: active",
         "en": ("Filter (all: all tasks, active: in-progress, completed: finished). Default: active"),
     },
-    "schema.text_format.args_label": {
-        "ja": "引数",
-        "en": "Args",
-    },
-    "schema.text_format.example": {
-        "ja": '{"tool": "ツール名", "arguments": {"引数名": "値"}}',
-        "en": '{"tool": "tool_name", "arguments": {"arg_name": "value"}}',
-    },
-    "schema.text_format.fewshot1_prompt": {
-        "ja": "ユーザー: docker ps して",
-        "en": "User: run docker ps",
-    },
-    "schema.text_format.fewshot2_prompt": {
-        "ja": "ユーザー: 今のメモリ使用量を教えて",
-        "en": "User: show current memory usage",
-    },
-    "schema.text_format.fewshot_header": {
-        "ja": "### 使用例",
-        "en": "### Examples",
-    },
-    "schema.text_format.header": {
-        "ja": "## 利用可能なツール",
-        "en": "## Available Tools",
-    },
-    "schema.text_format.instruction": {
-        "ja": "外部情報の取得やコマンド実行が必要な場合は、**必ず**以下の形式で ```json コードブロックを出力してツールを呼び出してください:",
-        "en": (
-            "When you need external information or command execution, you **MUST** output a ```json code block to invoke a tool:"
-        ),
-    },
-    "schema.text_format.required_label": {
-        "ja": "(必須)",
-        "en": "(required)",
-    },
-    "schema.text_format.rule_no_empty_promise": {
-        "ja": "「調べます」「確認します」とだけ言って終わらないでください。調べるならツールを呼び出してください。",
-        "en": 'Do NOT just say "I\'ll check" without actually calling a tool.',
-    },
-    "schema.text_format.rule_no_fabricate": {
-        "ja": "**重要**: コマンド出力・ファイル内容・プロセス情報などを推測や想像で生成してはいけません。必ずツールで取得してください。",
-        "en": (
-            "**Important**: NEVER fabricate command output, file contents, or system information. Always use a tool to retrieve real data."
-        ),
-    },
-    "schema.text_format.rule_one_call": {
-        "ja": "1回のメッセージでツール呼び出しは1つだけにしてください。",
-        "en": "Only one tool call per message.",
-    },
-    "schema.text_format.rule_plain_text": {
-        "ja": "ツールを使う必要がなければ、普通にテキストで返答してください。",
-        "en": "If you don't need to use a tool, respond with plain text.",
-    },
-    "schema.text_format.rule_wait": {
-        "ja": "ツールの実行結果は次のメッセージで提供されます。結果を待ってから回答してください。",
-        "en": ("Tool results will be provided in the next message. Wait for results before answering."),
-    },
-    "schema.text_format.tools_header": {
-        "ja": "### ツール一覧",
-        "en": "### Tool List",
-    },
     "schema.update_task.desc": {
         "ja": ("タスクのステータスを更新する。完了時は status='done'、中断時は status='cancelled' に設定する。"),
         "en": ("Update a task's status. Set status='done' on completion, status='cancelled' on abort."),

@@ -1,12 +1,12 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for Mode A1 create-anima feature changes.
+"""Unit tests for Mode A1 anima creation feature changes.
 
 Covers:
 1. Hiring rules in system prompt based on execution_mode (a1 vs a2)
 2. Reconciliation status.json guard in _reconcile()
-3. CLI --supervisor flag forwarding to create_from_md()
+3. anima create --supervisor flag forwarding to create_from_md()
 """
 
 from __future__ import annotations

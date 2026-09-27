@@ -278,33 +278,12 @@ class TestParserCommands:
         assert args.anima == "alice"
         assert args.local is False
 
-    def test_list_command(self):
-        parser = argparse.ArgumentParser()
-        sub = parser.add_subparsers(dest="command")
-        p_list = sub.add_parser("list")
-        p_list.add_argument("--local", action="store_true")
-
-        args = parser.parse_args(["list", "--local"])
-        assert args.local is True
-
     def test_data_dir_override(self):
         parser = argparse.ArgumentParser()
         parser.add_argument("--data-dir", default=None)
 
         args = parser.parse_args(["--data-dir", "/custom/path"])
         assert args.data_dir == "/custom/path"
-
-    def test_create_anima_command(self):
-        parser = argparse.ArgumentParser()
-        sub = parser.add_subparsers(dest="command")
-        p = sub.add_parser("create-anima")
-        p.add_argument("--name", default=None)
-        p.add_argument("--template", default=None)
-        p.add_argument("--from-md", default=None)
-
-        args = parser.parse_args(["create-anima", "--name", "bob", "--template", "basic"])
-        assert args.name == "bob"
-        assert args.template == "basic"
 
     def test_stop_command(self):
         parser = argparse.ArgumentParser()
@@ -342,14 +321,6 @@ class TestLazyImportWrappers:
 
         args = MagicMock()
         _lazy_init(args)
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.anima.cmd_create_anima")
-    def test_lazy_create_anima(self, mock_cmd):
-        from cli.parser import _lazy_create_anima
-
-        args = MagicMock()
-        _lazy_create_anima(args)
         mock_cmd.assert_called_once_with(args)
 
     @patch("cli.commands.server.cmd_start")
@@ -392,22 +363,6 @@ class TestLazyImportWrappers:
         _lazy_reset(args)
         mock_cmd.assert_called_once_with(args)
 
-    @patch("cli.commands.server.cmd_gateway")
-    def test_lazy_gateway(self, mock_cmd):
-        from cli.parser import _lazy_gateway
-
-        args = MagicMock()
-        _lazy_gateway(args)
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.server.cmd_worker")
-    def test_lazy_worker(self, mock_cmd):
-        from cli.parser import _lazy_worker
-
-        args = MagicMock()
-        _lazy_worker(args)
-        mock_cmd.assert_called_once_with(args)
-
     @patch("cli.commands.anima.cmd_chat")
     def test_lazy_chat(self, mock_cmd):
         from cli.parser import _lazy_chat
@@ -430,14 +385,6 @@ class TestLazyImportWrappers:
 
         args = MagicMock()
         _lazy_send(args)
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.messaging.cmd_list")
-    def test_lazy_list(self, mock_cmd):
-        from cli.parser import _lazy_list
-
-        args = MagicMock()
-        _lazy_list(args)
         mock_cmd.assert_called_once_with(args)
 
     @patch("cli.commands.messaging.cmd_status")
@@ -514,32 +461,6 @@ class TestAnimaSubcommandParsing:
 
         args = parser.parse_args(["anima", "list", "--local"])
         assert args.local is True
-
-
-class TestDeprecationWarnings:
-    """Test that deprecated commands show warnings."""
-
-    @patch("cli.commands.anima.cmd_create_anima")
-    def test_create_anima_deprecation(self, mock_cmd, capsys):
-        from cli.parser import _lazy_create_anima
-
-        args = MagicMock()
-        _lazy_create_anima(args)
-        captured = capsys.readouterr()
-        assert "deprecated" in captured.err
-        assert "anima create" in captured.err
-        mock_cmd.assert_called_once_with(args)
-
-    @patch("cli.commands.messaging.cmd_list")
-    def test_list_deprecation(self, mock_cmd, capsys):
-        from cli.parser import _lazy_list
-
-        args = MagicMock()
-        _lazy_list(args)
-        captured = capsys.readouterr()
-        assert "deprecated" in captured.err
-        assert "anima list" in captured.err
-        mock_cmd.assert_called_once_with(args)
 
 
 class TestNewLazyWrappers:

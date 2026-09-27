@@ -135,17 +135,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "上記を統合した新しい要約を作成してください。",
         "en": "Please create a new integrated summary of the above.",
     },
-    "conversation.new_task_marker": {
-        "ja": "- [ ] {task}（自動検出: {ts}）",
-        "en": "- [ ] {task} (auto-detected: {ts})",
-    },
     "conversation.new_turns_header": {
         "ja": "## 新しい会話ターン",
         "en": "## New conversation turns",
-    },
-    "conversation.pruned_auto_detected_header": {
-        "ja": "## 自動検出タスク（current_state.mdから退避）",
-        "en": "## Auto-detected tasks (pruned from current_state.md)",
     },
     "conversation.recent_conversation_header": {
         "ja": "### 直近の会話",
@@ -154,10 +146,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "conversation.resolution_summary": {
         "ja": "解決済み: {item}",
         "en": "Resolved: {item}",
-    },
-    "conversation.resolved_marker": {
-        "ja": "- ✅ {item}（自動検出: {ts}）",
-        "en": "- ✅ {item} (auto-detected: {ts})",
     },
     "conversation.role_you": {
         "ja": "あなた",
@@ -254,10 +242,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "priming.related_knowledge_header": {
         "ja": "### 関連する知識",
         "en": "### Related Knowledge",
-    },
-    "priming.search_before_action": {
-        "ja": "外部アクションを行う前に、search_memory で根拠を確認してください。",
-        "en": "Before taking any external action, verify the basis with search_memory.",
     },
     "priming.section_intro": {
         "ja": "以下は、この会話に関連してあなたが自然に想起した記憶です。",

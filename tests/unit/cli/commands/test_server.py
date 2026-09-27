@@ -859,25 +859,6 @@ class TestSpawnRestartHelper:
         assert pid == 88888
 
 
-# ── Deprecated commands ──────────────────────────────────
-
-
-class TestDeprecatedCommands:
-    def test_gateway_deprecated(self):
-        from cli.commands.server import cmd_gateway
-
-        args = argparse.Namespace()
-        with pytest.raises(SystemExit):
-            cmd_gateway(args)
-
-    def test_worker_deprecated(self):
-        from cli.commands.server import cmd_worker
-
-        args = argparse.Namespace()
-        with pytest.raises(SystemExit):
-            cmd_worker(args)
-
-
 # ── _clear_pycache ───────────────────────────────────────
 
 
