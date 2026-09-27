@@ -11,7 +11,7 @@ from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, 
 from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
 from core.schemas import ModelConfig
 from core.tooling.handler import ToolHandler
-from core.tooling.schemas import build_tool_list, build_unified_tool_list
+from core.tooling.schemas import build_unified_tool_list
 
 
 def _write_config(animas: dict[str, AnimaModelConfig]) -> None:
@@ -172,10 +172,8 @@ def test_anima_home_path_is_denied(data_dir: Path) -> None:
 
 def test_grant_workspace_access_is_exposed_in_tool_schemas() -> None:
     mode_ab_names = {tool["name"] for tool in build_unified_tool_list(trigger="message:human")}
-    mode_b_names = {tool["name"] for tool in build_tool_list(trigger="message:human")}
 
     assert "grant_workspace_access" in mode_ab_names
-    assert "grant_workspace_access" in mode_b_names
 
 
 def test_grant_workspace_access_is_exposed_via_mcp() -> None:

@@ -500,7 +500,7 @@ class TestA2TokenLevelWithToolCall:
                 return _fake_async_stream(iter1_chunks)
             return _fake_async_stream(iter2_chunks)
 
-        async def mock_process_tool_calls(parsed_calls, messages, tools, active_categories, **kwargs):
+        async def mock_process_tool_calls(parsed_calls, messages, tools, **kwargs):
             """Mock _process_streaming_tool_calls as an async generator yielding tool_end events."""
             for tc in parsed_calls:
                 yield {
@@ -577,7 +577,7 @@ class TestA2StreamingRunawayGuard:
             calls.append(kwargs)
             return _fake_async_stream(streams[len(calls) - 1])
 
-        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+        async def mock_process(parsed_calls, messages, tools, **kwargs):
             nonlocal process_count
             process_count += 1
             if False:
@@ -621,7 +621,7 @@ class TestA2StreamingRunawayGuard:
             calls.append(kwargs)
             return _fake_async_stream(streams[len(calls) - 1])
 
-        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+        async def mock_process(parsed_calls, messages, tools, **kwargs):
             nonlocal process_count
             process_count += 1
             if False:
@@ -671,7 +671,7 @@ class TestA2StreamingRunawayGuard:
         mock_acompletion = AsyncMock(side_effect=[*tool_responses, final])
         process_count = 0
 
-        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+        async def mock_process(parsed_calls, messages, tools, **kwargs):
             nonlocal process_count
             process_count += 1
             if False:
@@ -710,7 +710,7 @@ class TestA2StreamingRunawayGuard:
         mock_acompletion = AsyncMock(side_effect=[*tool_responses, final])
         process_count = 0
 
-        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+        async def mock_process(parsed_calls, messages, tools, **kwargs):
             nonlocal process_count
             process_count += 1
             if False:

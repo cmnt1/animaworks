@@ -9,15 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import core.integrations
 from core.tooling.schemas import (
-    DISCOVERY_TOOLS,
-    FILE_TOOLS,
     MEMORY_TOOLS,
-    SEARCH_TOOLS,
-    TOOL_MANAGEMENT_TOOLS,
-    USE_TOOL,
-    build_tool_list,
     load_external_schemas,
-    to_anthropic_format,
     to_litellm_format,
 )
 
@@ -83,112 +76,7 @@ class TestSendMessageSchema:
         assert send_msg["parameters"]["properties"]["intent"]["type"] == "string"
 
 
-class TestFileTools:
-    def test_file_tools_is_list(self):
-        assert isinstance(FILE_TOOLS, list)
-        assert len(FILE_TOOLS) == 4
-
-    def test_read_file_schema(self):
-        schema = next(t for t in FILE_TOOLS if t["name"] == "read_file")
-        assert "path" in schema["parameters"]["properties"]
-
-    def test_write_file_schema(self):
-        schema = next(t for t in FILE_TOOLS if t["name"] == "write_file")
-        assert set(schema["parameters"]["required"]) == {"path", "content"}
-
-    def test_edit_file_schema(self):
-        schema = next(t for t in FILE_TOOLS if t["name"] == "edit_file")
-        assert set(schema["parameters"]["required"]) == {"path", "old_string", "new_string"}
-
-    def test_execute_command_schema(self):
-        schema = next(t for t in FILE_TOOLS if t["name"] == "execute_command")
-        assert "command" in schema["parameters"]["properties"]
-        assert "timeout" in schema["parameters"]["properties"]
-
-
-class TestSearchTools:
-    def test_search_tools_is_list(self):
-        assert isinstance(SEARCH_TOOLS, list)
-        assert len(SEARCH_TOOLS) == 4
-
-    def test_web_search_schema(self):
-        schema = next(t for t in SEARCH_TOOLS if t["name"] == "web_search")
-        assert "query" in schema["parameters"]["properties"]
-        assert "query" in schema["parameters"]["required"]
-
-    def test_search_code_schema(self):
-        schema = next(t for t in SEARCH_TOOLS if t["name"] == "search_code")
-        assert "pattern" in schema["parameters"]["properties"]
-        assert "pattern" in schema["parameters"]["required"]
-
-    def test_list_directory_schema(self):
-        schema = next(t for t in SEARCH_TOOLS if t["name"] == "list_directory")
-        assert "path" in schema["parameters"]["properties"]
-        assert "recursive" in schema["parameters"]["properties"]
-
-
-class TestDiscoveryTools:
-    def test_discovery_tools_is_list(self):
-        assert isinstance(DISCOVERY_TOOLS, list)
-        assert len(DISCOVERY_TOOLS) == 0
-
-    def test_use_tool_schema(self):
-        schema = USE_TOOL[0]
-        assert schema["name"] == "use_tool"
-        assert "tool_name" in schema["parameters"]["properties"]
-
-
-class TestToolManagementTools:
-    def test_tool_management_tools_is_list(self):
-        assert isinstance(TOOL_MANAGEMENT_TOOLS, list)
-        assert len(TOOL_MANAGEMENT_TOOLS) == 2
-
-    def test_contains_refresh_tools(self):
-        names = [t["name"] for t in TOOL_MANAGEMENT_TOOLS]
-        assert "refresh_tools" in names
-
-    def test_contains_share_tool(self):
-        names = [t["name"] for t in TOOL_MANAGEMENT_TOOLS]
-        assert "share_tool" in names
-
-    def test_refresh_tools_schema(self):
-        schema = next(t for t in TOOL_MANAGEMENT_TOOLS if t["name"] == "refresh_tools")
-        assert "description" in schema
-        assert schema["parameters"]["type"] == "object"
-        # refresh_tools has no required parameters
-        assert "required" not in schema["parameters"]
-
-    def test_share_tool_schema(self):
-        schema = next(t for t in TOOL_MANAGEMENT_TOOLS if t["name"] == "share_tool")
-        assert "description" in schema
-        assert schema["parameters"]["type"] == "object"
-        assert "tool_name" in schema["parameters"]["properties"]
-        assert "tool_name" in schema["parameters"]["required"]
-
-
 # ── Format converters ─────────────────────────────────────────
-
-
-class TestToAnthropicFormat:
-    def test_converts_single_tool(self):
-        tools = [{"name": "foo", "description": "desc", "parameters": {"type": "object"}}]
-        result = to_anthropic_format(tools)
-        assert len(result) == 1
-        assert result[0]["name"] == "foo"
-        assert result[0]["description"] == "desc"
-        assert result[0]["input_schema"] == {"type": "object"}
-        assert "parameters" not in result[0]
-
-    def test_converts_multiple_tools(self):
-        result = to_anthropic_format(MEMORY_TOOLS)
-        assert len(result) == len(MEMORY_TOOLS)
-        for item in result:
-            assert "name" in item
-            assert "description" in item
-            assert "input_schema" in item
-
-    def test_empty_list(self):
-        assert to_anthropic_format([]) == []
 
 
 class TestToLitellmFormat:
@@ -202,107 +90,14 @@ class TestToLitellmFormat:
         assert result[0]["function"]["parameters"] == {"type": "object"}
 
     def test_converts_multiple_tools(self):
-        result = to_litellm_format(FILE_TOOLS)
-        assert len(result) == len(FILE_TOOLS)
+        result = to_litellm_format(MEMORY_TOOLS)
+        assert len(result) == len(MEMORY_TOOLS)
         for item in result:
             assert item["type"] == "function"
             assert "name" in item["function"]
 
     def test_empty_list(self):
         assert to_litellm_format([]) == []
-
-
-# ── build_tool_list ───────────────────────────────────────────
-
-
-class TestBuildToolList:
-    def test_default_returns_memory_tools_only(self):
-        result = build_tool_list()
-        names = [t["name"] for t in result]
-        assert "search_memory" in names
-        assert "read_memory_file" in names
-        assert "write_memory_file" in names
-        assert "send_message" in names
-        assert "read_file" not in names
-
-    def test_include_file_tools(self):
-        result = build_tool_list(include_file_tools=True)
-        names = [t["name"] for t in result]
-        assert "read_file" in names
-        assert "write_file" in names
-        assert "edit_file" in names
-        assert "execute_command" in names
-
-    def test_include_external_schemas(self):
-        ext = [{"name": "custom_tool", "description": "custom", "parameters": {}}]
-        result = build_tool_list(external_schemas=ext)
-        names = [t["name"] for t in result]
-        assert "custom_tool" in names
-
-    def test_combined(self):
-        ext = [{"name": "ext1", "description": "e", "parameters": {}}]
-        result = build_tool_list(
-            include_file_tools=True,
-            external_schemas=ext,
-        )
-        names = [t["name"] for t in result]
-        assert "search_memory" in names
-        assert "read_file" in names
-        assert "ext1" in names
-
-    def test_include_search_tools(self):
-        result = build_tool_list(include_search_tools=True)
-        names = [t["name"] for t in result]
-        assert "search_code" in names
-        assert "list_directory" in names
-        # Should NOT include file tools unless requested
-        assert "read_file" not in names
-
-    def test_include_use_tool(self):
-        result = build_tool_list(include_use_tool=True)
-        names = [t["name"] for t in result]
-        assert "use_tool" in names
-
-    def test_include_tool_management(self):
-        result = build_tool_list(include_tool_management=True)
-        names = [t["name"] for t in result]
-        assert "refresh_tools" in names
-        assert "share_tool" in names
-        # Should still include memory tools
-        assert "search_memory" in names
-        # Should NOT include other optional tools unless requested
-        assert "read_file" not in names
-        assert "discover_tools" not in names
-
-    def test_all_flags_combined(self):
-        result = build_tool_list(
-            include_file_tools=True,
-            include_search_tools=True,
-            include_discovery_tools=True,
-            include_use_tool=True,
-            include_tool_management=True,
-        )
-        names = [t["name"] for t in result]
-        # 5 memory + 4 channel (incl. manage_channel) + 1 report_procedure_outcome
-        # + 1 report_knowledge_outcome + 1 workspace + 1 check_permissions + 4 file
-        # + 4 search (web_search, web_fetch, search_code, list_directory)
-        # + 1 use_tool + 2 tool_management = 24
-        assert len(result) == 24
-        assert "search_code" in names
-        assert "list_directory" in names
-        assert "grant_workspace_access" in names
-        assert "use_tool" in names
-        assert "refresh_tools" in names
-        assert "share_tool" in names
-        assert "post_channel" in names
-        assert "read_channel" in names
-        assert "read_dm_history" in names
-        assert "grant_workspace_access" in names
-
-    def test_does_not_mutate_memory_tools(self):
-        original_len = len(MEMORY_TOOLS)
-        build_tool_list(include_file_tools=True)
-        assert len(MEMORY_TOOLS) == original_len
 
 
 # ── load_external_schemas ─────────────────────────────────────

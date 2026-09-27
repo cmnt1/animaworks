@@ -21,7 +21,6 @@ from core.config.models import (
 from core.notification.notifier import HumanNotifier
 from core.tooling.handler import ToolHandler
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 
@@ -292,16 +291,16 @@ class TestNotificationToolSchema:
         assert "subject" in schema["parameters"]["required"]
         assert "body" in schema["parameters"]["required"]
 
-    def test_build_tool_list_includes_notification(self):
-        from core.tooling.schemas import build_tool_list
+    def test_build_unified_tool_list_includes_notification(self):
+        from core.tooling.schemas import build_unified_tool_list
 
-        tools = build_tool_list(include_notification_tools=True)
+        tools = build_unified_tool_list(include_notification_tools=True)
         names = [t["name"] for t in tools]
         assert "call_human" in names
 
-    def test_build_tool_list_excludes_notification_by_default(self):
-        from core.tooling.schemas import build_tool_list
+    def test_build_unified_tool_list_excludes_notification_by_default(self):
+        from core.tooling.schemas import build_unified_tool_list
 
-        tools = build_tool_list()
+        tools = build_unified_tool_list()
         names = [t["name"] for t in tools]
         assert "call_human" not in names

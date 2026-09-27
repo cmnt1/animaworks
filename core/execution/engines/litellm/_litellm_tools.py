@@ -184,30 +184,6 @@ class ToolProcessingMixin:
         )
         return to_litellm_format(canonical)
 
-    def _refresh_tools_inline(self, tools: list[dict[str, Any]]) -> str:
-        """Re-discover personal/common tools and update the tools list in-place."""
-        from core.integrations import discover_common_tools, discover_personal_tools
-        from core.tooling.schemas import load_personal_tool_schemas
-
-        personal = discover_personal_tools(self._anima_dir)
-        common = discover_common_tools()
-        merged = {**common, **personal}
-
-        if not merged:
-            return "No personal or common tools found."
-
-        self._personal_tools = merged
-        self._tool_handler._external.update_personal_tools(merged)
-
-        new_schemas = load_personal_tool_schemas(merged)
-        new_litellm = to_litellm_format(new_schemas)
-
-        dynamic_names = {s["name"] for s in new_schemas}
-        tools[:] = [t for t in tools if t.get("function", {}).get("name") not in dynamic_names] + new_litellm
-
-        names = ", ".join(sorted(merged.keys()))
-        return f"Refreshed tools ({len(merged)} discovered): {names}"
-
     async def _execute_tool_call(self, tc, fn_args: dict[str, Any]) -> dict[str, Any]:
         """Execute a single tool call, offloading sync work to a thread.
 
@@ -238,10 +214,9 @@ class ToolProcessingMixin:
         parsed_calls: list[dict[str, Any]],
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-        active_categories: set[str],
         context_window: int = 128_000,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """Process parsed tool calls: discover_tools, refresh_tools, and execute.
+        """Execute already-parsed tool calls.
 
         Appends tool result messages to ``messages`` in place.  Yields
         ``tool_end`` events after each individual tool completes so the
@@ -288,29 +263,6 @@ class ToolProcessingMixin:
                         result_summary=_truncate_for_record(
                             error_content, tool_result_save_budget(fn_name, context_window)
                         ),
-                    ),
-                }
-                continue
-
-            # Handle refresh_tools inline
-            if fn_name == "refresh_tools":
-                result = self._refresh_tools_inline(tools)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": wrap_tool_result(fn_name, result),
-                    }
-                )
-                yield {
-                    "type": "tool_end",
-                    "tool_id": tc_id,
-                    "tool_name": fn_name,
-                    "record": ToolCallRecord(
-                        tool_name=fn_name,
-                        tool_id=tc_id,
-                        input_summary=_truncate_for_record(str(fn_args), tool_input_save_budget(context_window)),
-                        result_summary=_truncate_for_record(result, tool_result_save_budget(fn_name, context_window)),
                     ),
                 }
                 continue

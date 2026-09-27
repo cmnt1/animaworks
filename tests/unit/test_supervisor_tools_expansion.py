@@ -945,31 +945,3 @@ class TestSdkHooksDescendantManagementFiles:
         hinata_dir = (animas_dir / "hinata").resolve()
         mgmt_names = {p.name for p in sub_mgmt_files if p.parent == hinata_dir}
         assert mgmt_names == {"cron.md", "heartbeat.md", "status.json", "injection.md"}
-
-
-# ── build_tool_list integration tests ──────────────────────
-
-
-class TestBuildToolListIntegration:
-    def test_check_permissions_always_included(self):
-        """check_permissions should always be in the tool list."""
-        from core.tooling.schemas import build_tool_list
-
-        tools = build_tool_list()
-        names = {t["name"] for t in tools}
-        assert "check_permissions" in names
-
-    def test_supervisor_tools_include_new_tools(self):
-        """When supervisor tools are enabled, new tools are included."""
-        from core.tooling.schemas import build_tool_list
-
-        tools = build_tool_list(include_supervisor_tools=True)
-        names = {t["name"] for t in tools}
-        for expected in [
-            "org_dashboard",
-            "ping_subordinate",
-            "read_subordinate_state",
-            "delegate_task",
-            "task_tracker",
-        ]:
-            assert expected in names, f"Missing tool: {expected}"

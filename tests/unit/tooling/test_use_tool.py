@@ -13,7 +13,6 @@ import pytest
 
 from core.exceptions import ToolExecutionError
 from core.tooling.handler import ToolHandler
-from core.tooling.schemas import USE_TOOL
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -232,41 +231,6 @@ class TestUseToolHandlesDispatchException:
                     "args": {},
                 },
             )
-
-
-# ── test_use_tool_schema_definition ────────────────────────────
-
-
-class TestUseToolSchemaDefinition:
-    """USE_TOOL schema has correct structure."""
-
-    def test_use_tool_schema_exists(self):
-        assert len(USE_TOOL) >= 1
-        schema = USE_TOOL[0]
-
-    def test_schema_has_name(self):
-        schema = USE_TOOL[0]
-        assert schema["name"] == "use_tool"
-
-    def test_schema_has_description(self):
-        schema = USE_TOOL[0]
-        assert "description" in schema
-        assert len(schema["description"]) > 0
-
-    def test_schema_has_parameters(self):
-        schema = USE_TOOL[0]
-        assert "parameters" in schema
-        params = schema["parameters"]
-        assert "properties" in params
-        assert "tool_name" in params["properties"]
-        assert "action" in params["properties"]
-        assert "args" in params["properties"]
-
-    def test_schema_required_fields(self):
-        schema = USE_TOOL[0]
-        required = schema["parameters"].get("required", [])
-        assert "tool_name" in required
-        assert "action" in required
 
 
 # ── Personal tool dispatch ────────────────────────────────

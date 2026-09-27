@@ -850,7 +850,7 @@ async def _drive_litellm(anima_dir: Path, golden_id: str, path: str) -> dict:
             call_count["n"] += 1
             return _fake_async_stream(chunks[min(i, len(chunks) - 1)])
 
-        async def mock_process_tool_calls(parsed_calls, messages, tools, active_categories, **kwargs):
+        async def mock_process_tool_calls(parsed_calls, messages, tools, **kwargs):
             for tc in parsed_calls:
                 yield {
                     "type": "tool_end",

@@ -281,13 +281,6 @@ class TestReportProcedureOutcome:
 class TestProcedureToolSchema:
     """Test that the procedure outcome tool is registered in schemas."""
 
-    def test_schema_in_build_tool_list(self) -> None:
-        from core.tooling.schemas import build_tool_list
-
-        tools = build_tool_list()
-        names = {t["name"] for t in tools}
-        assert "report_procedure_outcome" in names
-
     def test_schema_in_build_unified_tool_list(self) -> None:
         from core.tooling.schemas import build_unified_tool_list
 
