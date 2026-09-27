@@ -40,6 +40,7 @@ class TestHousekeepingConfig:
         assert cfg.shortterm_archive_retention_days == 30
         assert cfg.shortterm_thread_gc_days == 30
         assert cfg.facts_lock_stale_hours == 24
+        assert cfg.curator_report_retention_days == 30
         assert cfg.task_results_retention_days == 7
         assert cfg.pending_failed_retention_days == 14
         assert cfg.corrupt_vectordb_keep_generations == 2
@@ -71,6 +72,7 @@ class TestHousekeepingConfig:
             shortterm_archive_retention_days=60,
             shortterm_thread_gc_days=45,
             facts_lock_stale_hours=12,
+            curator_report_retention_days=21,
             corrupt_vectordb_keep_generations=4,
             tmp_retention_days=21,
             backup_retention_days=120,
@@ -90,6 +92,7 @@ class TestHousekeepingConfig:
         assert cfg.shortterm_archive_retention_days == 60
         assert cfg.shortterm_thread_gc_days == 45
         assert cfg.facts_lock_stale_hours == 12
+        assert cfg.curator_report_retention_days == 21
         assert cfg.corrupt_vectordb_keep_generations == 4
         assert cfg.tmp_retention_days == 21
         assert cfg.backup_retention_days == 120
@@ -121,6 +124,7 @@ class TestHousekeepingConfig:
 
     @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_vector_worker_log(self, tmp_path: Path):
+        from core.config.models import HousekeepingConfig
         from core.memory.maintenance.housekeeping import run_housekeeping
 
         logs = tmp_path / "logs"
@@ -129,8 +133,7 @@ class TestHousekeepingConfig:
 
         results = await run_housekeeping(
             tmp_path,
-            daemon_log_max_size_mb=0,
-            daemon_log_keep_generations=5,
+            housekeeping=HousekeepingConfig(daemon_log_max_size_mb=0, daemon_log_keep_generations=5),
         )
 
         assert results["vector_worker_log"]["rotated"] is True
@@ -138,17 +141,17 @@ class TestHousekeepingConfig:
 
     @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_suppressed_messages_log(self, tmp_path: Path):
+        from core.config.models import HousekeepingConfig
         from core.memory.maintenance.housekeeping import run_housekeeping
 
         state_dir = tmp_path / "animas" / "alice" / "state"
         state_dir.mkdir(parents=True)
         suppressed = state_dir / "suppressed_messages.jsonl"
-        suppressed.write_bytes(b"x" * 2048)
+        suppressed.write_bytes(b"x" * (1024 * 1024 + 1))
 
         results = await run_housekeeping(
             tmp_path,
-            suppressed_messages_max_size_mb=0,
-            suppressed_messages_keep_generations=2,
+            housekeeping=HousekeepingConfig(suppressed_messages_max_size_mb=1, suppressed_messages_keep_generations=2),
         )
 
         assert results["suppressed_messages"]["files"] == 1
@@ -868,15 +871,18 @@ class TestRunHousekeeping:
         old_pf.write_text("{}")
         os.utime(old_pf, (old_time, old_time))
 
+        from core.config.models import HousekeepingConfig
         from core.memory.maintenance.housekeeping import run_housekeeping
 
         results = await run_housekeeping(
             data_dir,
-            prompt_log_retention_days=3,
-            cron_log_retention_days=30,
-            shortterm_retention_days=7,
-            task_results_retention_days=7,
-            pending_failed_retention_days=7,
+            housekeeping=HousekeepingConfig(
+                prompt_log_retention_days=3,
+                cron_log_retention_days=30,
+                shortterm_retention_days=7,
+                task_results_retention_days=7,
+                pending_failed_retention_days=7,
+            ),
         )
 
         assert "prompt_logs" in results
@@ -953,15 +959,10 @@ class TestRunHousekeeping:
         old_mtime = time.time() - (40 * 86400)
         os.utime(old_processed, (old_mtime, old_mtime))
 
+        from core.config.models import InboxConfig
         from core.memory.maintenance.housekeeping import run_housekeeping
 
-        results = await run_housekeeping(
-            data_dir,
-            inbox_ttl_hours=24,
-            inbox_expired_retention_days=7,
-            inbox_processed_retention_days=30,
-            inbox_quarantine_retention_days=30,
-        )
+        results = await run_housekeeping(data_dir, inbox=InboxConfig())
 
         shared = results["shared_inbox"]
         assert shared["expired"] == 1

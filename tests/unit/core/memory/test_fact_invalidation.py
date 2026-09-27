@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -461,15 +460,12 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
     new = FactRecord(text="Alice's LoCoMo score is 85.", recorded_at="2026-06-03T10:00:00+09:00")
     captured: dict[str, object] = {}
 
-    def fake_completion(**kwargs):
+    def fake_completion(prompt: str, **kwargs):
         captured.update(kwargs)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="CONTRADICT"))])
+        captured["prompt"] = prompt
+        return "CONTRADICT"
 
-    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=fake_completion))
-    monkeypatch.setattr(
-        "core.memory._llm_utils.get_memory_llm_kwargs_for_model",
-        lambda model, extra: {"model": model, "timeout": 3, **extra},
-    )
+    monkeypatch.setattr("core.memory._llm_utils.one_shot_completion_sync", fake_completion)
 
     label = fact_invalidation_llm.classify_fact_relation(
         new,
@@ -479,12 +475,12 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
 
     assert label == "CONTRADICT"
     assert captured["model"] == "status-model"
-    assert captured["timeout"] == 3
-    messages = captured["messages"]
-    assert messages[0]["role"] == "system"
-    assert "Return exactly one label" in messages[0]["content"]
-    assert "DUPLICATE" in messages[1]["content"]
-    assert old.fact_id in messages[1]["content"]
+    assert captured["timeout"] == 7
+    assert captured["max_tokens"] == 16
+    assert captured["temperature"] == 0.0
+    assert "Return exactly one label" in captured["system_prompt"]
+    assert "DUPLICATE" in captured["prompt"]
+    assert old.fact_id in captured["prompt"]
 
 
 @pytest.mark.unit

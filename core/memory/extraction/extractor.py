@@ -190,10 +190,9 @@ class FactExtractor:
         system_prompt: str,
         user_prompt: str,
     ) -> str:
-        """Call LLM with retry logic.
+        """Call the shared one-shot LLM path with retry logic.
 
-        Uses litellm.acompletion for async calls.  Retries up to
-        ``max_retries`` on failure.
+        Retries up to ``max_retries`` when all guarded backends fail.
 
         Returns:
             Raw text response.
@@ -201,42 +200,24 @@ class FactExtractor:
         Raises:
             Exception: If all retry attempts fail.
         """
-        import litellm
-
-        from core.memory._llm_utils import get_memory_llm_kwargs_for_model
-
-        llm_kwargs = get_memory_llm_kwargs_for_model(
-            self._model,
-            self._llm_extra,
-            credential=self._credential,
-        )
-        resolved_model = llm_kwargs.pop("model", self._model)
-        effective_timeout = llm_kwargs.pop("timeout", self._timeout)
-
-        # Structured output is only requested for API-family models; local/
-        # self-hosted models keep multi-stage parsing (no response_format).
-        from core.memory._llm_utils import supports_structured_output
-
-        if supports_structured_output(resolved_model):
-            llm_kwargs.setdefault("response_format", {"type": "json_object"})
-
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        from core.memory._llm_utils import one_shot_completion
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):
             try:
-                response = await litellm.acompletion(
-                    model=resolved_model,
-                    messages=messages,
-                    temperature=0.0,
+                text = await one_shot_completion(
+                    user_prompt,
+                    system_prompt=system_prompt,
+                    model=self._model,
+                    credential=self._credential,
                     max_tokens=2048,
-                    timeout=effective_timeout,
-                    **llm_kwargs,
+                    structured_output=True,
+                    temperature=0.0,
+                    timeout=self._timeout,
+                    llm_extra=self._llm_extra,
                 )
-                text: str = response.choices[0].message.content or ""
+                if text is None:
+                    raise RuntimeError("LLM returned no content")
                 return text
             except Exception as exc:
                 last_exc = exc
@@ -250,7 +231,9 @@ class FactExtractor:
                 if attempt < self._max_retries - 1:
                     await asyncio.sleep(0.5 * (attempt + 1))
 
-        raise last_exc  # type: ignore[misc]
+        if last_exc is None:
+            raise RuntimeError("LLM call configured with no attempts")
+        raise last_exc
 
     # ── JSON parsing ───────────────────────────────────────
 

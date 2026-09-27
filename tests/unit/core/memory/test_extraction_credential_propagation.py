@@ -28,24 +28,22 @@ def _capture_kwargs_resolver(captured: dict):
 async def test_fact_extractor_passes_credential():
     from core.memory.extraction.extractor import FactExtractor
 
-    captured: dict = {}
     ext = FactExtractor(
         model="qwen-model",
         credential="vllm-lb",
         max_retries=1,
     )
 
-    with (
-        patch(
-            "core.memory._llm_utils.get_memory_llm_kwargs_for_model",
-            side_effect=_capture_kwargs_resolver(captured),
-        ),
-        patch("litellm.acompletion", new_callable=AsyncMock, return_value=_llm_response('{"entities": []}')),
-    ):
+    with patch(
+        "core.memory._llm_utils.one_shot_completion",
+        new_callable=AsyncMock,
+        return_value='{"entities": []}',
+    ) as mock_one_shot:
         await ext._call_llm("system", "user")
 
-    assert captured["credential"] == "vllm-lb"
-    assert captured["model"] == "qwen-model"
+    assert mock_one_shot.call_args.kwargs["credential"] == "vllm-lb"
+    assert mock_one_shot.call_args.kwargs["model"] == "qwen-model"
+    assert mock_one_shot.call_args.kwargs["llm_extra"] == {}
 
 
 @pytest.mark.unit

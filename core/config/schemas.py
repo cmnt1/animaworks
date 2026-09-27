@@ -886,6 +886,7 @@ class HousekeepingConfig(BaseModel):
     shortterm_archive_retention_days: int = Field(default=30, ge=1)
     shortterm_thread_gc_days: int = Field(default=30, ge=1)
     facts_lock_stale_hours: int = Field(default=24, ge=1)
+    curator_report_retention_days: int = Field(default=30, ge=1)
     task_results_retention_days: int = 7
     pending_failed_retention_days: int = 14
     corrupt_vectordb_keep_generations: int = Field(default=2, ge=0)

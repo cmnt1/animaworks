@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from core.config.models import HousekeepingConfig
 from core.memory.maintenance.housekeeping import run_housekeeping
 from core.tasks.board.store import TaskBoardStore
 from core.tasks.queue import TaskQueueManager
@@ -72,10 +73,12 @@ async def test_housekeeping_preserves_legacy_llm_evidence_and_cleans_unrelated_a
 
     results = await run_housekeeping(
         data_dir,
-        pending_processing_stale_hours=24,
-        background_running_stale_hours=48,
-        current_state_stale_hours=24,
-        taskboard_suppressed_retention_days=30,
+        housekeeping=HousekeepingConfig(
+            pending_processing_stale_hours=24,
+            background_running_stale_hours=48,
+            current_state_stale_hours=24,
+            taskboard_suppressed_retention_days=30,
+        ),
     )
 
     taskboard = results["taskboard_stale"]
@@ -158,11 +161,13 @@ async def test_taskboard_housekeeping_archives_orphan_metadata_and_purges_stale(
 
     results = await run_housekeeping(
         data_dir,
-        pending_processing_stale_hours=24,
-        background_running_stale_hours=48,
-        current_state_stale_hours=24,
-        taskboard_suppressed_retention_days=30,
-        taskboard_orphan_metadata_stale_hours=24,
+        housekeeping=HousekeepingConfig(
+            pending_processing_stale_hours=24,
+            background_running_stale_hours=48,
+            current_state_stale_hours=24,
+            taskboard_suppressed_retention_days=30,
+            taskboard_orphan_metadata_stale_hours=24,
+        ),
     )
 
     taskboard = results["taskboard_stale"]

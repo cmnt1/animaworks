@@ -23,23 +23,6 @@ from core.memory.ontology.default import (
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
-def _make_llm_response(content: str) -> MagicMock:
-    """Build a fake LiteLLM acompletion response."""
-    msg = MagicMock()
-    msg.content = content
-    choice = MagicMock()
-    choice.message = msg
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
-
-
-_LLM_KWARGS_PATCH = patch(
-    "core.memory._llm_utils.get_llm_kwargs_for_model",
-    return_value={"model": "test-model"},
-)
-
-
 # ── TestExtractedModels ────────────────────────────────────────────────────
 
 
@@ -95,9 +78,8 @@ class TestFactExtractorInit:
 
 class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_entities_success(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_success(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         payload = {
@@ -106,7 +88,7 @@ class TestFactExtractorExtractEntities:
                 {"name": "東京", "entity_type": "Place", "summary": "A city"},
             ]
         }
-        mock_acompletion.return_value = _make_llm_response(json.dumps(payload, ensure_ascii=False))
+        mock_acompletion.return_value = json.dumps(payload, ensure_ascii=False)
 
         ext = FactExtractor(model="test-model", max_retries=1)
         entities = await ext.extract_entities("田中さんは東京に住んでいる")
@@ -118,8 +100,8 @@ class TestFactExtractorExtractEntities:
         assert entities[1].entity_type == "Place"
 
     @pytest.mark.asyncio
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_entities_prefixes_bare_custom_endpoint_model(self, mock_acompletion):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_forwards_custom_endpoint_settings(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         payload = {
@@ -127,50 +109,43 @@ class TestFactExtractorExtractEntities:
                 {"name": "ExampleOrg", "entity_type": "Organization", "summary": "A company"},
             ]
         }
-        mock_acompletion.return_value = _make_llm_response(json.dumps(payload, ensure_ascii=False))
-
-        cfg = MagicMock()
-        cfg.consolidation.llm_model = "anthropic/claude-sonnet-4-6"
-        cfg.credentials = {}
+        mock_acompletion.return_value = json.dumps(payload, ensure_ascii=False)
 
         ext = FactExtractor(
             model="deepseek-v4-flash",
             max_retries=1,
+            timeout=120,
             llm_extra={
                 "api_base": "http://localhost:4000/v1",
                 "api_key": "dummy",
                 "timeout": 120,
             },
         )
-        with (
-            patch("core.memory._llm_utils.ensure_credentials_in_env"),
-            patch("core.config.load_config", return_value=cfg),
-        ):
-            entities = await ext.extract_entities("ExampleOrgについて")
+        entities = await ext.extract_entities("ExampleOrgについて")
 
         assert len(entities) == 1
         kwargs = mock_acompletion.call_args.kwargs
-        assert kwargs["model"] == "openai/deepseek-v4-flash"
-        assert kwargs["api_base"] == "http://localhost:4000/v1"
-        assert kwargs["api_key"] == "dummy"
+        assert kwargs["model"] == "deepseek-v4-flash"
+        assert kwargs["llm_extra"]["api_base"] == "http://localhost:4000/v1"
+        assert kwargs["llm_extra"]["api_key"] == "dummy"
         assert kwargs["timeout"] == 120
+        assert kwargs["temperature"] == 0.0
+        assert kwargs["structured_output"] is True
 
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_entities_empty_content(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_empty_content(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
-        mock_acompletion.return_value = _make_llm_response("")
+        mock_acompletion.return_value = ""
 
         ext = FactExtractor(model="test-model", max_retries=1)
         entities = await ext.extract_entities("テスト")
         assert entities == []
 
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_entities_llm_failure(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_llm_failure(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         mock_acompletion.side_effect = RuntimeError("API down")
@@ -180,13 +155,12 @@ class TestFactExtractorExtractEntities:
         assert entities == []
 
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_entities_invalid_json(self, mock_acompletion, _mock_kwargs, caplog):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_invalid_json(self, mock_acompletion, caplog):
         from core.memory.extraction.extractor import FactExtractor
 
         reset_warning_rate_limits()
-        mock_acompletion.return_value = _make_llm_response("NOT VALID JSON {{{")
+        mock_acompletion.return_value = "NOT VALID JSON {{{"
 
         ext = FactExtractor(model="test-model", max_retries=1)
         with caplog.at_level("WARNING", logger="core.memory.extraction.extractor"):
@@ -197,9 +171,8 @@ class TestFactExtractorExtractEntities:
         assert "Failed to parse entity extraction LLM JSON response" in caplog.text
 
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_entities_filters_empty_names(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_entities_filters_empty_names(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         payload = {
@@ -209,13 +182,41 @@ class TestFactExtractorExtractEntities:
                 {"name": "Valid", "entity_type": "Concept", "summary": "ok"},
             ]
         }
-        mock_acompletion.return_value = _make_llm_response(json.dumps(payload))
+        mock_acompletion.return_value = json.dumps(payload)
 
         ext = FactExtractor(model="test-model", max_retries=1)
         entities = await ext.extract_entities("テスト")
 
         assert len(entities) == 1
         assert entities[0].name == "Valid"
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.memory.extraction.extractor.asyncio.sleep", new_callable=AsyncMock)
+    async def test_call_llm_retries_none_until_exhausted(self, mock_sleep, mock_one_shot):
+        from core.memory.extraction.extractor import FactExtractor
+
+        mock_one_shot.return_value = None
+        ext = FactExtractor(model="test-model", max_retries=3)
+
+        with pytest.raises(RuntimeError, match="LLM returned no content"):
+            await ext._call_llm("system", "user")
+
+        assert mock_one_shot.call_count == 3
+        assert mock_sleep.await_count == 2
+
+    @pytest.mark.asyncio
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.memory.extraction.extractor.asyncio.sleep", new_callable=AsyncMock)
+    async def test_call_llm_succeeds_after_none(self, mock_sleep, mock_one_shot):
+        from core.memory.extraction.extractor import FactExtractor
+
+        mock_one_shot.side_effect = [None, "recovered response"]
+        ext = FactExtractor(model="test-model", max_retries=3)
+
+        assert await ext._call_llm("system", "user") == "recovered response"
+        assert mock_one_shot.call_count == 2
+        mock_sleep.assert_awaited_once_with(0.5)
 
 
 # ── TestParseJsonResponse ──────────────────────────────────────────────
@@ -260,9 +261,8 @@ class TestParseJsonResponse:
 
 class TestFactExtractorExtractFacts:
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_facts_success(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_facts_success(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         payload = {
@@ -275,7 +275,7 @@ class TestFactExtractorExtractFacts:
                 }
             ]
         }
-        mock_acompletion.return_value = _make_llm_response(json.dumps(payload, ensure_ascii=False))
+        mock_acompletion.return_value = json.dumps(payload, ensure_ascii=False)
 
         ext = FactExtractor(model="test-model", max_retries=1)
         entities = [
@@ -298,9 +298,8 @@ class TestFactExtractorExtractFacts:
         assert facts == []
 
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_facts_filters_invalid_refs(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_facts_filters_invalid_refs(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         payload = {
@@ -319,7 +318,7 @@ class TestFactExtractorExtractFacts:
                 },
             ]
         }
-        mock_acompletion.return_value = _make_llm_response(json.dumps(payload, ensure_ascii=False))
+        mock_acompletion.return_value = json.dumps(payload, ensure_ascii=False)
 
         ext = FactExtractor(model="test-model", max_retries=1)
         entities = [
@@ -332,9 +331,8 @@ class TestFactExtractorExtractFacts:
         assert facts[0].target_entity == "東京"
 
     @pytest.mark.asyncio
-    @_LLM_KWARGS_PATCH
-    @patch("litellm.acompletion", new_callable=AsyncMock)
-    async def test_extract_facts_llm_failure(self, mock_acompletion, _mock_kwargs):
+    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    async def test_extract_facts_llm_failure(self, mock_acompletion):
         from core.memory.extraction.extractor import FactExtractor
 
         mock_acompletion.side_effect = RuntimeError("API down")

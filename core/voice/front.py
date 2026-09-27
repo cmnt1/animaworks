@@ -256,6 +256,7 @@ class VoiceFrontLane:
                 kwargs["tool_choice"] = tool_choice
             else:
                 kwargs.pop("tool_choice", None)
+            # Streaming plus tool calls uses the low-latency lane; one_shot_completion is not suitable here.
             response = await litellm.acompletion(**kwargs)
 
             chunks: list[str] = []

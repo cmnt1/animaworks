@@ -209,3 +209,35 @@ class TestRAGSearchScopeAllPipeline:
 
         assert results[0]["updated_at"] == "2026-06-03T10:11:12+09:00"
         assert results[0]["origin"] == "external_web"
+
+
+def test_rag_pipeline_settings_use_schema_defaults_on_config_failure(
+    rag_search: RAGMemorySearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.config.schemas import RAGConfig
+
+    monkeypatch.setattr("core.config.load_config", lambda: (_ for _ in ()).throw(RuntimeError("no config")))
+    setting_keys = {
+        "rerank_enabled",
+        "rerank_candidate_pool",
+        "cross_encoder_model",
+        "confidence_threshold",
+        "rrf_confidence_threshold",
+        "enable_spreading_activation",
+        "entity_registry_enabled",
+        "entity_boost_enabled",
+        "entity_boost",
+        "entity_boost_cap",
+        "temporal_boost_enabled",
+        "temporal_boost",
+        "temporal_boost_max",
+        "temporal_half_life_days",
+        "access_boost_enabled",
+        "access_boost_weight",
+        "access_boost_cap",
+        "access_boost_half_life_days",
+    }
+    expected = RAGConfig().model_dump(include=setting_keys.intersection(RAGConfig.model_fields))
+
+    assert rag_search._load_rag_pipeline_settings() == expected

@@ -25,7 +25,7 @@ from typing import Any
 
 from core.i18n import t
 from core.integrations._base import ToolConfigError, get_credential, logger
-from core.integrations._retry import retry_on_rate_limit
+from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -358,16 +358,11 @@ class NotionClient:
                 return {}
             return resp.json()
 
-        def _get_retry_after(exc: Exception) -> float | None:
-            if isinstance(exc, RateLimitError):
-                return exc.retry_after
-            return None
-
         return retry_on_rate_limit(
             _do_request,
             max_retries=RATE_LIMIT_RETRY_MAX,
             default_wait=RATE_LIMIT_WAIT_DEFAULT,
-            get_retry_after=_get_retry_after,
+            get_retry_after=retry_after_from_attr,
             retry_on=(RateLimitError,),
         )
 

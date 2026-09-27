@@ -72,19 +72,19 @@ class SchedulerMixin:
         # Load consolidation config
         try:
             from core.config import load_config
+            from core.config.models import ConsolidationConfig
 
             config = load_config()
-            consolidation_cfg = getattr(config, "consolidation", None)
+            consolidation_cfg = config.consolidation or ConsolidationConfig()
         except Exception:
             logger.debug("Config load failed for consolidation schedule", exc_info=True)
-            consolidation_cfg = None
+            from core.config.models import ConsolidationConfig
+
+            consolidation_cfg = ConsolidationConfig()
 
         # Daily consolidation
-        daily_enabled = True
-        daily_time = "02:00"
-        if consolidation_cfg:
-            daily_enabled = getattr(consolidation_cfg, "daily_enabled", True)
-            daily_time = getattr(consolidation_cfg, "daily_time", "02:00")
+        daily_enabled = consolidation_cfg.daily_enabled
+        daily_time = consolidation_cfg.daily_time
 
         if daily_enabled:
             hour, minute = (int(x) for x in daily_time.split(":"))
@@ -99,11 +99,8 @@ class SchedulerMixin:
             logger.info("System cron: Daily consolidation at %s", daily_time)
 
         # Weekly integration
-        weekly_enabled = True
-        weekly_time = "sun:03:00"
-        if consolidation_cfg:
-            weekly_enabled = getattr(consolidation_cfg, "weekly_enabled", True)
-            weekly_time = getattr(consolidation_cfg, "weekly_time", "sun:03:00")
+        weekly_enabled = consolidation_cfg.weekly_enabled
+        weekly_time = consolidation_cfg.weekly_time
 
         if weekly_enabled:
             parts = weekly_time.split(":")
@@ -120,15 +117,8 @@ class SchedulerMixin:
             )
             logger.info("System cron: Weekly integration on %s at %s:%s", day_of_week, time_parts[0], time_parts[1])
 
-        indexing_enabled = True
-        indexing_time = "04:00"
-        if consolidation_cfg:
-            _ie = getattr(consolidation_cfg, "indexing_enabled", None)
-            if isinstance(_ie, bool):
-                indexing_enabled = _ie
-            _it = getattr(consolidation_cfg, "indexing_time", None)
-            if isinstance(_it, str) and ":" in _it:
-                indexing_time = _it
+        indexing_enabled = consolidation_cfg.indexing_enabled
+        indexing_time = consolidation_cfg.indexing_time
 
         if indexing_enabled:
             idx_hour, idx_minute = (int(x) for x in indexing_time.split(":"))
@@ -1008,40 +998,8 @@ class SchedulerMixin:
 
             results = await run_housekeeping(
                 self._get_data_dir(),
-                prompt_log_retention_days=hk_cfg.prompt_log_retention_days,
-                daemon_log_max_size_mb=hk_cfg.daemon_log_max_size_mb,
-                daemon_log_keep_generations=hk_cfg.daemon_log_keep_generations,
-                anima_log_retention_days=hk_cfg.anima_log_retention_days,
-                anima_log_total_max_size_mb=hk_cfg.anima_log_total_max_size_mb,
-                frontend_log_backup_count=hk_cfg.frontend_log_backup_count,
-                dm_log_archive_retention_days=hk_cfg.dm_log_archive_retention_days,
-                cron_log_retention_days=hk_cfg.cron_log_retention_days,
-                shortterm_retention_days=hk_cfg.shortterm_retention_days,
-                shortterm_archive_retention_days=hk_cfg.shortterm_archive_retention_days,
-                shortterm_thread_gc_days=hk_cfg.shortterm_thread_gc_days,
-                facts_lock_stale_hours=hk_cfg.facts_lock_stale_hours,
-                task_results_retention_days=hk_cfg.task_results_retention_days,
-                pending_failed_retention_days=hk_cfg.pending_failed_retention_days,
-                corrupt_vectordb_keep_generations=hk_cfg.corrupt_vectordb_keep_generations,
-                tmp_retention_days=hk_cfg.tmp_retention_days,
-                backup_retention_days=hk_cfg.backup_retention_days,
-                codex_log_max_size_mb=hk_cfg.codex_log_max_size_mb,
-                codex_tmp_retention_hours=hk_cfg.codex_tmp_retention_hours,
-                anima_tmp_gitdirs_retention_days=hk_cfg.anima_tmp_gitdirs_retention_days,
-                anima_local_log_retention_days=hk_cfg.anima_local_log_retention_days,
-                pending_processing_stale_hours=hk_cfg.pending_processing_stale_hours,
-                background_running_stale_hours=hk_cfg.background_running_stale_hours,
-                current_state_stale_hours=hk_cfg.current_state_stale_hours,
-                taskboard_suppressed_retention_days=hk_cfg.taskboard_suppressed_retention_days,
-                taskboard_orphan_metadata_stale_hours=hk_cfg.taskboard_orphan_metadata_stale_hours,
-                suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
-                suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
-                archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,
-                archive_versions_keep_per_file=hk_cfg.archive_versions_keep_per_file,
-                inbox_ttl_hours=inbox_cfg.ttl_hours,
-                inbox_expired_retention_days=inbox_cfg.expired_retention_days,
-                inbox_processed_retention_days=inbox_cfg.processed_retention_days,
-                inbox_quarantine_retention_days=inbox_cfg.quarantine_retention_days,
+                housekeeping=hk_cfg,
+                inbox=inbox_cfg,
             )
             logger.info("Housekeeping complete: %s", results)
         except Exception:
@@ -1080,16 +1038,19 @@ class SchedulerMixin:
 
         try:
             from core.config import load_config
+            from core.config.models import ConsolidationConfig
 
-            consolidation_cfg = getattr(load_config(), "consolidation", None)
+            consolidation_cfg = load_config().consolidation or ConsolidationConfig()
         except Exception:
-            consolidation_cfg = None
+            from core.config.models import ConsolidationConfig
+
+            consolidation_cfg = ConsolidationConfig()
 
         now = now_local()
         mdir = _marker_dir(self._get_data_dir())
 
-        daily_enabled = getattr(consolidation_cfg, "daily_enabled", True) if consolidation_cfg else True
-        weekly_enabled = getattr(consolidation_cfg, "weekly_enabled", True) if consolidation_cfg else True
+        daily_enabled = consolidation_cfg.daily_enabled
+        weekly_enabled = consolidation_cfg.weekly_enabled
 
         if daily_enabled:
             last = _read_marker(mdir / "last_daily_consolidation")
@@ -1109,7 +1070,7 @@ class SchedulerMixin:
                 )
                 await self._run_weekly_integration()
 
-        indexing_enabled = getattr(consolidation_cfg, "indexing_enabled", True) if consolidation_cfg else True
+        indexing_enabled = consolidation_cfg.indexing_enabled
         if indexing_enabled:
             last = _read_marker(mdir / "last_daily_indexing")
             if last is None or (now - last) > timedelta(hours=36):

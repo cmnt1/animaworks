@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.platform.atomic_io import atomic_write_json
-from core.time_utils import now_local
+from core.time_utils import now_iso, now_local
 
 STATE_PENDING_USER_INPUT = "pending_user_input"
 STATE_RUNNING = "running"
@@ -45,10 +45,6 @@ def bootstrap_state_path(anima_dir: Path) -> Path:
     return anima_dir / "state" / "bootstrap_state.json"
 
 
-def _now_iso() -> str:
-    return now_local().isoformat()
-
-
 def _bootstrap_artifacts(anima_dir: Path) -> list[Path]:
     return [
         anima_dir / "bootstrap.md.auto_resolved",
@@ -71,7 +67,7 @@ def read_bootstrap_state(anima_dir: Path) -> dict[str, Any]:
 def write_bootstrap_state(anima_dir: Path, state: dict[str, Any]) -> dict[str, Any]:
     payload = dict(state)
     payload["version"] = 1
-    payload["updated_at"] = _now_iso()
+    payload["updated_at"] = now_iso()
     if payload.get("state") not in ALLOWED_STATES:
         payload["state"] = STATE_NEEDS_REPAIR
         payload["reason"] = "invalid_bootstrap_state"
@@ -99,7 +95,7 @@ def _base_state(
         "reason": reason,
         "started_at": started_at,
         "completed_at": completed_at,
-        "updated_at": _now_iso(),
+        "updated_at": now_iso(),
         "last_error": last_error,
         "validation_errors": validation_errors or [],
         "retry_count": int(retry_count or 0),
@@ -332,7 +328,7 @@ def mark_bootstrap_running(anima_dir: Path, *, mode: str = "background") -> dict
         mode=mode,
         reason="background_bootstrap_running",
         retry_count=int(persisted.get("retry_count") or 0),
-        started_at=_now_iso(),
+        started_at=now_iso(),
     )
     return write_bootstrap_state(anima_dir, payload)
 
@@ -416,7 +412,7 @@ def finalize_bootstrap_run(anima_dir: Path) -> dict[str, Any]:
         status["archived_bootstrap"] = str(archive_path)
 
     payload = {k: v for k, v in status.items() if not k.startswith("needs_")}
-    payload["completed_at"] = _now_iso()
+    payload["completed_at"] = now_iso()
     return write_bootstrap_state(anima_dir, payload)
 
 
@@ -536,7 +532,7 @@ def repair_bootstrap_complete(anima_dir: Path, *, retry_counts_file: Path | None
         mode="repaired",
         reason="completed_after_bootstrap_repair",
         retry_count=0,
-        completed_at=_now_iso(),
+        completed_at=now_iso(),
     )
     if archived_bootstrap:
         payload["archived_bootstrap_artifacts"] = archived_bootstrap

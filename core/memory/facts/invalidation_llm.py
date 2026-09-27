@@ -18,27 +18,21 @@ logger = logging.getLogger("animaworks.memory.fact_invalidation_llm")
 
 
 def classify_fact_relation(new_fact: FactRecord, candidates: list[Any], anima_dir: Path) -> str:
-    import litellm
-
     model, llm_extra, timeout = _resolve_reconcile_llm_config(anima_dir)
-    from core.memory._llm_utils import get_memory_llm_kwargs_for_model
+    from core.memory._llm_utils import one_shot_completion_sync
 
-    llm_kwargs = get_memory_llm_kwargs_for_model(model, llm_extra)
-    resolved_model = llm_kwargs.pop("model", model)
-    effective_timeout = llm_kwargs.pop("timeout", timeout)
-
-    response = litellm.completion(
-        model=resolved_model,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": _user_prompt(new_fact, candidates)},
-        ],
-        temperature=0.0,
+    text = one_shot_completion_sync(
+        _user_prompt(new_fact, candidates),
+        system_prompt=_SYSTEM_PROMPT,
+        model=model,
         max_tokens=16,
-        timeout=effective_timeout,
-        **llm_kwargs,
+        temperature=0.0,
+        timeout=timeout,
+        llm_extra=llm_extra,
     )
-    return response.choices[0].message.content or ""
+    if text is None:
+        raise RuntimeError("Fact relation LLM returned no content")
+    return text
 
 
 def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:

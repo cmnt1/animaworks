@@ -680,6 +680,9 @@ async def one_shot_completion(
     credential: str = "",
     max_tokens: int = 2048,
     structured_output: bool = False,
+    temperature: float | None = None,
+    timeout: float | None = None,
+    llm_extra: dict[str, object] | None = None,
 ) -> str | None:
     """Execute a one-shot LLM completion with automatic backend selection.
 
@@ -698,11 +701,22 @@ async def one_shot_completion(
             model (structured-output capable), request JSON output via
             ``response_format``. Local / self-hosted models are left on the
             multi-stage (fence → json.loads → json_repair) parsing path.
+        temperature: Optional sampling temperature passed to LiteLLM.
+        timeout: Optional request timeout, overriding any value in ``llm_extra``.
+        llm_extra: Optional memory-specific LiteLLM kwargs, including custom
+            endpoints and credentials.
 
     Returns:
         Generated text, or None if all backends fail.
     """
-    llm_kwargs = get_llm_kwargs_for_model(model, credential=credential)
+    if llm_extra is not None:
+        llm_kwargs = get_memory_llm_kwargs_for_model(model, llm_extra, credential=credential)
+    else:
+        llm_kwargs = get_llm_kwargs_for_model(model, credential=credential)
+    if temperature is not None:
+        llm_kwargs["temperature"] = temperature
+    if timeout is not None:
+        llm_kwargs["timeout"] = timeout
     resolved_model = llm_kwargs["model"]
 
     if structured_output and supports_structured_output(resolved_model):
@@ -777,6 +791,41 @@ async def one_shot_completion(
             logger.warning("Codex SDK one-shot fallback also failed: %s", e)
 
     return None
+
+
+def one_shot_completion_sync(
+    prompt: str,
+    *,
+    system_prompt: str = "",
+    model: str = "",
+    credential: str = "",
+    max_tokens: int = 2048,
+    structured_output: bool = False,
+    temperature: float | None = None,
+    timeout: float | None = None,
+    llm_extra: dict[str, object] | None = None,
+) -> str | None:
+    """Run :func:`one_shot_completion` from a thread without an event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("one_shot_completion_sync cannot run inside an active event loop")
+
+    return asyncio.run(
+        one_shot_completion(
+            prompt,
+            system_prompt=system_prompt,
+            model=model,
+            credential=credential,
+            max_tokens=max_tokens,
+            structured_output=structured_output,
+            temperature=temperature,
+            timeout=timeout,
+            llm_extra=llm_extra,
+        )
+    )
 
 
 async def one_shot_completion_with_model_config(

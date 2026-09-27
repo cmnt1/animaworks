@@ -7,8 +7,6 @@ from unittest.mock import patch
 from core.i18n import t
 from core.memory.priming import PrimingResult, format_priming_section
 from core.paths import load_prompt
-from core.prompt.tool_content import load_guide
-from core.schemas import VALID_EMOTIONS
 from core.prompt.builder import (
     TIER_MICRO,
     _build_emotion_instruction,
@@ -17,6 +15,8 @@ from core.prompt.builder import (
     _build_human_notification_guidance,
     build_system_prompt,
 )
+from core.prompt.tool_content import load_guide
+from core.schemas import VALID_EMOTIONS
 
 
 def _prompt_config(*, threshold: int = 5) -> SimpleNamespace:
@@ -30,6 +30,12 @@ def _prompt_config(*, threshold: int = 5) -> SimpleNamespace:
                 "Basic Profile",
             ],
             skill_catalog_router_enabled=False,
+            skill_catalog_router_top_k=5,
+            skill_catalog_router_min_score=1.15,
+            skill_catalog_router_include_body=True,
+            skill_catalog_router_dense_enabled=True,
+            skill_catalog_router_dense_weight=8.0,
+            skill_catalog_max_items=3,
         )
     )
 
@@ -95,6 +101,26 @@ def test_identity_without_h2_or_with_only_excluded_sections_falls_back_to_origin
     assert _filter_identity_business_sections("No headings here", ["外見"]) == "No headings here"
     identity = "## 外見\nOnly excluded content"
     assert _filter_identity_business_sections(identity, ["外見"]) == identity
+
+
+def test_skill_catalog_router_uses_prompt_schema_defaults_when_config_fails() -> None:
+    from core.config.schemas import PromptConfig
+    from core.prompt.builder import _load_skill_catalog_router_settings, _SkillCatalogRouterSettings
+
+    with patch("core.config.load_config", side_effect=RuntimeError("config unavailable")):
+        settings = _load_skill_catalog_router_settings()
+
+    prompt = PromptConfig()
+    expected = _SkillCatalogRouterSettings(
+        enabled=prompt.skill_catalog_router_enabled,
+        top_k=prompt.skill_catalog_router_top_k,
+        min_score=prompt.skill_catalog_router_min_score,
+        include_body=prompt.skill_catalog_router_include_body,
+        dense_enabled=prompt.skill_catalog_router_dense_enabled,
+        dense_weight=prompt.skill_catalog_router_dense_weight,
+        max_items=prompt.skill_catalog_max_items,
+    )
+    assert settings == expected
 
 
 def test_injection_size_warning_is_only_added_for_consolidation() -> None:

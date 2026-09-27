@@ -15,7 +15,7 @@ from typing import Any
 
 from core.integrations._async_compat import run_sync
 from core.integrations._base import logger
-from core.integrations._retry import retry_on_rate_limit
+from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
 # ── Constants ──────────────────────────────────────────────
 
@@ -82,16 +82,11 @@ class ChatworkClient:
                 return None
             return resp.json()
 
-        def _get_retry_after(exc: Exception) -> float | None:
-            if isinstance(exc, _RateLimitError):
-                return float(exc.retry_after)
-            return None
-
         return retry_on_rate_limit(
             _do_request,
             max_retries=RATE_LIMIT_RETRY_MAX,
             default_wait=RATE_LIMIT_WAIT_DEFAULT,
-            get_retry_after=_get_retry_after,
+            get_retry_after=retry_after_from_attr,
             retry_on=(_RateLimitError,),
         )
 
