@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -49,10 +48,19 @@ def detect_server() -> ServerInfo:
 
 
 def _configure_server_embeddings(server: ServerInfo) -> None:
+    from urllib.parse import urlsplit
+
+    from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
+
     if not server.running:
+        configure_endpoints(RagEndpoints())
         return
-    os.environ.setdefault("ANIMAWORKS_EMBED_URL", f"{server.base_url}/internal/embed")
-    os.environ.setdefault("ANIMAWORKS_RERANK_URL", f"{server.base_url}/internal/rerank")
+    port = urlsplit(server.base_url).port
+    if port is None:
+        from core.config import load_config
+
+        port = load_config().server.port
+    configure_endpoints(RagEndpoints.for_server(port))
 
 
 def _repair_timeout_seconds() -> float:
@@ -107,8 +115,8 @@ def _open_owner_access(
     purpose: str,
     wait_seconds: float,
 ) -> tuple[VectorAccess, Callable[[], None]]:
-    from core.memory.rag.http_store import HttpVectorStore
-    from core.memory.rag.owner_transport import owner_transport
+    from core.memory.rag.vector_client import VectorClient
+    from core.memory.rag.vector_ops import bridge_transport
     from core.supervisor.memory_service import MemoryService
 
     loop = asyncio.new_event_loop()
@@ -123,10 +131,9 @@ def _open_owner_access(
             if service._owner_lock.held:
                 if service._store is None:
                     raise service._open_error or RuntimeError("MemoryService did not open its vector store")
-                result["store"] = HttpVectorStore(
-                    "",
+                result["store"] = VectorClient(
                     anima_name,
-                    transport=owner_transport(service.handle, loop),
+                    transport=bridge_transport(service.handle, loop),
                 )
                 return
             if time.monotonic() >= deadline:
@@ -201,11 +208,11 @@ def open_vector_access(
         return
 
     if server.running:
-        from core.memory.rag.http_store import HttpVectorStore
+        from core.memory.rag.vector_client import VectorClient
 
         access = VectorAccess(
             mode="server",
-            store=HttpVectorStore(f"{server.base_url}/internal/vector", anima_name),
+            store=VectorClient(anima_name, base_url=f"{server.base_url}/internal/vector"),
             _repair=lambda include_shared: request_repair_and_wait(
                 anima_name,
                 include_shared=True,

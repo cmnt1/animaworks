@@ -471,7 +471,7 @@ class MemoryService:
                     self._read_or_empty(collection, lambda: query(collection, embedding, top_k, filter_metadata))
                 )
             }
-        if method == "memory.list_collections_checked":
+        if method == "memory.list_collections":
             listing = getattr(store, "_list_collections_once", store.list_collections)
             return {"collections": list(listing())}
         if method == "memory.get_by_metadata":

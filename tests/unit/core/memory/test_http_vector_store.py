@@ -18,7 +18,7 @@ from core.memory.rag.store import CollectionExistence, Document, SearchResult
 def _make_store(
     base_url: str = "http://localhost:18500/api/internal/vector", anima_name: str = "rin"
 ) -> HttpVectorStore:
-    return HttpVectorStore(base_url=base_url, anima_name=anima_name)
+    return HttpVectorStore(anima_name, base_url=base_url)
 
 
 # ── test_query_returns_search_results ─────────────────────────────
@@ -85,8 +85,7 @@ def test_http_vector_store_read_503_from_vector_worker_fails_soft():
     assert store.query("rin_knowledge", [0.1, 0.2]) == []
     assert store.get_by_metadata("rin_knowledge", {"type": "knowledge"}) == []
     assert store.get_by_ids("rin_knowledge", ["doc1"]) == []
-    assert store.list_collections() == []
-    assert store.list_collections_checked() is None
+    assert store.list_collections() is None
     assert store.collection_exists("rin_knowledge") is CollectionExistence.UNAVAILABLE
 
 
@@ -262,7 +261,7 @@ def test_list_collections():
     assert colls == ["col1", "col2"]
 
 
-def test_list_collections_checked_distinguishes_empty_and_existence():
+def test_list_collections_distinguishes_empty_and_existence():
     mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.json.return_value = {"collections": []}
@@ -271,22 +270,21 @@ def test_list_collections_checked_distinguishes_empty_and_existence():
 
     with patch("httpx.Client", return_value=mock_client):
         store = _make_store()
-        assert store.list_collections_checked() == []
+        assert store.list_collections() == []
         assert store.collection_exists("missing") is CollectionExistence.MISSING
 
     mock_response.json.return_value = {"collections": ["present"]}
     assert store.collection_exists("present") is CollectionExistence.EXISTS
 
 
-def test_list_collections_checked_transport_error_is_unavailable():
+def test_list_collections_transport_error_is_unavailable():
     mock_client = MagicMock()
     mock_client.post.side_effect = httpx.TransportError("connection refused")
     store = _make_store()
     store._client = mock_client
 
-    assert store.list_collections_checked() is None
+    assert store.list_collections() is None
     assert store.collection_exists("missing") is CollectionExistence.UNAVAILABLE
-    assert store.list_collections() == []
 
 
 # ── test_create_collection_and_delete_collection ──────────────────
@@ -328,50 +326,6 @@ def test_delete_collection():
     assert mock_client.post.call_args[0][0] == "/delete-collection"
 
 
-def test_reset_store_posts_owner_and_clears_local_circuit():
-    """reset_store asks the worker to drop cached handles for this anima."""
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"status": "ok"}
-    mock_client.post.return_value = mock_response
-
-    with patch("httpx.Client", return_value=mock_client):
-        store = _make_store()
-        store._write_circuit_retry_at["rin_knowledge"] = 999.0
-        assert store.reset_store() is True
-
-    assert store._write_circuit_retry_at == {}
-    mock_client.post.assert_called_once_with("/reset-store", json={"anima_name": "rin"})
-
-
-def test_reset_store_returns_false_on_old_or_unavailable_worker():
-    """reset_store must not raise when the worker lacks /reset-store."""
-    mock_client = MagicMock()
-    mock_client.post.side_effect = httpx.HTTPError("404 Not Found")
-
-    with patch("httpx.Client", return_value=mock_client):
-        store = _make_store()
-        assert store.reset_store() is False
-
-
-def test_verify_repair_posts_nonce_and_expected_chunks():
-    mock_client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"status": "ok", "collections": 1, "query_results": 1}
-    mock_client.post.return_value = mock_response
-
-    with patch("httpx.Client", return_value=mock_client):
-        store = _make_store()
-        assert store.verify_repair("repair-secret", expected_chunks=3) is True
-
-    mock_client.post.assert_called_once_with(
-        "/verify-repair",
-        json={"anima_name": "rin", "repair_nonce": "repair-secret", "expected_chunks": 3},
-    )
-
-
 # ── test_close ─────────────────────────────────────────────────────
 
 
@@ -399,12 +353,12 @@ def test_circuit_open_logs_once_and_reports_suppressed_on_resume(caplog):
     store = _make_store(anima_name="sora")
     store._write_circuit_retry_at["sora_knowledge"] = 10.0
 
-    with caplog.at_level(logging.INFO, logger="core.memory.rag.http_store"):
-        with patch("core.memory.rag.http_store.time.monotonic", return_value=1.0):
+    with caplog.at_level(logging.INFO, logger="core.memory.rag.vector_client"):
+        with patch("core.memory.rag.vector_client.time.monotonic", return_value=1.0):
             assert store._write_circuit_open("sora_knowledge") is True
             assert store._write_circuit_open("sora_knowledge") is True
             assert store._write_circuit_open("sora_knowledge") is True
-        with patch("core.memory.rag.http_store.time.monotonic", return_value=11.0):
+        with patch("core.memory.rag.vector_client.time.monotonic", return_value=11.0):
             assert store._write_circuit_open("sora_knowledge") is False
 
     messages = [record.getMessage() for record in caplog.records]
@@ -422,12 +376,12 @@ def test_http_failures_are_aggregated_by_path_status_and_collection(caplog):
     store._client.post.return_value = response
 
     with (
-        caplog.at_level(logging.WARNING, logger="core.memory.rag.http_store"),
-        patch("core.memory.rag.http_store.time.monotonic", side_effect=[1.0, 10.0, 70.0]),
+        caplog.at_level(logging.WARNING, logger="core.memory.rag.vector_client"),
+        patch("core.memory.rag.vector_client.time.monotonic", side_effect=[1.0, 10.0, 70.0]),
     ):
-        assert store._post("/query", {}) is None
-        assert store._post("/query", {}) is None
-        assert store._post("/query", {}) is None
+        assert store._http_transport("/query", {}) is None
+        assert store._http_transport("/query", {}) is None
+        assert store._http_transport("/query", {}) is None
 
     messages = [record.getMessage() for record in caplog.records if "HTTP vector request" in record.getMessage()]
     assert len(messages) == 2

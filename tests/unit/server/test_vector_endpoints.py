@@ -47,7 +47,7 @@ from server.routes.internal import create_internal_router
         ),
         ("create-collection", {"collection": "c"}, "memory.create_collection", {"collection": "c"}),
         ("delete-collection", {"collection": "c"}, "memory.delete_collection", {"collection": "c"}),
-        ("list-collections", {}, "memory.list_collections_checked", {}),
+        ("list-collections", {}, "memory.list_collections", {}),
     ],
 )
 async def test_vector_endpoints_forward_to_anima_root(endpoint, body, method, params) -> None:

@@ -21,13 +21,13 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-    from core.memory.rag.http_store import HttpVectorStore, VectorTransport
     from core.memory.rag.store import VectorStore
+    from core.memory.rag.vector_client import VectorClient, VectorTransport
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,13 @@ _lock = threading.Lock()
 _native_ops_lock = threading.Lock()
 _vector_stores: dict[str | None, VectorStore | None] = {}
 _vector_store_init_failed: set[str | None] = set()
-_http_stores: dict[tuple[str, str | None], HttpVectorStore] = {}
+_http_stores: dict[tuple[str, str], VectorClient] = {}
 _owner_transport: VectorTransport | None = None
 _owner_anima: str | None = None
-_owner_stores: dict[str, HttpVectorStore] = {}
+_owner_stores: dict[str, VectorClient] = {}
+_server_send_request: Callable[..., Any] | None = None
+_server_loop = None
+_server_stores: dict[str, VectorClient] = {}
 _embedding_model: SentenceTransformer | None = None
 _embedding_model_name: str | None = None
 _embedding_model_device: str | None = None
@@ -243,25 +246,25 @@ def _vector_store_close_gate(operation: str) -> Iterator[Callable[[Callable[[], 
         )
 
 
-def _get_http_store(base_url: str, anima_name: str | None) -> HttpVectorStore:
-    """Return cached HttpVectorStore for the given base_url and anima_name."""
+def _get_http_store(base_url: str, anima_name: str) -> VectorClient:
+    """Return cached VectorClient for the given base URL and owner."""
     normalized_url = base_url.rstrip("/")
     key = (normalized_url, anima_name)
     if key not in _http_stores:
         with _lock:
             if key not in _http_stores:
-                from core.memory.rag.http_store import HttpVectorStore
+                from core.memory.rag.vector_client import VectorClient
 
-                _http_stores[key] = HttpVectorStore(base_url=normalized_url, anima_name=anima_name)
+                _http_stores[key] = VectorClient(anima_name, base_url=normalized_url)
     return _http_stores[key]
 
 
-def configure_owner_transport(transport: VectorTransport | None, *, anima_name: str | None = None) -> None:
+def configure_owner_vector_access(transport: VectorTransport | None, *, anima_name: str | None = None) -> None:
     """Install the phase3 root's own MemoryService transport.
 
     The root owns the native Chroma handle, so its inbox/tool work uses the
-    owner transport (direct function call) instead of a loop back through
-    HTTP. Children still reach the owner over HTTP.
+    in-process bridge instead of a loop back through HTTP. Children still
+    reach the owner over HTTP.
     """
     global _owner_transport, _owner_anima
 
@@ -271,7 +274,7 @@ def configure_owner_transport(transport: VectorTransport | None, *, anima_name: 
         _owner_stores.clear()
 
 
-def _get_owner_store(anima_name: str | None) -> HttpVectorStore | None:
+def _get_owner_store(anima_name: str) -> VectorClient | None:
     transport = _owner_transport
     if transport is None:
         return None
@@ -281,26 +284,55 @@ def _get_owner_store(anima_name: str | None) -> HttpVectorStore | None:
     if anima_name not in _owner_stores:
         with _lock:
             if anima_name not in _owner_stores:
-                from core.memory.rag.http_store import HttpVectorStore
+                from core.memory.rag.vector_client import VectorClient
 
-                _owner_stores[anima_name] = HttpVectorStore("", anima_name, transport=transport)
+                _owner_stores[anima_name] = VectorClient(anima_name, transport=transport)
     return _owner_stores.get(anima_name)
+
+
+def configure_server_vector_access(send_request: Callable[..., Any] | None, loop: Any = None) -> None:
+    """Configure this server process to forward vector operations to root processes."""
+    global _server_send_request, _server_loop
+    with _lock:
+        _server_send_request = send_request
+        _server_loop = loop if send_request is not None else None
+        _server_stores.clear()
+
+
+def _get_server_store(anima_name: str) -> VectorClient | None:
+    send_request = _server_send_request
+    loop = _server_loop
+    if send_request is None or loop is None:
+        return None
+    if anima_name not in _server_stores:
+        with _lock:
+            if anima_name not in _server_stores:
+                from core.memory.rag.vector_client import VectorClient
+                from core.memory.rag.vector_ops import bridge_transport
+
+                async def send_memory(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return await send_request(anima_name, "memory", {"method": method, "params": params})
+
+                _server_stores[anima_name] = VectorClient(
+                    anima_name,
+                    transport=bridge_transport(send_memory, loop),
+                )
+    return _server_stores.get(anima_name)
 
 
 def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
     """Return process-level singleton VectorStore per anima.
 
-    A phase3 root uses its own in-process owner transport when one is
-    installed; otherwise ``ANIMAWORKS_VECTOR_URL`` (when set) delegates to
-    the server's vector API via ``HttpVectorStore``, and authorized processes
-    open a local store.
+    A phase3 root uses its own in-process bridge when one is installed. The
+    server process forwards through its supervisor, while child processes use
+    the configured vector URL and authorized processes open a local store.
 
     Args:
         anima_name: Anima name for per-anima DB isolation. ``None`` is
             unsupported because shared user memories are no longer indexed.
 
     Returns:
-        VectorStore instance (HttpVectorStore or ChromaVectorStore),
+        VectorStore instance (VectorClient or ChromaVectorStore),
         or ``None`` if no vector backend is available.
     """
     global _direct_disabled_warned, _init_failed, _shared_store_disabled_warned
@@ -312,9 +344,14 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
                 _shared_store_disabled_warned = True
         return None
 
-    vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
+    from core.memory.rag.endpoints import get_endpoints
+
+    vector_url = get_endpoints().vector_url
     if _owner_transport is not None:
         return _get_owner_store(anima_name)
+    server_store = _get_server_store(anima_name)
+    if server_store is not None:
+        return server_store
     if vector_url:
         return _get_http_store(vector_url, anima_name)
 
@@ -907,7 +944,9 @@ def generate_embeddings(
     """
     if not texts:
         return []
-    embed_url = os.environ.get("ANIMAWORKS_EMBED_URL")
+    from core.memory.rag.endpoints import get_endpoints
+
+    embed_url = get_endpoints().embed_url
     if embed_url:
         return _generate_embeddings_http(texts, embed_url, purpose=purpose, priority=priority)
     return _generate_embeddings_local(texts, purpose=purpose, priority=priority)
@@ -985,6 +1024,7 @@ def _reset_for_testing():
     global _bulk_yield_count, _direct_disabled_warned, _shared_store_disabled_warned
     global _embedding_model, _embedding_model_device, _embedding_model_name
     global _init_failed, _interactive_waiters, _owner_transport, _owner_anima, _last_error_reset_monotonic
+    global _server_send_request, _server_loop
     global _vector_store_lifecycle_gate
     from core.infra.gpu import reset_gpu_status_for_testing
 
@@ -998,6 +1038,9 @@ def _reset_for_testing():
         _owner_stores.clear()
         _owner_transport = None
         _owner_anima = None
+        _server_send_request = None
+        _server_loop = None
+        _server_stores.clear()
         _embedding_model = None
         _embedding_model_name = None
         _embedding_model_device = None
@@ -1009,3 +1052,6 @@ def _reset_for_testing():
             _bulk_yield_count = 0
             _priority_condition.notify_all()
         reset_gpu_status_for_testing()
+    from core.memory.rag.endpoints import configure_endpoints
+
+    configure_endpoints(None)

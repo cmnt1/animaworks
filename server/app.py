@@ -662,13 +662,11 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
 
 def _prepare_child_env_urls(app: FastAPI) -> None:
+    from core.memory.rag.endpoints import RagEndpoints, child_env
+
     _embed_config = load_config()
     _server_port = getattr(app.state, "listen_port", getattr(_embed_config.server, "port", 18500))
-    app.state.child_env_urls = {
-        "ANIMAWORKS_EMBED_URL": f"http://127.0.0.1:{_server_port}/api/internal/embed",
-        "ANIMAWORKS_VECTOR_URL": f"http://127.0.0.1:{_server_port}/api/internal/vector",
-        "ANIMAWORKS_RERANK_URL": f"http://127.0.0.1:{_server_port}/api/internal/rerank",
-    }
+    app.state.child_env_urls = child_env(RagEndpoints.for_server(_server_port))
     app.state.supervisor.child_env_urls = app.state.child_env_urls
 
 
@@ -691,6 +689,9 @@ async def _run_startup_initialization(app: FastAPI) -> None:
     app.state.worker_services_ready = False
     try:
         _prepare_child_env_urls(app)
+        from core.memory.rag.singleton import configure_server_vector_access
+
+        configure_server_vector_access(app.state.supervisor.send_request, asyncio.get_running_loop())
 
         preflight_runner = getattr(app.state, "startup_preflight_runner", _startup_default_preflight_runner)
         startup_progress.set_phase("preflight", detail=t("startup.detail_preflight"), reset_counts=True)
@@ -1006,6 +1007,9 @@ async def lifespan(app: FastAPI):
         if governor:
             await governor.stop()
         await app.state.supervisor.shutdown_all()
+        from core.memory.rag.singleton import configure_server_vector_access
+
+        configure_server_vector_access(None)
         from core.paths import get_data_dir as _shutdown_get_data_dir
         from server.internal_auth import remove_operator_token
 

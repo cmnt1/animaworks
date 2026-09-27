@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.http_store import HttpVectorStore
-from core.memory.rag.singleton import _reset_for_testing, configure_owner_transport, get_vector_store
+from core.memory.rag.singleton import _reset_for_testing, configure_owner_vector_access, get_vector_store
 from core.memory.rag.store import ChromaVectorStore
 
 
@@ -34,38 +34,38 @@ def test_returns_http_store_when_env_set():
         assert store._base_url == "http://localhost:18500/api/internal/vector"
 
 
-def test_phase3_owner_transport_wins_for_reads() -> None:
+def test_phase3_bridge_transport_wins_for_reads() -> None:
     """A registered owner transport wins over HTTP and routes local reads."""
     transport = MagicMock(return_value={"collections": []})
-    configure_owner_transport(transport, anima_name="test_anima")
+    configure_owner_vector_access(transport, anima_name="test_anima")
     with patch.dict(os.environ, {"ANIMAWORKS_VECTOR_URL": "http://localhost:18500/api/internal/vector"}):
         store = get_vector_store("test_anima")
 
     assert store is not None
     assert isinstance(store, HttpVectorStore)
-    assert store.list_collections_checked() == []
+    assert store.list_collections() == []
     transport.assert_called()
     # The owner store must scope itself to the registered owner's DB only.
     assert get_vector_store("other_anima") is None
 
 
-def test_phase3_without_owner_transport_uses_http() -> None:
+def test_phase3_without_bridge_transport_uses_http() -> None:
     """Unregistered owner → VECTOR_URL present → HTTP store."""
-    configure_owner_transport(None)
+    configure_owner_vector_access(None)
     with patch.dict(os.environ, {"ANIMAWORKS_VECTOR_URL": "http://localhost:18500/api/internal/vector"}):
         store = get_vector_store("test_anima")
     assert isinstance(store, HttpVectorStore)
     assert store._base_url == "http://localhost:18500/api/internal/vector"
 
 
-def test_owner_transport_without_vector_url_still_works() -> None:
+def test_bridge_transport_without_vector_url_still_works() -> None:
     """The root reaches its own service even when no vector URL is exported."""
     transport = MagicMock(return_value={"collections": []})
-    configure_owner_transport(transport, anima_name="sakura")
+    configure_owner_vector_access(transport, anima_name="sakura")
     store = get_vector_store("sakura")
     assert store is not None
     assert isinstance(store, HttpVectorStore)
-    assert store.list_collections_checked() == []
+    assert store.list_collections() == []
 
 
 def test_returns_none_when_vector_url_and_direct_allow_are_not_set(monkeypatch):
@@ -198,11 +198,13 @@ def test_per_anima_db_failure_does_not_poison_other_animas(monkeypatch):
 
 
 def test_http_store_cache_is_keyed_by_base_url():
-    """Changing vector URLs must not reuse an HttpVectorStore for another worker."""
-    with patch.dict(os.environ, {"ANIMAWORKS_VECTOR_URL": "http://localhost:1111/vector"}):
-        store1 = get_vector_store("test_anima")
-    with patch.dict(os.environ, {"ANIMAWORKS_VECTOR_URL": "http://localhost:2222/vector"}):
-        store2 = get_vector_store("test_anima")
+    """Changing configured vector URLs must not reuse a client for another worker."""
+    from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
+
+    configure_endpoints(RagEndpoints(vector_url="http://localhost:1111/vector"))
+    store1 = get_vector_store("test_anima")
+    configure_endpoints(RagEndpoints(vector_url="http://localhost:2222/vector"))
+    store2 = get_vector_store("test_anima")
 
     assert isinstance(store1, HttpVectorStore)
     assert isinstance(store2, HttpVectorStore)

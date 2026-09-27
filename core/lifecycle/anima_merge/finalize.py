@@ -306,7 +306,10 @@ class AnimaMergeFinalizeService:
         store = create_chroma_vector_store(persist_dir=vectordb, anima_name=self.source)
         removed: list[str] = []
         try:
-            for name in store.list_collections():
+            collections = store.list_collections()
+            if collections is None:
+                return removed
+            for name in collections:
                 if name.startswith(f"{self.source}_") and store.delete_collection(name):
                     removed.append(name)
         finally:

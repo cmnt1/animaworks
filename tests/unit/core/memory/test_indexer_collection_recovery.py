@@ -43,15 +43,8 @@ def _make_indexer(anima_dir: Path):
     # Patch embedding generation to return deterministic vectors
     idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
     idx.vector_store.create_collection.return_value = True
-    idx.vector_store.list_collections_checked.side_effect = lambda: _checked_collections(idx.vector_store)
+    idx.vector_store.list_collections.return_value = []
     return idx
-
-
-def _checked_collections(vector_store):
-    try:
-        return vector_store.list_collections()
-    except Exception:
-        return None
 
 
 class TestCollectionExistenceCache:
@@ -72,9 +65,9 @@ class TestCollectionExistenceCache:
         assert idx._collection_exists("missing") is CollectionExistence.MISSING
 
     def test_listing_failure_is_conservative(self, anima_dir: Path):
-        """When list_collections raises, we should NOT trigger spurious re-index."""
+        """When collection listing is unavailable, do not trigger spurious re-index."""
         idx = _make_indexer(anima_dir)
-        idx.vector_store.list_collections.side_effect = RuntimeError("transient")
+        idx.vector_store.list_collections.return_value = None
         # Be conservative: assume the collection exists rather than
         # forcing a full re-index of everything on a transient error.
         assert idx._collection_exists("any") is CollectionExistence.UNAVAILABLE
@@ -182,8 +175,8 @@ class TestIndexFileCollectionRecovery:
 
         assert idx.index_file(f, "knowledge") > 0
         idx._known_collections = None
-        idx.vector_store.list_collections_checked.side_effect = None
-        idx.vector_store.list_collections_checked.return_value = None
+        idx.vector_store.list_collections.side_effect = None
+        idx.vector_store.list_collections.return_value = None
         idx.vector_store.upsert.reset_mock()
         idx._generate_embeddings.reset_mock()
 
@@ -201,8 +194,8 @@ class TestIndexFileCollectionRecovery:
             file_path.write_text(self._SAMPLE_MD, encoding="utf-8")
             assert idx.index_file(file_path, "knowledge") > 0
         idx._known_collections = None
-        idx.vector_store.list_collections_checked.side_effect = None
-        idx.vector_store.list_collections_checked.return_value = None
+        idx.vector_store.list_collections.side_effect = None
+        idx.vector_store.list_collections.return_value = None
         idx._generate_embeddings.reset_mock()
         idx._reconcile_stale_entries = MagicMock()
 
@@ -308,10 +301,8 @@ class TestIndexConversationSummaryRecovery:
         assert idx.index_conversation_summary(state_dir, "test_anima") == 1
         assert idx._last_index_file_outcome.status == "indexed"
         idx._known_collections = None
-        idx.vector_store.list_collections_checked.side_effect = None
-        idx.vector_store.list_collections_checked.return_value = (
-            ["test_anima_conversation_summary"] if available else None
-        )
+        idx.vector_store.list_collections.side_effect = None
+        idx.vector_store.list_collections.return_value = ["test_anima_conversation_summary"] if available else None
         idx._generate_embeddings.reset_mock()
         idx.vector_store.upsert.reset_mock()
 

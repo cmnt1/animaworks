@@ -184,6 +184,7 @@ class TestLifespan:
 
         mock_scheduler = MagicMock()
         mock_scheduler_cls.return_value = mock_scheduler
+        mock_supervisor.send_request.return_value = {"collections": []}
 
         async def fake_startup_animas(app, *, suppress_errors=True):
             await app.state.supervisor.start_all(app.state.anima_names)
@@ -201,6 +202,18 @@ class TestLifespan:
             async with lifespan(mock_app):
                 await asyncio.wait_for(mock_app.state._anima_startup_task, timeout=1.0)
                 mock_supervisor.start_all.assert_awaited_once_with(["alice"])
+
+                from core.memory.rag.singleton import get_vector_store
+                from core.memory.rag.vector_client import VectorClient
+
+                store = get_vector_store("alice")
+                assert isinstance(store, VectorClient)
+                assert await asyncio.to_thread(store.list_collections) == []
+                mock_supervisor.send_request.assert_awaited_once_with(
+                    "alice",
+                    "memory",
+                    {"method": "memory.list_collections", "params": {}},
+                )
 
         mock_supervisor.shutdown_all.assert_awaited_once()
 

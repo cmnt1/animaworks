@@ -109,23 +109,12 @@ class VectorStore(ABC):
         """
 
     @abstractmethod
-    def list_collections(self) -> list[str]:
-        """List all collection names."""
-
-    def list_collections_checked(self) -> list[str] | None:
-        """List collections without conflating failures with an empty store.
-
-        Returns ``None`` when the backend cannot determine the collection
-        list.  ``[]`` is reserved for a successful read of an empty store.
-        """
-        try:
-            return self.list_collections()
-        except Exception:
-            return None
+    def list_collections(self) -> list[str] | None:
+        """List collection names, or return ``None`` when the result is unavailable."""
 
     def collection_exists(self, name: str) -> CollectionExistence:
         """Return whether a collection exists, is missing, or is unavailable."""
-        collections = self.list_collections_checked()
+        collections = self.list_collections()
         if collections is None:
             return CollectionExistence.UNAVAILABLE
         if name in collections:
@@ -588,8 +577,8 @@ class ChromaVectorStore(VectorStore):
         collections = self.client.list_collections()
         return [c.name for c in collections]
 
-    def list_collections(self) -> list[str]:
-        """List all collections."""
+    def list_collections(self) -> list[str] | None:
+        """List all collections, or return ``None`` when the store is unavailable."""
         try:
             return self._with_self_heal(
                 "list_collections",
@@ -604,7 +593,7 @@ class ChromaVectorStore(VectorStore):
                 self.persist_dir,
                 e,
             )
-            raise
+            return None
 
     def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
         """Verify counts and query every nonempty freshly reopened collection."""
@@ -937,7 +926,10 @@ class ChromaVectorStore(VectorStore):
     def needs_cosine_migration(self) -> list[str]:
         """Return collection names still using L2 (non-cosine) distance."""
         l2_collections: list[str] = []
-        for name in self.list_collections():
+        collections = self.list_collections()
+        if collections is None:
+            return l2_collections
+        for name in collections:
             try:
                 coll = self.client.get_collection(name=name)
                 space = (coll.metadata or {}).get("hnsw:space", "l2")
