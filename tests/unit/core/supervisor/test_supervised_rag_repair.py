@@ -84,6 +84,30 @@ async def test_supervised_rag_repair_repairs_without_stopping_by_default(tmp_pat
     assert state["pid"] is None
 
 
+@pytest.mark.asyncio
+async def test_requested_repair_waits_until_anima_process_is_running(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = _create_enabled_anima(sup)
+    from core.memory.rag import repair_state
+
+    repair_state.write_repair_request_state(
+        "sora",
+        reason="cli_repair",
+        collection=None,
+        source="cli",
+        include_shared=True,
+        animas_dir=sup.animas_dir,
+    )
+    sup._last_rag_repair_poll_at = 0.0
+    sup._read_rag_repair_state = lambda _name: repair_state.read_state("sora", animas_dir=sup.animas_dir)
+
+    await sup._poll_requested_rag_repairs()
+
+    assert repair_state.read_state("sora", animas_dir=sup.animas_dir)["status"] == "requested"
+    assert sup._rag_repairs_in_progress == set()
+    assert anima_dir.is_dir()
+
+
 def test_rag_repair_stop_anima_config_defaults_to_uninterrupted() -> None:
     from core.config.schemas import RAGConfig
 
@@ -240,6 +264,7 @@ async def test_poll_requested_rag_repairs_starts_one_supervised_task(tmp_path: P
         encoding="utf-8",
     )
     sup._rag_repair_poll_interval_seconds = lambda: 0.0
+    sup.processes["sora"] = SimpleNamespace(is_alive=lambda: True)
     started = asyncio.Event()
     calls: list[tuple[str, str]] = []
 
@@ -271,6 +296,8 @@ async def test_poll_requested_rag_repairs_caps_concurrency(tmp_path: Path) -> No
         )
     sup._rag_repair_poll_interval_seconds = lambda: 0.0
     sup._rag_repair_max_concurrent = lambda: 1
+    for name in ("aoi", "rin", "sora"):
+        sup.processes[name] = SimpleNamespace(is_alive=lambda: True)
     started: list[str] = []
 
     async def run_repair(name: str, state: dict[str, object]) -> None:

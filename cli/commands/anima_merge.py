@@ -20,16 +20,6 @@ from core.paths import get_data_dir
 def cmd_anima_merge(args: argparse.Namespace) -> None:
     """Dry-run or execute an Anima merge through its tombstone phase."""
     execute = bool(getattr(args, "execute", False))
-    temp_worker = None
-    if execute:
-        from cli.commands.index_cmd import (
-            _setup_offline_vector_worker_if_needed,
-            _setup_server_delegation,
-            _stop_offline_vector_worker,
-        )
-
-        server_mode = _setup_server_delegation()
-        temp_worker = _setup_offline_vector_worker_if_needed(server_mode)
     service = AnimaMergeService(
         get_data_dir(),
         args.source,
@@ -42,9 +32,6 @@ def cmd_anima_merge(args: argparse.Namespace) -> None:
     except AnimaMergeError as exc:
         print(f"Error: {exc}")
         sys.exit(1)
-    finally:
-        if execute:
-            _stop_offline_vector_worker(temp_worker)
 
     mode = "execute" if execute else "dry-run"
     print(f"Anima merge {mode}: {result.source} → {result.target}")

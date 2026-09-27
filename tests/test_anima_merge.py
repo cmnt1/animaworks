@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -585,50 +586,18 @@ def test_anima_merge_attachments_in_different_subdirectories_do_not_collide(
     }
 
 
-def test_anima_merge_cli_offline_worker_enables_real_get_vector_store_path(
+def test_anima_merge_cli_does_not_start_a_vector_worker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data_dir, _source, _target = _setup_data_dir(tmp_path)
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
-    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
-    monkeypatch.setattr("cli.commands.index_cmd._setup_server_delegation", lambda: False)
-
-    class FakeWorker:
-        stopped = False
-
-        def stop(self) -> None:
-            self.stopped = True
-
-    worker = FakeWorker()
-
-    def start_worker():
-        monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker.test")
-        monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://worker.test/embed")
-        return worker
-
+    _stub_rebuild_substeps(monkeypatch)
     monkeypatch.setattr(
         "core.memory.rag.vector_worker_client.start_temporary_vector_worker",
-        start_worker,
+        Mock(side_effect=AssertionError("CLI must not start a vector worker")),
     )
-    monkeypatch.setattr(
-        AnimaMergeService,
-        "_rebuild_vectordb",
-        lambda self: {"chunks_indexed": 0, "archived_vectordb": None},
-    )
-
-    from core.memory.rag import singleton
-
-    real_get_vector_store = singleton.get_vector_store
-    stores: list[object] = []
-
-    def tracked_get_vector_store(anima_name=None):
-        store = real_get_vector_store(anima_name)
-        stores.append(store)
-        return store
-
-    monkeypatch.setattr(singleton, "get_vector_store", tracked_get_vector_store)
     args = argparse.Namespace(
         source="source",
         target="target",
@@ -640,8 +609,7 @@ def test_anima_merge_cli_offline_worker_enables_real_get_vector_store_path(
 
     cmd_anima_merge(args)
 
-    assert worker.stopped is True
-    assert stores and all(store is not None for store in stores)
+    assert "ANIMAWORKS_VECTOR_URL" not in os.environ
     journal = json.loads((data_dir / "state" / "merge_journal_source_target.json").read_text(encoding="utf-8"))
     substeps = journal["phases"][MergePhase.REBUILD_INDEXES.value]["substeps"]
     assert substeps["entities"]["status"] == "completed"

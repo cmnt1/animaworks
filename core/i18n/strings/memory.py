@@ -85,6 +85,31 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Root memory operation failed",
         "ko": "루트 메모리 작업에 실패했습니다.",
     },
+    "rag.owner_busy": {
+        "ja": "Anima {anima} のベクトルDBは別プロセスが所有しています。",
+        "en": "The vector DB for anima {anima} is owned by another process.",
+        "ko": "Anima {anima}의 벡터 DB를 다른 프로세스가 소유하고 있습니다.",
+    },
+    "rag.cli_root_busy": {
+        "ja": "Anima {anima} の root が停止後もベクトルDBのロックを保持しています。`animaworks stop` 後に再実行してください。",
+        "en": "The root for anima {anima} still holds the vector DB lock while the server is stopped. Run `animaworks stop` and retry.",
+        "ko": "Anima {anima}의 root가 서버 중지 후에도 벡터 DB 잠금을 보유하고 있습니다. `animaworks stop` 후 다시 실행하세요.",
+    },
+    "rag.cli_repair_timeout": {
+        "ja": "Anima {anima} のRAG修復がタイムアウトしました。修復はサーバー側で継続している可能性があります。",
+        "en": "RAG repair for anima {anima} timed out. The server may still be repairing it.",
+        "ko": "Anima {anima}의 RAG 복구 시간이 초과되었습니다. 서버에서 복구가 계속 진행 중일 수 있습니다.",
+    },
+    "rag.cli_server_required": {
+        "ja": "Anima {anima} のrootが稼働中です。サーバー経由の修復を利用できません。",
+        "en": "The root for anima {anima} is running, but server-mediated repair is unavailable.",
+        "ko": "Anima {anima}의 root가 실행 중이지만 서버 경유 복구를 사용할 수 없습니다.",
+    },
+    "rag.cli_rename_repair_queued": {
+        "ja": "Anima名変更後のRAG再構築要求を登録しました。新しいAnimaのroot起動後に実行されます。",
+        "en": "Queued a RAG rebuild after the rename. It will run when the renamed anima's root starts.",
+        "ko": "이름 변경 후 RAG 재구축 요청을 등록했습니다. 새 Anima의 root가 시작된 후 실행됩니다.",
+    },
     "rag.worker_operation_disabled": {
         "ja": "phase3 Animaのvector worker操作は禁止されています: {anima}",
         "en": "Vector worker operation disabled for phase3 anima: {anima}",

@@ -15,7 +15,7 @@ import shutil
 import sqlite3
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -121,9 +121,17 @@ class AnimaMergeService:
         self.state_dir = self.data_dir / "state"
         self.journal_path = self.state_dir / f"merge_journal_{source}_{target}.json"
         self.lock_path = self.state_dir / "anima_merge.lock"
+        self._target_access: ExitStack | None = None
+        self._target_access_value: Any | None = None
 
     def run(self, *, execute: bool = False, resume: bool = False) -> MergeResult:
         """Generate a manifest, or execute the complete merge through tombstone."""
+        try:
+            return self._run(execute=execute, resume=resume)
+        finally:
+            self._close_target_access()
+
+    def _run(self, *, execute: bool = False, resume: bool = False) -> MergeResult:
         if resume and not execute:
             raise AnimaMergeError("--resume requires --execute")
         self._validate_names()
@@ -1075,26 +1083,44 @@ class AnimaMergeService:
         journal.complete_substep(phase, name, artifacts)
         return artifacts
 
-    def _rebuild_vectordb(self) -> dict[str, Any]:
-        from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
+    def _target_vector_access(self) -> Any:
+        if self._target_access_value is not None:
+            return self._target_access_value
+        from core.memory.rag.cli_access import open_vector_access
+        from core.memory.rag.owner_lock import VectorOwnerBusy
 
-        chunks, archive = atomic_rebuild_vectordb(
-            self.target,
-            include_shared=False,
-            anima_dir=self.target_dir,
-        )
+        stack = ExitStack()
+        try:
+            access = stack.enter_context(open_vector_access(self.target, self.target_dir, purpose="merge"))
+        except VectorOwnerBusy as exc:
+            raise AnimaMergeError(f"Target vector owner is busy after merge quiesce: {exc}") from exc
+        if access.mode != "owner":
+            stack.close()
+            raise AnimaMergeError("Target anima remained owned by a running root after merge quiesce")
+        self._target_access = stack
+        self._target_access_value = access
+        return access
+
+    def _close_target_access(self) -> None:
+        stack, self._target_access = self._target_access, None
+        self._target_access_value = None
+        if stack is not None:
+            stack.close()
+
+    def _rebuild_vectordb(self) -> dict[str, Any]:
+        result = self._target_vector_access().repair(include_shared=True)
+        if not result.get("ok", result.get("status") in {"success", "healthy"}):
+            raise AnimaMergeError(f"Vector DB rebuild failed for target '{self.target}': {result}")
+        archive = result.get("archive_path")
         return {
-            "chunks_indexed": chunks,
-            "archived_vectordb": str(archive) if archive is not None else None,
+            "chunks_indexed": result.get("chunks_indexed", 0),
+            "archived_vectordb": archive,
         }
 
     def _target_vector_components(self) -> tuple[Any, Any]:
         from core.memory.rag import MemoryIndexer
-        from core.memory.rag.singleton import get_vector_store
 
-        vector_store = get_vector_store(self.target)
-        if vector_store is None:
-            raise AnimaMergeError(f"Vector store unavailable for target '{self.target}'")
+        vector_store = self._target_vector_access().store
         return vector_store, MemoryIndexer(vector_store, self.target, self.target_dir)
 
     def _rebuild_entities(self) -> dict[str, Any]:
@@ -1383,15 +1409,8 @@ class AnimaMergeService:
     def _probe_index_contains(self, scope: str, target_rel: str) -> bool:
         if scope not in {"knowledge", "episodes", "procedures", "skills"}:
             return False
-        from core.memory.rag.singleton import get_vector_store
-
         try:
-            store = get_vector_store(self.target)
-        except Exception:
-            return False
-        if store is None:
-            return False
-        try:
+            store = self._target_vector_access().store
             results = store.get_by_metadata(f"{self.target}_{scope}", {"source_file": target_rel}, limit=1)
         except Exception:
             return False
@@ -1424,6 +1443,7 @@ class AnimaMergeService:
         return False
 
     def _smoke_check_target(self) -> dict[str, Any]:
+        self._close_target_access()
         if not self._server_running():
             return {
                 "status": "skipped_offline",

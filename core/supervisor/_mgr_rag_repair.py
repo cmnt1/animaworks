@@ -164,6 +164,9 @@ class RAGRepairMixin:
             anima_name = anima_dir.name
             if anima_name in in_progress or anima_name in self._restarting:
                 continue
+            process = self.processes.get(anima_name)
+            if process is None or not process.is_alive():
+                continue
             state = self._read_rag_repair_state(anima_name)
             if state.get("status") == "requested":
                 in_progress.add(anima_name)

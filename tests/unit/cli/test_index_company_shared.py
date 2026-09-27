@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from cli.commands.index_cmd import _index_shared_collections
@@ -16,6 +18,14 @@ def _anima(base: Path, name: str, company: str | None) -> Path:
     payload["process_model"] = "legacy"
     (directory / "status.json").write_text(json.dumps(payload), encoding="utf-8")
     return directory
+
+
+def _open_access_for(stores: dict[str, MagicMock]):
+    @contextmanager
+    def open_access(name: str, *_args, **_kwargs):
+        yield SimpleNamespace(mode="owner", store=stores[name])
+
+    return open_access
 
 
 def _knowledge(base: Path, company: str) -> Path:
@@ -41,14 +51,13 @@ def test_shared_index_targets_each_animas_own_company_only(tmp_path: Path) -> No
     def make_indexer(store, **_kwargs):
         indexer = MagicMock()
         indexer.index_directory.side_effect = lambda directory, label, force=False: (
-            indexed.append((store, directory, label))
-            or IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
+            indexed.append((store, directory, label)) or IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
         )
         return indexer
 
     with (
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=lambda name: stores[name]),
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=_open_access_for(stores)),
         patch("core.memory.rag.MemoryIndexer", side_effect=make_indexer),
     ):
         total = _index_shared_collections([alice, bob, legacy], tmp_path, full=False, dry_run=False)
@@ -67,7 +76,7 @@ def test_company_shared_index_dry_run_does_not_mutate(tmp_path: Path) -> None:
 
     with (
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=_open_access_for({"alice": store})),
         patch("core.memory.rag.MemoryIndexer") as indexer,
     ):
         assert _index_shared_collections([alice], tmp_path, full=False, dry_run=True) == 0
@@ -95,7 +104,7 @@ def test_company_change_delete_failure_preserves_marker_and_hashes(tmp_path: Pat
 
     with (
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=_open_access_for({"alice": store})),
         patch("core.memory.rag.MemoryIndexer") as indexer,
     ):
         assert _index_shared_collections([alice], tmp_path, full=False, dry_run=False) == 0
@@ -128,7 +137,7 @@ def test_company_checked_value_is_reused_for_cli_marker_and_resources(tmp_path: 
 
     with (
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        patch("core.memory.rag.cli_access.open_vector_access", side_effect=_open_access_for({"alice": store})),
         patch("core.memory.rag.MemoryIndexer", side_effect=make_indexer),
     ):
         assert _index_shared_collections([alice], tmp_path, full=False, dry_run=False) == 1

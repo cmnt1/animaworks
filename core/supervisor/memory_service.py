@@ -13,9 +13,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from time import perf_counter
+from time import monotonic, perf_counter
 from typing import Any
 
+from core.memory.rag.owner_lock import VectorOwnerBusy, VectorOwnerLock
 from core.memory.rag.store import Document, SearchResult, VectorStore
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class MemoryService:
         queue_limit: int = 64,
         opener: Callable[[], VectorStore] | None = None,
         repair_fenced: Callable[[], bool] | None = None,
+        owner_label: str = "root",
     ) -> None:
         if queue_limit < 1:
             raise ValueError("queue_limit must be >= 1")
@@ -44,6 +46,8 @@ class MemoryService:
         self.queue_limit = queue_limit
         self._opener = opener or self._open_native_store
         self._repair_fenced = repair_fenced or (lambda: False)
+        self._owner_lock = VectorOwnerLock(anima_dir, owner_label)
+        self._owner_retry_at = 0.0
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"memory-{anima_name}")
         self._store: VectorStore | None = None
         self._open_error: Exception | None = None
@@ -58,8 +62,18 @@ class MemoryService:
         if self._started:
             return
         self._started = True
+        loop = asyncio.get_running_loop()
         try:
-            self._store = await asyncio.get_running_loop().run_in_executor(self._executor, self._opener)
+            await loop.run_in_executor(self._executor, self._owner_lock.acquire)
+        except VectorOwnerBusy as exc:
+            self._open_error = exc
+            self._started = False
+            self._owner_retry_at = monotonic() + 5.0
+            logger.info("Vector store owner is busy for %s; retrying later: %s", self.anima_name, exc)
+            return
+        try:
+            self._store = await loop.run_in_executor(self._executor, self._opener)
+            self._open_error = None
         except Exception as exc:
             self._open_error = exc
             logger.warning("Root memory store open failed for %s: %s", self.anima_name, exc)
@@ -72,8 +86,19 @@ class MemoryService:
         """Run one checked operation or raise an explicit unavailable error."""
         if self._closing:
             raise MemoryServiceUnavailable("memory service is closing")
-        if not self._started:
+        if isinstance(self._open_error, VectorOwnerBusy):
+            if monotonic() >= self._owner_retry_at:
+                await self.start()
+            if isinstance(self._open_error, VectorOwnerBusy):
+                from core.i18n import t
+
+                raise MemoryServiceUnavailable(t("rag.owner_busy", anima=self.anima_name)) from self._open_error
+        elif not self._started:
             await self.start()
+            if isinstance(self._open_error, VectorOwnerBusy):
+                from core.i18n import t
+
+                raise MemoryServiceUnavailable(t("rag.owner_busy", anima=self.anima_name)) from self._open_error
         if self._closing:
             raise MemoryServiceUnavailable("memory service is closing")
         if self._repairing:
@@ -628,10 +653,15 @@ class MemoryService:
             return
         self._closing = True
         store = self._store
+        loop = asyncio.get_running_loop()
         if store is not None:
             try:
-                await asyncio.get_running_loop().run_in_executor(self._executor, store.close)
+                await loop.run_in_executor(self._executor, store.close)
             except Exception:
                 logger.warning("Failed to close root memory store for %s", self.anima_name, exc_info=True)
         self._store = None
+        try:
+            await loop.run_in_executor(self._executor, self._owner_lock.release)
+        except Exception:
+            logger.warning("Failed to release vector owner lock for %s", self.anima_name, exc_info=True)
         self._executor.shutdown(wait=False)

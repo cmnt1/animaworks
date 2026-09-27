@@ -445,12 +445,12 @@ def test_discover_suspect_animas_includes_quick_check_corruption(data_dir: Path,
     ]
 
 
-def test_discover_suspect_animas_does_not_check_phase3_db(data_dir: Path, monkeypatch):
+def test_discover_suspect_animas_includes_phase3_db_in_quick_check(data_dir: Path, monkeypatch):
     anima_dir = data_dir / "animas" / "sora"
     anima_dir.mkdir(parents=True)
     (anima_dir / "identity.md").write_text("# sora", encoding="utf-8")
     (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
-    quick_check = MagicMock()
+    quick_check = MagicMock(return_value=MagicMock(corrupt=False))
     monkeypatch.setattr(
         "core.memory.rag.sqlite_health.check_anima_vectordb_health_via_worker_or_direct",
         quick_check,
@@ -459,7 +459,12 @@ def test_discover_suspect_animas_does_not_check_phase3_db(data_dir: Path, monkey
     suspects = RAGRepairService(enabled=True).discover_suspect_animas(include_logs=False)
 
     assert suspects == []
-    quick_check.assert_not_called()
+    quick_check.assert_called_once_with(
+        "sora",
+        timeout_seconds=10.0,
+        source="startup_quick_check",
+        record_repair=False,
+    )
 
 
 def test_discover_suspect_animas_ignores_signals_before_success(data_dir: Path):
