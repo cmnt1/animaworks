@@ -8,12 +8,12 @@ from __future__ import annotations
 
 Phase 1: activity_log write protection
 Phase 2: min_trust_seen tracking across execution engines
-Phase 3: knowledge origin propagation + consolidation origin chain
+Phase 3: knowledge origin propagation
 """
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -403,139 +403,3 @@ class TestKnowledgeOriginFrontmatter:
         written = (knowledge_dir / "from-sdk.md").read_text(encoding="utf-8")
         assert written.startswith("---")
         assert "origin: external_web" in written
-
-
-# ── Phase 3: consolidation origin chain ───────────────────────
-
-
-class TestConsolidationOriginChain:
-    """ConsolidationEngine respects origin during RAG index updates."""
-
-    def test_has_external_origin_detects_external_web(self, tmp_path):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "external.md").write_text(
-            "---\norigin: external_web\n---\n\n# External Data",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["external.md"]) is True
-
-    def test_has_external_origin_detects_mixed(self, tmp_path):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "mixed.md").write_text(
-            "---\norigin: mixed\n---\n\n# Mixed Data",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["mixed.md"]) is True
-
-    def test_has_external_origin_clean_files_return_false(self, tmp_path):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "clean.md").write_text(
-            "---\nconfidence: 0.8\n---\n\n# Clean Data",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["clean.md"]) is False
-
-    def test_has_external_origin_no_frontmatter_returns_false(self, tmp_path):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-        (knowledge_dir / "legacy.md").write_text(
-            "# Legacy knowledge without frontmatter",
-            encoding="utf-8",
-        )
-        assert engine._has_external_origin_in_files(["legacy.md"]) is False
-
-    def test_has_external_origin_nonexistent_file(self, tmp_path):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        assert engine._has_external_origin_in_files(["nonexistent.md"]) is False
-
-    def test_update_rag_index_downgrades_with_external_source(self, tmp_path):
-        """When source_files contain external origins, origin is downgraded."""
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-
-        (knowledge_dir / "source_ext.md").write_text(
-            "---\norigin: external_web\n---\n\nExternal source data",
-            encoding="utf-8",
-        )
-        (knowledge_dir / "output.md").write_text(
-            "---\nconfidence: 0.8\n---\n\nConsolidated output",
-            encoding="utf-8",
-        )
-
-        mock_indexer = MagicMock()
-        mock_store = MagicMock()
-
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
-        ):
-            engine._update_rag_index(
-                ["output.md"],
-                origin="consolidation",
-                source_files=["source_ext.md"],
-            )
-
-        if mock_indexer.index_file.called:
-            call_kwargs = mock_indexer.index_file.call_args
-            assert call_kwargs[1].get("origin") == "consolidation_external"
-
-    def test_update_rag_index_keeps_consolidation_without_external(self, tmp_path):
-        """When no external sources, origin stays 'consolidation'."""
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(tmp_path, "test")
-        knowledge_dir = tmp_path / "knowledge"
-        knowledge_dir.mkdir(parents=True, exist_ok=True)
-
-        (knowledge_dir / "clean_src.md").write_text(
-            "---\nconfidence: 0.9\n---\n\nClean source",
-            encoding="utf-8",
-        )
-        (knowledge_dir / "output2.md").write_text(
-            "Consolidated output",
-            encoding="utf-8",
-        )
-
-        mock_indexer = MagicMock()
-        mock_store = MagicMock()
-
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
-        ):
-            engine._update_rag_index(
-                ["output2.md"],
-                origin="consolidation",
-                source_files=["clean_src.md"],
-            )
-
-        if mock_indexer.index_file.called:
-            call_kwargs = mock_indexer.index_file.call_args
-            assert call_kwargs[1].get("origin") == "consolidation"
-
-    def test_consolidation_external_is_in_external_origins(self):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        assert "consolidation_external" in ConsolidationEngine._EXTERNAL_ORIGINS
-        assert "external_web" in ConsolidationEngine._EXTERNAL_ORIGINS
-        assert "mixed" in ConsolidationEngine._EXTERNAL_ORIGINS

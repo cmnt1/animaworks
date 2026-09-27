@@ -46,11 +46,6 @@ def load_entity_registry(anima_dir: Path, *, rebuild_on_corrupt: bool = True) ->
         return _load_entity_registry_unlocked(anima_dir, rebuild_on_corrupt=rebuild_on_corrupt)
 
 
-def save_entity_registry(anima_dir: Path, registry: dict[str, Any]) -> None:
-    with _locked_registry(anima_dir):
-        _save_entity_registry_unlocked(anima_dir, registry)
-
-
 def upsert_entities_from_facts(anima_dir: Path, records: list[FactRecord]) -> dict[str, Any]:
     """Upsert fact entities into the authoritative JSON registry."""
     with _locked_registry(anima_dir):

@@ -613,24 +613,3 @@ class TestBuilderResolutionInjection:
         mm = MemoryManager(anima_dir)
         result = build_system_prompt(mm)
         assert "## 解決済み案件（組織横断）" not in result.system_prompt
-
-
-# ── Consolidation resolved events test ────────────────────────
-
-
-class TestConsolidationResolved:
-    """Tests for resolved events in consolidation."""
-
-    def test_collect_resolved_events(self, anima_dir):
-        """_collect_resolved_events returns issue_resolved entries."""
-        from core.memory.activity.logger import ActivityLogger
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        activity = ActivityLogger(anima_dir)
-        activity.log("issue_resolved", content="問題A解決", summary="解決済み")
-        activity.log("response_sent", content="通常応答", summary="応答")
-
-        engine = ConsolidationEngine(anima_dir, "test-dedup")
-        events = engine._collect_resolved_events(hours=24)
-        assert len(events) == 1
-        assert "問題A解決" in events[0]["content"]

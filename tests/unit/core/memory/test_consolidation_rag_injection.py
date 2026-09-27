@@ -1,27 +1,14 @@
+from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
-from __future__ import annotations
-
-"""Unit tests for ConsolidationEngine rag_store injection (Fix N2).
-
-Verifies that when a ``rag_store`` is injected via the constructor,
-``_update_rag_index`` uses the injected store instead of calling the
-``get_vector_store`` singleton.
-
-Note: ``_fetch_related_knowledge`` was removed in the consolidation
-refactor; its tests have been removed accordingly.
-"""
-
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.memory.maintenance.consolidation import ConsolidationEngine
-
-# ── Fixtures ────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -32,98 +19,56 @@ def anima_dir(tmp_path: Path) -> Path:
     return d
 
 
-# ── Constructor Tests ───────────────────────────────────
+def _write_merge_candidates(engine: ConsolidationEngine) -> None:
+    (engine.knowledge_dir / "first.md").write_text("First knowledge.", encoding="utf-8")
+    (engine.knowledge_dir / "second.md").write_text("Second knowledge.", encoding="utf-8")
 
 
 class TestConsolidationRagStoreConstructor:
-    """Tests for rag_store parameter handling in __init__."""
-
-    def test_default_rag_store_is_none(self, anima_dir: Path):
+    def test_default_rag_store_is_none(self, anima_dir: Path) -> None:
         engine = ConsolidationEngine(anima_dir, "test")
         assert engine._rag_store is None
 
-    def test_injected_rag_store_is_stored(self, anima_dir: Path):
+    def test_injected_rag_store_is_stored(self, anima_dir: Path) -> None:
         mock_store = MagicMock()
         engine = ConsolidationEngine(anima_dir, "test", rag_store=mock_store)
         assert engine._rag_store is mock_store
 
-    def test_rag_store_keyword_only(self, anima_dir: Path):
-        """rag_store must be passed as keyword argument."""
+    def test_rag_store_keyword_only(self, anima_dir: Path) -> None:
         mock_store = MagicMock()
-        # Positional should fail since rag_store is keyword-only (after *)
         with pytest.raises(TypeError):
             ConsolidationEngine(anima_dir, "test", mock_store)  # type: ignore[misc]
 
 
-# ── _update_rag_index Tests ─────────────────────────────
-
-
-class TestUpdateRagIndexInjection:
-    """Tests for _update_rag_index using injected vs singleton store."""
-
-    def test_uses_injected_store(self, anima_dir: Path):
-        """When rag_store is injected, get_vector_store should NOT be called."""
+class TestMergeCandidateRagStoreInjection:
+    def test_uses_injected_store(self, anima_dir: Path) -> None:
         mock_store = MagicMock()
         engine = ConsolidationEngine(anima_dir, "test", rag_store=mock_store)
-
-        # Create a test knowledge file
-        (anima_dir / "knowledge" / "test.md").write_text(
-            "test content",
-            encoding="utf-8",
-        )
+        _write_merge_candidates(engine)
 
         with (
-            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
-            patch(
-                "core.memory.rag.vector_registry.get_vector_store",
-            ) as mock_get_vs,
+            patch("core.memory.rag.MemoryIndexer") as mock_indexer,
+            patch("core.memory.rag.retriever.MemoryRetriever") as mock_retriever,
+            patch("core.memory.rag.vector_registry.get_vector_store") as mock_get_store,
         ):
-            mock_indexer_inst = MagicMock()
-            MockIndexer.return_value = mock_indexer_inst
+            mock_retriever.return_value.search.return_value = []
+            assert engine._find_merge_candidates() == []
 
-            engine._update_rag_index(["test.md"])
+        mock_get_store.assert_not_called()
+        mock_indexer.assert_called_once_with(mock_store, "test", anima_dir)
 
-            # Should NOT call get_vector_store since we injected one
-            mock_get_vs.assert_not_called()
-            # Should use the injected store
-            MockIndexer.assert_called_once_with(mock_store, "test", anima_dir)
-            mock_indexer_inst.index_file.assert_called_once()
-
-    def test_falls_back_to_singleton(self, anima_dir: Path):
-        """When rag_store is None, get_vector_store() IS called."""
-        engine = ConsolidationEngine(anima_dir, "test")  # No rag_store
-
-        (anima_dir / "knowledge" / "test.md").write_text(
-            "test content",
-            encoding="utf-8",
-        )
+    def test_falls_back_to_singleton_store(self, anima_dir: Path) -> None:
+        engine = ConsolidationEngine(anima_dir, "test")
+        _write_merge_candidates(engine)
+        singleton_store = MagicMock()
 
         with (
-            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
-            patch(
-                "core.memory.rag.vector_registry.get_vector_store",
-            ) as mock_get_vs,
+            patch("core.memory.rag.MemoryIndexer") as mock_indexer,
+            patch("core.memory.rag.retriever.MemoryRetriever") as mock_retriever,
+            patch("core.memory.rag.vector_registry.get_vector_store", return_value=singleton_store) as mock_get_store,
         ):
-            singleton_store = MagicMock()
-            mock_get_vs.return_value = singleton_store
-            mock_indexer_inst = MagicMock()
-            MockIndexer.return_value = mock_indexer_inst
+            mock_retriever.return_value.search.return_value = []
+            assert engine._find_merge_candidates() == []
 
-            engine._update_rag_index(["test.md"])
-
-            # Should call get_vector_store since no injected store
-            mock_get_vs.assert_called_once_with("test")
-            MockIndexer.assert_called_once_with(
-                singleton_store,
-                "test",
-                anima_dir,
-            )
-
-    def test_noop_when_filenames_empty(self, anima_dir: Path):
-        """When filenames is empty, nothing should happen."""
-        mock_store = MagicMock()
-        engine = ConsolidationEngine(anima_dir, "test", rag_store=mock_store)
-
-        with patch("core.memory.rag.MemoryIndexer") as MockIndexer:
-            engine._update_rag_index([])
-            MockIndexer.assert_not_called()
+        mock_get_store.assert_called_once_with("test")
+        mock_indexer.assert_called_once_with(singleton_store, "test", anima_dir)

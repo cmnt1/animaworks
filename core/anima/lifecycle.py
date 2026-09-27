@@ -358,41 +358,6 @@ class LifecycleMixin:
             duration_ms=hard_timeout * 1000,
         )
 
-    # ── Consolidation helpers ──────────────────────────────────
-
-    def _collect_episodes_summary(self) -> tuple[str, str, str, str]:
-        """Collect recent episodes, resolved events, activity log, and reflections.
-
-        Returns:
-            Tuple of (episodes_summary, resolved_events_summary,
-            activity_log_summary, reflections_summary).
-            If no episodes are found, returns a placeholder message for episodes
-            with empty strings for the other summaries.
-        """
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(self.anima_dir, self.name)
-        episodes = engine._collect_recent_episodes(hours=24)
-        resolved = engine._collect_resolved_events(hours=24)
-        activity_log_summary = engine._collect_activity_entries(hours=24)
-
-        # Format episodes
-        if episodes:
-            episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
-        else:
-            return (t("anima.no_episodes_today"), "", activity_log_summary, "")
-
-        # Extract reflections from episodes
-        reflections_summary = engine._extract_reflections_from_episodes(episodes_summary)
-
-        # Format resolved events
-        if resolved:
-            resolved_events_summary = "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved)
-        else:
-            resolved_events_summary = ""
-
-        return (episodes_summary, resolved_events_summary, activity_log_summary, reflections_summary)
-
     async def run_consolidation(
         self,
         consolidation_type: str = "daily",

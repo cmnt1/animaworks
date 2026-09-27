@@ -95,7 +95,7 @@ def _current_consolidation_helper_model() -> str:
 
 
 class TestProceduralDistillerModelDefault:
-    """ProceduralDistiller.classify_and_distill / weekly_pattern_distill."""
+    """ProceduralDistiller.weekly_pattern_distill."""
 
     @pytest.fixture
     def distiller(self, temp_anima_dir: Path):
@@ -105,32 +105,6 @@ class TestProceduralDistillerModelDefault:
             anima_dir=temp_anima_dir,
             anima_name="test_anima",
         )
-
-    # ── classify_and_distill ─────────────────────────────────
-
-    @pytest.mark.asyncio
-    async def test_classify_and_distill_default_model(self, distiller):
-        """classify_and_distill(model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
-        with (
-            patch(
-                "core.memory._llm_utils.get_consolidation_llm_kwargs",
-                return_value={"model": _LITELLM_TEST_CONSOLIDATION_MODEL},
-            ),
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
-        ):
-            mock_llm.return_value = mock_resp
-            await distiller.classify_and_distill("some episodes")
-            _assert_model_in_acompletion(mock_llm, _LITELLM_TEST_CONSOLIDATION_MODEL)
-
-    @pytest.mark.asyncio
-    async def test_classify_and_distill_explicit_model(self, distiller):
-        """classify_and_distill(model='custom/m') uses that model."""
-        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
-        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
-            mock_llm.return_value = mock_resp
-            await distiller.classify_and_distill("some episodes", model="custom/m")
-            _assert_model_in_acompletion(mock_llm, "custom/m")
 
     # ── weekly_pattern_distill ───────────────────────────────
 

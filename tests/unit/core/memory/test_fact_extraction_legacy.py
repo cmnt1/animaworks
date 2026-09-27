@@ -11,7 +11,6 @@ from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
 from core.memory.facts.extraction import (
     DEFAULT_FACT_CONFIDENCE,
     _resolve_extraction_config,
-    extract_and_store_facts,
     extract_and_store_facts_with_outcome,
     extract_fact_records,
     extract_fact_records_with_outcome,
@@ -399,7 +398,9 @@ def test_facts_extraction_enabled_returns_boolean() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_extract_and_store_facts_with_outcome_appends_and_indexes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     record = FactRecord(
         text="Alice tracks LoCoMo memory scores.",
         source_entity="Alice",
@@ -412,7 +413,7 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
     async def fake_extract(*args, **kwargs):
         calls["extract_args"] = args
         calls["extract_kwargs"] = kwargs
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(anima_dir: Path, records: list[FactRecord]):
         calls["append"] = (anima_dir, records)
@@ -433,13 +434,13 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
     ) -> None:
         calls["index"] = (anima_dir, records, origin, sync_entities, entity_registry, entity_keys, extra_paths)
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_upsert_fact_entities", fake_upsert)
     monkeypatch.setattr(fact_extraction, "_index_fact_records", fake_index)
     monkeypatch.setattr(fact_extraction, "_facts_reconcile_enabled", lambda: False)
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         tmp_path / "alice",
         "Alice tracks LoCoMo memory scores.",
         source_episode="episodes/2026-06-03.md",
@@ -449,7 +450,7 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
         enabled=True,
     )
 
-    assert stored == [record]
+    assert outcome.records == [record]
     assert calls["append"] == (tmp_path / "alice", [record])
     assert calls["upsert"] == (tmp_path / "alice", [record])
     assert calls["index"] == (tmp_path / "alice", [record], "episode", True, None, None, set())
@@ -458,7 +459,7 @@ async def test_extract_and_store_facts_appends_and_indexes(tmp_path: Path, monke
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_skips_registry_when_disabled(
+async def test_extract_and_store_facts_with_outcome_skips_registry_when_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = FactRecord(
@@ -471,7 +472,7 @@ async def test_extract_and_store_facts_skips_registry_when_disabled(
     calls: dict[str, object] = {}
 
     async def fake_extract(*args, **kwargs):
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(anima_dir: Path, records: list[FactRecord]):
         return records
@@ -491,14 +492,14 @@ async def test_extract_and_store_facts_skips_registry_when_disabled(
     ) -> None:
         calls["index"] = (anima_dir, records, origin, sync_entities, entity_registry, entity_keys, extra_paths)
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_entity_registry_enabled", lambda: False)
     monkeypatch.setattr(fact_extraction, "_upsert_fact_entities", fail_upsert)
     monkeypatch.setattr(fact_extraction, "_index_fact_records", fake_index)
     monkeypatch.setattr(fact_extraction, "_facts_reconcile_enabled", lambda: False)
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         tmp_path / "alice",
         "Alice tracks LoCoMo memory scores.",
         source_episode="episodes/2026-06-03.md",
@@ -506,13 +507,13 @@ async def test_extract_and_store_facts_skips_registry_when_disabled(
         enabled=True,
     )
 
-    assert stored == [record]
+    assert outcome.records == [record]
     assert calls["index"] == (tmp_path / "alice", [record], "episode", False, None, None, set())
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_extract_and_store_facts_append_failure_is_non_fatal(
+async def test_extract_and_store_facts_with_outcome_append_failure_is_non_fatal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = FactRecord(
@@ -524,24 +525,23 @@ async def test_extract_and_store_facts_append_failure_is_non_fatal(
     )
 
     async def fake_extract(*args, **kwargs):
-        return [record]
+        return fact_extraction.FactExtractionOutcome([record])
 
     def fake_append(anima_dir: Path, records: list[FactRecord]):
         raise OSError("write failed")
 
-    monkeypatch.setattr(fact_extraction, "extract_fact_records", fake_extract)
+    monkeypatch.setattr(fact_extraction, "extract_fact_records_with_outcome", fake_extract)
     monkeypatch.setattr(fact_extraction, "append_fact_records", fake_append)
     monkeypatch.setattr(fact_extraction, "_facts_reconcile_enabled", lambda: False)
 
-    assert (
-        await extract_and_store_facts(
-            tmp_path / "alice",
-            "Alice tracks LoCoMo memory scores.",
-            source_episode="episodes/2026-06-03.md",
-            enabled=True,
-        )
-        == []
+    outcome = await extract_and_store_facts_with_outcome(
+        tmp_path / "alice",
+        "Alice tracks LoCoMo memory scores.",
+        source_episode="episodes/2026-06-03.md",
+        enabled=True,
     )
+    assert outcome.records == []
+    assert outcome.failed is True
 
 
 @pytest.mark.asyncio

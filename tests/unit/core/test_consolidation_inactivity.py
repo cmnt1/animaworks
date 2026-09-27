@@ -4,13 +4,9 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-
-import pytest
 
 from core.config.schemas import AnimaDefaults, AnimaWorksConfig, ConsolidationConfig
 from core.lifecycle.system_consolidation import (
-    SystemConsolidationMixin,
     has_recent_activity,
     is_consolidation_enabled,
     should_skip_inactive_consolidation,
@@ -107,29 +103,3 @@ def test_status_override_wins_over_disabled_anima_default(tmp_path, monkeypatch)
     monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: config)
 
     assert is_consolidation_enabled(tmp_path) is True
-
-
-@pytest.mark.asyncio
-async def test_system_mixin_daily_and_weekly_skip_inactive_anima(tmp_path, monkeypatch) -> None:
-    (tmp_path / "status.json").write_text("{}", encoding="utf-8")
-    run_consolidation = AsyncMock()
-    anima = SimpleNamespace(
-        memory=SimpleNamespace(anima_dir=tmp_path),
-        run_consolidation=run_consolidation,
-    )
-    runner = SystemConsolidationMixin()
-    runner.animas = {"sleepy": anima}
-    config = SimpleNamespace(
-        consolidation=SimpleNamespace(
-            daily_enabled=True,
-            weekly_enabled=True,
-            inactivity_skip_enabled=True,
-            inactivity_days=7,
-        )
-    )
-    monkeypatch.setattr("core.lifecycle.system_consolidation.load_config", lambda: config)
-
-    await runner._handle_daily_consolidation()
-    await runner._handle_weekly_integration()
-
-    run_consolidation.assert_not_awaited()

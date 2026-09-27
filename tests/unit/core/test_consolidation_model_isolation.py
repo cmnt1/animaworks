@@ -68,23 +68,13 @@ class _FakeEngine:
         self.write_calls.append({"target_date": target_date, "content": consolidated_timeline})
         return self.episodes_dir / f"{target_date}.md"
 
-    async def extract_facts_from_text(self, *args, **kwargs):
-        return 0
+    async def extract_facts_from_text_outcome(self, *args, **kwargs):
+        from core.memory.facts.extraction import FactExtractionOutcome
+
+        return FactExtractionOutcome([])
 
     def _collect_recent_episodes(self, *, hours: int):
         return self.recent_episodes
-
-    def _extract_reflections_from_episodes(self, episodes_summary: str):
-        return ""
-
-    def _collect_resolved_events(self, *, hours: int):
-        return []
-
-    def _collect_error_entries(self, *, hours: int):
-        return ""
-
-    def _list_knowledge_files_with_meta(self):
-        return []
 
     def _find_merge_candidates(self, *, max_pairs: int):
         return []
