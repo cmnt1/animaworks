@@ -3,10 +3,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from scripts.i18n.engine import TranslationResponse
 from scripts.i18n.pipeline import Target, Translator
 from scripts.i18n.protect import protect_text
 from scripts.i18n.segment import split_markdown
+from scripts.i18n.validate import ValidationError, validate_translation
 
 
 class EchoEngine:
@@ -99,34 +102,59 @@ def test_splitter_ignores_hash_lines_inside_fenced_code() -> None:
     assert segments[1].text.startswith("## Second")
 
 
-def test_only_changed_section_is_translated_and_insertions_reuse_other_sections(tmp_path: Path) -> None:
+def _make_ja_translator(tmp_path: Path) -> tuple[Translator, EchoEngine, Path]:
+    """A docs translator whose mock engine turns Japanese fixtures into English."""
+    translations = {
+        "章A": "Section A",
+        "アルファの説明。": "Alpha explanation.",
+        "章B": "Section B",
+        "ベータの説明。": "Beta explanation.",
+        "ベータ改訂。": "Beta revised.",
+        "章C": "Section C",
+        "ガンマの説明。": "Gamma explanation.",
+        "章D": "Section D",
+        "デルタの説明。": "Delta explanation.",
+    }
+
+    def translate(text: str) -> str:
+        for ja, en in translations.items():
+            text = text.replace(ja, en)
+        return text
+
     source_dir = tmp_path / "docs" / "ja"
     source_dir.mkdir(parents=True)
     source = source_dir / "guide.md"
-    source.write_text("# Alpha\nAlpha source.\n\n## Beta\nBeta source.\n\n## Gamma\nGamma source.\n", encoding="utf-8")
-    engine = EchoEngine()
+    engine = EchoEngine(translate)
     translator = _translator(tmp_path, _docs_target(), engine)
+    return translator, engine, source
+
+
+def test_only_changed_section_is_translated_and_insertions_reuse_other_sections(tmp_path: Path) -> None:
+    translator, engine, source = _make_ja_translator(tmp_path)
+    source.write_text(
+        "# 章A\nアルファの説明。\n\n## 章B\nベータの説明。\n\n## 章C\nガンマの説明。\n", encoding="utf-8"
+    )
 
     assert translator.run("docs", requested_langs=["en"]) == 0
     first_call_count = len(engine.calls)
     source.write_text(
-        "# Alpha\nAlpha source.\n\n## Beta\nBeta revised.\n\n## Gamma\nGamma source.\n",
+        "# 章A\nアルファの説明。\n\n## 章B\nベータ改訂。\n\n## 章C\nガンマの説明。\n",
         encoding="utf-8",
     )
     assert translator.run("docs", requested_langs=["en"]) == 0
     assert len(engine.calls) - first_call_count == 1
-    assert "Beta revised." in engine.calls[-1]
-    assert "Alpha source." not in engine.calls[-1]
-    assert "Gamma source." not in engine.calls[-1]
+    assert "ベータ改訂。" in engine.calls[-1]
+    assert "アルファの説明。" not in engine.calls[-1]
+    assert "ガンマの説明。" not in engine.calls[-1]
 
     calls_before_insert = len(engine.calls)
     source.write_text(
-        "# Alpha\nAlpha source.\n\n## Beta\nBeta revised.\n\n## Gamma\nGamma source.\n\n## Delta\nDelta source.\n",
+        "# 章A\nアルファの説明。\n\n## 章B\nベータ改訂。\n\n## 章C\nガンマの説明。\n\n## 章D\nデルタの説明。\n",
         encoding="utf-8",
     )
     assert translator.run("docs", requested_langs=["en"]) == 0
     assert len(engine.calls) - calls_before_insert == 1
-    assert engine.calls[-1].strip() == "## Delta\nDelta source."
+    assert engine.calls[-1].strip() == "## 章D\nデルタの説明。"
 
 
 def test_malformed_batch_retries_each_section_only_once(tmp_path: Path) -> None:
@@ -197,6 +225,126 @@ def test_lost_sentinel_fails_validation_and_uses_fallback(tmp_path: Path) -> Non
     assert "```text\ncode stays byte-identical\n```" in output
     record = translator.manifest["files"]["docs/en/guide.md"]
     assert record["statuses"] == ["translated"]
+
+
+def _compress_translate(translations):
+    """Simulate a model that translates but drops the coalescing blank line
+    between batch sections, so headings come back glued to the previous line."""
+
+    def transform(text: str) -> str:
+        for ja, en in translations.items():
+            text = text.replace(ja, en)
+        parts: list[str] = []
+        for chunk in re.split(r"(⟦§\d+⟧)", text):
+            if not chunk:
+                continue
+            if chunk.startswith("⟦§"):
+                parts.append(chunk)
+            else:
+                parts.append(chunk.strip())
+        return "".join(parts)
+
+    return transform
+
+
+def test_heading_stays_at_line_start_when_model_compresses_section_gaps(tmp_path: Path) -> None:
+    # R22 regression: a model that strips the blank separator line between batch
+    # sections glued the next heading onto the previous paragraph. Boundaries
+    # must be restored from the source so each heading is at line start.
+    source_dir = tmp_path / "docs" / "ja"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "guide.md"
+    source.write_text(
+        "# 章A\nアルファの説明。\n\n## 章B\nベータの説明。\n", encoding="utf-8"
+    )
+    engine = EchoEngine(
+        _compress_translate(
+            {
+                "章A": "Section A",
+                "アルファの説明。": "Alpha explanation.",
+                "章B": "Section B",
+                "ベータの説明。": "Beta explanation.",
+            }
+        )
+    )
+    translator = _translator(tmp_path, _docs_target(), engine)
+
+    assert translator.run("docs", requested_langs=["en"]) == 0
+    output = (tmp_path / "docs" / "en" / "guide.md").read_text(encoding="utf-8")
+    # Each heading is on its own line and the blank line gap matches the source
+    # (the docs target prepends an auto-translation header).
+    assert output.endswith("# Section A\nAlpha explanation.\n\n## Section B\nBeta explanation.\n")
+    assert "\n\n## Section B" in output
+
+
+def test_sections_without_translatable_japanese_are_kept_and_not_sent(tmp_path: Path) -> None:
+    source_dir = tmp_path / "docs" / "ja"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "guide.md"
+    source.write_text(
+        "# 日本語\nこれは説明。\n\n## ASCII Only\nKeep this verbatim 123.\n", encoding="utf-8"
+    )
+    engine = EchoEngine(lambda text: text.replace("これは説明。", "This is an explanation."))
+    translator = _translator(tmp_path, _docs_target(), engine)
+
+    assert translator.run("docs", requested_langs=["en"]) == 0
+    output = (tmp_path / "docs" / "en" / "guide.md").read_text(encoding="utf-8")
+    assert "Keep this verbatim 123." in output
+    # Only the Japanese section reached the model.
+    assert len(engine.calls) == 1
+    assert "ASCII Only" not in engine.calls[-1]
+
+
+def test_validate_rejects_canned_model_response() -> None:
+    source = "# 日本語\nこれは説明。\n"
+    translated = (
+        "Understood. Please provide the Japanese content you would like me to translate into Korean.\n"
+        "# 日本語\nこれは説明。\n"
+    )
+    with pytest.raises(ValidationError, match="canned model response"):
+        validate_translation(source, translated, "en")
+
+
+def test_language_ratio_skipped_for_short_japanese_sections() -> None:
+    # Fewer than 20 visible source characters: ratio thresholds are skipped, so
+    # an English section that keeps a short Japanese example is accepted.
+    source = "# 見出し\nここは短いです。\n"
+    translated = "# Heading\nThis is short. これは例の文章です。\n"
+    validate_translation(source, translated, "en")
+
+
+def test_language_ratio_still_rejects_untranslated_short_section() -> None:
+    source = "# 見出し\nここは短いです。\n"
+    with pytest.raises(ValidationError, match="was not performed"):
+        validate_translation(source, source, "en")
+
+
+def test_language_ratio_fails_for_long_mostly_japanese_section() -> None:
+    source = "# 見出し\n" + "これは長い文章です。" * 10 + "\n"
+    with pytest.raises(ValidationError, match="was not performed"):
+        validate_translation(source, source, "en")
+
+
+def test_language_ratio_excludes_source_shared_japanese_for_korean() -> None:
+    # Japanese usage examples that already appear in the source must not be
+    # counted as untranslated kana in the Korean output.
+    body = "ここに長い日本語の説明文が続きます。" * 8 + "\n"
+    source = "# 日本語ガイド\n" + body + "「手順」の通りに操作します。\n"
+    # Korean output keeps the same Japanese examples verbatim (as the source has
+    # them) while translating the surrounding prose into Hangul.
+    translated = (
+        "# 한국어 가이드\n"
+        "여기에 긴 한국어 설명문이 계속됩니다." * 8 + "\n"
+        "「手順」의 대로 조작합니다.\n"
+    )
+    validate_translation(source, translated, "ko")
+
+
+def test_language_ratio_rejects_korean_output_without_hangul() -> None:
+    source = "# 見出し\n" + "これは長い文章です。" * 10 + "\n"
+    translated = source  # stays Japanese (kana), no Hangul
+    with pytest.raises(ValidationError):
+        validate_translation(source, translated, "ko")
 
 
 def test_check_detects_source_changes(tmp_path: Path) -> None:

@@ -23,6 +23,31 @@ _KANA_RE = re.compile(r"[ぁ-んァ-ン]")
 _HANGUL_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
 _ALLOWED_FRONTMATTER_KEYS = {"description", "title", "summary"}
 
+# Minimum amount of visible source Japanese below which the ratio thresholds are
+# skipped to avoid false failures on short, example-laden sections. An
+# essentially-unchanged (all-Japanese) output is still rejected regardless.
+_SHORT_JA_THRESHOLD = 20
+# Relaxed language-ratio thresholds (target-language presence per plan).
+_EN_JA_RATIO = 0.05
+_KO_KANA_RATIO = 0.05
+_KO_HANGUL_RATIO = 0.02
+# A translation that is still mostly Japanese pad is treated as not performed.
+_NOT_PERFORMED_RATIO = 0.5
+
+_BOILERPLATE_PHRASES = (
+    "understood",
+    "please provide",
+    "i'd be happy",
+    "i would be happy",
+    "here is",
+    "here's",
+    "sure,",
+    "certainly,",
+    "以下は翻訳",
+    "번역 결과",
+    "번역이 완료",
+)
+
 
 def _code_blocks(text: str) -> list[str]:
     return [match.group(0) for match in _FENCE_RE.finditer(text)]
@@ -64,22 +89,62 @@ def _visible(text: str) -> str:
     return text
 
 
+def has_translatable_japanese(text: str) -> bool:
+    """Return True when the section carries visible Japanese prose worth translating."""
+    return bool(_JAPANESE_RE.search(_visible(text)))
+
+
+def _check_boilerplate(translated: str) -> None:
+    head = re.sub(r"^\s+", "", translated)[:60].lower()
+    for phrase in _BOILERPLATE_PHRASES:
+        if head.startswith(phrase):
+            raise ValidationError("Output begins with a canned model response instead of a translation")
+
+
+def _count_visible_japanese(text: str) -> int:
+    return len(_JAPANESE_RE.findall(_visible(text)))
+
+
 def _check_language(source_visible: str, translated_visible: str, lang: str) -> None:
+    source_visible = _visible(source_visible)
+    translated_visible = _visible(translated_visible)
     if not _JAPANESE_RE.search(source_visible):
         return
     letters = [char for char in translated_visible if char.isalpha()]
     if not letters:
         raise ValidationError(f"Translation to {lang} contains no readable text")
-    japanese_ratio = sum(bool(_JAPANESE_RE.fullmatch(char)) for char in letters) / len(letters)
-    if lang == "en" and japanese_ratio >= 0.02:
-        raise ValidationError(f"English output contains too much Japanese text ({japanese_ratio:.1%})")
-    if lang == "ko":
+
+    # Japanese characters that already appear in the source (usage examples,
+    # quotes, protected fragments) are expected to survive; exclude them from
+    # the translated-side ratio instead of penalising a legitimate output.
+    source_ja = set(_JAPANESE_RE.findall(source_visible))
+    ja_only = [char for char in letters if _JAPANESE_RE.fullmatch(char) and char not in source_ja]
+    japanese_ratio = len(ja_only) / len(letters) if letters else 0.0
+
+    short = _count_visible_japanese(source_visible) < _SHORT_JA_THRESHOLD
+    # An output that is still essentially all Japanese was never translated
+    # (an unchanged copy keeps the source characters even after excluding
+    # source-shared ones); reject it even for short sections.
+    all_ja = sum(1 for char in letters if _JAPANESE_RE.fullmatch(char))
+    raw_japanese_ratio = all_ja / len(letters) if letters else 0.0
+    if raw_japanese_ratio >= _NOT_PERFORMED_RATIO:
+        raise ValidationError(f"Translation to {lang} was not performed (Japanese ratio {raw_japanese_ratio:.1%})")
+    if short:
+        return
+
+    if lang == "en":
+        if japanese_ratio >= _EN_JA_RATIO:
+            raise ValidationError(f"English output contains too much Japanese text ({japanese_ratio:.1%})")
+    elif lang == "ko":
         kana_ratio = sum(bool(_KANA_RE.fullmatch(char)) for char in letters) / len(letters)
         hangul_ratio = sum(bool(_HANGUL_RE.fullmatch(char)) for char in letters) / len(letters)
-        if kana_ratio >= 0.02:
+        if kana_ratio >= _KO_KANA_RATIO:
             raise ValidationError(f"Korean output contains too much kana ({kana_ratio:.1%})")
-        if hangul_ratio < 0.05:
+        if hangul_ratio < _KO_HANGUL_RATIO:
             raise ValidationError(f"Korean output contains too little Hangul ({hangul_ratio:.1%})")
+    elif lang == "zh":
+        if japanese_ratio >= _EN_JA_RATIO:
+            raise ValidationError(f"Chinese output contains too much Japanese text ({japanese_ratio:.1%})")
 
 
 def validate_translation(
@@ -129,6 +194,7 @@ def validate_translation(
     if errors:
         raise ValidationError("; ".join(errors))
 
+    _check_boilerplate(translated_visible if translated_visible is not None else translated)
     _check_language(
         source_visible if source_visible is not None else _visible(source),
         translated_visible if translated_visible is not None else _visible(translated),
