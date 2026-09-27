@@ -16,7 +16,6 @@ import pytest
 from core.agent.session_compactor import (
     SessionCompactor,
     _compact_mode_a,
-    _compact_mode_b,
     _compact_mode_c,
     _compact_mode_s,
     _extract_recent_chat_context,
@@ -490,21 +489,6 @@ class TestModeSpecificCompaction:
             assert "Turn 4" in saved_state.accumulated_response
             assert "Turn 0" not in saved_state.accumulated_response
             assert "Turn 1" not in saved_state.accumulated_response
-
-    @pytest.mark.asyncio
-    async def test_compact_mode_b_delegates_to_mode_a(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """_compact_mode_b delegates to _compact_mode_a."""
-        with patch("core.agent.session_compactor._compact_mode_a", new_callable=AsyncMock) as mock_a:
-            mock_a.return_value = {"compression_performed": False}
-
-            anima = MagicMock()
-            anima.anima_dir = anima_dir
-            anima.agent.model_config = model_config
-
-            result = await _compact_mode_b(anima, "default")
-
-            mock_a.assert_awaited_once_with(anima, "default")
-            assert result == {"compression_performed": False}
 
     @pytest.mark.asyncio
     async def test_compact_mode_c_calls_compress_shortterm_clear_finalize(

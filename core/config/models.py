@@ -46,8 +46,8 @@ def resolve_context_window(model_name: str, *args: object, **kwargs: object) -> 
 
 from core.config.model_mode import (
     _LEGACY_MODE_MAP,
+    CANONICAL_MODES,
     DEFAULT_MODEL_MODE_PATTERNS,
-    DEFAULT_MODEL_MODES,
     KNOWN_MODELS,
     _load_models_json,
     _match_models_json,

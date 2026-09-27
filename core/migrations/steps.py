@@ -1847,6 +1847,87 @@ def step_phase_b_removal_20260927(data_dir: Path, dry_run: bool, verbose: bool) 
     return StepResult(changed=changed, skipped=skipped, details=details)
 
 
+def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Map retired Mode B values to canonical Mode A in config and status files."""
+    del verbose
+    details: list[str] = []
+    changed_files = 0
+
+    def _map_record(record: dict[str, Any]) -> bool:
+        changed = False
+        for key in ("execution_mode", "resolved_mode"):
+            value = record.get(key)
+            if isinstance(value, str) and value.strip().lower() in {"b", "basic"}:
+                record[key] = "A"
+                changed = True
+
+        fallback_models = record.get("fallback_models")
+        if isinstance(fallback_models, list):
+            for index, fallback in enumerate(fallback_models):
+                if not isinstance(fallback, str):
+                    continue
+                leading = len(fallback) - len(fallback.lstrip())
+                value = fallback[leading:]
+                if value[:2].lower() == "b:":
+                    fallback_models[index] = f"{fallback[:leading]}a:{value[2:]}"
+                    changed = True
+        return changed
+
+    try:
+        config_path = data_dir / "config.json"
+        if config_path.is_file():
+            config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            if isinstance(config, dict):
+                config_changed = False
+                for key in ("anima_defaults", "animas"):
+                    section = config.get(key)
+                    if isinstance(section, dict):
+                        records = section.values() if key == "animas" else (section,)
+                        for record in records:
+                            if isinstance(record, dict):
+                                config_changed = _map_record(record) or config_changed
+                model_modes = config.get("model_modes")
+                if isinstance(model_modes, dict):
+                    for pattern, mode in model_modes.items():
+                        if isinstance(mode, str) and mode.strip().lower() in {"b", "basic"}:
+                            model_modes[pattern] = "A"
+                            config_changed = True
+                if config_changed:
+                    if dry_run:
+                        details.append("Would map retired Mode B values to A in config.json")
+                    else:
+                        config_path.write_text(
+                            json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                        details.append("Mapped retired Mode B values to A in config.json")
+                    changed_files += 1
+
+        for anima_dir in _iter_anima_dirs(data_dir):
+            status_path = anima_dir / "status.json"
+            if not status_path.is_file():
+                continue
+            status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(status, dict) or not _map_record(status):
+                continue
+            if dry_run:
+                details.append(f"Would map retired Mode B values to A in {status_path.relative_to(data_dir)}")
+            else:
+                status_path.write_text(
+                    json.dumps(status, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                details.append(f"Mapped retired Mode B values to A in {status_path.relative_to(data_dir)}")
+            changed_files += 1
+
+        if not details:
+            details.append("No retired Mode B values found")
+        return StepResult(changed=changed_files, skipped=0 if changed_files else 1, details=details)
+    except Exception as exc:
+        logger.exception("step_retired_mode_to_a failed")
+        return StepResult(changed=changed_files, skipped=0, details=details, error=str(exc))
+
+
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
     steps = [
@@ -2078,6 +2159,12 @@ def register_all_steps(runner: Any) -> None:
             "Drop Phase B knowledge mutation settings and carryover state",
             "structural",
             step_phase_b_removal_20260927,
+        ),
+        MigrationStep(
+            "retired_mode_to_a",
+            "Map retired execution mode B to A in config.json and status.json",
+            "structural",
+            step_retired_mode_to_a,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

@@ -179,10 +179,12 @@ def register_models_command(subparsers: argparse._SubParsersAction) -> None:
 
     # models list
     p_list = models_sub.add_parser("list", help="List known models")
+    from core.config.model_mode import CANONICAL_MODES
+
     p_list.add_argument(
         "--mode",
         default=None,
-        choices=["S", "A", "B", "C", "D", "G", "X", "s", "a", "b", "c", "d", "g", "x"],
+        choices=[*sorted(CANONICAL_MODES), *(mode.lower() for mode in sorted(CANONICAL_MODES))],
         help="Filter by execution mode",
     )
     p_list.add_argument(
