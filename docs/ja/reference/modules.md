@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 4501d03dd85b4e87d453bc16df2f6a47172f6f6e4fec1398d3c8aa1e7fc680e7 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 08e1fd7c9fe43aec0a0aa69b44aa100a658bd32f63a93df83dfa361fbcb41a6c -->
 
 # モジュール一覧
 
@@ -136,6 +136,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.messaging` | 1694 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
+| `core.anima.skills_check` | 15 | — |
 
 ## `core.auth`
 
@@ -295,7 +296,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.i18n.strings.misc` | 536 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 12 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
-| `core.i18n.strings.server` | 273 | Domain-specific i18n strings. |
+| `core.i18n.strings.server` | 285 | Domain-specific i18n strings. |
 | `core.i18n.strings.supervisor` | 91 | Domain-specific i18n strings. |
 | `core.i18n.strings.tmp` | 74 | — |
 | `core.i18n.strings.tooling` | 111 | Domain-specific i18n strings (tool prompts and tooling). |
@@ -426,7 +427,7 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 906 | — |
+| `core.mcp.server` | 907 | — |
 | `core.mcp.trigger_tools` | 84 | — |
 
 ## `core.memory`
@@ -717,6 +718,7 @@ anima 間および外部とのメッセージ配送。
 | `core.org` | 6 | — |
 | `core.org.company` | 1217 | Company membership and cross-company boundary helpers. |
 | `core.org.company_resources` | 86 | — |
+| `core.org.hierarchy` | 39 | — |
 | `core.org.org_sync` | 552 | — |
 | `core.org.workspace` | 234 | — |
 
@@ -916,7 +918,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.handler_skills` | 766 | — |
 | `core.tooling.handler_subordinate_control` | 417 | — |
 | `core.tooling.handler_workspace` | 254 | — |
-| `core.tooling.org_helpers` | 159 | — |
+| `core.tooling.org_helpers` | 154 | — |
 | `core.tooling.permissions` | 332 | — |
 | `core.tooling.schemas.admin` | 238 | — |
 | `core.tooling.schemas.builder` | 253 | — |
@@ -988,7 +990,7 @@ LLM 利用量とコストの記録・集計。
 | `server` | 7 | — |
 | `server.app` | 1458 | — |
 | `server.events` | 56 | — |
-| `server.internal_auth` | 143 | — |
+| `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
 | `server.reload_manager` | 115 | — |
 | `server.room_manager` | 540 | Meeting room lifecycle, orchestration, and minutes generation. |
@@ -1034,7 +1036,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_ws_effects` | 55 | — |
 | `server.routes.config_routes` | 523 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 907 | — |
+| `server.routes.internal` | 1014 | — |
 | `server.routes.logs_routes` | 213 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 459 | — |
