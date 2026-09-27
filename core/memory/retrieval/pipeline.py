@@ -56,6 +56,7 @@ class RetrievalPipeline:
         temporal_boost: TemporalBoostConfig | None = None,
         entity_boost: EntityBoostConfig | None = None,
         access_boost: AccessBoostConfig | None = None,
+        anima_name: str | None = None,
     ) -> PipelineResult:
         """Merge, rerank, and mark candidates by confidence."""
         non_empty = [lst for lst in ranked_lists if lst]
@@ -93,7 +94,7 @@ class RetrievalPipeline:
         if entity_boost is not None and used_rerank:
             candidates = apply_entity_boost(query, candidates, entity_boost)
         if access_boost is not None:
-            candidates = apply_access_boost(candidates, access_boost)
+            candidates = apply_access_boost(candidates, access_boost, anima_name=anima_name)
         candidates = candidates[:limit]
 
         threshold = confidence_threshold if used_rerank else rrf_confidence_threshold

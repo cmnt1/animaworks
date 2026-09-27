@@ -1740,6 +1740,35 @@ def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: boo
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Drop the retired rag.max_graph_hops setting from config.json."""
+    del verbose
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["config.json not found; skip"])
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(config, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+        rag = config.get("rag")
+        if rag is None:
+            return StepResult(changed=0, skipped=1, details=["No rag section; skip"])
+        if not isinstance(rag, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json rag section is not an object"])
+        if "max_graph_hops" not in rag:
+            return StepResult(changed=0, skipped=1, details=["rag.max_graph_hops not found; skip"])
+        if dry_run:
+            return StepResult(changed=1, skipped=0, details=["Would drop rag.max_graph_hops"])
+
+        del rag["max_graph_hops"]
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return StepResult(changed=1, skipped=0, details=["Dropped rag.max_graph_hops"])
+    except Exception as exc:
+        logger.exception("step_priming_config_cleanup_20260927 failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_update_version(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """No-op step for display; version update is handled by runner."""
     return StepResult(changed=1, skipped=0, details=["migration_state.json"])
@@ -1967,6 +1996,12 @@ def register_all_steps(runner: Any) -> None:
             "Drop housekeeping.hygiene_grace_days and hygiene first_seen state",
             "structural",
             step_memory_maintenance_config_cleanup_20260927,
+        ),
+        MigrationStep(
+            "priming_config_cleanup_20260927",
+            "Drop rag.max_graph_hops",
+            "structural",
+            step_priming_config_cleanup_20260927,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

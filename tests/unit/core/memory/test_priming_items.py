@@ -232,8 +232,12 @@ async def test_prime_memories_selects_items_within_single_budget(tmp_path: Path,
     # Items are selected whole by rank, emitted intact (never "..."-truncated).
     assert estimate_tokens(result.related_knowledge) <= 160
     assert "..." not in result.related_knowledge
-    emitted = [item.rank for item in result.items.get("related_knowledge", ())]
-    assert emitted == sorted(emitted, reverse=True)
+    emitted = sorted(
+        (item for item in knowledge_items if item.text in result.related_knowledge),
+        key=lambda item: result.related_knowledge.index(item.text),
+    )
+    emitted_ranks = [item.rank for item in emitted]
+    assert emitted_ranks == sorted(emitted_ranks, reverse=True)
 
 
 @pytest.mark.asyncio
@@ -278,9 +282,48 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
 
     # Only the highest-rank item fits; the whole pointer is kept, never split.
     assert result.related_knowledge == high.text
-    assert result.items["related_knowledge"] == (high,)
+    assert high.text in result.related_knowledge
     assert low.text not in result.related_knowledge
     assert "..." not in result.related_knowledge
+
+
+@pytest.mark.asyncio
+async def test_full_profile_shares_budget_by_channel_priority(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = tmp_path / "animas" / "mei"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "episodes").mkdir()
+    engine = PrimingEngine(anima_dir)
+    large = "知" * 5000
+    notifications = "通知内容"
+
+    async def filled(*args, **kwargs):
+        return large
+
+    async def related(*args, **kwargs):
+        return large, large
+
+    async def pending_notifications(*args, **kwargs):
+        return notifications
+
+    monkeypatch.setattr(engine, "_channel_a_sender_profile", filled)
+    monkeypatch.setattr(engine, "_channel_b_recent_activity", filled)
+    monkeypatch.setattr(engine, "_channel_c0_important_knowledge", filled)
+    monkeypatch.setattr(engine, "_channel_c_related_knowledge", related)
+    monkeypatch.setattr(engine, "_channel_e_pending_tasks", filled)
+    monkeypatch.setattr(engine, "_collect_recent_outbound", filled)
+    monkeypatch.setattr(engine, "_channel_f_episodes", filled)
+    monkeypatch.setattr(engine, "_collect_pending_human_notifications", pending_notifications)
+    monkeypatch.setattr(engine, "_graph_context_enabled", lambda: True)
+    monkeypatch.setattr(engine, "_channel_g_graph_context", filled)
+
+    result = await engine.prime_memories("query", profile="full", max_tokens=500)
+
+    assert result.estimated_tokens() - estimate_tokens(result.pending_human_notifications) <= 500
+    assert result.sender_profile
+    assert result.pending_tasks
+    assert result.recent_outbound
+    assert not result.episodes
+    assert not result.graph_context
 
 
 async def empty_pair() -> tuple[str, str]:

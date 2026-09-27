@@ -210,7 +210,7 @@ def test_spreading_activation(temp_knowledge_dir):
     ]
 
     # Expand with spreading activation
-    expanded = graph_builder.expand_search_results(initial_results, max_hops=2)
+    expanded = graph_builder.expand_search_results(initial_results)
 
     # Check that results were expanded
     assert len(expanded) > len(initial_results)
@@ -263,7 +263,7 @@ def test_expand_results_real_content(temp_knowledge_dir):
         )
     ]
 
-    expanded = graph_builder.expand_search_results(initial_results, max_hops=2)
+    expanded = graph_builder.expand_search_results(initial_results)
 
     # Activated nodes should contain real file content, not placeholder
     for result in expanded[1:]:  # Skip first (original)
@@ -446,7 +446,7 @@ def test_spreading_activation_with_episodes(temp_anima_dir):
         )
     ]
 
-    expanded = graph_builder.expand_search_results(initial_results, max_hops=2)
+    expanded = graph_builder.expand_search_results(initial_results)
 
     # Should have more results than initial
     assert len(expanded) > len(initial_results)
@@ -487,7 +487,7 @@ def test_episode_doc_id_in_expansion(temp_anima_dir):
         )
     ]
 
-    expanded = graph_builder.expand_search_results(initial_results, max_hops=2)
+    expanded = graph_builder.expand_search_results(initial_results)
 
     for result in expanded[1:]:
         mt = result.metadata.get("memory_type", "")
@@ -614,7 +614,6 @@ class _MockConfig:
         enable_spreading_activation = True
         spreading_memory_types = ["knowledge", "episodes"]
         implicit_link_threshold = 0.75
-        max_graph_hops = 2
 
     rag = _RAG()
 
@@ -626,7 +625,6 @@ class _MockConfigDisabled:
         enable_spreading_activation = False
         spreading_memory_types = ["knowledge", "episodes"]
         implicit_link_threshold = 0.75
-        max_graph_hops = 2
 
     rag = _RAG()
 
@@ -904,7 +902,7 @@ def test_expand_results_no_content_unavailable(temp_anima_dir):
         )
     ]
 
-    expanded = graph_builder.expand_search_results(initial_results, max_hops=2)
+    expanded = graph_builder.expand_search_results(initial_results)
 
     for result in expanded:
         assert "[Content unavailable" not in result.content

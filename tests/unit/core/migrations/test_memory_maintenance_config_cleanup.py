@@ -59,4 +59,4 @@ def test_cleanup_is_registered_after_engine_timeout_cleanup_and_before_version(t
     ids = [step["id"] for step in runner.list_steps()]
 
     assert ids.index("engine_timeout_config_cleanup") + 1 == ids.index("memory_maintenance_config_cleanup_20260927")
-    assert ids.index("memory_maintenance_config_cleanup_20260927") + 1 == ids.index("update_version")
+    assert ids.index("memory_maintenance_config_cleanup_20260927") < ids.index("update_version")

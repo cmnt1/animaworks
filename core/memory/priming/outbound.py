@@ -21,6 +21,7 @@ from core.time_utils import ensure_aware, now_local
 logger = logging.getLogger("animaworks.priming")
 
 _HUMAN_NOTIFY_BUDGET_TOKENS = 500
+HUMAN_NOTIFICATION_CHANNELS: frozenset[str] = frozenset({"chat", "heartbeat"})
 
 
 def _timestamp_rank(value: str) -> float:
@@ -96,9 +97,9 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
     """Collect recent call_human notifications for context injection.
 
     Returns formatted string of human_notify entries from last 24 hours.
-    Only active for chat, heartbeat, and message: sessions.
+    Only active for chat and heartbeat sessions.
     """
-    if channel not in ("chat", "heartbeat") and not channel.startswith("message:"):
+    if channel not in HUMAN_NOTIFICATION_CHANNELS:
         return ""
 
     from core.memory.activity.logger import ActivityLogger
@@ -110,7 +111,7 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
         return ""
 
     items: list[MemoryItem] = []
-    header = "## Pending Human Notifications (last 24h)"
+    header = t("priming.pending_human_notifications_header")
 
     for entry in reversed(entries):
         ts = entry.ts[:16]

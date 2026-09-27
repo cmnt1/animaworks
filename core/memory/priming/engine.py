@@ -48,11 +48,13 @@ from core.memory.priming.constants import (
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
+from core.prompt.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
 
-_IMPORTANT_HEADER = "### [IMPORTANT] Knowledge (summary pointers)"
-_NOTIFICATIONS_HEADER = "## Pending Human Notifications (last 24h)"
+_BUDGET_SENDER_PROFILE = 400
+_BUDGET_PENDING_TASKS = 500
+_BUDGET_RECENT_OUTBOUND = 250
 
 # TTL (seconds) before a failed MemoryBackend init is retried once.  Prevents a
 # transient failure from permanently disabling graph/episode priming.
@@ -75,16 +77,13 @@ class PrimingEngine:
         self,
         anima_dir: Path,
         shared_dir: Path | None = None,
-        context_window: int = 0,
     ) -> None:
         self.anima_dir = anima_dir
         self.shared_dir = shared_dir
-        self.context_window = context_window
         self.episodes_dir = anima_dir / "episodes"
         self.knowledge_dir = anima_dir / "knowledge"
         self._retriever_cache = RetrieverCache()
         self._retriever: Any | None = None
-        self._retriever_initialized = False
         self._config_loaded = False
         self._channel_timeout_seconds = 60.0
         self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
@@ -309,7 +308,7 @@ class PrimingEngine:
         pending_tasks, pending_task_items = unpack_itemized(results["E"])
         recent_outbound, outbound_items = unpack_itemized(results["outbound"])
         episodes, episode_items = unpack_itemized(results["F"])
-        pending_human_notifications, notification_items = unpack_itemized(results["pending_human_notifications"])
+        pending_human_notifications, _ = unpack_itemized(results["pending_human_notifications"])
         graph_value = results.get("G", "")
         graph_context = graph_value if isinstance(graph_value, str) else ""
 
@@ -323,59 +322,111 @@ class PrimingEngine:
         b_dates = {item.updated[:10] for item in recent_activity_items if item.updated}
         episode_items = tuple(_channel_f.exclude_episodes_for_dates(list(episode_items), b_dates))
 
-        final_items: dict[str, tuple[MemoryItem, ...]] = {}
+        remaining = max(0, token_budget)
+        allocated: dict[str, str] = {}
+
+        def _allocated_token_count() -> int:
+            important = allocated.get("important_knowledge", "")
+            related = allocated.get("related_knowledge", "")
+            combined_knowledge = f"{important}\n\n{related}" if important and related else important or related
+            complete_text = "".join(
+                (
+                    allocated.get("sender_profile", ""),
+                    allocated.get("recent_activity", ""),
+                    combined_knowledge,
+                    allocated.get("related_knowledge_untrusted", ""),
+                    allocated.get("pending_tasks", ""),
+                    allocated.get("recent_outbound", ""),
+                    allocated.get("episodes", ""),
+                    pending_human_notifications,
+                    allocated.get("graph_context", ""),
+                )
+            )
+            return max(
+                0,
+                estimate_tokens(complete_text) - estimate_tokens(pending_human_notifications),
+            )
 
         def _select(
-            source: str,
+            allocation_key: str,
             items: Sequence[MemoryItem],
             text: str,
             *,
             header: str = "",
             tail: bool = False,
+            max_budget: int | None = None,
         ) -> str:
+            nonlocal remaining
+            budget = remaining if max_budget is None else min(remaining, max_budget)
+            selected: list[MemoryItem] = []
             if items:
-                selected = select_within_budget(items, token_budget)
-                final_items[source] = tuple(selected)
-                return render_items(selected, header)
-            final_items[source] = ()
-            if not text:
-                return ""
-            return truncate_tail(text, token_budget) if tail else truncate_head(text, token_budget)
+                item_budget = max(0, budget - estimate_tokens(header))
+                selected = select_within_budget(items, item_budget)
+                value = render_items(selected, header)
+            elif text:
+                value = truncate_tail(text, budget) if tail else truncate_head(text, budget)
+            else:
+                value = ""
 
-        if important_items:
-            important_text = _select("important_knowledge", important_items, "", header=_IMPORTANT_HEADER)
-        elif important_knowledge:
-            important_text = truncate_head(important_knowledge, token_budget)
-        else:
-            important_text = ""
+            allocated[allocation_key] = value
+            while _allocated_token_count() > token_budget:
+                if selected:
+                    selected.pop()
+                    value = render_items(selected, header)
+                elif text:
+                    budget = max(0, budget - 1)
+                    value = truncate_tail(text, budget) if tail else truncate_head(text, budget)
+                else:
+                    value = ""
+                allocated[allocation_key] = value
 
+            remaining = max(0, token_budget - _allocated_token_count())
+            return value
+
+        sender_profile_text = _select(
+            "sender_profile",
+            (),
+            sender_profile,
+            max_budget=min(_BUDGET_SENDER_PROFILE, token_budget // 4),
+        )
+        pending_tasks_text = _select(
+            "pending_tasks",
+            pending_task_items,
+            pending_tasks,
+            max_budget=min(_BUDGET_PENDING_TASKS, token_budget // 3),
+        )
+        recent_outbound_text = _select(
+            "recent_outbound",
+            outbound_items,
+            recent_outbound,
+            header=t("priming.outbound_header"),
+            max_budget=_BUDGET_RECENT_OUTBOUND,
+        )
+        important_text = _select(
+            "important_knowledge",
+            important_items,
+            important_knowledge,
+            header=t("priming.important_knowledge_header"),
+        )
         medium_text = _select("related_knowledge", related_items, channel_c_related_knowledge)
         related_knowledge_text = (
             f"{important_text}\n\n{medium_text}" if important_text and medium_text else important_text or medium_text
         )
-
         untrusted_text = _select("related_knowledge_untrusted", untrusted_items, related_knowledge_untrusted)
-        pending_tasks_text = _select("pending_tasks", pending_task_items, pending_tasks)
-        recent_outbound_text = _select(
-            "recent_outbound", outbound_items, recent_outbound, header=t("priming.outbound_header")
-        )
+        recent_activity_text = _select("recent_activity", recent_activity_items, recent_activity, tail=True)
         episodes_text = _select("episodes", episode_items, episodes, tail=True)
-        notifications_text = _select(
-            "pending_human_notifications", notification_items, pending_human_notifications, header=_NOTIFICATIONS_HEADER
-        )
-        graph_context_text = truncate_tail(graph_context, token_budget)
+        graph_context_text = _select("graph_context", (), graph_context, tail=True)
 
         result = PrimingResult(
-            sender_profile=truncate_head(sender_profile, token_budget),
-            recent_activity=_select("recent_activity", recent_activity_items, recent_activity, tail=True),
+            sender_profile=sender_profile_text,
+            recent_activity=recent_activity_text,
             related_knowledge=related_knowledge_text,
             related_knowledge_untrusted=untrusted_text,
             pending_tasks=pending_tasks_text,
             recent_outbound=recent_outbound_text,
             episodes=episodes_text,
-            pending_human_notifications=notifications_text,
+            pending_human_notifications=pending_human_notifications,
             graph_context=graph_context_text,
-            items=final_items,
         )
 
         logger.info(
@@ -445,10 +496,10 @@ class PrimingEngine:
             return truncate_head(value, budget)
 
         result = PrimingResult(
-            sender_profile=truncate_head(content("A"), min(400, token_budget // 4)),
-            pending_tasks=bounded(content("E"), min(500, token_budget // 3)),
+            sender_profile=truncate_head(content("A"), min(_BUDGET_SENDER_PROFILE, token_budget // 4)),
+            pending_tasks=bounded(content("E"), min(_BUDGET_PENDING_TASKS, token_budget // 3)),
             resident_knowledge=content("C0"),
-            recent_outbound=truncate_tail(content("outbound"), 250),
+            recent_outbound=truncate_tail(content("outbound"), _BUDGET_RECENT_OUTBOUND),
             # Notification delivery is a separate contract, never dropped to
             # meet a recall optimization budget.
             pending_human_notifications=content("pending_human_notifications"),

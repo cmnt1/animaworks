@@ -19,11 +19,13 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from core.memory.rag.retriever import (
-    _PER_ANIMA_AC_PREFIX,
     FREQUENCY_LOG_CAP,
     WEIGHT_FREQUENCY,
     MemoryRetriever,
     RetrievalResult,
+)
+from core.memory.rag.retriever import (
+    PER_ANIMA_ACCESS_PREFIX as _PER_ANIMA_AC_PREFIX,
 )
 
 # ── Mock fixtures ────────────────────────────────────────────────────
@@ -223,10 +225,7 @@ class _FakeVectorStore:
 
         coll = self._ensure_collection(collection)
         data = coll.get(ids=ids)
-        return [
-            Document(id=did, content="", metadata=data["metadatas"][i])
-            for i, did in enumerate(data["ids"])
-        ]
+        return [Document(id=did, content="", metadata=data["metadatas"][i]) for i, did in enumerate(data["ids"])]
 
     def get_by_metadata(self, collection, where, limit=20):
         from core.memory.rag.store import Document, SearchResult

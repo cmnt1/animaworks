@@ -455,6 +455,42 @@ class TestMigrationSteps:
         assert server["runner_liveness_timeout"] == 600
         assert "busy_hang_threshold" not in server
 
+    def test_step_priming_config_cleanup_drops_max_graph_hops(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_priming_config_cleanup_20260927
+
+        (data_dir / "config.json").write_text(
+            json.dumps({"rag": {"max_graph_hops": 2, "enable_spreading_activation": True}}),
+            encoding="utf-8",
+        )
+
+        result = step_priming_config_cleanup_20260927(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert result.changed == 1
+        assert json.loads((data_dir / "config.json").read_text(encoding="utf-8")) == {
+            "rag": {"enable_spreading_activation": True}
+        }
+
+    def test_step_priming_config_cleanup_skips_when_setting_missing(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_priming_config_cleanup_20260927
+
+        (data_dir / "config.json").write_text(json.dumps({"rag": {}}), encoding="utf-8")
+
+        result = step_priming_config_cleanup_20260927(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert result.changed == 0
+        assert result.skipped == 1
+
+    def test_priming_config_cleanup_registered_before_version(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+
+        assert ids.index("priming_config_cleanup_20260927") == ids.index("update_version") - 1
+
     def test_v063_registered_after_v062(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
@@ -812,7 +848,8 @@ class TestRegisterAllSteps:
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
         assert ids.index("engine_timeout_config_cleanup") + 1 == ids.index("memory_maintenance_config_cleanup_20260927")
-        assert ids.index("memory_maintenance_config_cleanup_20260927") == ids.index("update_version") - 1
+        assert ids.index("memory_maintenance_config_cleanup_20260927") + 1 == ids.index("priming_config_cleanup_20260927")
+        assert ids.index("priming_config_cleanup_20260927") == ids.index("update_version") - 1
 
 
 def test_step_v0146_removes_retired_prompt_copies(tmp_path):

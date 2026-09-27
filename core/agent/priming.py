@@ -92,17 +92,8 @@ class PrimingMixin:
             policy = resolve_priming_policy(self.anima_dir)
             if not hasattr(self, "_priming_engine"):
                 from core.paths import get_shared_dir
-                from core.prompt.context import resolve_context_window as _rcw_priming
 
-                ctx_window = _rcw_priming(
-                    active_model_config.model,
-                    overrides=self._load_context_window_overrides(),
-                )
-                self._priming_engine = PrimingEngine(
-                    self.anima_dir,
-                    get_shared_dir(),
-                    context_window=ctx_window,
-                )
+                self._priming_engine = PrimingEngine(self.anima_dir, get_shared_dir())
                 # Inject callback for active parallel tasks (DAG scheduler)
                 if hasattr(self, "_active_parallel_tasks_getter"):
                     self._priming_engine._get_active_parallel_tasks = self._active_parallel_tasks_getter

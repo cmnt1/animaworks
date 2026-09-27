@@ -179,6 +179,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("# {date} 行動ログ\n\n"),
         "en": ("# {date} Action log\n\n"),
     },
+    "priming.important_knowledge_header": {
+        "ja": "### [IMPORTANT] 知識（要約ポインタ）",
+        "en": "### [IMPORTANT] Knowledge (summary pointers)",
+        "ko": "### [IMPORTANT] 지식（요약 포인터）",
+    },
+    "priming.pending_human_notifications_header": {
+        "ja": "## 未処理の人間通知（直近24時間）",
+        "en": "## Pending Human Notifications (last 24h)",
+        "ko": "## 미처리 사람 알림（최근 24시간）",
+    },
     "priming.about_sender": {
         "ja": "### {sender_name} について",
         "en": "### About {sender_name}",

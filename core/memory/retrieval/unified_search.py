@@ -351,6 +351,7 @@ class UnifiedMemorySearch:
             temporal_boost=temporal_boost,
             entity_boost=entity_boost,
             access_boost=access_boost,
+            anima_name=self._anima_dir.name,
         )
         logger.info(
             "Unified search pipeline: scope=%s elapsed=%.3fs rerank_enabled=%s",

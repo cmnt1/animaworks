@@ -27,7 +27,6 @@ def retrieval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             graph_cache_enabled=True,
             entity_aware_graph_enabled=False,
             spreading_memory_types=("knowledge", "episodes"),
-            max_graph_hops=2,
         )
     )
     monkeypatch.setattr(retriever, "_safe_load_config", lambda: config)
@@ -89,6 +88,17 @@ def test_unusable_graph_cache_keeps_seeds_without_building(retrieval, monkeypatc
     retriever.vector_store.query.assert_not_called()
     assert retriever._knowledge_graph is None
     assert sorted(str(p) for p in retriever.knowledge_dir.parent.rglob("*")) == before
+
+
+def test_entity_aware_graph_settings_ignore_benchmark_environment_variable(retrieval, monkeypatch):
+    retriever, config, _ = retrieval
+    config.rag.entity_aware_graph_enabled = False
+    monkeypatch.setenv("LOCOMO_ENTITY_AWARE_GRAPH", "1")
+
+    assert retriever._entity_aware_graph_settings(config)["enabled"] is False
+
+    config.rag.entity_aware_graph_enabled = True
+    assert retriever._entity_aware_graph_settings(config)["enabled"] is True
 
 
 def test_valid_cached_graph_still_expands_existing_results(retrieval, monkeypatch):

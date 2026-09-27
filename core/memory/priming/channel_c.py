@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.i18n import t
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
@@ -250,7 +251,7 @@ def _static_c0_chunks(
     min_score: float,
     resident_only: bool = False,
     search_cache: KnowledgeSearchCache | None = None,
-) -> tuple[list, list[dict]]:
+) -> tuple[list, list[dict], bool]:
     """Load all C0 sources in one worker-thread transaction."""
     retriever = get_retriever()
     if retriever is None:
@@ -463,7 +464,7 @@ async def channel_c0_important_knowledge(
             _replace_item_rank(item, len(ordered_items) - index) for index, item in enumerate(ordered_items)
         ]
 
-        header = "### [IMPORTANT] Knowledge (summary pointers)"
+        header = t("priming.important_knowledge_header")
         available = _BUDGET_IMPORTANT_KNOWLEDGE - estimate_tokens(header)
         if available <= 0:
             return ""

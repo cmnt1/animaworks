@@ -3,7 +3,20 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime
 
-from core.memory.retrieval.access_boost import AccessBoostConfig, apply_access_boost, compute_access_boost
+from core.memory.retrieval.access_boost import (
+    AccessBoostConfig,
+    access_count_for,
+    apply_access_boost,
+    compute_access_boost,
+)
+
+
+def test_access_count_for_uses_anima_specific_counts_for_shared_chunks() -> None:
+    metadata = {"anima": "shared", "ac_alice": 3, "access_count": 100}
+
+    assert access_count_for(metadata, "alice") == 3.0
+    assert access_count_for(metadata, "bob") == 0.0
+    assert access_count_for({"anima": "alice", "access_count": 7}, "alice") == 7.0
 
 
 def test_compute_access_boost_applies_formula() -> None:
@@ -57,6 +70,31 @@ def test_apply_access_boost_reorders_same_relevance_candidates() -> None:
     assert boosted[0]["content"] == "high access"
     assert boosted[0]["access_boost"] > 0.0
     assert boosted[0]["score"] > boosted[1]["score"]
+
+
+def test_apply_access_boost_uses_anima_specific_shared_count() -> None:
+    config = AccessBoostConfig(weight=0.5, cap=1.0, half_life_days=30.0)
+    candidates = [
+        {
+            "content": "global count only",
+            "score": 0.8,
+            "anima": "shared",
+            "access_count": 100,
+            "ac_alice": 0,
+        },
+        {
+            "content": "alice has used this",
+            "score": 0.8,
+            "anima": "shared",
+            "access_count": 0,
+            "ac_alice": 3,
+        },
+    ]
+
+    boosted = apply_access_boost(candidates, config, anima_name="alice")
+
+    assert boosted[0]["content"] == "alice has used this"
+    assert boosted[0]["access_boost"] > 0.0
 
 
 def test_apply_access_boost_treats_missing_access_count_as_zero() -> None:
