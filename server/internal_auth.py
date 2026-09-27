@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from core.anima.factory import validate_anima_name
 from core.config.io import load_config
@@ -77,6 +78,94 @@ class InternalAuth:
         if hmac.compare_digest(token, expected):
             return InternalCaller(kind="anima", name=name)
         return None
+
+
+def _authz_mode() -> str:
+    try:
+        return load_config().server.internal_api_auth
+    except Exception:
+        logger.warning("internal_api_auth_mode_unreadable", exc_info=True)
+        return "enforce"
+
+
+def internal_authz_denied(
+    caller: InternalCaller | None,
+    claimed: str | None,
+    detail_key: str,
+    *,
+    path: str = "?",
+    **detail_values: str,
+) -> JSONResponse | None:
+    """Return a localized 403, except in log mode where it warns and allows."""
+    if _authz_mode() == "log":
+        logger.warning(
+            "internal_api_authz_denied caller=%s claimed=%s path=%s",
+            caller.name if caller is not None else "?",
+            claimed or "",
+            path,
+        )
+        return None
+
+    detail = t(
+        detail_key,
+        caller=caller.name if caller is not None else "",
+        claimed=claimed or "",
+        **detail_values,
+    )
+    return JSONResponse(status_code=403, content={"detail": detail})
+
+
+def ensure_self(
+    caller: InternalCaller | None,
+    claimed: str | None,
+    *,
+    path: str = "?",
+) -> JSONResponse | None:
+    """Require an Anima caller to claim only its own identity."""
+    if caller is None or caller.kind == "operator":
+        return None
+    if claimed and claimed == caller.name:
+        return None
+    return internal_authz_denied(
+        caller,
+        claimed,
+        "server.internal_identity_mismatch",
+        path=path,
+    )
+
+
+def ensure_self_or_descendant(
+    caller: InternalCaller | None,
+    claimed: str | None,
+    *,
+    path: str = "?",
+) -> JSONResponse | None:
+    """Allow an Anima to read its own or any descendant's state."""
+    if caller is None or caller.kind == "operator":
+        return None
+    if not claimed or claimed == caller.name:
+        return ensure_self(caller, claimed, path=path)
+
+    from core.org.hierarchy import descendants_of
+
+    try:
+        descendants = descendants_of(load_config().animas, caller.name)
+    except Exception:
+        logger.warning("Failed to load org hierarchy for internal API authorization", exc_info=True)
+        return internal_authz_denied(
+            caller,
+            claimed,
+            "server.internal_not_subordinate",
+            path=path,
+        )
+    if claimed in descendants:
+        return None
+    return internal_authz_denied(
+        caller,
+        claimed,
+        "server.internal_not_subordinate",
+        path=path,
+    )
 
 
 def write_operator_token(path: Path) -> None:

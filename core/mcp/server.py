@@ -433,8 +433,9 @@ def _has_newstaff_skill_for_anima() -> bool:
         if not anima_dir_env:
             _has_newstaff = False
             return False
-        skills_dir = Path(anima_dir_env) / "skills"
-        _has_newstaff = (skills_dir / "newstaff" / "SKILL.md").is_file() or (skills_dir / "newstaff.md").is_file()
+        from core.anima.skills_check import has_newstaff_skill
+
+        _has_newstaff = has_newstaff_skill(Path(anima_dir_env))
         return _has_newstaff
     except Exception:
         logger.debug("Failed to check newstaff skill, defaulting to False")

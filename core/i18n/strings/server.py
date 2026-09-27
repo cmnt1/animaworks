@@ -160,6 +160,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "内部 API の認証に失敗しました",
         "en": "Internal API authentication required",
     },
+    "server.internal_identity_mismatch": {
+        "ja": "呼び出し元 '{caller}' は '{claimed}' として操作できません",
+        "en": "Caller '{caller}' cannot act as '{claimed}'",
+    },
+    "server.internal_not_subordinate": {
+        "ja": "呼び出し元 '{caller}' は '{claimed}' を操作する権限がありません",
+        "en": "Caller '{caller}' is not authorized to access '{claimed}'",
+    },
+    "server.internal_newstaff_required": {
+        "ja": "Anima の作成には newstaff スキルが必要です",
+        "en": "The newstaff skill is required to create an Anima",
+    },
     "chat.message_too_large": {
         "ja": "メッセージが大きすぎます（{size_mb}MB / 上限10MB）",
         "en": "Message too large ({size_mb}MB / max 10MB)",
