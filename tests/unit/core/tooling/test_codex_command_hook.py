@@ -77,7 +77,7 @@ def test_per_anima_and_global_deny_lists_apply(anima_dir: Path, tmp_path: Path) 
     assert _decide(anima_dir, "mkfs.ext4 /dev/sda", global_permissions=gp) == "Filesystem creation is blocked"
 
 
-def test_main_emits_deny_json_and_fails_open(anima_dir: Path, capsys, monkeypatch) -> None:
+def test_main_emits_deny_json_and_fails_closed(anima_dir: Path, capsys, monkeypatch) -> None:
     import io
 
     payload = {"tool_input": {"command": "grep -R x " + str(anima_dir.parent.parent)}, "cwd": str(anima_dir)}
@@ -87,4 +87,7 @@ def test_main_emits_deny_json_and_fails_open(anima_dir: Path, capsys, monkeypatc
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
     monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
-    assert hook.main(["--anima-dir", str(anima_dir)]) == 1
+    # Broken stdin must fail closed: emit a deny JSON and exit 0 (no command runs).
+    assert hook.main(["--anima-dir", str(anima_dir)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"

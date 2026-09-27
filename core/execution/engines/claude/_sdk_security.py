@@ -16,12 +16,10 @@ Helpers have no executor state; this remains a leaf module in the dependency gra
 import json
 import logging
 import re
-import shlex
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.config.schemas import command_deny_matches
 from core.paths import get_data_dir
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -159,130 +157,35 @@ def _check_a1_bash_command(
     superuser: bool = False,
     trigger: str = "unknown",
 ) -> str | None:
-    """Check bash commands against blocklist patterns and file operation violations.
+    """Check a bash command against the shared command policy.
 
-    Global deny patterns are matched against the raw command string (before
-    shlex parsing) to prevent bypass via pipes/subshells.  Path traversal
-    checks use parsed argv for precision.
-
-    This is a best-effort heuristic — not a complete sandbox.
+    Thin wrapper over ``core.tooling.command_policy.evaluate_command`` so Mode S
+    applies exactly the same layers (injection, global deny, recursive-search
+    guard, per-anima deny, allowlist, traversal, other-anima write) as the
+    ToolHandler and the Codex hook.  Returns a denial reason or None.
     """
-    if superuser:
+    if superuser or not command or not command.strip():
         return None
 
-    from core.config.global_permissions import GlobalPermissionsCache
-    from core.config.schemas import load_permissions
-
-    cache = GlobalPermissionsCache.get()
-
-    # Mode S legitimately uses shell composition, so injection detection is
-    # introduced in two phases.  The default ``log`` mode collects one week of
-    # false-positive evidence; ``enforce`` can then be enabled by config only.
-    # The deliberately narrow default pattern detects semicolons/newlines but
-    # leaves pipes, &&, $VAR, $(), and backticks available to the SDK.
-    injection_mode = "log"
-    if cache.loaded and cache.config is not None:
-        injection_mode = cache.config.sdk_bash_injection.mode
-    inj_re = cache.injection_re if cache.loaded else None
-    injection_match = inj_re.search(command) if inj_re and injection_mode != "off" else None
-    if injection_match is not None:
-        pattern_name = _matching_injection_pattern(command, cache.config)
-        _log_sdk_bash_injection_hit(
-            command,
-            anima_dir,
-            pattern_name=pattern_name,
-            trigger=trigger,
-            mode=injection_mode,
-        )
-        if injection_mode == "enforce":
-            return f"Command contains injection pattern: {pattern_name}"
-
-    if cache.loaded:
-        for pattern, reason in cache.blocked_patterns:
-            if pattern.search(command):
-                logger.warning("Bash command blocked: %s (command: %s)", reason, command[:200])
-                return reason
-
-    config = load_permissions(anima_dir)
-    if config.commands.deny:
-        segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()]
-        for segment in segments:
-            try:
-                seg_argv = shlex.split(segment)
-            except ValueError:
-                continue
-            if not seg_argv:
-                continue
-            seg_cmd_base = seg_argv[0]
-            for denied in config.commands.deny:
-                if command_deny_matches(denied, segment, seg_cmd_base):
-                    logger.warning(
-                        "Bash command denied by per-anima config: %s (command: %s)",
-                        denied,
-                        command[:200],
-                    )
-                    return f"Command '{seg_cmd_base}' is in denied list ('{denied}')"
-
-    if not config.commands.allow_all:
-        allowed = config.commands.allow
-        if not allowed:
-            return "Command execution not enabled in permissions"
-        segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()]
-        for segment in segments:
-            try:
-                seg_argv = shlex.split(segment)
-            except ValueError:
-                return f"Invalid command syntax in '{segment}'"
-            if not seg_argv:
-                continue
-            seg_cmd_base = seg_argv[0]
-            if seg_cmd_base not in allowed:
-                return f"Command '{seg_cmd_base}' not in allowed list"
-
-    # Path traversal has low false-positive risk and is enforced even during
-    # the injection dry-run phase, matching ToolHandler's Layer 5 behavior.
-    segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()] or [command]
-    for segment in segments:
-        try:
-            seg_argv = shlex.split(segment)
-        except ValueError:
-            continue
-        for arg in seg_argv[1:]:
-            if ".." not in arg:
-                continue
-            try:
-                resolved = (anima_dir / arg).resolve()
-                if not resolved.is_relative_to(anima_dir.resolve()):
-                    return "Command argument resolves outside anima directory"
-            except (ValueError, OSError):
-                pass
+    from core.tooling.command_policy import (
+        evaluate_command,
+        load_command_policy_context,
+        record_injection_hit,
+    )
 
     try:
-        argv = shlex.split(command)
-    except ValueError:
+        ctx = load_command_policy_context(anima_dir, cwd=anima_dir, superuser=superuser)
+    except Exception:
+        # fail-closed: a broken config must block the command.
+        logger.exception("command_policy load failed for anima_dir=%s", anima_dir)
+        return "Command policy check failed"
+
+    decision = evaluate_command(command, ctx)
+    if decision.injection_hit:
+        record_injection_hit(command, ctx, pattern_name=decision.injection_hit, trigger=trigger)
+    if decision.allowed:
         return None
-
-    if not argv:
-        return None
-
-    cmd_base = Path(argv[0]).name
-
-    # Check file-writing commands for path violations
-    if cmd_base in _WRITE_COMMANDS:
-        animas_root = str(anima_dir.parent.resolve())
-        anima_resolved = str(anima_dir.resolve())
-        for arg in argv[1:]:
-            if arg.startswith("-"):
-                continue
-            try:
-                resolved = str(Path(arg).resolve())
-                # Writing to other anima's directory
-                if resolved.startswith(animas_root) and not resolved.startswith(anima_resolved):
-                    return f"Command targets other anima's directory: {arg}"
-            except (ValueError, OSError):
-                pass
-
-    return None
+    return decision.reason
 
 
 def _matching_injection_pattern(command: str, config: Any) -> str:
