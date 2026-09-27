@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from core.tasks.board.models import AttentionVisibility
-from core.tasks.board.store import TaskBoardStore
 from core.tasks.board.tasks import process_identity
 from core.tasks.dispatch import publish_tasks
 from core.tasks.queue import TaskQueueManager
@@ -14,7 +11,7 @@ from core.tasks.queue import TaskQueueManager
 pytestmark = pytest.mark.e2e
 
 
-def test_archived_cancelled_task_cannot_be_republished_as_new_work(tmp_path: Path) -> None:
+def test_cancelled_task_cannot_be_republished_as_new_work(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
@@ -23,13 +20,6 @@ def test_archived_cancelled_task_cannot_be_republished_as_new_work(tmp_path: Pat
     payload = {"task_id": "archived1234", "title": "do not resurrect", "description": "do not resurrect this task"}
     entry = publish_tasks(anima_dir, [payload])[0]
     queue.update_status(entry.task_id, "cancelled")
-
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        visibility=AttentionVisibility.ARCHIVED,
-    )
 
     # Duplicate delivery is idempotent, not a resume/reconstruction request.
     publish_tasks(anima_dir, [payload])
@@ -41,7 +31,7 @@ def test_archived_cancelled_task_cannot_be_republished_as_new_work(tmp_path: Pat
     assert queue.store.claim("sakura", entry.task_id, process_identity()) is None
 
 
-def test_snoozed_task_needs_explicit_resume_and_retains_complete_input(tmp_path: Path) -> None:
+def test_interrupted_task_needs_explicit_resume_and_retains_complete_input(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
@@ -51,13 +41,8 @@ def test_snoozed_task_needs_explicit_resume_and_retains_complete_input(tmp_path:
     entry = publish_tasks(anima_dir, [payload])[0]
     attempt = queue.store.claim("sakura", entry.task_id, process_identity())
     queue.store.finish(attempt["_attempt_token"], status="pending", stop_kind="interrupted")
-    TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3").upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        visibility=AttentionVisibility.SNOOZED,
-        snoozed_until=(datetime.now(UTC) + timedelta(hours=1)).isoformat(),
-    )
 
+    # An interrupted task parks itself and only resumes on an explicit resume request.
     assert queue.store.pending("sakura") == []
     publish_tasks(anima_dir, [{"task_id": entry.task_id, "resume": True}])
 

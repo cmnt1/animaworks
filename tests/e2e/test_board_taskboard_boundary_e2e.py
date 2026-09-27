@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,7 @@ pytestmark = pytest.mark.e2e
 
 
 def _create_app(tmp_path: Path, anima_names: list[str]):
+    os.environ["ANIMAWORKS_DATA_DIR"] = str(tmp_path)
     animas_dir = tmp_path / "animas"
     shared_dir = tmp_path / "shared"
     for name in anima_names:
@@ -81,14 +83,14 @@ async def test_taskboard_operations_do_not_modify_board_channel_jsonl(tmp_path: 
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        patch_resp = await client.patch(
-            f"/api/task-board/alice/{task.task_id}",
-            json={"visibility": "expired", "reason": "deadline passed", "actor": "planner"},
+        cancel_resp = await client.post(
+            f"/api/task-board/alice/{task.task_id}/cancel",
+            json={"reason": "deadline passed"},
         )
         channels_resp = await client.get("/api/channels")
 
-    assert patch_resp.status_code == 200
-    assert patch_resp.json()["task"]["visibility"] == "expired"
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["result"]["status"] == "cancelled"
     assert channel_path.read_bytes() == before
     assert sorted(path.name for path in (app.state.shared_dir / "channels").glob("*.jsonl")) == before_channel_files
     assert (app.state.shared_dir / "taskboard.sqlite3").exists()

@@ -595,7 +595,7 @@ def test_format_for_priming_shows_auto_taskexec_for_in_progress(tmp_path: Path) 
     assert "abc12345" in result or "abc1234" in result
 
 
-# ── TaskBoard metadata sync on terminal status ─────────────────────────
+# ── Terminal status updates ─────────────────────────
 
 
 def _tqm_with_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "sakura"):
@@ -606,12 +606,9 @@ def _tqm_with_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: st
     return TaskQueueManager(anima_dir), data_dir
 
 
-def test_update_status_terminal_archives_existing_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Terminal status closes existing TaskBoard metadata to archived/done."""
-    from core.tasks.board.models import AttentionVisibility, BoardColumn
-    from core.tasks.board.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+def test_update_status_terminal_marks_task_terminal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Terminal status simply marks the canonical task terminal (no metadata)."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="delegate work",
@@ -619,44 +616,16 @@ def test_update_status_terminal_archives_existing_metadata(tmp_path: Path, monke
         summary="delegate work",
         task_id="task-term-1",
     )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="delegator",
-        visibility="active",
-        column="waiting",
-    )
 
-    for terminal in ("done", "cancelled"):
-        # Reset to active so each terminal path is exercised independently.
-        tqm.update_status(entry.task_id, "pending")
-        store.upsert_metadata(
-            anima_name="sakura",
-            task_id=entry.task_id,
-            actor="test",
-            visibility="active",
-            column="waiting",
-        )
-        result = tqm.update_status(entry.task_id, terminal)
-        assert result is not None
-        assert result.status == terminal
-        meta = store.get_metadata("sakura", entry.task_id)
-        assert meta is not None
-        assert meta.visibility == AttentionVisibility.ARCHIVED
-        assert meta.column == BoardColumn.DONE
-        assert meta.updated_by == "sakura"
-        events = store.list_events(anima_name="sakura", task_id=entry.task_id)
-        assert any(event["event_type"] == "archived" for event in events)
+    result = tqm.update_status(entry.task_id, "done")
+
+    assert result is not None
+    assert result.status == "done"
 
 
-def test_update_status_pending_reactivates_archived_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Re-queueing an archived task to pending revives the board card so the
-    pending attention gate does not cancel it as "archived by TaskBoard"."""
-    from core.tasks.board.models import AttentionVisibility, BoardColumn
-    from core.tasks.board.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+def test_update_status_terminal_then_pending_reactivates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A terminal task can be re-queued to pending."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="revivable work",
@@ -664,43 +633,17 @@ def test_update_status_pending_reactivates_archived_metadata(tmp_path: Path, mon
         summary="revivable work",
         task_id="task-revive-1",
     )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="delegator",
-        visibility="active",
-        column="todo",
-    )
-    tqm.update_status(entry.task_id, "cancelled")
-    meta = store.get_metadata("sakura", entry.task_id)
-    assert meta is not None and meta.visibility == AttentionVisibility.ARCHIVED
+
+    result = tqm.update_status(entry.task_id, "done")
+    assert result is not None and result.status == "done"
 
     result = tqm.update_status(entry.task_id, "pending")
     assert result is not None and result.status == "pending"
-    meta = store.get_metadata("sakura", entry.task_id)
-    assert meta is not None
-    assert meta.visibility == AttentionVisibility.ACTIVE
-    assert meta.column == BoardColumn.TODO
-
-    # Tombstoned cards are deliberate suppressions and must stay suppressed.
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="test",
-        visibility="tombstoned",
-    )
-    tqm.update_status(entry.task_id, "pending")
-    meta = store.get_metadata("sakura", entry.task_id)
-    assert meta is not None
-    assert meta.visibility == AttentionVisibility.TOMBSTONED
 
 
-def test_update_status_terminal_does_not_create_metadata_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Terminal status must not invent a TaskBoard metadata row when none exists."""
-    from core.tasks.board.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+def test_update_status_terminal_succeeds_without_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Terminal status never touches a TaskBoard metadata row (none exists anymore)."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="plain task",
@@ -710,84 +653,14 @@ def test_update_status_terminal_does_not_create_metadata_row(tmp_path: Path, mon
     )
 
     result = tqm.update_status(entry.task_id, "done")
+
     assert result is not None
     assert result.status == "done"
 
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    assert store.get_metadata("sakura", entry.task_id) is None
-    assert store.list_metadata(anima_name="sakura") == []
 
-
-@pytest.mark.parametrize("visibility", ["expired", "archived", "tombstoned"])
-def test_update_status_terminal_preserves_suppressed_visibility(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    visibility: str,
-) -> None:
-    """Terminal queue sync must not replace a more specific suppression reason."""
-    from core.tasks.board.models import AttentionVisibility
-    from core.tasks.board.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
-    entry = tqm.add_task(
-        source="human",
-        original_instruction="suppressed task",
-        assignee="sakura",
-        summary="suppressed task",
-        task_id=f"task-{visibility}",
-    )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="planner",
-        visibility=visibility,
-        column="suppressed",
-    )
-
-    tqm.update_status(entry.task_id, "cancelled")
-
-    metadata = store.get_metadata("sakura", entry.task_id)
-    assert metadata is not None
-    assert metadata.visibility == AttentionVisibility(visibility)
-    assert metadata.column.value == "suppressed"
-    assert metadata.updated_by == "planner"
-
-
-def test_update_status_succeeds_when_taskboard_store_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Queue terminal update remains successful if TaskBoard store fails."""
+def test_update_status_non_terminal_changes_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-terminal transitions just change the canonical status."""
     tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
-    entry = tqm.add_task(
-        source="human",
-        original_instruction="resilient task",
-        assignee="sakura",
-        summary="resilient task",
-        task_id="task-resilient",
-    )
-
-    class _BoomStore:
-        def get_metadata(self, *args, **kwargs):
-            raise RuntimeError("store down")
-
-        def upsert_metadata(self, *args, **kwargs):
-            raise RuntimeError("store down")
-
-    with patch("core.tasks.board.store.TaskBoardStore", return_value=_BoomStore()):
-        result = tqm.update_status(entry.task_id, "done")
-
-    assert result is not None
-    assert result.status == "done"
-    reloaded = TaskQueueManager(tqm.anima_dir).get_task_by_id(entry.task_id)
-    assert reloaded is not None
-    assert reloaded.status == "done"
-
-
-def test_update_status_non_terminal_does_not_touch_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Non-terminal transitions leave TaskBoard metadata unchanged."""
-    from core.tasks.board.models import AttentionVisibility, BoardColumn
-    from core.tasks.board.store import TaskBoardStore
-
-    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
         source="human",
         original_instruction="active task",
@@ -795,30 +668,11 @@ def test_update_status_non_terminal_does_not_touch_metadata(tmp_path: Path, monk
         summary="active task",
         task_id="task-active",
     )
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="sakura",
-        task_id=entry.task_id,
-        actor="planner",
-        visibility="active",
-        column="todo",
-        position=3.0,
-    )
-    before = store.get_metadata("sakura", entry.task_id)
-    assert before is not None
-    before_updated_at = before.updated_at
 
     result = tqm.update_status(entry.task_id, "in_progress")
+
     assert result is not None
     assert result.status == "in_progress"
-
-    after = store.get_metadata("sakura", entry.task_id)
-    assert after is not None
-    assert after.visibility == AttentionVisibility.ACTIVE
-    assert after.column == BoardColumn.TODO
-    assert after.position == 3.0
-    assert after.updated_at == before_updated_at
-    assert after.updated_by == "planner"
 
 
 # ── Legacy jsonl compat: blocked/failed/deadline rows read as pending ──────

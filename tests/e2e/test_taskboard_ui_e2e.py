@@ -12,10 +12,14 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from core.tasks.board.store import TaskBoardStore
 from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
 
 
 def _create_app(tmp_path: Path, anima_names: list[str], *, base_path: str = ""):
@@ -88,13 +92,6 @@ def _seed_taskboard(app) -> tuple[str, str]:
         task_id="task-action",
     )
     bob_queue.update_status(running.task_id, "in_progress")
-    TaskBoardStore(app.state.shared_dir / "taskboard.sqlite3").upsert_metadata(
-        anima_name="bob",
-        task_id=running.task_id,
-        actor="planner",
-        column="running",
-        position=1000,
-    )
     return todo.task_id, running.task_id
 
 
@@ -241,9 +238,11 @@ def test_taskboard_base_path_routes_installed_websocket(tmp_path: Path) -> None:
     client = TestClient(app)
     auth_cfg = MagicMock(auth_mode="local_trust")
 
-    with patch("server.routes.websocket_route.load_auth", return_value=auth_cfg):
-        with client.websocket_connect("/app/ws") as ws:
-            ws.send_text('{"type":"ping"}')
+    with (
+        patch("server.routes.websocket_route.load_auth", return_value=auth_cfg),
+        client.websocket_connect("/app/ws") as ws,
+    ):
+        ws.send_text('{"type":"ping"}')
 
     app.state.ws_manager.connect.assert_awaited_once()
     app.state.ws_manager.handle_client_message.assert_awaited_once()
@@ -296,7 +295,7 @@ async def test_taskboard_base_path_strips_websocket_scope() -> None:
 
 async def test_taskboard_ui_actions_do_not_modify_board_channels(tmp_path: Path) -> None:
     app = _create_app(tmp_path, ["alice", "bob"])
-    alice_task_id, bob_task_id = _seed_taskboard(app)
+    alice_task_id, _bob_task_id = _seed_taskboard(app)
     channel_path = app.state.shared_dir / "channels" / "general.jsonl"
     channel_entry = {
         "ts": "2026-05-14T10:00:00+09:00",
@@ -308,28 +307,14 @@ async def test_taskboard_ui_actions_do_not_modify_board_channels(tmp_path: Path)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        snooze_resp = await client.patch(
-            f"/api/task-board/alice/{alice_task_id}",
-            json={
-                "visibility": "snoozed",
-                "snoozed_until": "2026-05-15T10:00:00+09:00",
-                "actor": "dashboard",
-            },
-        )
-        reactivate_resp = await client.patch(
-            f"/api/task-board/alice/{alice_task_id}",
-            json={"visibility": "active", "snoozed_until": None, "actor": "dashboard"},
-        )
-        reorder_resp = await client.patch(
-            f"/api/task-board/bob/{bob_task_id}",
-            json={"position": 2000, "actor": "dashboard"},
+        cancel_resp = await client.post(
+            f"/api/task-board/alice/{alice_task_id}/cancel",
+            json={"reason": "obsolete from dashboard"},
         )
         channels_resp = await client.get("/api/channels")
 
-    assert snooze_resp.status_code == 200
-    assert reactivate_resp.status_code == 200
-    assert reorder_resp.status_code == 200
-    assert reorder_resp.json()["task"]["position"] == 2000
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["result"]["status"] == "cancelled"
     assert channel_path.read_bytes() == before
     assert channels_resp.status_code == 200
     assert channels_resp.json()[0]["name"] == "general"

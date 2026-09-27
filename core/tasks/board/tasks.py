@@ -1,7 +1,9 @@
-"""Durable execution records, separate from TaskBoard presentation metadata.
+"""Durable execution records; the single source of truth for the TaskBoard.
 
 One task owns its complete input. Attempts carry fenced execution identities;
 JSONL and pending files are import/export formats, never a second authority.
+TaskBoard views read this store directly instead of layering presentation
+metadata on top.
 """
 
 from __future__ import annotations
@@ -25,42 +27,6 @@ from core.time_utils import now_iso
 logger = logging.getLogger(__name__)
 
 _TERMINAL_STATUSES = frozenset({"done", "cancelled"})
-
-
-def _archive_board_cards(db: sqlite3.Connection, anima: str, task_id: str) -> None:
-    """Close every active TaskBoard card for a finished task, in the same transaction.
-
-    Covers the owner's card and the requesters' ``waiting`` cards, which share the
-    task_id or reach it through ``task_aliases``. Stores without the board table
-    (isolated task DBs) are left alone.
-    """
-    try:
-        rows = db.execute(
-            "SELECT anima_name, task_id FROM taskboard_metadata WHERE visibility='active' AND ("
-            "(task_id=?) OR (anima_name, task_id) IN "
-            "(SELECT viewer, alias FROM task_aliases WHERE anima=? AND task_id=?))",
-            (task_id, anima, task_id),
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return
-    now = now_iso()
-    for card_anima, card_id in rows:
-        db.execute(
-            "UPDATE taskboard_metadata SET visibility='archived', column='done', updated_at=?, updated_by=? "
-            "WHERE anima_name=? AND task_id=?",
-            (now, anima, card_anima, card_id),
-        )
-        db.execute(
-            "INSERT INTO taskboard_events(ts, actor, event_type, anima_name, task_id, payload_json) "
-            "VALUES(?, ?, 'archived', ?, ?, ?)",
-            (
-                now,
-                anima,
-                card_anima,
-                card_id,
-                _json({"reason": "task_terminal", "owner": anima, "owner_task_id": task_id}),
-            ),
-        )
 
 
 _attempt_identity: ContextVar[dict[str, str] | None] = ContextVar("task_attempt_identity", default=None)
@@ -370,7 +336,6 @@ class TaskStore:
                 )
                 if new_status in _TERMINAL_STATUSES:
                     db.execute("DELETE FROM task_leases WHERE anima=? AND task_id=?", (owner, task_id))
-                    _archive_board_cards(db, owner, task_id)
                 return
             entry = TaskEntry(**{key: value for key, value in event.items() if key != "_event"})
             target = entry.meta.get("delegated_to")
@@ -466,8 +431,14 @@ class TaskStore:
             return None
         return dict(row)
 
-    def board_rows(self, anima: str | None = None, viewer: str | None = None) -> list[dict[str, Any]]:
-        """Return active canonical tasks plus alias-visible delegated work."""
+    def board_rows(
+        self, anima: str | None = None, viewer: str | None = None, all_viewers: bool = False
+    ) -> list[dict[str, Any]]:
+        """Return active canonical tasks plus alias-visible delegated work.
+
+        ``all_viewers`` returns alias rows for every viewer instead of restricting
+        them to a single ``viewer``; canonical rows are unaffected.
+        """
         rows: list[dict[str, Any]] = []
         with self.reader() as db:
             where = (
@@ -498,17 +469,19 @@ class TaskStore:
                         "stop_kind": row["stop_kind"],
                     }
                 )
-            if viewer:
+            if viewer or all_viewers:
+                where_viewer_sql = "" if all_viewers else "a.viewer=? AND "
+                alias_params: list = [] if all_viewers else [viewer]
                 alias_rows = db.execute(
                     "SELECT a.viewer,a.alias,a.anima,a.task_id,t.entry_json, "
                     "x.started_at,x.ended_at,x.stop_kind FROM task_aliases a "
                     "JOIN tasks t ON t.anima=a.anima AND t.task_id=a.task_id "
                     "LEFT JOIN task_attempts x ON x.token=(SELECT token FROM task_attempts y "
                     "WHERE y.anima=t.anima AND y.task_id=t.task_id ORDER BY y.number DESC LIMIT 1) "
-                    "WHERE a.viewer=? AND t.archived=0 AND "
+                    "WHERE " + where_viewer_sql + "t.archived=0 AND "
                     "json_extract(t.entry_json,'$.status') IN ('pending','in_progress','delegated') "
                     "ORDER BY a.alias",
-                    (viewer,),
+                    alias_params,
                 ).fetchall()
                 for row in alias_rows:
                     entry = json.loads(row["entry_json"])
@@ -538,6 +511,48 @@ class TaskStore:
                 except (TypeError, ValueError):
                     lease = None
             row["lease"] = lease
+        return rows
+
+    def history_rows(self, anima: str | None, limit: int) -> list[dict[str, Any]]:
+        """Return terminal (done/cancelled) rows, regardless of archived flag.
+
+        Rows are ordered by ``updated_at`` descending (most recent first) and
+        limited to ``limit`` entries. ``limit <= 0`` returns an empty list. The
+        dict shape matches the canonical rows of ``board_rows`` (``waiting`` is
+        ``False`` and ``lease`` is ``None``).
+        """
+        if limit <= 0:
+            return []
+        rows: list[dict[str, Any]] = []
+        with self.reader() as db:
+            where = "WHERE json_extract(t.entry_json,'$.status') IN ('done','cancelled')"
+            params: list = []
+            if anima is not None:
+                where += " AND t.anima=?"
+                params.append(anima)
+            query = (
+                "SELECT t.anima,t.task_id,t.entry_json, "
+                "a.started_at,a.ended_at,a.stop_kind "
+                "FROM tasks t LEFT JOIN task_attempts a ON a.token=("
+                "SELECT token FROM task_attempts x WHERE x.anima=t.anima AND x.task_id=t.task_id "
+                "ORDER BY x.number DESC LIMIT 1) "
+                f"{where} ORDER BY json_extract(t.entry_json,'$.updated_at') DESC, t.task_id LIMIT ?"
+            )
+            params.append(limit)
+            for row in db.execute(query, params):
+                entry = json.loads(row["entry_json"])
+                rows.append(
+                    {
+                        **entry,
+                        "anima": row["anima"],
+                        "canonical_task_id": row["task_id"],
+                        "waiting": False,
+                        "started_at": row["started_at"],
+                        "ended_at": row["ended_at"],
+                        "stop_kind": row["stop_kind"],
+                        "lease": None,
+                    }
+                )
         return rows
 
     def alias(self, viewer: str, alias: str, anima: str, task_id: str) -> None:
@@ -782,7 +797,6 @@ class TaskStore:
                 )
             if status in _TERMINAL_STATUSES:
                 db.execute("DELETE FROM task_leases WHERE anima=? AND task_id=?", (row["anima"], row["task_id"]))
-                _archive_board_cards(db, row["anima"], row["task_id"])
             return True
 
     def active_attempts(self, anima: str) -> list[dict[str, Any]]:

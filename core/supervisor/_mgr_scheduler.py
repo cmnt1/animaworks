@@ -1025,8 +1025,6 @@ class SchedulerMixin:
                 pending_processing_stale_hours=hk_cfg.pending_processing_stale_hours,
                 background_running_stale_hours=hk_cfg.background_running_stale_hours,
                 current_state_stale_hours=hk_cfg.current_state_stale_hours,
-                taskboard_suppressed_retention_days=hk_cfg.taskboard_suppressed_retention_days,
-                taskboard_orphan_metadata_stale_hours=hk_cfg.taskboard_orphan_metadata_stale_hours,
                 suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
                 suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
                 archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,

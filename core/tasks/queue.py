@@ -34,8 +34,6 @@ _VALID_STATUSES = frozenset({"pending", "in_progress", "delegated", "done", "can
 # written before this teardown. _load_all() remaps them to "pending" on read.
 _RETIRED_STATUSES = frozenset({"blocked", "failed"})
 _TERMINAL_STATUSES = frozenset({"done", "cancelled"})
-_ARCHIVE_SYNC_STATUSES = frozenset({"done", "cancelled"})
-_REACTIVATE_SYNC_STATUSES = frozenset({"pending", "in_progress"})
 _ACTIVE_STATUSES = frozenset({"pending", "in_progress", "delegated"})
 
 # Valid task sources
@@ -103,16 +101,6 @@ def mark_executability(items: list[dict[str, Any]], anima_dir: Path) -> None:
         else:
             item["executable"] = False
             item["executable_note"] = _NOT_EXECUTABLE_NOTE
-
-
-def _metadata_expired(expires_at: str | None) -> bool:
-    """Return True when a TaskBoard metadata expiry timestamp is in the past."""
-    if not expires_at:
-        return False
-    try:
-        return now_local() >= ensure_aware(datetime.fromisoformat(expires_at))
-    except (ValueError, TypeError):
-        return False
 
 
 class TaskQueueManager:
@@ -376,78 +364,7 @@ class TaskQueueManager:
             return None
         logger.info("Task updated: id=%s status=%s", task_id, status)
 
-        if status in _ARCHIVE_SYNC_STATUSES:
-            self.store.after_commit(lambda: self._sync_taskboard_archived(task_id))
-        elif status in _REACTIVATE_SYNC_STATUSES:
-            self.store.after_commit(lambda: self._sync_taskboard_reactivated(task_id))
-
         return task
-
-    def _sync_taskboard_archived(self, task_id: str) -> None:
-        """Best-effort: close TaskBoard metadata when a task reaches terminal status.
-
-        Only updates an existing metadata row; never creates one. Failures are
-        swallowed so the queue update remains authoritative.
-        """
-        try:
-            from core.tasks.board.models import AttentionVisibility
-            from core.tasks.board.store import TaskBoardStore
-
-            anima_name = self.anima_dir.name
-            store = TaskBoardStore()
-            metadata = store.get_metadata(anima_name, task_id)
-            if metadata is None:
-                return
-            if metadata.visibility in {
-                AttentionVisibility.EXPIRED,
-                AttentionVisibility.ARCHIVED,
-                AttentionVisibility.TOMBSTONED,
-            }:
-                return
-            store.upsert_metadata(
-                anima_name=anima_name,
-                task_id=task_id,
-                actor=anima_name,
-                event_type="archived",
-                visibility="archived",
-                column="done",
-            )
-        except Exception:
-            logger.debug(
-                "Failed to archive TaskBoard metadata for task %s",
-                task_id,
-                exc_info=True,
-            )
-
-    def _sync_taskboard_reactivated(self, task_id: str) -> None:
-        """Best-effort: revive an archived TaskBoard card when a task re-enters
-        an active status, so the pending attention gate does not cancel the
-        revived task as "archived by TaskBoard". Tombstoned/expired cards are
-        deliberate suppressions and stay untouched.
-        """
-        try:
-            from core.tasks.board.models import AttentionVisibility
-            from core.tasks.board.store import TaskBoardStore
-
-            anima_name = self.anima_dir.name
-            store = TaskBoardStore()
-            metadata = store.get_metadata(anima_name, task_id)
-            if metadata is None or metadata.visibility != AttentionVisibility.ARCHIVED:
-                return
-            store.upsert_metadata(
-                anima_name=anima_name,
-                task_id=task_id,
-                actor=anima_name,
-                event_type="visibility_changed",
-                visibility="active",
-                column="todo",
-            )
-        except Exception:
-            logger.debug(
-                "Failed to reactivate TaskBoard metadata for task %s",
-                task_id,
-                exc_info=True,
-            )
 
     def update_meta(
         self,
@@ -541,56 +458,13 @@ class TaskQueueManager:
                 raise
             return read_tasks_via_server(self.anima_dir.name, include_archived=True, task_id=task_id).get(task_id)
 
-    def get_active_goal_task(self, goal_id: str) -> TaskEntry | None:
-        """Return an active task linked to a persistent goal, ignoring suppressed board rows.
-
-        Archived, tombstoned, and expired TaskBoard metadata do not block goal
-        continuation; snoozed/active pending work still counts as an existing
-        continuation to avoid duplicate tasks.
-        """
-        if not goal_id:
-            return None
-        for task in self.load_active_tasks().values():
-            if task.meta.get("goal_id") != goal_id:
-                continue
-            if self._goal_task_suppressed_by_taskboard(task.task_id):
-                continue
-            return task
-        return None
-
-    def list_goal_tasks(self, goal_id: str) -> list[TaskEntry]:
-        """Return all queue tasks linked to a persistent goal."""
-        if not goal_id:
-            return []
-        return sorted(
-            [task for task in self._load_all().values() if task.meta.get("goal_id") == goal_id],
-            key=lambda task: task.updated_at,
-            reverse=True,
-        )
-
-    def _goal_task_suppressed_by_taskboard(self, task_id: str) -> bool:
-        try:
-            from core.tasks.board.models import AttentionVisibility
-            from core.tasks.board.store import TaskBoardStore
-
-            metadata = TaskBoardStore().get_metadata(self.anima_dir.name, task_id)
-            if metadata is None:
-                return False
-            if _metadata_expired(metadata.expires_at):
-                return True
-            return metadata.visibility in {
-                AttentionVisibility.ARCHIVED,
-                AttentionVisibility.TOMBSTONED,
-                AttentionVisibility.EXPIRED,
-            }
-        except Exception:
-            logger.debug("TaskBoard metadata check failed for goal task %s", task_id, exc_info=True)
-            return False
-
     # ── Formatting ───────────────────────────────────────────
 
     def format_for_priming(self, budget_tokens: int = 400) -> str:
-        """Format pending tasks for system prompt injection."""
+        """Format pending tasks for system prompt injection.
+
+        This is the only Channel E task formatting implementation.
+        """
         tasks = self.get_pending()
         now = now_local()
         chars_per_token = 4
@@ -690,20 +564,6 @@ class TaskQueueManager:
             lines.append(line)
             total += len(line) + 1
         return "\n".join(lines)
-
-    def _resolve_subordinate_display(self, target_dir: Path, child_id: str) -> str:
-        """Resolve subordinate task status for display (single queue read)."""
-        if not target_dir.is_dir():
-            return "?"
-        try:
-            sub_tqm = TaskQueueManager(target_dir)
-            sub_task = sub_tqm.get_task_by_id(child_id)
-            if sub_task:
-                return sub_task.status
-            archived = self._search_archive(target_dir, child_id)
-            return archived if archived else t("task_queue.delegated_archived")
-        except Exception:
-            return "?"
 
     # ── Maintenance ────────────────────────────────────────────
 

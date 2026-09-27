@@ -13,8 +13,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
+from core.tasks.board.tasks import TaskStore
+from core.tasks.board.view import summarize_board
 from core.time_utils import now_local
-from server.routes.taskboard import summarize_task_board
 
 logger = logging.getLogger("animaworks.routes.system")
 
@@ -510,12 +511,12 @@ def create_system_router() -> APIRouter:
         """Aggregate active task counts across all animas from TaskBoard projection."""
         import asyncio
 
-        animas_dir = request.app.state.animas_dir
         shared_dir = request.app.state.shared_dir
         anima_names = request.app.state.anima_names
 
-        summary = await asyncio.to_thread(summarize_task_board, animas_dir, shared_dir, anima_names)
-        pending = summary["pending"] + summary["delegated"]
+        store = TaskStore(shared_dir / "taskboard.sqlite3")
+        summary = await asyncio.to_thread(summarize_board, store, anima_names)
+        pending = summary["pending"]
         in_progress = summary["in_progress"]
         return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
 

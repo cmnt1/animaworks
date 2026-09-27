@@ -438,6 +438,84 @@ class TestMigrationSteps:
         assert server["runner_liveness_timeout"] == 600
         assert "busy_hang_threshold" not in server
 
+    def test_step_taskboard_metadata_retire(self, data_dir: Path) -> None:
+        import sqlite3
+
+        from core.migrations.steps import step_taskboard_metadata_retire
+
+        shared = data_dir / "shared"
+        shared.mkdir(parents=True, exist_ok=True)
+        (data_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "housekeeping": {
+                        "taskboard_suppressed_retention_days": 30,
+                        "taskboard_orphan_metadata_stale_hours": 24,
+                        "tmp_retention_days": 14,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        db_path = shared / "taskboard.sqlite3"
+        db = sqlite3.connect(db_path)
+        db.executescript(
+            """
+            CREATE TABLE tasks (anima TEXT, task_id TEXT, entry_json TEXT);
+            INSERT INTO tasks VALUES ('sakura', 't1', '{"status":"pending","meta":{}}');
+            INSERT INTO tasks VALUES ('sakura', 't2', '{"status":"done","meta":{"source_ref":"keep"}}');
+            CREATE TABLE taskboard_metadata (
+                anima_name TEXT, task_id TEXT, visibility TEXT, column TEXT, source_ref TEXT
+            );
+            INSERT INTO taskboard_metadata VALUES ('sakura','t1','expired','todo','hermes://x.json#0');
+            INSERT INTO taskboard_metadata VALUES ('sakura','t2','archived','done',NULL);
+            INSERT INTO taskboard_metadata VALUES ('sakura','t3','waiting','waiting','hermes://y.json#0');
+            CREATE TABLE taskboard_events (id INTEGER);
+            CREATE TABLE task_aliases (viewer TEXT, alias TEXT);
+            """
+        )
+        db.commit()
+        db.close()
+
+        dry = step_taskboard_metadata_retire(data_dir, dry_run=True, verbose=True)
+        assert dry.error is None
+        assert dry.changed == 1
+        db = sqlite3.connect(db_path)
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='taskboard_metadata'").fetchone()
+        db.close()
+
+        result = step_taskboard_metadata_retire(data_dir, dry_run=False, verbose=True)
+        assert result.error is None
+        assert result.changed == 1
+
+        db = sqlite3.connect(db_path)
+        row = db.execute("SELECT entry_json FROM tasks WHERE task_id='t1'").fetchone()
+        assert json.loads(row[0])["meta"]["source_ref"] == "hermes://x.json#0"
+        row2 = db.execute("SELECT entry_json FROM tasks WHERE task_id='t2'").fetchone()
+        assert json.loads(row2[0])["meta"]["source_ref"] == "keep"
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='taskboard_metadata'"
+        ).fetchone()
+        assert not db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='taskboard_events'"
+        ).fetchone()
+        db.close()
+
+        backups = list((shared / "backups").glob("taskboard-pre-metadata-retire-*.sqlite3"))
+        assert len(backups) == 1
+        # backups contain the pre-drop metadata table
+        bdb = sqlite3.connect(backups[0])
+        assert bdb.execute("SELECT name FROM sqlite_master WHERE name='taskboard_metadata'").fetchone()
+        bdb.close()
+
+        cfg = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+        assert "taskboard_suppressed_retention_days" not in cfg["housekeeping"]
+        assert "taskboard_orphan_metadata_stale_hours" not in cfg["housekeeping"]
+        assert cfg["housekeeping"]["tmp_retention_days"] == 14
+
+        second = step_taskboard_metadata_retire(data_dir, dry_run=False, verbose=True)
+        assert second.skipped == 1
+
     def test_v063_registered_after_v062(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
@@ -794,7 +872,8 @@ class TestRegisterAllSteps:
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
-        assert ids.index("engine_timeout_config_cleanup") == ids.index("update_version") - 1
+        assert ids.index("engine_timeout_config_cleanup") < ids.index("taskboard_metadata_retire")
+        assert ids.index("taskboard_metadata_retire") == ids.index("update_version") - 1
 
 
 def test_step_v0146_removes_retired_prompt_copies(tmp_path):

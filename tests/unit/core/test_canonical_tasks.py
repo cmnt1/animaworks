@@ -294,21 +294,16 @@ def test_durable_inbox_delivery_deduplicates_after_archive(queue):
     assert not list((shared / "inbox" / "worker").glob("*.json"))
 
 
-def test_presentation_updates_run_only_after_task_transaction_commits(queue, monkeypatch):
-    from core.tasks.board.store import TaskBoardStore
-
-    monkeypatch.setattr("core.tasks.board.store.get_taskboard_db_path", lambda: queue.store.db_path)
-    board = TaskBoardStore()
+def test_terminal_update_commits_only_after_task_transaction_commits(queue):
+    """A terminal change takes effect only when the write transaction commits."""
     queue.submit(_payload())
-    board.upsert_metadata(anima_name="worker", task_id="task", actor="worker", visibility="active")
     with pytest.raises(ValueError), queue.store.transaction():
         queue.update_status("task", "done")
         raise ValueError("rollback")
-    assert board.get_metadata("worker", "task").visibility.value == "active"
     assert queue.get_task_by_id("task").status == "pending"
     with queue.store.transaction():
         queue.update_status("task", "done")
-    assert board.get_metadata("worker", "task").visibility.value == "archived"
+    assert queue.get_task_by_id("task").status == "done"
 
 
 def test_reader_keeps_one_consistent_snapshot_and_rejects_writes(queue):

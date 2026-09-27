@@ -775,7 +775,6 @@ def create_internal_router() -> APIRouter:
         from core.anima.factory import validate_anima_name
         from core.org.company import check_company_boundary
         from core.paths import get_animas_dir
-        from core.tooling.handler_delegation import _record_taskboard_delegation
 
         if validate_anima_name(body.delegator) or validate_anima_name(body.target):
             return JSONResponse(
@@ -850,15 +849,6 @@ def create_internal_router() -> APIRouter:
                     tracking_task_id=body.tracking_task_id,
                     host_fallback=False,
                 )
-            try:
-                _record_taskboard_delegation(
-                    delegated_to=body.target,
-                    delegated_task_id=body.sub_task_id,
-                    delegator=body.delegator,
-                    tracking_task_id=body.tracking_task_id,
-                )
-            except Exception:
-                logger.warning("TaskBoard metadata unavailable after delegation", exc_info=True)
             return {"sub_task_id": body.sub_task_id, "tracking_task_id": body.tracking_task_id}
 
         try:

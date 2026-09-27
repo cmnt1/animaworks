@@ -75,7 +75,6 @@ class TestDelegateTaskErofsFallback:
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=error),
             patch("httpx.post", return_value=response) as post,
-            patch("core.tooling.handler_delegation._record_taskboard_delegation") as board,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert not result.strip().startswith("{")
@@ -85,7 +84,6 @@ class TestDelegateTaskErofsFallback:
         assert sent["sub_task_id"] in result
         assert sent["tracking_task_id"] in result
         assert not any(key.startswith("persist_") for key in sent)
-        board.assert_not_called()
         assert TaskQueueManager(target).list_tasks() == []
 
     def test_alias_write_denied_rolls_back_subordinate_before_proxy(self, tmp_path):

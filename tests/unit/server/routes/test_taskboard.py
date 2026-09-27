@@ -6,13 +6,12 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core.tasks.board.store import TaskBoardStore
+from core.tasks.board.board_actions import BoardActionError
 from core.tasks.queue import TaskQueueManager
-from server.routes.system import create_system_router
 from server.routes.taskboard import create_taskboard_router
 
 
-def _make_app(tmp_path: Path, anima_names: list[str]) -> FastAPI:
+def _make_app(tmp_path: Path, anima_names: list[str], monkeypatch=None) -> FastAPI:
     data_dir = tmp_path / "data"
     animas_dir = data_dir / "animas"
     shared_dir = data_dir / "shared"
@@ -21,12 +20,14 @@ def _make_app(tmp_path: Path, anima_names: list[str]) -> FastAPI:
     for name in anima_names:
         (animas_dir / name / "state").mkdir(parents=True, exist_ok=True)
 
+    if monkeypatch is not None:
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+
     app = FastAPI()
     app.state.animas_dir = animas_dir
     app.state.shared_dir = shared_dir
     app.state.anima_names = anima_names
     app.include_router(create_taskboard_router(), prefix="/api")
-    app.include_router(create_system_router(), prefix="/api")
     return app
 
 
@@ -34,28 +35,25 @@ def _queue(app: FastAPI, anima_name: str) -> TaskQueueManager:
     return TaskQueueManager(app.state.animas_dir / anima_name)
 
 
-def _store(app: FastAPI) -> TaskBoardStore:
-    return TaskBoardStore(app.state.shared_dir / "taskboard.sqlite3")
-
-
 class TestTaskBoardList:
-    async def test_lists_projected_tasks_with_filters_and_corrupt_warning(self, tmp_path: Path) -> None:
+    async def test_lists_canonical_tasks_with_filters_and_corrupt_warning(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         queue = _queue(app, "alice")
-        active = queue.add_task(
+        queue.add_task(
             source="human",
             original_instruction="prepare release notes",
             assignee="alice",
             summary="prepare release notes",
             task_id="task-active",
         )
-        snoozed = queue.add_task(
+        running = queue.add_task(
             source="human",
-            original_instruction="wait for vendor reply",
+            original_instruction="write the report",
             assignee="alice",
-            summary="wait for vendor reply",
-            task_id="task-snoozed",
+            summary="write the report",
+            task_id="task-running",
         )
+        queue.update_status(running.task_id, "in_progress")
         done = queue.add_task(
             source="human",
             original_instruction="ship old patch",
@@ -64,20 +62,6 @@ class TestTaskBoardList:
             task_id="task-done",
         )
         queue.update_status(done.task_id, "done")
-        _store(app).upsert_metadata(
-            anima_name="alice",
-            task_id=active.task_id,
-            actor="planner",
-            column="waiting",
-            position=2.0,
-        )
-        _store(app).upsert_metadata(
-            anima_name="alice",
-            task_id=snoozed.task_id,
-            actor="planner",
-            visibility="snoozed",
-            snoozed_until="2026-05-15T00:00:00+09:00",
-        )
         # A stale legacy file cannot alter a canonical board or its diagnostics.
         queue.queue_path.parent.mkdir(parents=True, exist_ok=True)
         queue.queue_path.write_text("\n{bad-json\n", encoding="utf-8")
@@ -87,95 +71,25 @@ class TestTaskBoardList:
             default_resp = await client.get("/api/task-board")
             full_resp = await client.get("/api/task-board", params={"include_archived": "true"})
             query_resp = await client.get("/api/task-board", params={"q": "release"})
+            column_resp = await client.get("/api/task-board", params={"column": "running"})
 
         assert default_resp.status_code == 200
-        assert [task["task_id"] for task in default_resp.json()["tasks"]] == ["task-active"]
-        assert default_resp.json()["tasks"][0]["column"] == "waiting"
-        assert default_resp.json()["tasks"][0]["updated_at"] is not None
-        assert default_resp.json()["columns"][0] == {"id": "todo", "title": "Todo", "count": 0}
+        assert [task["task_id"] for task in default_resp.json()["tasks"]] == ["task-active", "task-running"]
+        assert default_resp.json()["tasks"][0]["column"] == "todo"
+        assert default_resp.json()["columns"][0] == {"id": "todo", "title": "Todo", "count": 1}
         assert default_resp.json()["meta"]["warnings"]["corrupt_task_queue_lines"] == 0
+        assert default_resp.json()["counts"] == {"active": 2, "archived": 0}
 
         full_data = full_resp.json()
         assert {task["task_id"] for task in full_data["tasks"]} == {
             "task-active",
-            "task-snoozed",
+            "task-running",
             "task-done",
         }
-        assert full_data["counts"]["active"] == 1
-        assert full_data["counts"]["snoozed"] == 1
-        assert full_data["counts"]["archived"] == 1
+        assert full_data["counts"] == {"active": 2, "archived": 1}
 
         assert [task["task_id"] for task in query_resp.json()["tasks"]] == ["task-active"]
-
-    async def test_default_view_skips_ledger_archived_tasks(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
-        queue = _queue(app, "alice")
-        queue.add_task(
-            source="human",
-            original_instruction="live work",
-            assignee="alice",
-            summary="live work",
-            task_id="task-live",
-        )
-        failed = queue.add_task(
-            source="human",
-            original_instruction="old failure",
-            assignee="alice",
-            summary="old failure",
-            task_id="task-failed",
-        )
-        # Legacy 'failed' rows were archived in the ledger but carry no board metadata.
-        with queue.store.transaction() as db:
-            db.execute(
-                "UPDATE tasks SET archived=1, entry_json=json_set(entry_json, '$.status', 'failed') "
-                "WHERE anima=? AND task_id=?",
-                ("alice", failed.task_id),
-            )
-
-        # A stale active card must not resurface the archived row as a missing task.
-        _store(app).upsert_metadata(anima_name="alice", task_id=failed.task_id, actor="planner", visibility="active")
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            default_resp = await client.get("/api/task-board", params={"include_missing": "true"})
-            full_resp = await client.get("/api/task-board", params={"include_archived": "true"})
-            summary_resp = await client.get("/api/task-board/summary")
-
-        assert [task["task_id"] for task in default_resp.json()["tasks"]] == ["task-live"]
-        assert {task["task_id"] for task in full_resp.json()["tasks"]} == {"task-live", "task-failed"}
-        assert summary_resp.json()["pending"] == 1
-        assert summary_resp.json()["failed_review"] == 0
-
-    async def test_history_view_returns_latest_hidden_cards_only(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
-        queue = _queue(app, "alice")
-        queue.add_task(
-            source="human", original_instruction="live", assignee="alice", summary="live", task_id="task-live"
-        )
-        for index in range(3):
-            old = queue.add_task(
-                source="human",
-                original_instruction=f"old {index}",
-                assignee="alice",
-                summary=f"old {index}",
-                task_id=f"task-old-{index}",
-            )
-            with queue.store.transaction() as db:
-                db.execute(
-                    "UPDATE tasks SET archived=1, entry_json=json_set(entry_json, '$.status', 'done', "
-                    "'$.updated_at', ?) WHERE anima=? AND task_id=?",
-                    (f"2026-01-0{index + 1}T00:00:00+09:00", "alice", old.task_id),
-                )
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            limited = await client.get("/api/task-board", params={"include_archived": "true", "history_limit": 2})
-            roomy = await client.get("/api/task-board", params={"include_archived": "true", "history_limit": 10})
-
-        assert {task["task_id"] for task in limited.json()["tasks"]} == {"task-live", "task-old-2", "task-old-1"}
-        assert limited.json()["meta"]["history_truncated"] is True
-        assert len(roomy.json()["tasks"]) == 4
-        assert roomy.json()["meta"]["history_truncated"] is False
+        assert [task["task_id"] for task in column_resp.json()["tasks"]] == ["task-running"]
 
     async def test_unknown_assignee_returns_404(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
@@ -186,71 +100,76 @@ class TestTaskBoardList:
         assert resp.status_code == 404
         assert resp.json()["detail"]["error"] == "anima_not_found"
 
-    async def test_invalid_filters_return_422(self, tmp_path: Path) -> None:
+    async def test_invalid_column_returns_422(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            visibility_resp = await client.get("/api/task-board", params={"visibility": "later"})
-            column_resp = await client.get("/api/task-board", params={"column": "doing"})
+            resp = await client.get("/api/task-board", params={"column": "doing"})
 
-        assert visibility_resp.status_code == 422
-        assert column_resp.status_code == 422
+        assert resp.status_code == 422
 
-    async def test_include_missing_returns_metadata_only_tasks(self, tmp_path: Path) -> None:
+
+class TestTaskBoardSummary:
+    async def test_summary_counts_canonical_work(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
-        _store(app).upsert_metadata(
-            anima_name="alice",
-            task_id="missing-task",
-            actor="planner",
-            visibility="tombstoned",
-            column="suppressed",
-            tombstone_reason="queue compaction removed it",
+        queue = _queue(app, "alice")
+        queue.add_task(
+            source="human",
+            original_instruction="pending work",
+            assignee="alice",
+            summary="pending work",
+            task_id="task-pending",
         )
+        running = queue.add_task(
+            source="human",
+            original_instruction="running work",
+            assignee="alice",
+            summary="running work",
+            task_id="task-running",
+        )
+        queue.update_status(running.task_id, "in_progress")
+        done = queue.add_task(
+            source="human",
+            original_instruction="finished",
+            assignee="alice",
+            summary="finished",
+            task_id="task-done",
+        )
+        queue.update_status(done.task_id, "done")
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            default_resp = await client.get("/api/task-board", params={"include_archived": "true"})
-            missing_resp = await client.get(
-                "/api/task-board",
-                params={"include_archived": "true", "include_missing": "true"},
-            )
+            resp = await client.get("/api/task-board/summary")
 
-        assert default_resp.json()["tasks"] == []
-        assert missing_resp.json()["tasks"][0]["task_id"] == "missing-task"
-        assert missing_resp.json()["tasks"][0]["queue_missing"] is True
+        assert resp.status_code == 200
+        assert resp.json() == {"pending": 1, "in_progress": 1, "delegated": 0, "total_active": 2}
 
 
-class TestTaskBoardPatch:
-    async def test_archiving_active_task_cancels_queue_entry(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
+class TestTaskBoardCancel:
+    async def test_cancel_marks_task_cancelled(self, tmp_path: Path, monkeypatch) -> None:
+        app = _make_app(tmp_path, ["alice"], monkeypatch)
         queue = _queue(app, "alice")
         task = queue.add_task(
             source="human",
             original_instruction="obsolete follow up",
             assignee="alice",
             summary="obsolete follow up",
-            task_id="task-archive",
+            task_id="task-cancel",
         )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.patch(
-                f"/api/task-board/alice/{task.task_id}",
-                json={"visibility": "archived", "reason": "no longer relevant", "actor": "tadasi"},
+            resp = await client.post(
+                f"/api/task-board/alice/{task.task_id}/cancel",
+                json={"reason": "no longer relevant"},
             )
 
         assert resp.status_code == 200
-        data = resp.json()["task"]
-        assert data["visibility"] == "archived"
-        assert data["queue_status"] == "cancelled"
+        assert resp.json()["result"]["status"] == "cancelled"
         assert queue.get_task_by_id(task.task_id).status == "cancelled"
-        assert queue.get_task_by_id(task.task_id).summary == "archived by TaskBoard: no longer relevant"
 
-        events = _store(app).list_events(anima_name="alice", task_id=task.task_id)
-        assert events[-1]["event_type"] == "archived"
-
-    async def test_authenticated_user_overrides_request_actor(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
+    async def test_authenticated_user_is_actor(self, tmp_path: Path, monkeypatch) -> None:
+        app = _make_app(tmp_path, ["alice"], monkeypatch)
 
         @app.middleware("http")
         async def _inject_user(request, call_next):
@@ -259,102 +178,77 @@ class TestTaskBoardPatch:
 
         task = _queue(app, "alice").add_task(
             source="human",
-            original_instruction="audit mutation",
+            original_instruction="audit cancel",
             assignee="alice",
-            summary="audit mutation",
-            task_id="task-audit",
-        )
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.patch(
-                f"/api/task-board/alice/{task.task_id}",
-                json={"column": "review", "actor": "spoofed"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json()["task"]["board_updated_by"] == "owner"
-        assert resp.json()["task"]["updated_at"] == resp.json()["task"]["board_updated_at"]
-        assert _store(app).list_events(anima_name="alice", task_id=task.task_id)[-1]["actor"] == "owner"
-
-    async def test_snoozed_requires_snoozed_until(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
-        task = _queue(app, "alice").add_task(
-            source="human",
-            original_instruction="check later",
-            assignee="alice",
-            summary="check later",
-            task_id="task-snooze",
-        )
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.patch(f"/api/task-board/alice/{task.task_id}", json={"visibility": "snoozed"})
-
-        assert resp.status_code == 422
-        assert resp.json()["detail"]["error"] == "snoozed_until_required"
-
-    async def test_notification_ack_records_key_and_timestamp(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
-        task = _queue(app, "alice").add_task(
-            source="human",
-            original_instruction="notify me",
-            assignee="alice",
-            summary="notify me",
-            task_id="task-notify",
+            summary="audit cancel",
+            task_id="task-cancel-audit",
         )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
-                f"/api/task-board/alice/{task.task_id}/notification-ack",
-                json={"notification_key": "runtime:alice:task-notify", "actor": "runtime"},
+                f"/api/task-board/alice/{task.task_id}/cancel",
+                json={"reason": "done by owner"},
             )
 
         assert resp.status_code == 200
-        metadata = _store(app).get_metadata("alice", task.task_id)
-        assert metadata is not None
-        assert metadata.notification_key == "runtime:alice:task-notify"
-        assert metadata.last_notified_at is not None
-        assert _store(app).list_events(anima_name="alice", task_id=task.task_id)[-1]["event_type"] == (
-            "notification_acknowledged"
-        )
+        notes = queue_task_notes(app, "alice", task.task_id)
+        assert notes and notes[-1]["by"] == "owner"
 
-
-class TestTaskSummaryCompatibility:
-    async def test_legacy_summary_uses_taskboard_visibility(self, tmp_path: Path) -> None:
-        app = _make_app(tmp_path, ["alice"])
-        queue = _queue(app, "alice")
-        visible = queue.add_task(
-            source="human",
-            original_instruction="visible task",
-            assignee="alice",
-            summary="visible task",
-            task_id="task-visible",
-        )
-        snoozed = queue.add_task(
-            source="human",
-            original_instruction="hidden for now",
-            assignee="alice",
-            summary="hidden for now",
-            task_id="task-hidden",
-        )
-        queue.update_status(visible.task_id, "in_progress")
-        _store(app).upsert_metadata(
-            anima_name="alice",
-            task_id=snoozed.task_id,
-            actor="planner",
-            visibility="snoozed",
-            snoozed_until="2026-05-15T00:00:00+09:00",
-        )
-
+    async def test_cancel_unknown_task_returns_404(self, tmp_path: Path, monkeypatch) -> None:
+        app = _make_app(tmp_path, ["alice"], monkeypatch)
+        _queue(app, "alice")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            legacy_resp = await client.get("/api/tasks/summary")
-            board_resp = await client.get("/api/task-board/summary")
+            resp = await client.post(
+                "/api/task-board/alice/does-not-exist/cancel",
+                json={"reason": "gone"},
+            )
 
-        assert legacy_resp.json() == {"pending": 0, "in_progress": 1, "total_active": 1}
-        board_data = board_resp.json()
-        assert board_data["in_progress"] == 1
-        assert board_data["snoozed"] == 1
-        assert board_data["total_active"] == 1
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["error"] == "task_not_found"
+
+    async def test_cancel_unknown_anima_returns_404(self, tmp_path: Path, monkeypatch) -> None:
+        app = _make_app(tmp_path, ["alice"], monkeypatch)
+        _queue(app, "alice")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/task-board/missing/task-x/cancel",
+                json={"reason": "gone"},
+            )
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["error"] == "anima_not_found"
+
+    async def test_board_action_refusal_maps_to_409(self, tmp_path: Path, monkeypatch) -> None:
+        app = _make_app(tmp_path, ["alice"], monkeypatch)
+        task = _queue(app, "alice").add_task(
+            source="human",
+            original_instruction="refuse me",
+            assignee="alice",
+            summary="refuse me",
+            task_id="task-refuse",
+        )
+
+        def _refuse(**kwargs):
+            raise BoardActionError("task is leased by other until 2099", 2)
+
+        monkeypatch.setattr("server.routes.taskboard.run_board_action", _refuse)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/task-board/alice/{task.task_id}/cancel",
+                json={"reason": "please"},
+            )
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["error"] == "board_action_refused"
+
+
+def queue_task_notes(app: FastAPI, anima_name: str, task_id: str) -> list:
+    queue = _queue(app, anima_name)
+    entry = queue.get_task_by_id(task_id)
+    if entry is None:
+        return []
+    return list(entry.meta.get("notes", []))

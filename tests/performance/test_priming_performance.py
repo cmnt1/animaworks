@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -21,12 +22,12 @@ import asyncio
 import statistics
 import time
 from datetime import timedelta
-from core.time_utils import now_jst
 from unittest.mock import patch
 
 import pytest
 
 from core.memory.priming import PrimingEngine
+from core.time_utils import now_jst
 
 # Try to import optional dependencies
 try:
@@ -37,8 +38,9 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 try:
-    from core.memory.rag import MemoryIndexer, MemoryRetriever  # noqa: F401
     import chromadb as _chromadb  # noqa: F401 — verify native dep is available
+
+    from core.memory.rag import MemoryIndexer, MemoryRetriever  # noqa: F401
 
     RAG_AVAILABLE = True
 except ImportError:
@@ -632,7 +634,6 @@ async def test_budget_allocation_performance(anima_dir_with_data):
                 message="こんにちは",
                 sender_name="system",
                 channel="chat",
-                enable_dynamic_budget=True,
             )
             end = time.perf_counter()
             small_budget_times.append(end - start)
@@ -645,7 +646,6 @@ async def test_budget_allocation_performance(anima_dir_with_data):
                 message="過去の全ての記録を参照して、詳細な分析結果を提供してください。",
                 sender_name="system",
                 channel="chat",
-                enable_dynamic_budget=True,
             )
             end = time.perf_counter()
             large_budget_times.append(end - start)
