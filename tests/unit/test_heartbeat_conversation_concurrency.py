@@ -121,16 +121,13 @@ class TestLockSeparation:
         """Public callback setters should propagate to every lane agent."""
         on_message = MagicMock()
         on_schedule = MagicMock()
-        wake = MagicMock()
 
         anima.set_on_message_sent(on_message)
         anima.set_on_schedule_changed(on_schedule)
-        anima._set_pending_executor_wake(wake)
 
         for agent in anima._iter_lane_agents():
             agent.set_on_message_sent.assert_called_with(on_message)
             agent.set_on_schedule_changed.assert_called_with(on_schedule)
-            agent._tool_handler.set_pending_executor_wake.assert_called_with(wake)
 
     def test_reload_config_updates_all_lane_agents(self, anima: DigitalAnima) -> None:
         """Config reload should not leave background/inbox agents stale."""

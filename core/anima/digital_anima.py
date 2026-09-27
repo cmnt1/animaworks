@@ -298,11 +298,6 @@ class DigitalAnima(
             return lock
         return nullcontext()
 
-    def _set_pending_executor_wake(self, wake_fn: Callable[[], Any]) -> None:
-        """Wire PendingTaskExecutor wake callback into every lane ToolHandler."""
-        for agent in self._iter_lane_agents():
-            agent._tool_handler.set_pending_executor_wake(wake_fn)
-
     def _set_active_parallel_tasks_getter(self, getter: Callable[[], dict[str, dict[str, Any]]]) -> None:
         """Wire active parallel task visibility into every lane AgentCore."""
         for agent in self._iter_lane_agents():

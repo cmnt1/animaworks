@@ -205,6 +205,7 @@ def _cmd_board(args: argparse.Namespace) -> None:
     rows.sort(
         key=lambda row: (
             group(row),
+            0 if row.get("source") == "human" else 1,
             _parse_timestamp(row.get("updated_at") or row.get("ts")) or min_time,
             row.get("task_id", ""),
         )

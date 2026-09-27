@@ -1004,7 +1004,9 @@ class TestPendingExecutorWake:
         assert executor._wake_event.is_set()
 
     def test_trigger_calls_wake(self, data_dir, make_anima):
-        """_trigger_pending_task_execution should call wake on executor."""
+        """_trigger_pending_task_execution should fan out to the registered wake."""
+        from core.tasks.wake import register_wake, unregister_wake
+
         anima_dir = make_anima("trigger_wake")
         shared_dir = data_dir / "shared"
 
@@ -1019,8 +1021,13 @@ class TestPendingExecutorWake:
 
         mock_executor = MagicMock()
         dp._pending_executor = mock_executor
-        dp._trigger_pending_task_execution()
-        mock_executor.wake.assert_called_once()
+        woke = []
+        register_wake(dp.name, lambda: woke.append(True))
+        try:
+            dp._trigger_pending_task_execution()
+            assert woke == [True]
+        finally:
+            unregister_wake(dp.name)
 
 
 # ── Runner IPC ──────────────────────────────────────────────

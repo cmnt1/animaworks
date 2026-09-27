@@ -529,12 +529,6 @@ class TaskQueueManager:
                 result.append(task)
         return result
 
-    # ── Delegation sync ─────────────────────────────────────────
-
-    def sync_delegated(self, animas_dir: Path) -> int:
-        """Compatibility facade: aliases read the assignee's canonical record."""
-        return 0
-
     @staticmethod
     def _search_archive(target_dir: Path, child_id: str) -> str | None:
         """Compatibility facade over archived canonical records, not JSONL."""

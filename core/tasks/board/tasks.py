@@ -636,10 +636,13 @@ class TaskStore:
             return updated
 
     def pending(self, anima: str) -> list[dict[str, Any]]:
+        """Return ready tasks in execution order: human-sourced first,
+        then by submission order within the same source."""
         with self.reader() as db:
             rows = db.execute(
                 "SELECT input_json FROM tasks WHERE anima=? AND ready=1 AND current_attempt IS NULL "
-                "AND archived=0 ORDER BY rowid",
+                "AND archived=0 "
+                "ORDER BY CASE WHEN json_extract(entry_json,'$.source')='human' THEN 0 ELSE 1 END, rowid",
                 (anima,),
             ).fetchall()
             return [json.loads(row[0]) for row in rows]

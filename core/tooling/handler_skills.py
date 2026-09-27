@@ -663,7 +663,11 @@ class SkillsToolsMixin:
 
     def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
         """Validate a complete DAG batch, then publish it in one transaction."""
+        from core.execution._sanitize import ORIGIN_HUMAN
         from core.tasks.dispatch import publish_tasks
+        from core.tasks.wake import request_wake
+
+        source = "human" if getattr(self, "_session_origin", "") == ORIGIN_HUMAN else "anima"
 
         batch_id = args.get("batch_id", "")
         tasks = args.get("tasks", [])
@@ -696,15 +700,14 @@ class SkillsToolsMixin:
             for task in tasks
         ]
         try:
-            entries = publish_tasks(self._anima_dir, payloads)
+            entries = publish_tasks(self._anima_dir, payloads, source=source)
         except ValueError as exc:
             return _error_result("InvalidArguments", str(exc))
         except Exception as exc:
             logger.exception("Failed to submit task batch %s", batch_id)
             return _error_result("PersistenceFailed", str(exc))
 
-        if getattr(self, "_pending_executor_wake", None):
-            self._pending_executor_wake()
+        request_wake(self._anima_dir.name)
         return _json.dumps(
             {
                 "status": "submitted",
