@@ -33,7 +33,6 @@ from core.execution.engines.codex.codex_sdk import (
     _should_cli_exec_fallback,
     _stderr_contains_fatal_signal,
     clear_codex_thread_id,
-    clear_codex_thread_ids,
 )
 from core.execution.engines.codex.events import (
     _codex_item_tool_name,
@@ -457,16 +456,14 @@ class TestSessionPersistence:
         _clear_thread_id(anima_dir, "heartbeat")
         assert _load_thread_id(anima_dir, "heartbeat") is None
 
-    def test_clear_all_thread_ids(self, anima_dir):
-        _save_thread_id(anima_dir, "t1", "chat")
-        _save_thread_id(anima_dir, "t2", "heartbeat")
-        _save_thread_id(anima_dir, "t3", "inbox")
-        _save_thread_id(anima_dir, "t4", "inbox", "inbox")
-        clear_codex_thread_ids(anima_dir)
+    def test_executor_clear_session_only_clears_resolved_namespace(self, executor, anima_dir):
+        _save_thread_id(anima_dir, "chat-thread", "chat")
+        _save_thread_id(anima_dir, "heartbeat-thread", "heartbeat")
+
+        executor.clear_session("message:owner")
+
         assert _load_thread_id(anima_dir, "chat") is None
-        assert _load_thread_id(anima_dir, "heartbeat") is None
-        assert _load_thread_id(anima_dir, "inbox") is None
-        assert _load_thread_id(anima_dir, "inbox", "inbox") == "t4"
+        assert _load_thread_id(anima_dir, "heartbeat") == "heartbeat-thread"
 
     def test_clear_single_thread_id_for_non_chat_thread(self, anima_dir):
         _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")

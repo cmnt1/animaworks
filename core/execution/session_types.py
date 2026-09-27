@@ -24,11 +24,11 @@ CHAT_TRIGGERS: frozenset[str] = frozenset({"", "manual", "chat", "bootstrap", "g
 
 def resolve_runtime_session_type(trigger: str) -> str:
     """Resolve the persistent state namespace for a runtime trigger."""
-    if trigger.startswith("message:"):
+    if not trigger or trigger.startswith(("chat", "message")):
         return SESSION_TYPE_CHAT
     if trigger == "inbox" or trigger.startswith("inbox:"):
         return SESSION_TYPE_INBOX
-    if trigger == "heartbeat" or trigger.startswith("consolidation:"):
+    if trigger == "heartbeat" or trigger.startswith(("heartbeat:", "consolidation:")):
         return SESSION_TYPE_HEARTBEAT
     if trigger.startswith("cron:"):
         return SESSION_TYPE_CRON
@@ -44,9 +44,23 @@ def is_chat_session_type(session_type: str) -> bool:
     return session_type in CHAT_SESSION_TYPES
 
 
+RESUMABLE_SESSION_TYPES: frozenset[str] = CHAT_SESSION_TYPES
+"""Session namespaces that may resume an existing engine session."""
+
+
+def is_resumable_session_type(session_type: str) -> bool:
+    """Return whether a resolved session namespace supports resume."""
+    return session_type in RESUMABLE_SESSION_TYPES
+
+
+def is_resumable_trigger(trigger: str) -> bool:
+    """Return whether a runtime trigger resolves to a resumable namespace."""
+    return is_resumable_session_type(resolve_runtime_session_type(trigger))
+
+
 def trigger_uses_chat_session(trigger: str) -> bool:
-    """Return True only for user-facing human chat triggers."""
-    return trigger.startswith("message:") or trigger in CHAT_TRIGGERS
+    """Backward-compatible alias for :func:`is_resumable_trigger`."""
+    return is_resumable_trigger(trigger)
 
 
 def is_clean_start_session(trigger: str) -> bool:
@@ -55,5 +69,5 @@ def is_clean_start_session(trigger: str) -> bool:
 
 
 def is_persistent_codex_session(trigger: str) -> bool:
-    """Return True when Codex thread IDs should be resumed across turns."""
-    return trigger_uses_chat_session(trigger)
+    """Backward-compatible alias for :func:`is_resumable_trigger`."""
+    return is_resumable_trigger(trigger)

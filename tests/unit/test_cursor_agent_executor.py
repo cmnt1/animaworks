@@ -19,7 +19,6 @@ from core.execution.base import ExecutionResult
 from core.execution.engine_base import engine_error_metadata
 from core.execution.engines.cursor.cursor_agent import (
     _MAX_RESUME_TURNS,
-    _RESUMABLE_TRIGGERS,
     CursorAgentExecutor,
     _chat_id_path,
     _clear_chat_id,
@@ -29,6 +28,7 @@ from core.execution.engines.cursor.cursor_agent import (
     _save_chat_id,
     is_cursor_agent_available,
 )
+from core.execution.session_types import is_resumable_trigger
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -569,10 +569,10 @@ class TestChatIdPersistence:
         p = _chat_id_path(anima_dir, "chat", "my-thread")
         assert p == anima_dir / "shortterm" / "chat" / "my-thread" / "cursor_chat_id.txt"
 
-    def test_resumable_triggers_contains_chat(self):
-        assert "chat" in _RESUMABLE_TRIGGERS
-        assert "heartbeat" not in _RESUMABLE_TRIGGERS
-        assert "cron" not in _RESUMABLE_TRIGGERS
+    def test_resumable_triggers(self):
+        assert is_resumable_trigger("chat") is True
+        assert is_resumable_trigger("heartbeat") is False
+        assert is_resumable_trigger("cron") is False
 
 
 class TestSessionResume:

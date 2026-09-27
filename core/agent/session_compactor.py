@@ -22,6 +22,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from core.execution.engine_session import clear_engine_session
+from core.execution.session_store import SessionEngine
+
 if TYPE_CHECKING:
     from core.anima.digital_anima import DigitalAnima
     from core.memory.activity.models import ActivityEntry
@@ -409,13 +412,18 @@ async def _compact_mode_s(anima: DigitalAnima, thread_id: str) -> bool:
     return await _compact_mode_s_shared(anima.anima_dir, anima.name, thread_id)
 
 
-async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
-    """Mode A: conversation compress + shortterm save + finalize."""
+async def _compact_conversation(
+    anima: DigitalAnima,
+    thread_id: str,
+    *,
+    clear_engine: SessionEngine | None,
+) -> dict[str, Any]:
+    """Compress conversation history, save shortterm context, and optionally discard its engine session."""
     from core.memory.conversation.memory import ConversationMemory
     from core.memory.conversation.shortterm import SessionState, ShortTermMemory
     from core.time_utils import now_local
 
-    logger.debug("_compact_mode_a: entry (anima=%s, thread=%s)", anima.name, thread_id)
+    logger.debug("_compact_conversation: entry (anima=%s, thread=%s)", anima.name, thread_id)
     conv = ConversationMemory(anima.anima_dir, anima.agent.model_config, thread_id=thread_id)
     compression = await conv.compress_if_needed_detailed()
 
@@ -439,8 +447,10 @@ async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]
             )
         )
 
+    if clear_engine is not None:
+        clear_engine_session(anima.anima_dir, clear_engine, "chat", thread_id)
     finalized = await conv.finalize_if_session_ended()
-    logger.debug("_compact_mode_a: exit (compressed=%s)", compression.performed)
+    logger.debug("_compact_conversation: exit (compressed=%s)", compression.performed)
     return {
         "compression_status": compression.status,
         "compression_performed": compression.performed,
@@ -450,54 +460,8 @@ async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]
         "compressed_turns": compression.compressed_turns,
         "compression_error": compression.error,
         "shortterm_saved": shortterm_saved,
-        "finalized": finalized,
-    }
-
-
-async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
-    """Mode C: conversation compress + shortterm save + codex thread discard."""
-    from core.execution.engines.codex.codex_sdk import _clear_thread_id
-    from core.memory.conversation.memory import ConversationMemory
-    from core.memory.conversation.shortterm import SessionState, ShortTermMemory
-    from core.time_utils import now_local
-
-    logger.debug("_compact_mode_c: entry (anima=%s, thread=%s)", anima.name, thread_id)
-    conv = ConversationMemory(anima.anima_dir, anima.agent.model_config, thread_id=thread_id)
-    compression = await conv.compress_if_needed_detailed()
-
-    state = conv.load()
-    summary_parts: list[str] = []
-    if state.compressed_summary:
-        summary_parts.append(state.compressed_summary)
-    if state.turns:
-        for turn in state.turns[-3:]:
-            summary_parts.append(f"{turn.role}: {turn.content[:200]}")
-
-    shortterm_saved = bool(summary_parts)
-    if shortterm_saved:
-        shortterm = ShortTermMemory(anima.anima_dir, session_type="chat", thread_id=thread_id)
-        shortterm.save(
-            SessionState(
-                accumulated_response="\n".join(summary_parts)[:4000],
-                timestamp=now_local().isoformat(),
-                trigger="idle_compaction",
-                notes="Auto-saved before Codex thread discard",
-            )
-        )
-
-    _clear_thread_id(anima.anima_dir, "chat", thread_id)
-    finalized = await conv.finalize_if_session_ended()
-    logger.debug("_compact_mode_c: exit (success)")
-    return {
-        "compression_status": compression.status,
-        "compression_performed": compression.performed,
-        "compression_fallback": compression.fallback_used,
-        "raw_turns_before": compression.raw_turns_before,
-        "raw_turns_after": compression.raw_turns_after,
-        "compressed_turns": compression.compressed_turns,
-        "compression_error": compression.error,
-        "shortterm_saved": shortterm_saved,
-        "codex_thread_cleared": True,
+        "engine_session_cleared": clear_engine is not None,
+        "engine": clear_engine,
         "finalized": finalized,
     }
 
@@ -554,13 +518,13 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
                     anima.name,
                     thread_id,
                 )
-                _record_result(await _compact_mode_a(anima, thread_id))
-        elif mode == "a":
-            _record_result(await _compact_mode_a(anima, thread_id))
-        elif mode == "c":
-            _record_result(await _compact_mode_c(anima, thread_id))
+                _record_result(await _compact_conversation(anima, thread_id, clear_engine=None))
         else:
-            _record_result(await _compact_mode_a(anima, thread_id))
+            executor = getattr(getattr(anima, "agent", None), "_executor", None)
+            clear_engine = getattr(executor, "session_engine", None)
+            if clear_engine not in {"agent_sdk", "codex", "cursor", "grok"}:
+                clear_engine = None
+            _record_result(await _compact_conversation(anima, thread_id, clear_engine=clear_engine))
     except Exception:
         logger.exception("Idle compaction failed for %s/%s", anima.name, thread_id)
         return False

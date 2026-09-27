@@ -46,7 +46,7 @@ from . import events, setup
 
 logger = logging.getLogger("animaworks.execution.codex_sdk")
 
-__all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids"]
+__all__ = ["CodexSDKExecutor", "clear_codex_thread_id"]
 
 RESUME_TIMEOUT_SEC = 15.0
 _RESUME_PROMPT_SIZE_LIMIT = 50_000
@@ -80,12 +80,6 @@ def _clear_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "
 def clear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
     """Clear one resolved Codex thread ID namespace."""
     _clear_thread_id(anima_dir, session_type, chat_thread_id)
-
-
-def clear_codex_thread_ids(anima_dir: Path, chat_thread_id: str = "default") -> None:
-    """Clear persisted Codex thread IDs for all known runtime session types."""
-    for st in ("chat", "heartbeat", "cron", "task", "inbox"):
-        _clear_thread_id(anima_dir, st, chat_thread_id)
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -138,6 +132,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
     """
 
     engine_mode = "C"
+    session_engine = "codex"
     errors_always_terminal = False
 
     def __init__(

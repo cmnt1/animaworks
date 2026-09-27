@@ -284,6 +284,7 @@ def _kill_sdk_process(pid: int | None, create_time: float | None) -> None:
 
 
 class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
+    session_engine = "agent_sdk"
     """Execute via Claude Agent SDK (Mode S).
 
     The SDK spawns a subprocess where Claude has full tool access.

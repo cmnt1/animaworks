@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from core.execution.session_store import SessionStore
+from core.execution.session_types import RESUMABLE_SESSION_TYPES
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -110,7 +111,7 @@ SESSION_TYPE_CRON = "cron"
 SESSION_TYPE_TASK = "task"
 SESSION_TYPE_INBOX = "inbox"
 
-_RESUMABLE_SESSION_TYPES: frozenset[str] = frozenset({SESSION_TYPE_CHAT})
+_RESUMABLE_SESSION_TYPES = RESUMABLE_SESSION_TYPES
 """Only these session types persist and resume SDK sessions.
 All other types start fresh each time (no resume, no save)."""
 

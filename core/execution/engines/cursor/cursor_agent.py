@@ -25,6 +25,7 @@ from typing import Any
 from core.execution.base import ExecutionResult, ToolCallRecord, _truncate_for_record, join_answer_parts
 from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_event
+from core.execution.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
 from core.execution.session_context import _resolve_session_type
@@ -46,7 +47,6 @@ __all__ = [
     "CursorAgentExecutor",
     "is_cursor_agent_available",
     "_MAX_RESUME_TURNS",
-    "_RESUMABLE_TRIGGERS",
     "_chat_id_path",
     "_clear_chat_id",
     "_load_chat_id",
@@ -56,8 +56,7 @@ __all__ = [
 
 # ── Constants ───────────────────────────────────────────────────
 
-_RESUMABLE_TRIGGERS = frozenset({"chat"})
-_MAX_RESUME_TURNS = 10
+_MAX_RESUME_TURNS = MAX_RESUME_TURNS
 
 
 # ── Session (chat ID) persistence ─────────────────────────────
@@ -121,6 +120,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
     """
 
     engine_mode = "D"
+    session_engine = "cursor"
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -366,26 +366,11 @@ class CursorAgentExecutor(CLIStreamExecutor):
         self._write_cursor_rules()
 
         session_type = _resolve_session_type(trigger)
-        is_resumable = session_type in _RESUMABLE_TRIGGERS
-
-        loaded_chat_id: str | None = None
-        turn_count = 0
-        if is_resumable:
-            loaded_chat_id, turn_count = _load_chat_id(self._anima_dir, session_type, thread_id)
-
-        session_rotated = False
-        resume_chat_id = loaded_chat_id
-
-        if loaded_chat_id and SessionStore.turn_limit_reached(turn_count, _MAX_RESUME_TURNS):
-            session_rotated = True
-            _clear_chat_id(self._anima_dir, session_type, thread_id)
-            resume_chat_id = None
-            logger.info(
-                "Session rotation at turn %d (max=%d, type=%s)",
-                turn_count,
-                _MAX_RESUME_TURNS,
-                session_type,
-            )
+        decision = load_turn_limited_session(self._anima_dir, "cursor", trigger, thread_id)
+        is_resumable = decision.resumable
+        turn_count = decision.turn_count
+        session_rotated = decision.rotated
+        resume_chat_id = decision.session_id
 
         # ── Build combined prompt ──────────────────────────
         time_prefix = _format_current_time()
@@ -408,6 +393,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 thread_id,
             )
 
+        rotated_during_run = False
         result, session_id, failed = await self._run_subprocess(
             combined_prompt,
             resume_chat_id=resume_chat_id,
@@ -432,14 +418,14 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 event_sink=_event_sink,
             )
             session_rotated = True
+            rotated_during_run = True
 
         # ── Persist session state ──────────────────────────
-        if session_rotated:
-            new_turn = 1
-        elif resume_chat_id:
-            new_turn = turn_count + 1
-        else:
-            new_turn = 1
+        new_turn, rotation_pending = next_turn_count(
+            decision,
+            resumed=resume_chat_id is not None,
+            rotated_during_run=rotated_during_run,
+        )
 
         if session_id and is_resumable:
             _save_chat_id(self._anima_dir, session_id, session_type, thread_id, new_turn)
@@ -451,7 +437,6 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 thread_id,
             )
 
-        rotation_pending = is_resumable and not session_rotated and new_turn >= _MAX_RESUME_TURNS
         result.session_rotated = session_rotated
         result.session_rotation_pending = rotation_pending
 

@@ -15,8 +15,7 @@ import pytest
 
 from core.agent.session_compactor import (
     SessionCompactor,
-    _compact_mode_a,
-    _compact_mode_c,
+    _compact_conversation,
     _compact_mode_s,
     _extract_recent_chat_context,
     run_idle_compaction,
@@ -371,8 +370,10 @@ class TestModeSpecificCompaction:
         )
 
     @pytest.mark.asyncio
-    async def test_compact_mode_a_calls_compress_and_finalize(self, anima_dir: Path, model_config: ModelConfig) -> None:
-        """_compact_mode_a calls compress_if_needed and finalize_if_session_ended."""
+    async def test_compact_conversation_calls_compress_and_finalize(
+        self, anima_dir: Path, model_config: ModelConfig
+    ) -> None:
+        """Conversation compaction compresses history and finalizes the conversation."""
         with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
@@ -384,7 +385,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            result = await _compact_mode_a(anima, "default")
+            result = await _compact_conversation(anima, "default", clear_engine=None)
 
             mock_conv.compress_if_needed_detailed.assert_awaited_once()
             mock_conv.finalize_if_session_ended.assert_awaited_once()
@@ -395,7 +396,7 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_a_saves_shortterm_when_state_has_content(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_a saves shortterm when conversation state has content."""
+        """Conversation compaction saves shortterm when conversation state has content."""
         mock_turn = MagicMock()
         mock_turn.role = "assistant"
         mock_turn.content = "I completed the task."
@@ -420,7 +421,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            await _compact_mode_a(anima, "default")
+            await _compact_conversation(anima, "default", clear_engine=None)
 
             mock_stm_cls.assert_called_once_with(anima_dir, session_type="chat", thread_id="default")
             mock_stm.save.assert_called_once()
@@ -433,7 +434,7 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_a_skips_shortterm_when_state_empty(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_a skips shortterm save when conversation state is empty."""
+        """Conversation compaction skips shortterm save when conversation state is empty."""
         with (
             patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
             patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
@@ -448,7 +449,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            await _compact_mode_a(anima, "default")
+            await _compact_conversation(anima, "default", clear_engine=None)
 
             mock_stm_cls.assert_not_called()
 
@@ -456,7 +457,7 @@ class TestModeSpecificCompaction:
     async def test_compact_mode_a_shortterm_includes_last_3_turns(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_a includes up to last 3 turns in shortterm."""
+        """Conversation compaction includes up to the last 3 turns in shortterm."""
         turns = []
         for i in range(5):
             t = MagicMock()
@@ -481,7 +482,7 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            await _compact_mode_a(anima, "default")
+            await _compact_conversation(anima, "default", clear_engine=None)
 
             saved_state = mock_stm.save.call_args[0][0]
             assert "Turn 2" in saved_state.accumulated_response
@@ -491,13 +492,13 @@ class TestModeSpecificCompaction:
             assert "Turn 1" not in saved_state.accumulated_response
 
     @pytest.mark.asyncio
-    async def test_compact_mode_c_calls_compress_shortterm_clear_finalize(
+    async def test_compact_conversation_clears_engine_session_when_requested(
         self, anima_dir: Path, model_config: ModelConfig
     ) -> None:
-        """_compact_mode_c calls compress, shortterm save, clear_thread_id, finalize."""
+        """Conversation compaction clears the selected engine session."""
         with (
             patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
-            patch("core.execution.engines.codex.codex_sdk._clear_thread_id") as mock_clear,
+            patch("core.agent.session_compactor.clear_engine_session") as mock_clear,
             patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
@@ -516,14 +517,15 @@ class TestModeSpecificCompaction:
             anima.anima_dir = anima_dir
             anima.agent.model_config = model_config
 
-            result = await _compact_mode_c(anima, "default")
+            result = await _compact_conversation(anima, "default", clear_engine="codex")
 
             mock_conv.compress_if_needed_detailed.assert_awaited_once()
             mock_stm.save.assert_called_once()
-            mock_clear.assert_called_once_with(anima_dir, "chat", "default")
+            mock_clear.assert_called_once_with(anima_dir, "codex", "chat", "default")
             mock_conv.finalize_if_session_ended.assert_awaited_once()
             assert result["compression_performed"] is True
-            assert result["codex_thread_cleared"] is True
+            assert result["engine_session_cleared"] is True
+            assert result["engine"] == "codex"
 
     @pytest.mark.asyncio
     async def test_compact_mode_s_saves_shortterm_and_clears_session(self, anima_dir: Path) -> None:
@@ -1126,7 +1128,7 @@ class TestRunIdleCompaction:
 
     @pytest.mark.asyncio
     async def test_dispatches_to_mode_a(self) -> None:
-        """run_idle_compaction dispatches to _compact_mode_a for mode 'a'."""
+        """run_idle_compaction dispatches to conversation compaction for mode 'a'."""
         anima = MagicMock()
         anima.name = "alice"
         anima.agent.execution_mode = "a"
@@ -1136,20 +1138,72 @@ class TestRunIdleCompaction:
         anima._get_thread_lock = MagicMock(return_value=mock_lock)
 
         with patch(
-            "core.agent.session_compactor._compact_mode_a",
+            "core.agent.session_compactor._compact_conversation",
             new_callable=AsyncMock,
         ) as mock_compact:
             mock_compact.return_value = {"compression_performed": False}
             with patch("core.memory.activity.logger.ActivityLogger"):
                 await run_idle_compaction(anima, "thread-1")
 
-            mock_compact.assert_awaited_once_with(anima, "thread-1")
+            mock_compact.assert_awaited_once_with(anima, "thread-1", clear_engine=None)
+
+    @pytest.mark.parametrize(
+        ("mode", "engine", "storage_engine", "should_clear"),
+        [
+            ("x", "grok", "grok", True),
+            ("d", "cursor", "cursor", True),
+            ("c", "codex", "codex", True),
+            ("g", None, "grok", False),
+            ("a", None, "grok", False),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_mode_compaction_clears_only_selected_engine_session(
+        self,
+        tmp_path: Path,
+        mode: str,
+        engine: str | None,
+        storage_engine: str,
+        should_clear: bool,
+    ) -> None:
+        from core.execution.session_store import SessionRecord, SessionStore
+
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        model_config = ModelConfig(model="test/model", max_tokens=4096, context_threshold=0.5)
+        path = SessionStore.path_for(storage_engine, anima_dir, "chat", "thread-1")
+        SessionStore(path).write_text_record(SessionRecord("session-id", 1), with_turn_count=True)
+
+        with (
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.activity.logger.ActivityLogger"),
+        ):
+            mock_conv = MagicMock()
+            mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
+            mock_conv.load.return_value = MagicMock(compressed_summary="", turns=[])
+            mock_conv.finalize_if_session_ended = AsyncMock(return_value=False)
+            mock_conv_cls.return_value = mock_conv
+
+            anima = MagicMock()
+            anima.name = "alice"
+            anima.anima_dir = anima_dir
+            anima.agent.execution_mode = mode
+            anima.agent.model_config = model_config
+            anima.agent._executor = MagicMock(session_engine=engine)
+            lock = MagicMock()
+            lock.acquire = AsyncMock(return_value=True)
+            lock.release = MagicMock()
+            anima._get_thread_lock = MagicMock(return_value=lock)
+
+            assert await run_idle_compaction(anima, "thread-1") is True
+
+        assert path.exists() is (not should_clear)
 
     @pytest.mark.asyncio
     async def test_mode_s_fallback_to_mode_a_when_compact_returns_false(
         self,
     ) -> None:
-        """When mode S and _compact_mode_s returns False, falls back to _compact_mode_a."""
+        """When mode S compaction returns False, it falls back to conversation compaction."""
         anima = MagicMock()
         anima.name = "alice"
         anima.agent.execution_mode = "s"
@@ -1165,7 +1219,7 @@ class TestRunIdleCompaction:
                 return_value=False,
             ) as mock_s,
             patch(
-                "core.agent.session_compactor._compact_mode_a",
+                "core.agent.session_compactor._compact_conversation",
                 new_callable=AsyncMock,
             ) as mock_a,
         ):
@@ -1174,7 +1228,7 @@ class TestRunIdleCompaction:
                 await run_idle_compaction(anima, "thread-1")
 
             mock_s.assert_awaited_once()
-            mock_a.assert_awaited_once_with(anima, "thread-1")
+            mock_a.assert_awaited_once_with(anima, "thread-1", clear_engine=None)
 
     @pytest.mark.asyncio
     async def test_exception_caught_and_logged(self) -> None:
@@ -1189,7 +1243,7 @@ class TestRunIdleCompaction:
 
         with (
             patch(
-                "core.agent.session_compactor._compact_mode_a",
+                "core.agent.session_compactor._compact_conversation",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("compaction failed"),
             ),
