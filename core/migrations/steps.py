@@ -2472,6 +2472,9 @@ def step_usage_governor_cleanup(data_dir: Path, dry_run: bool, verbose: bool) ->
         return StepResult(changed=changed, skipped=skipped, details=details, error=str(exc))
 
 
+_MEMORY_DEAD_STALE_PROMPTS = ("memory/classification.md",)
+
+
 def step_memory_dead_prompt_cleanup_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove runtime prompts retired with classify_and_distill."""
     details: list[str] = []
