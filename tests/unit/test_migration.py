@@ -784,7 +784,8 @@ class TestRegisterAllSteps:
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("v0145_prompt_diet4_resync") - 1
-        assert ids.index("v0145_prompt_diet4_resync") == ids.index("rename_core_tools_to_integrations") - 1
+        assert ids.index("v0145_prompt_diet4_resync") == ids.index("v0146_prompt_diet4_stale_cleanup") - 1
+        assert ids.index("v0146_prompt_diet4_stale_cleanup") == ids.index("rename_core_tools_to_integrations") - 1
 
     def test_engine_timeout_cleanup_registered_after_tools_rename_and_before_version(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
@@ -794,3 +795,26 @@ class TestRegisterAllSteps:
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
         assert ids.index("engine_timeout_config_cleanup") == ids.index("update_version") - 1
+
+
+def test_step_v0146_removes_retired_prompt_copies(tmp_path):
+    from core.migrations.steps import _V0146_STALE_PROMPTS, step_v0146_prompt_diet4_stale_cleanup
+
+    builder_dir = tmp_path / "prompts" / "builder"
+    builder_dir.mkdir(parents=True)
+    for name in _V0146_STALE_PROMPTS:
+        (tmp_path / "prompts" / name).write_text("old", encoding="utf-8")
+    kept = builder_dir / "memory_guide_extra.md"
+    kept.write_text("keep", encoding="utf-8")
+
+    dry = step_v0146_prompt_diet4_stale_cleanup(tmp_path, dry_run=True, verbose=False)
+    assert dry.changed == len(_V0146_STALE_PROMPTS)
+    assert all((tmp_path / "prompts" / name).exists() for name in _V0146_STALE_PROMPTS)
+
+    result = step_v0146_prompt_diet4_stale_cleanup(tmp_path, dry_run=False, verbose=False)
+    assert result.changed == len(_V0146_STALE_PROMPTS)
+    assert not any((tmp_path / "prompts" / name).exists() for name in _V0146_STALE_PROMPTS)
+    assert kept.exists()
+
+    again = step_v0146_prompt_diet4_stale_cleanup(tmp_path, dry_run=False, verbose=False)
+    assert again.changed == 0
