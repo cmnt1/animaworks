@@ -243,17 +243,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = "status: idle"
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="prompt section"):
             result = build_system_prompt(memory)
@@ -274,17 +270,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="prompt"):
             result = build_system_prompt(memory)
@@ -316,18 +308,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = ["topic-a", "topic-b"]
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = ["proc-x"]
-        memory.list_skill_summaries.return_value = [("coding", "Write code")]
-        memory.list_common_skill_summaries.return_value = [("deploy", "Deploy apps")]
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
-        memory.list_procedure_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with (
             patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()),
@@ -354,18 +341,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = ["a", "b", "c"]
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = ["p1"]
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
-        memory.list_procedure_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = ["owner"]
 
         captured_calls: list[dict] = []
 
@@ -394,17 +376,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = "Bootstrap instructions"
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="section"):
             result = build_system_prompt(memory)
@@ -423,17 +401,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = "status: working"
-        memory.read_pending.return_value = "- task 1"
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -455,17 +429,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(
@@ -490,17 +460,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="section"):
             result = build_system_prompt(
@@ -527,17 +493,13 @@ class TestBuildSystemPrompt:
         memory.read_permissions.return_value = "## 外部ツール\n- chatwork: OK"
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
         memory.list_procedure_files.return_value = []
-        memory.list_skill_summaries.return_value = []
-        memory.list_common_skill_summaries.return_value = []
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", return_value="section"):
             result = build_system_prompt(
@@ -773,7 +735,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -781,7 +742,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -807,7 +767,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -815,7 +774,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -838,7 +796,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -846,7 +803,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)
@@ -873,7 +829,6 @@ class TestAssemblyWithTags:
         memory.read_permissions.return_value = ""
         memory.read_specialty_prompt.return_value = ""
         memory.read_current_state.return_value = ""
-        memory.read_pending.return_value = ""
         memory.read_bootstrap.return_value = ""
         memory.list_knowledge_files.return_value = []
         memory.list_episode_files.return_value = []
@@ -881,7 +836,6 @@ class TestAssemblyWithTags:
         memory.list_skill_metas.return_value = []
         memory.list_common_skill_metas.return_value = []
         memory.common_skills_dir = data_dir / "common_skills"
-        memory.list_shared_users.return_value = []
 
         with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt_with_builder()):
             result = build_system_prompt(memory)

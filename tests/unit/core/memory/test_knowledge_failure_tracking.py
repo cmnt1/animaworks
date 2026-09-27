@@ -9,7 +9,6 @@ version, last_used) — Issue: memory-system-symmetry-and-skill-vector-search.
 
 Tests cover:
 - Knowledge metadata creation via consolidation
-- update_knowledge_metadata helper
 - report_knowledge_outcome handler
 - Knowledge protection in forgetting
 - Knowledge reconsolidation targets
@@ -88,39 +87,6 @@ class TestMemoryManagerKnowledgeHelpers:
         meta = mm.read_knowledge_metadata(anima_dir / "knowledge" / "legacy.md")
         assert meta.get("success_count", 0) == 0
         assert meta.get("failure_count", 0) == 0
-
-    def test_update_knowledge_metadata_merges(self, anima_dir: Path) -> None:
-        from core.memory.manager import MemoryManager
-
-        _write_knowledge(
-            anima_dir,
-            "topic.md",
-            "body text",
-            {
-                "confidence": 0.7,
-                "success_count": 0,
-                "failure_count": 0,
-                "version": 1,
-            },
-        )
-        mm = MemoryManager(anima_dir)
-        target = anima_dir / "knowledge" / "topic.md"
-        mm.update_knowledge_metadata(target, {"success_count": 5, "last_used": "now"})
-
-        meta = mm.read_knowledge_metadata(target)
-        assert meta["success_count"] == 5
-        assert meta["last_used"] == "now"
-        assert meta["confidence"] == 0.7  # unchanged
-
-    def test_update_knowledge_metadata_relative_path(self, anima_dir: Path) -> None:
-        from core.memory.manager import MemoryManager
-
-        _write_knowledge(anima_dir, "rel.md", "body", {"confidence": 0.5})
-        mm = MemoryManager(anima_dir)
-        mm.update_knowledge_metadata(Path("rel.md"), {"failure_count": 3})
-
-        meta = mm.read_knowledge_metadata(anima_dir / "knowledge" / "rel.md")
-        assert meta["failure_count"] == 3
 
 
 # ── 2. report_knowledge_outcome handler ────────────────────────

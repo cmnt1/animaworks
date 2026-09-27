@@ -679,22 +679,6 @@ class ChromaVectorStore(VectorStore):
             )
             return []
 
-    def needs_cosine_migration(self) -> list[str]:
-        """Return collection names still using L2 (non-cosine) distance."""
-        l2_collections: list[str] = []
-        collections = self.list_collections()
-        if collections is None:
-            return l2_collections
-        for name in collections:
-            try:
-                coll = self.client.get_collection(name=name)
-                space = (coll.metadata or {}).get("hnsw:space", "l2")
-                if space != "cosine":
-                    l2_collections.append(name)
-            except Exception:
-                logger.debug("Skipping collection '%s' during migration check", name)
-        return l2_collections
-
     @staticmethod
     def _serialize_metadata(
         metadata: dict[str, str | int | float | list[str]],

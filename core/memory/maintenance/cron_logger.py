@@ -20,7 +20,7 @@ logger = logging.getLogger("animaworks.memory")
 
 
 class CronLogger:
-    """Cron execution log recorder and reader.
+    """Cron execution log recorder.
 
     Manages daily JSONL log files under ``{anima_dir}/state/cron_logs/``.
     """
@@ -157,34 +157,3 @@ class CronLogger:
             ensure_ascii=False,
         )
         self._append_entry(path, entry)
-
-    def read_cron_log(self, days: int = 1) -> str:
-        """Read cron logs for the last *days* days."""
-        log_dir = self._log_dir()
-        if not log_dir.is_dir():
-            return ""
-
-        parts: list[str] = []
-        today = now_local().date()
-        for i in range(days):
-            target = today - timedelta(days=i)
-            path = log_dir / f"{target.isoformat()}.jsonl"
-            if not path.exists():
-                continue
-            for line in path.read_text(encoding="utf-8").strip().splitlines():
-                try:
-                    e = json.loads(line)
-                    if "event" in e:
-                        reason = f" ({e['reason']})" if e.get("reason") else ""
-                        line_text = f"- {e['timestamp']}: [{e['task']}] {e['event']}{reason}"
-                    elif "summary" in e:
-                        line_text = f"- {e['timestamp']}: [{e['task']}] {e['summary'][:200]} ({e['duration_ms']}ms)"
-                    else:
-                        exit_code = e.get("exit_code", "?")
-                        preview = (e.get("stdout_preview", "") or e.get("stderr_preview", ""))[:100]
-                        dur = e.get("duration_ms", 0)
-                        line_text = f"- {e['timestamp']}: [{e['task']}] exit={exit_code} {preview} ({dur}ms)"
-                    parts.append(line_text)
-                except (json.JSONDecodeError, KeyError):
-                    continue
-        return "\n".join(parts)

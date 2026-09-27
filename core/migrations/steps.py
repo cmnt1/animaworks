@@ -2539,6 +2539,44 @@ def step_retired_config_keys_cleanup(data_dir: Path, dry_run: bool, verbose: boo
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_memory_config_dead_keys_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Drop retired consolidation and RAG configuration keys."""
+    del verbose
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["config.json not found; skip"])
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(config, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+
+        retired_keys = (
+            ("consolidation", "duplicate_threshold"),
+            ("rag", "enable_file_watcher"),
+        )
+        found: list[tuple[str, str]] = []
+        for section_name, key in retired_keys:
+            section = config.get(section_name)
+            if isinstance(section, dict) and key in section:
+                found.append((section_name, key))
+
+        if not found:
+            return StepResult(changed=0, skipped=1, details=["No retired memory config keys found"])
+        if dry_run:
+            details = [f"Would remove {section}.{key}" for section, key in found]
+            return StepResult(changed=len(found), skipped=0, details=details)
+
+        for section_name, key in found:
+            del config[section_name][key]
+        details = [f"Removed {section}.{key}" for section, key in found]
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return StepResult(changed=len(found), skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_memory_config_dead_keys_20260927 failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
     steps = [
@@ -2836,6 +2874,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove retired config.json keys",
             "structural",
             step_retired_config_keys_cleanup,
+        ),
+        MigrationStep(
+            "memory_config_dead_keys_20260927",
+            "Drop consolidation.duplicate_threshold and rag.enable_file_watcher",
+            "structural",
+            step_memory_config_dead_keys_20260927,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

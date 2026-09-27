@@ -299,11 +299,3 @@ class SkillMetadataService:
                 seen.add(resolved)
                 results.append(self.extract_skill_meta(f, is_common=True))
         return results
-
-    def list_skill_summaries(self) -> list[tuple[str, str]]:
-        """Return (name, description) for each personal skill."""
-        return [(m.name, m.description) for m in self.list_skill_metas()]
-
-    def list_common_skill_summaries(self) -> list[tuple[str, str]]:
-        """Return (name, description) for each common skill."""
-        return [(m.name, m.description) for m in self.list_common_skill_metas()]

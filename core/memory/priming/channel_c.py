@@ -82,16 +82,6 @@ def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
     return (title, body)
 
 
-def _usable_summary_body(body: str) -> str:
-    """Reject structural Markdown lines that do not summarize a document."""
-    stripped = body.strip()
-    if stripped.startswith("|") or re.fullmatch(r"[-|:\s]+", stripped):
-        return ""
-    if re.fullmatch(r"#+", stripped):
-        return ""
-    return stripped
-
-
 def _timestamp_rank(value: str) -> float:
     """Convert an ISO timestamp into a sortable numeric rank."""
     if not value:

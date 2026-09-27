@@ -24,7 +24,7 @@ import os
 import re
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from core.i18n import t
 from core.memory._io import atomic_write_text
@@ -32,13 +32,7 @@ from core.memory.conversation.compression import (
     CompressionResult,
 )
 from core.memory.conversation.compression import (
-    _call_compression_llm as _call_compression_llm_fn,
-)
-from core.memory.conversation.compression import (
     _compress as _compress_fn,
-)
-from core.memory.conversation.compression import (
-    _format_turns_for_compression as _format_turns_for_compression_fn,
 )
 from core.memory.conversation.compression import (
     compress_if_needed as _compress_if_needed,
@@ -50,14 +44,9 @@ from core.memory.conversation.compression import (
     needs_compression as _needs_compression,
 )
 from core.memory.conversation.finalize import (
-    _parse_session_summary as _parse_session_summary_fn,
-)
-from core.memory.conversation.finalize import (
     finalize_if_session_ended as _finalize_if_session_ended,
 )
-from core.memory.conversation.finalize import (
-    finalize_session as _finalize_session,
-)
+from core.memory.conversation.finalize import finalize_session as _finalize_session
 from core.memory.conversation.models import (
     _CHARS_PER_TOKEN,
     _ERROR_PATTERN,
@@ -73,11 +62,7 @@ from core.memory.conversation.models import (
     SESSION_GAP_MINUTES,
     ConversationState,
     ConversationTurn,
-    ParsedSessionSummary,
     ToolRecord,
-)
-from core.memory.conversation.prompt import (
-    _format_history as _format_history_fn,
 )
 from core.memory.conversation.prompt import (
     build_chat_prompt as _build_chat_prompt,
@@ -85,14 +70,8 @@ from core.memory.conversation.prompt import (
 from core.memory.conversation.prompt import (
     build_structured_messages as _build_structured_messages,
 )
-from core.memory.conversation.state_update import (
-    _record_resolutions as _record_resolutions_fn,
-)
 from core.schemas import ModelConfig
 from core.time_utils import today_local
-
-if TYPE_CHECKING:
-    from core.memory.manager import MemoryManager
 
 logger = logging.getLogger("animaworks.conversation_memory")
 
@@ -189,14 +168,6 @@ class ConversationMemory:
     @staticmethod
     def _valid_date(date: str) -> bool:
         return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", date))
-
-    def list_transcript_dates(self) -> list[str]:
-        if not self._transcript_dir.exists():
-            return []
-        return sorted(
-            [f.stem for f in self._transcript_dir.glob("*.jsonl")],
-            reverse=True,
-        )
 
     def load_transcript(self, date: str) -> list[dict]:
         if not self._valid_date(date):
@@ -306,22 +277,6 @@ class ConversationMemory:
         state = self.load()
         return _build_structured_messages(state, content, fmt, self.model_config)
 
-    def _format_history(self, state: ConversationState, max_chars: int | None = None) -> str:
-        return _format_history_fn(state, max_chars)
-
-    def _format_turns_for_compression(self, turns: list[ConversationTurn]) -> str:
-        return _format_turns_for_compression_fn(turns)
-
-    @staticmethod
-    def _parse_session_summary(raw: str) -> ParsedSessionSummary:
-        return _parse_session_summary_fn(raw)
-
-    def _record_resolutions(self, memory_mgr: MemoryManager, resolved_items: list[str]) -> None:
-        _record_resolutions_fn(self.anima_dir, memory_mgr, resolved_items)
-
-    async def _call_compression_llm(self, old_summary: str, new_turns: str) -> str:
-        return await _call_compression_llm_fn(old_summary, new_turns)
-
     async def _compress(self) -> CompressionResult:
         return await _compress_fn(self.load(), self.model_config, self.save, self.anima_name)
 
@@ -345,21 +300,6 @@ class ConversationMemory:
             self._load_context_window_overrides,
             self.save,
             self.anima_name,
-        )
-
-    async def finalize_session(
-        self,
-        min_turns: int = 3,
-        injected_procedures: list[str] | None = None,
-        session_id: str = "",
-    ) -> bool:
-        del injected_procedures, session_id
-        return await _finalize_session(
-            self.anima_dir,
-            self.load(),
-            self.model_config,
-            self.save,
-            min_turns=min_turns,
         )
 
     async def finalize_if_session_ended(self) -> bool:

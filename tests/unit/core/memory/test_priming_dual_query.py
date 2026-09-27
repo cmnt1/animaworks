@@ -4,10 +4,9 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for dual-query strategy and language-agnostic keyword extraction.
+"""Tests for query merge and language-agnostic keyword extraction.
 
 Covers:
-  - _build_dual_queries(): query construction for message + keyword paths
   - _search_and_merge(): max-score deduplication across multiple queries
   - _extract_keywords(): language-agnostic keyword extraction (CJK, Latin, Korean)
   - _meets_min_length(): character-category-based minimum length filter
@@ -22,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.memory.priming.utils import build_dual_queries, meets_min_length, search_and_merge
+from core.memory.priming.utils import meets_min_length, search_and_merge
 
 
 @pytest.fixture
@@ -47,48 +46,6 @@ def anima_dir_with_knowledge(anima_dir):
         encoding="utf-8",
     )
     return anima_dir
-
-
-# ── _build_dual_queries ──────────────────────────────────
-
-
-class TestBuildDualQueries:
-    def test_both_message_and_keywords(self) -> None:
-        queries = build_dual_queries(
-            "Hello world, how are you?",
-            ["hello", "world"],
-        )
-        assert len(queries) == 2
-        assert queries[0] == "Hello world, how are you?"
-        assert queries[1] == "hello world"
-
-    def test_message_only(self) -> None:
-        queries = build_dual_queries("Some message", [])
-        assert len(queries) == 1
-        assert queries[0] == "Some message"
-
-    def test_keywords_only(self) -> None:
-        queries = build_dual_queries("", ["alpha", "beta"])
-        assert len(queries) == 1
-        assert queries[0] == "alpha beta"
-
-    def test_empty_both(self) -> None:
-        queries = build_dual_queries("", [])
-        assert queries == []
-
-    def test_dedup_identical(self) -> None:
-        queries = build_dual_queries("test", ["test"])
-        assert len(queries) == 1
-
-    def test_long_message_truncated_to_300(self) -> None:
-        long_msg = "a" * 500
-        queries = build_dual_queries(long_msg, ["kw"])
-        assert len(queries[0]) == 300
-
-    def test_max_5_keywords(self) -> None:
-        kws = ["a", "b", "c", "d", "e", "f", "g"]
-        queries = build_dual_queries("msg", kws)
-        assert queries[1] == "a b c d e"
 
 
 # ── _search_and_merge ─────────────────────────────────────

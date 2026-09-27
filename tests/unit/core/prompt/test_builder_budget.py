@@ -194,7 +194,6 @@ def _make_mock_memory(
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = ""
     memory.read_current_state.return_value = "status: idle"
-    memory.read_pending.return_value = ""
     memory.read_resolutions.return_value = []
     memory.read_model_config.return_value = None
     memory.list_knowledge_files.return_value = []
@@ -202,8 +201,6 @@ def _make_mock_memory(
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 

@@ -27,14 +27,11 @@ def _make_mock_memory(anima_dir: Path, tmp_path: Path) -> MagicMock:
     memory.read_permissions.return_value = ""
     memory.read_specialty_prompt.return_value = ""
     memory.read_current_state.return_value = ""
-    memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     memory.load_recent_heartbeat_summary.return_value = ""
-    memory.list_procedure_metas.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
     return memory
@@ -166,12 +163,7 @@ class TestSkillCatalogE2E:
         image_skill_dir = common_skills_dir / "image-gen-tool"
         image_skill_dir.mkdir(parents=True)
         (image_skill_dir / "SKILL.md").write_text(
-            "---\n"
-            "name: image-gen-tool\n"
-            "description: 画像生成スキル\n"
-            "tags: [image]\n"
-            "---\n\n"
-            "Body",
+            "---\nname: image-gen-tool\ndescription: 画像生成スキル\ntags: [image]\n---\n\nBody",
             encoding="utf-8",
         )
 
@@ -272,16 +264,8 @@ class TestSkillCatalogE2E:
             path=tmp_path / "skills" / "cron-management.md",
             is_common=False,
         )
-        procedure_meta = SkillMeta(
-            name="deploy-procedure",
-            description="本番デプロイの手順書",
-            path=tmp_path / "procedures" / "deploy-procedure.md",
-            is_common=False,
-        )
-
         memory = _make_mock_memory(anima_dir, tmp_path)
         memory.list_skill_metas.return_value = [skill_meta]
-        memory.list_procedure_metas.return_value = [procedure_meta]
 
         with (
             patch("core.prompt.builder.load_prompt", side_effect=_fake_load_prompt),

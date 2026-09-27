@@ -176,7 +176,6 @@ class TestIndexFileSkipsRagignored:
         mock_store = MagicMock()
         with (
             patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(MemoryIndexer, "_init_embedding_model"),
         ):
             indexer = MemoryIndexer(
                 mock_store,
@@ -208,7 +207,6 @@ class TestIndexFileSkipsRagignored:
         mock_store = MagicMock()
         with (
             patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(MemoryIndexer, "_init_embedding_model"),
         ):
             indexer = MemoryIndexer(mock_store, anima_name="test", anima_dir=anima_dir)
             indexer.delete_indexed_file = MagicMock(return_value=2)

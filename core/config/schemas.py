@@ -393,7 +393,6 @@ class ConsolidationConfig(BaseModel):
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
     weekly_enabled: bool = False
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
-    duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
     knowledge_self_correction_enabled: bool = True

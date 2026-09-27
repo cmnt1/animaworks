@@ -22,7 +22,6 @@ def _memory(tmp_path: Path, *, identity: str = "identity", state: str = "status:
     memory.read_model_config.return_value = None
     memory.list_knowledge_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 

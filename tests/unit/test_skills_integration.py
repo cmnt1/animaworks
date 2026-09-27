@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from core.memory.skill_metadata import SkillMetadataService, match_skills_by_description
 from core.schemas import SkillMeta
 from core.skills.loader import load_skill_metadata
@@ -20,10 +18,7 @@ from core.tooling.skill_creator import create_skill_directory
 def _write_skill(base: Path, name: str, *, desc: str = "", trust_level: str = "trusted") -> Path:
     d = base / name
     d.mkdir(parents=True, exist_ok=True)
-    content = (
-        f"---\nname: {name}\ndescription: {desc or name + ' desc'}\n"
-        f"trust_level: {trust_level}\n---\n\n# {name}\n"
-    )
+    content = f"---\nname: {name}\ndescription: {desc or name + ' desc'}\ntrust_level: {trust_level}\n---\n\n# {name}\n"
     (d / "SKILL.md").write_text(content, encoding="utf-8")
     return d
 
@@ -72,17 +67,6 @@ class TestSkillMetadataServiceBackwardCompat:
         metas = svc.list_common_skill_metas()
         assert len(metas) == 1
         assert metas[0].is_common is True
-
-    def test_list_skill_summaries(self, tmp_path: Path):
-        skills = tmp_path / "skills"
-        common = tmp_path / "common"
-        skills.mkdir()
-        common.mkdir()
-        _write_skill(skills, "my-skill", desc="My description")
-
-        svc = SkillMetadataService(skills, common)
-        summaries = svc.list_skill_summaries()
-        assert summaries == [("my-skill", "My description")]
 
 
 class TestMatchSkillsByDescription:

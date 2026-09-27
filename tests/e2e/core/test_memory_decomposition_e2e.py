@@ -17,47 +17,9 @@ from core.memory.config_reader import ConfigReader
 from core.memory.frontmatter import FrontmatterService
 from core.memory.maintenance.cron_logger import CronLogger
 from core.memory.maintenance.resolution_tracker import ResolutionTracker
-from core.memory.manager import (
-    MemoryManager,
-    _extract_bracket_keywords,
-    _extract_comma_keywords,
-    _match_tier1,
-    _match_tier2,
-    _match_tier3_vector,
-    _normalize_text,
-    # Re-exports from skill_metadata module
-    match_skills_by_description,
-)
+from core.memory.manager import MemoryManager
 from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.memory.skill_metadata import SkillMetadataService
-
-# ── Import compatibility ─────────────────────────────────
-
-
-class TestImportCompatibility:
-    """Re-exports from core.memory.manager still work."""
-
-    def test_match_skills_importable_from_manager(self) -> None:
-        assert callable(match_skills_by_description)
-
-    def test_normalize_text_importable_from_manager(self) -> None:
-        assert callable(_normalize_text)
-
-    def test_extract_bracket_keywords_importable(self) -> None:
-        assert callable(_extract_bracket_keywords)
-
-    def test_extract_comma_keywords_importable(self) -> None:
-        assert callable(_extract_comma_keywords)
-
-    def test_match_tier1_importable(self) -> None:
-        assert callable(_match_tier1)
-
-    def test_match_tier2_importable(self) -> None:
-        assert callable(_match_tier2)
-
-    def test_match_tier3_vector_importable(self) -> None:
-        assert callable(_match_tier3_vector)
-
 
 # ── New module direct imports ────────────────────────────
 
@@ -98,15 +60,8 @@ class TestFacadeDelegation:
         anima_dir.mkdir(parents=True, exist_ok=True)
         return MemoryManager(anima_dir)
 
-    def test_cron_log_roundtrip(self, mm: MemoryManager) -> None:
-        """append_cron_log + read_cron_log works through the facade."""
-        mm.append_cron_log("daily-backup", summary="OK", duration_ms=1234)
-        result = mm.read_cron_log(days=1)
-        assert "daily-backup" in result
-        assert "1234ms" in result
-
     def test_cron_command_log(self, mm: MemoryManager) -> None:
-        """append_cron_command_log writes to the log file and read_cron_log includes it."""
+        """append_cron_command_log writes to the log file."""
         import json as _json
 
         from core.time_utils import now_jst
@@ -125,10 +80,6 @@ class TestFacadeDelegation:
         assert entry["task"] == "test-cmd"
         assert entry["exit_code"] == 0
 
-        result = mm.read_cron_log(days=1)
-        assert "test-cmd" in result
-        assert "exit=0" in result
-
     def test_resolution_roundtrip(self, mm: MemoryManager) -> None:
         """append_resolution + read_resolutions works through the facade."""
         mm.append_resolution("disk full", "ops-anima")
@@ -138,10 +89,10 @@ class TestFacadeDelegation:
         assert entries[-1]["resolver"] == "ops-anima"
 
     def test_skill_meta_static(self, tmp_path: Path) -> None:
-        """_extract_skill_meta delegates to SkillMetadataService."""
+        """SkillMetadataService extracts skill metadata."""
         f = tmp_path / "test.md"
         f.write_text("---\nname: test-skill\ndescription: テスト\n---\n\nBody.\n")
-        meta = MemoryManager._extract_skill_meta(f)
+        meta = SkillMetadataService.extract_skill_meta(f)
         assert meta.name == "test-skill"
         assert meta.description == "テスト"
 
@@ -172,12 +123,6 @@ class TestFacadeDelegation:
         assert "do the thing" in content
         meta = mm.read_procedure_metadata(Path("proc.md"))
         assert meta["description"] == "test proc"
-
-    def test_search_knowledge_keyword(self, mm: MemoryManager) -> None:
-        """search_knowledge finds keyword matches."""
-        (mm.knowledge_dir / "test.md").write_text("# Python tips\nUse list comprehension.\n")
-        results = mm.search_knowledge("comprehension")
-        assert any("comprehension" in line for _, line in results)
 
     def test_search_memory_text_scope(self, mm: MemoryManager) -> None:
         """search_memory_text respects scope parameter (keyword fallback)."""

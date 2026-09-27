@@ -382,7 +382,6 @@ class TestRunHeartbeat:
             assert isinstance(result, CycleResult)
             assert dp._last_heartbeat is not None
             assert dp._status_slots["background"] == "idle"
-            MockMM.return_value.archive_and_reset_state.assert_not_called()
 
 
 # ── run_cron_task ─────────────────────────────────────────
@@ -410,7 +409,6 @@ class TestRunCronTask:
             result = await dp.run_cron_task("daily_report", "Generate report")
             assert isinstance(result, CycleResult)
             assert dp._status_slots["background"] == "idle"
-            MockMM.return_value.archive_and_reset_state.assert_not_called()
 
 
 # ── process_greet ────────────────────────────────────────

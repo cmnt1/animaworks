@@ -779,20 +779,6 @@ async def one_shot_completion(
         except Exception as e:
             logger.warning("Agent SDK one-shot fallback also failed: %s", e)
 
-    if _is_codex_model(resolved_model) and not _sdk_stage_guarded(
-        guard, guard_key(family, "codex"), "one-shot", "Codex SDK"
-    ):
-        try:
-            return await _try_codex_sdk(
-                prompt,
-                system_prompt=system_prompt,
-                model=resolved_model,
-                max_tokens=max_tokens,
-                llm_kwargs=llm_kwargs,
-            )
-        except Exception as e:
-            logger.warning("Codex SDK one-shot fallback also failed: %s", e)
-
     return None
 
 
@@ -895,19 +881,5 @@ async def one_shot_completion_with_model_config(
             )
         except Exception as e:
             logger.warning("Agent SDK active-model one-shot fallback also failed: %s", e)
-
-    if _is_codex_model(resolved_model) and not _sdk_stage_guarded(
-        guard, guard_key(family, "codex"), "active-model one-shot", "Codex SDK"
-    ):
-        try:
-            return await _try_codex_sdk(
-                prompt,
-                system_prompt=system_prompt,
-                model=resolved_model,
-                max_tokens=max_tokens,
-                llm_kwargs=llm_kwargs,
-            )
-        except Exception as e:
-            logger.warning("Codex SDK active-model one-shot fallback also failed: %s", e)
 
     return None

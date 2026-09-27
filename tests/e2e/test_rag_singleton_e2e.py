@@ -115,10 +115,9 @@ class TestMemoryManagerSingleton:
             mock_get_store.assert_any_call("test-anima")
             mock_get_store.assert_any_call("test-anima-2")
 
-    def test_multiple_managers_share_embedding_model(self, anima_dir, tmp_path):
-        """Multiple MemoryManager instances should share the same embedding model."""
+    def test_multiple_managers_defer_embedding_model_loading(self, anima_dir, tmp_path):
+        """Constructing MemoryManager indexers should not load the embedding model."""
         mock_store = MagicMock()
-        mock_model = MagicMock()
 
         # Create a second anima dir
         anima2 = tmp_path / "animas" / "test-anima-2"
@@ -131,10 +130,7 @@ class TestMemoryManagerSingleton:
                 "core.memory.rag.vector_registry.get_vector_store",
                 return_value=mock_store,
             ),
-            patch(
-                "core.memory.rag.embedding.get_embedding_model",
-                return_value=mock_model,
-            ),
+            patch("core.memory.rag.embedding.get_embedding_model") as mock_get_embedding_model,
         ):
             from core.memory.manager import MemoryManager
 
@@ -144,6 +140,6 @@ class TestMemoryManagerSingleton:
             indexer1 = mgr1._get_indexer()
             indexer2 = mgr2._get_indexer()
 
-            # Both should share the same embedding model instance
-            assert indexer1.embedding_model is indexer2.embedding_model
-            assert indexer1.embedding_model is mock_model
+            assert indexer1 is not None
+            assert indexer2 is not None
+            mock_get_embedding_model.assert_not_called()

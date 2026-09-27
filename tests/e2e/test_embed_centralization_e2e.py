@@ -153,7 +153,6 @@ class TestEmbedCentralizationE2E:
     async def test_indexer_uses_generate_embeddings(self, tmp_path):
         """MemoryIndexer._generate_embeddings() delegates to generate_embeddings()."""
         mock_store = MagicMock()
-        mock_model = MagicMock()
 
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir(parents=True)
@@ -170,7 +169,6 @@ class TestEmbedCentralizationE2E:
                 vector_store=mock_store,
                 anima_name="test-anima",
                 anima_dir=anima_dir,
-                embedding_model=mock_model,
             )
             result = indexer._generate_embeddings(["a", "b"])
 

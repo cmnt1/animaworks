@@ -14,19 +14,8 @@ import re
 # Default maximum tokens for entire priming injection
 _DEFAULT_MAX_PRIMING_TOKENS = 2000
 
-# Message type budgets (Phase 3: dynamic budget adjustment)
-_BUDGET_GREETING = 500
-_BUDGET_QUESTION = 2000
-_BUDGET_REQUEST = 3000
-_BUDGET_HEARTBEAT = 200
-
 # Channel-specific token budgets (default distribution)
-_BUDGET_SENDER_PROFILE = 500
-_BUDGET_RECENT_ACTIVITY = 1300  # Unified: old B(600) + E(700)
-_BUDGET_RELATED_KNOWLEDGE = 1200
 _BUDGET_IMPORTANT_KNOWLEDGE = 300
-_BUDGET_PENDING_TASKS = 500
-_BUDGET_RELATED_EPISODES = 400
 
 # Pre-compiled regex pattern for language-agnostic keyword extraction
 _RE_UNICODE_WORDS = re.compile(r"[\w]+", re.UNICODE)

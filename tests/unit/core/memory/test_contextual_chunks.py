@@ -10,7 +10,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -107,12 +107,11 @@ class TestIndexerContextualHeaders:
     def _make_indexer(self, anima_dir: Path):
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            return MemoryIndexer(
-                MagicMock(),
-                anima_name=anima_dir.name,
-                anima_dir=anima_dir,
-            )
+        return MemoryIndexer(
+            MagicMock(),
+            anima_name=anima_dir.name,
+            anima_dir=anima_dir,
+        )
 
     def test_episode_chunk_starts_with_date_title_heading(self, anima_dir: Path) -> None:
         indexer = self._make_indexer(anima_dir)

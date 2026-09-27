@@ -21,14 +21,11 @@ def _make_mock_memory(anima_dir: Path, tmp_path: Path) -> MagicMock:
     memory.read_permissions.return_value = ""
     memory.read_specialty_prompt.return_value = ""
     memory.read_current_state.return_value = ""
-    memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     memory.load_recent_heartbeat_summary.return_value = ""
-    memory.list_procedure_metas.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
     return memory
@@ -43,12 +40,7 @@ def _write_skill(anima_dir: Path, name: str, body: str, *, extra_frontmatter: st
     skill_dir.mkdir(parents=True)
     path = skill_dir / "SKILL.md"
     path.write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: active prompt skill\n"
-        f"{extra_frontmatter}"
-        "---\n\n"
-        f"{body}\n",
+        f"---\nname: {name}\ndescription: active prompt skill\n{extra_frontmatter}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path

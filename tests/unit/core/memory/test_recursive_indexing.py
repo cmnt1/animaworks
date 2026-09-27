@@ -13,7 +13,7 @@ handle subdirectory paths correctly.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -105,17 +105,16 @@ def test_index_directory_finds_subdirectory_files(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "shared",
-            temp_anima_dir["base"],
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "shared",
+        temp_anima_dir["base"],
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
+    chunks = indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
 
     assert chunks > 0, "Should index files from subdirectories"
     upsert_calls = mock_store.upsert.call_args_list
@@ -140,14 +139,13 @@ def test_index_directory_excludes_archive_subtree(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(mock_store, "test", temp_anima_dir["anima_dir"])
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
-        index_file = MagicMock(side_effect=indexer.index_file)
-        indexer.index_file = index_file
-        result = indexer.index_directory(knowledge_dir, "knowledge")
+    indexer = MemoryIndexer(mock_store, "test", temp_anima_dir["anima_dir"])
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    index_file = MagicMock(side_effect=indexer.index_file)
+    indexer.index_file = index_file
+    result = indexer.index_directory(knowledge_dir, "knowledge")
 
     assert result.files_indexed == 1
     index_file.assert_called_once_with(knowledge_dir / "topic-a.md", "knowledge", force=False)
@@ -164,17 +162,16 @@ def test_index_directory_skills_only_skill_md(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "test",
-            temp_anima_dir["anima_dir"],
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "test",
+        temp_anima_dir["anima_dir"],
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(sdir, "skills").chunks_indexed
+    chunks = indexer.index_directory(sdir, "skills").chunks_indexed
 
     assert chunks > 0, "Should index SKILL.md files"
 
@@ -197,17 +194,16 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
     mock_store.create_collection = MagicMock()
     mock_store.upsert = MagicMock()
 
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "shared",
-            temp_anima_dir["base"],
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "shared",
+        temp_anima_dir["base"],
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(csdir, "common_skills").chunks_indexed
+    chunks = indexer.index_directory(csdir, "common_skills").chunks_indexed
 
     assert chunks > 0, "Should index SKILL.md in common_skills"
 
@@ -233,17 +229,16 @@ def test_index_directory_shared_users_finds_nested(temp_anima_dir):
     mock_store.upsert = MagicMock()
 
     shared_base = temp_anima_dir["base"] / "shared"
-    with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"):
-        from core.memory.rag.indexer import MemoryIndexer
+    from core.memory.rag.indexer import MemoryIndexer
 
-        indexer = MemoryIndexer(
-            mock_store,
-            "shared",
-            shared_base,
-        )
-        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
+    indexer = MemoryIndexer(
+        mock_store,
+        "shared",
+        shared_base,
+    )
+    indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
-        chunks = indexer.index_directory(users_dir, "shared_users").chunks_indexed
+    chunks = indexer.index_directory(users_dir, "shared_users").chunks_indexed
 
     assert chunks > 0, "Should index nested user profile files"
 

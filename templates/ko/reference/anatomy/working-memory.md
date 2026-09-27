@@ -85,13 +85,6 @@ Anima의 워킹 메모리입니다. "지금 무엇을 하고 있는지", "무엇
 3. `state/pending.md`가 존재하고 내용이 있음 → `current_state.md`에 `## Migrated from pending.md`로 추가 후 삭제
 4. `state/pending.md`가 비어 있음 → 삭제
 
-### API
-
-| 메서드 | 동작 |
-|--------|------|
-| `read_pending()` | 항상 빈 문자열 `""`을 반환. 비권장 경고를 로그 출력 |
-| `update_pending()` | 아무것도 하지 않음 (no-op). 비권장 경고를 로그 출력 |
-
 ---
 
 ## 기존 태스크 파일

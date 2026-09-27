@@ -1,12 +1,7 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for skill metadata extraction and matching.
-
-Covers:
-- MemoryManager._extract_skill_meta()  (core/memory/manager.py)
-- match_skills_by_description()        (core/memory/manager.py)
-"""
+"""Unit tests for skill metadata extraction and matching."""
 
 from __future__ import annotations
 
@@ -14,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.manager import (
-    MemoryManager,
+from core.memory.skill_metadata import (
+    SkillMetadataService,
     _extract_bracket_keywords,
     _extract_comma_keywords,
     _match_tier1,
@@ -25,11 +20,11 @@ from core.memory.manager import (
 from core.schemas import SkillMeta
 from core.tooling.handler_base import _validate_skill_format
 
-# ── _extract_skill_meta ──────────────────────────────────
+# ── Skill metadata extraction ────────────────────────────
 
 
 class TestExtractSkillMeta:
-    """Tests for MemoryManager._extract_skill_meta()."""
+    """Tests for SkillMetadataService.extract_skill_meta()."""
 
     def test_parse_yaml_frontmatter(self, tmp_path: Path) -> None:
         """YAML frontmatter with name + description is correctly parsed."""
@@ -45,7 +40,7 @@ class TestExtractSkillMeta:
             encoding="utf-8",
         )
 
-        meta = MemoryManager._extract_skill_meta(skill_file)
+        meta = SkillMetadataService.extract_skill_meta(skill_file)
 
         assert meta.name == "deploy-skill"
         assert meta.description == "デプロイ手順「deploy」「リリース」"
@@ -60,7 +55,7 @@ class TestExtractSkillMeta:
             encoding="utf-8",
         )
 
-        meta = MemoryManager._extract_skill_meta(skill_file)
+        meta = SkillMetadataService.extract_skill_meta(skill_file)
 
         assert meta.name == "my-skill"
         assert meta.description == ""
@@ -74,7 +69,7 @@ class TestExtractSkillMeta:
             encoding="utf-8",
         )
 
-        meta = MemoryManager._extract_skill_meta(skill_file)
+        meta = SkillMetadataService.extract_skill_meta(skill_file)
 
         assert meta.name == "legacy"
         assert meta.description == "cronジョブの設定と管理を行うスキル"
@@ -96,7 +91,7 @@ class TestExtractSkillMeta:
             encoding="utf-8",
         )
 
-        meta = MemoryManager._extract_skill_meta(skill_file)
+        meta = SkillMetadataService.extract_skill_meta(skill_file)
 
         assert meta.name == "advanced-tool"
         assert meta.description == "高度な検索「search」「query」"
@@ -109,10 +104,10 @@ class TestExtractSkillMeta:
             encoding="utf-8",
         )
 
-        meta_personal = MemoryManager._extract_skill_meta(skill_file, is_common=False)
+        meta_personal = SkillMetadataService.extract_skill_meta(skill_file, is_common=False)
         assert meta_personal.is_common is False
 
-        meta_common = MemoryManager._extract_skill_meta(skill_file, is_common=True)
+        meta_common = SkillMetadataService.extract_skill_meta(skill_file, is_common=True)
         assert meta_common.is_common is True
 
 
@@ -520,7 +515,7 @@ class TestMatchTier3WithMockRetriever:
         """Results below min_score threshold are filtered out."""
         from unittest.mock import MagicMock
 
-        from core.memory.manager import _match_tier3_vector
+        from core.memory.skill_metadata import _match_tier3_vector
 
         p = tmp_path / "skill.md"
         p.write_text("dummy")
@@ -545,7 +540,7 @@ class TestMatchTier3WithMockRetriever:
         """Default min_score falls back to 0.75 when None is passed."""
         from unittest.mock import MagicMock
 
-        from core.memory.manager import _match_tier3_vector
+        from core.memory.skill_metadata import _match_tier3_vector
 
         p = tmp_path / "skill.md"
         p.write_text("dummy")
@@ -584,7 +579,7 @@ class TestMatchTier3WithMockRetriever:
         """Tier 3 matches results by file path stem."""
         from unittest.mock import MagicMock
 
-        from core.memory.manager import _match_tier3_vector
+        from core.memory.skill_metadata import _match_tier3_vector
 
         p = tmp_path / "deploy-guide.md"
         p.write_text("dummy")
@@ -609,7 +604,7 @@ class TestMatchTier3WithMockRetriever:
         """Tier 3 matches results by skill name when path doesn't match."""
         from unittest.mock import MagicMock
 
-        from core.memory.manager import _match_tier3_vector
+        from core.memory.skill_metadata import _match_tier3_vector
 
         p = tmp_path / "deploy.md"
         p.write_text("dummy")
@@ -640,7 +635,7 @@ class TestMatchTier3WithMockRetriever:
         """Duplicate matches from vector search are deduplicated."""
         from unittest.mock import MagicMock
 
-        from core.memory.manager import _match_tier3_vector
+        from core.memory.skill_metadata import _match_tier3_vector
 
         p = tmp_path / "deploy-guide.md"
         p.write_text("dummy")

@@ -16,6 +16,7 @@ from core.memory.conversation.memory import (
     _MAX_STORED_CONTENT_CHARS,
     ConversationMemory,
 )
+from core.memory.conversation.prompt import _format_history
 from core.schemas import ModelConfig
 
 
@@ -57,7 +58,7 @@ class TestLargeMessageHandling:
         big_msg = "x" * 2000
         mem.append_turn("human", big_msg)
         state = mem.load()
-        history = mem._format_history(state)
+        history = _format_history(state)
         # History should contain the truncated version
         assert "..." in history
         # Full 2000-char string should NOT appear
@@ -93,7 +94,7 @@ class TestLargeMessageHandling:
         mem.append_turn("assistant", "I see the error is on line 42." + " detail" * 300)
 
         state = mem.load()
-        history = mem._format_history(state)
+        history = _format_history(state)
 
         # History should be bounded
         assert len(history) < 10_000, f"History too long: {len(history)} chars"

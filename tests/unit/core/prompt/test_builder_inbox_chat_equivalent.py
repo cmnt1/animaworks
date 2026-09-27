@@ -63,7 +63,6 @@ def _mock_memory(tmp_path: Path, *, specialty: str = "", current_state: str = ""
     memory.read_identity.return_value = "# Identity\nI am test."
     memory.read_injection.return_value = ""
     memory.read_current_state.return_value = current_state
-    memory.read_pending.return_value = ""
     memory.read_bootstrap.return_value = ""
     memory.read_company_vision.return_value = ""
     memory.read_specialty_prompt.return_value = specialty
@@ -73,8 +72,6 @@ def _mock_memory(tmp_path: Path, *, specialty: str = "", current_state: str = ""
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     memory.read_resolutions.return_value = []
     return memory
 

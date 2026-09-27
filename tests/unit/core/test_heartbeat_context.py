@@ -87,15 +87,11 @@ def mock_memory(anima_dir: Path, tmp_path: Path) -> MagicMock:
     mm.read_company_vision.return_value = ""
     mm.read_permissions.return_value = ""
     mm.read_current_state.return_value = "status: idle"
-    mm.read_pending.return_value = ""
     mm.list_knowledge_files.return_value = []
     mm.list_episode_files.return_value = []
     mm.list_procedure_files.return_value = []
-    mm.list_skill_summaries.return_value = []
-    mm.list_common_skill_summaries.return_value = []
     mm.list_skill_metas.return_value = []
     mm.list_common_skill_metas.return_value = []
-    mm.list_shared_users.return_value = []
     mm.load_recent_heartbeat_summary.return_value = ""
     mm.read_model_config.return_value = MagicMock(supervisor=None)
     return mm

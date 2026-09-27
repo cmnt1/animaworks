@@ -20,6 +20,7 @@ from core.memory.conversation.memory import (
     ConversationMemory,
     ConversationTurn,
 )
+from core.memory.conversation.prompt import _format_history
 from core.schemas import ModelConfig
 
 # ── Conversation truncation tests ─────────────────────────────────
@@ -39,7 +40,7 @@ class TestHumanTurnTruncation:
         mem = self._make_memory(tmp_path)
         state = mem.load()
         state.turns.append(ConversationTurn(role="human", content="Hello, how are you?"))
-        history = mem._format_history(state)
+        history = _format_history(state)
         assert "Hello, how are you?" in history
         assert "..." not in history
 
@@ -49,7 +50,7 @@ class TestHumanTurnTruncation:
         long_msg = "x" * (_MAX_HUMAN_CHARS_IN_HISTORY + 500)
         state = mem.load()
         state.turns.append(ConversationTurn(role="human", content=long_msg))
-        history = mem._format_history(state)
+        history = _format_history(state)
         assert "..." in history
         # The full message should NOT be present
         assert long_msg not in history
@@ -62,7 +63,7 @@ class TestHumanTurnTruncation:
         long_resp = "y" * (_MAX_RESPONSE_CHARS_IN_HISTORY + 500)
         state = mem.load()
         state.turns.append(ConversationTurn(role="assistant", content=long_resp))
-        history = mem._format_history(state)
+        history = _format_history(state)
         assert "..." in history
         assert long_resp not in history
 

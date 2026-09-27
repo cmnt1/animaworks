@@ -46,7 +46,6 @@ class TestIndexerOriginMetadata:
             mock_store,
             "test-anima",
             anima_dir,
-            embedding_model=MagicMock(),
         )
         indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **_kwargs: [[0.1] * 384 for _ in texts])
         return indexer
@@ -237,18 +236,6 @@ class TestMemoryManagerOrigin:
         mm._rag.index_file.assert_called_once()
         _, kwargs = mm._rag.index_file.call_args
         assert kwargs["origin"] == "external_platform"
-
-    def test_write_knowledge_with_origin(self, mm) -> None:
-        mm.write_knowledge("test-topic", "# Test\n\nKnowledge content.", origin="consolidation")
-        mm._rag.index_file.assert_called_once()
-        _, kwargs = mm._rag.index_file.call_args
-        assert kwargs["origin"] == "consolidation"
-
-    def test_write_knowledge_without_origin(self, mm) -> None:
-        mm.write_knowledge("test-topic", "# Test\n\nKnowledge content.")
-        mm._rag.index_file.assert_called_once()
-        _, kwargs = mm._rag.index_file.call_args
-        assert kwargs.get("origin", "") == ""
 
 
 # ── RAGMemorySearch.index_file with origin ────────────────────

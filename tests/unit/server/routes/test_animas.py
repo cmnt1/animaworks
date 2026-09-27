@@ -13,7 +13,6 @@ from httpx import ASGITransport, AsyncClient
 
 from server.routes.animas import _read_appearance
 
-
 # ── Helper to build a minimal FastAPI app with animas router ──
 
 
@@ -22,6 +21,7 @@ def _make_test_app(
     anima_names: list[str] | None = None,
 ):
     from fastapi import FastAPI
+
     from server.routes.animas import create_animas_router
 
     app = FastAPI()
@@ -108,7 +108,6 @@ class TestGetAnima:
             mock_mm.read_identity.return_value = "# Identity"
             mock_mm.read_injection.return_value = ""
             mock_mm.read_current_state.return_value = "idle"
-            mock_mm.read_pending.return_value = ""
             mock_mm.list_knowledge_files.return_value = ["topic1.md"]
             mock_mm.list_episode_files.return_value = ["2026-01-01.md"]
             mock_mm.list_procedure_files.return_value = []

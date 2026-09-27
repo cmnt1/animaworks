@@ -55,26 +55,11 @@ class TestSharedKnowledgeInit:
 
         from core.memory.manager import MemoryManager
 
-        class FakeArray:
-            """Minimal ndarray-like object with tolist()."""
-
-            def __init__(self):
-                self._data = [0.0] * 384
-
-            def tolist(self):
-                return self._data
-
-        mock_embedding = MagicMock()
-        mock_embedding.encode.return_value = [FakeArray()]
-
-        def _set_embedding(self_indexer):
-            self_indexer.embedding_model = mock_embedding
-
         with (
             patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
             patch(
-                "core.memory.rag.indexer.MemoryIndexer._init_embedding_model",
-                _set_embedding,
+                "core.memory.rag.indexer.MemoryIndexer._generate_embeddings",
+                return_value=[[0.0] * 384],
             ),
         ):
             mock_store = MagicMock()
@@ -97,7 +82,6 @@ class TestSharedKnowledgeInit:
 
         with (
             patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
-            patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"),
         ):
             mock_store = MagicMock()
             mock_vs.return_value = mock_store
@@ -121,7 +105,6 @@ class TestSharedKnowledgeInit:
 
         with (
             patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
-            patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"),
             patch(
                 "core.memory.manager.MemoryManager._ensure_shared_knowledge_indexed",
                 side_effect=RuntimeError("indexing boom"),
@@ -149,7 +132,6 @@ class TestSharedKnowledgeInit:
 
         with (
             patch("core.memory.rag.vector_registry.get_vector_store") as mock_vs,
-            patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model"),
         ):
             mock_store = MagicMock()
             mock_vs.return_value = mock_store

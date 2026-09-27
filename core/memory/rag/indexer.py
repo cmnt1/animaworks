@@ -22,7 +22,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from core.memory.rag import indexer_delete
 from core.memory.rag.contextual_header import apply_contextual_header
@@ -31,9 +31,6 @@ from core.memory.rag.exclusion import is_archive_path, is_rag_excluded
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
 from core.memory.rag.store import CollectionExistence
 from core.time_utils import ensure_aware, now_iso
-
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger("animaworks.rag.indexer")
 
@@ -182,10 +179,8 @@ class MemoryIndexer:
         vector_store,  # VectorStore instance
         anima_name: str,
         anima_dir: Path,
-        embedding_model_name: str | None = None,
         *,
         collection_prefix: str | None = None,
-        embedding_model: SentenceTransformer | None = None,
         upsert_quarantine_failure_threshold: int | None = None,
         source_data_dir: Path | None = None,
         source_file_stats: dict[str, os.stat_result] | None = None,
@@ -196,14 +191,10 @@ class MemoryIndexer:
             vector_store: VectorStore instance (e.g., ChromaVectorStore)
             anima_name: Anima name (for collection naming)
             anima_dir: Path to anima's memory directory
-            embedding_model_name: Sentence-transformers model name
             collection_prefix: Override for collection name prefix.
                 Defaults to anima_name.  Use ``"shared"`` for
                 common_knowledge indexing so collection becomes
                 ``shared_common_knowledge``.
-            embedding_model: Pre-initialized SentenceTransformer instance.
-                When provided, ``_init_embedding_model()`` is skipped,
-                avoiding redundant model loading.
             source_data_dir: Private full-rebuild input root, or None for the
                 ordinary live indexing path. Preserves snapshot exclusion policy.
             source_file_stats: Original source stats keyed by copied absolute
@@ -229,7 +220,6 @@ class MemoryIndexer:
                 else []
             )
         self.collection_prefix = collection_prefix or anima_name
-        self._embedding_model_name_override = embedding_model_name
         if upsert_quarantine_failure_threshold is None:
             try:
                 from core.config import load_config
@@ -241,18 +231,6 @@ class MemoryIndexer:
                 upsert_quarantine_failure_threshold = RAGConfig().upsert_quarantine_failure_threshold
         self.upsert_quarantine_failure_threshold = max(1, upsert_quarantine_failure_threshold)
         self.upsert_failure_state_path = anima_dir / "state" / UPSERT_FAILURE_STATE_FILE
-
-        # Use injected embedding model or initialize via singleton.
-        # When an embed endpoint is configured, skip local model loading —
-        # generate_embeddings() handles HTTP delegation.
-        from core.memory.rag.endpoints import get_endpoints
-
-        if embedding_model is not None:
-            self.embedding_model = embedding_model
-        elif get_endpoints().embed_url:
-            self.embedding_model = None  # type: ignore[assignment]
-        else:
-            self._init_embedding_model()
 
         # Load index metadata
         self.meta_path = anima_dir / INDEX_META_FILE
@@ -298,12 +276,6 @@ class MemoryIndexer:
                 return
             self._known_collections = set(collections)
         self._known_collections.add(name)
-
-    def _init_embedding_model(self) -> None:
-        """Initialize sentence-transformers model via process-level singleton."""
-        from core.memory.rag.embedding import get_embedding_model
-
-        self.embedding_model = get_embedding_model(self._embedding_model_name_override)
 
     def _load_index_meta(self) -> dict[str, dict[str, str | int]]:
         """Load index metadata (file hashes and timestamps)."""

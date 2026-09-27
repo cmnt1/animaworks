@@ -52,7 +52,7 @@ class TestMemoryManagerLazyIndexer:
         assert mgr._indexer_initialized is False
 
         dummy_store = object()
-        dummy_indexer = SimpleNamespace(vector_store=dummy_store, embedding_model=None)
+        dummy_indexer = SimpleNamespace(vector_store=dummy_store)
 
         # First call triggers init without loading real Chroma/SentenceTransformer deps.
         with (

@@ -216,7 +216,6 @@ class TestIndexerDelegation:
     def test_indexer_delegates_to_generate_embeddings(self, tmp_path):
         """MemoryIndexer._generate_embeddings() should delegate to singleton."""
         mock_store = MagicMock()
-        mock_model = MagicMock()
 
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir(parents=True)
@@ -231,32 +230,11 @@ class TestIndexerDelegation:
                 vector_store=mock_store,
                 anima_name="test-anima",
                 anima_dir=anima_dir,
-                embedding_model=mock_model,
             )
             result = indexer._generate_embeddings(["hello"])
 
         assert result == [[0.1, 0.2]]
         mock_gen.assert_called_once_with(["hello"], purpose="document", priority="bulk")
-
-    def test_indexer_skips_model_init_when_embed_url_set(self, tmp_path, monkeypatch):
-        """When ANIMAWORKS_EMBED_URL is set, indexer skips model loading."""
-        monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://localhost/embed")
-
-        mock_store = MagicMock()
-        anima_dir = tmp_path / "test-anima"
-        anima_dir.mkdir(parents=True)
-
-        with patch("core.memory.rag.indexer.MemoryIndexer._init_embedding_model") as mock_init:
-            from core.memory.rag.indexer import MemoryIndexer
-
-            indexer = MemoryIndexer(
-                vector_store=mock_store,
-                anima_name="test-anima",
-                anima_dir=anima_dir,
-            )
-
-            mock_init.assert_not_called()
-            assert indexer.embedding_model is None
 
 
 class TestEmbeddingPriority:
