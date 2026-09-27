@@ -675,6 +675,23 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
 
     link = _RootLink(connection, socket_path, state, request_id)
 
+    # Route child-process task submissions back to the root so the root's
+    # PendingTaskExecutor does not wait a full poll interval after a submit.
+    _loop = asyncio.get_running_loop()
+
+    def _schedule_tasks_submitted_event(link: _RootLink) -> None:
+        async def _send() -> None:
+            try:
+                await link.send_event("tasks_submitted", {})
+            except Exception:
+                logger.debug("tasks_submitted wake event failed", exc_info=True)
+
+        asyncio.ensure_future(_send())
+
+    from core.tasks.wake import register_wake
+
+    register_wake(args.anima, lambda: _loop.call_soon_threadsafe(_schedule_tasks_submitted_event, link))
+
     try:
         execution_control: dict[str, Any] = {}
         execution = await _prepare_execution(
@@ -857,6 +874,9 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         # this runner still holds (close() is idempotent).
         for conn in {connection, link.connection}:
             await conn.close()
+        from core.tasks.wake import unregister_wake
+
+        unregister_wake(args.anima)
 
 
 def _setup_logging(anima_name: str) -> None:

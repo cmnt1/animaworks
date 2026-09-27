@@ -287,22 +287,15 @@ class SDKOptionsMixin:
         return env
 
     def _make_pending_executor_wake_callback(self) -> Callable[[], None] | None:
-        """Create a callback that writes a .wake file for PendingTaskExecutor.
+        """Create a callback that wakes the PendingTaskExecutor.
 
-        The wake file signals the pending executor (running in the runner
-        subprocess) to check for new tasks immediately rather than waiting
-        for the next poll interval.
+        The callback fans out to the registered wake handler (the anima root
+        process), so the pending executor checks for new tasks immediately
+        rather than waiting for the next poll interval.
         """
-        wake_path = self._anima_dir / "state" / "pending" / ".wake"
+        from core.tasks.wake import request_wake
 
-        def _wake() -> None:
-            try:
-                wake_path.parent.mkdir(parents=True, exist_ok=True)
-                wake_path.write_text("1", encoding="utf-8")
-            except Exception:
-                pass
-
-        return _wake
+        return lambda: request_wake(self._anima_dir.name)
 
     def _build_mcp_servers(self) -> dict[str, Any]:
         """Build MCP server configuration dict.

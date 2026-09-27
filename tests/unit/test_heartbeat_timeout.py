@@ -301,7 +301,6 @@ class TestHardTimeoutRecoveryNote:
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             mock_conversation.return_value.finalize_if_session_ended = AsyncMock()
-            mock_task_queue.return_value.sync_delegated.return_value = 0
             mock_task_queue.return_value.compact.return_value = 0
 
             await anima._execute_heartbeat_cycle(

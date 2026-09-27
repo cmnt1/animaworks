@@ -261,7 +261,6 @@ class TestAnimaRunnerPingReadiness:
         mock_anima._last_progress_at = None
         mock_anima._busy_since = None
         mock_anima._active_parallel_tasks = {}
-        mock_anima._set_pending_executor_wake = MagicMock()
         mock_anima._set_active_parallel_tasks_getter = MagicMock()
         mock_anima.set_on_lock_released = MagicMock()
         mock_anima.set_on_message_sent = MagicMock()

@@ -268,12 +268,9 @@ class AnimaRunner:
                 task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
             )
             self.anima._pending_executor = self._pending_executor
-            if hasattr(self.anima, "_set_pending_executor_wake"):
-                self.anima._set_pending_executor_wake(self._pending_executor.wake)
-            else:
-                self.anima.agent._tool_handler.set_pending_executor_wake(
-                    self._pending_executor.wake,
-                )
+            from core.tasks.wake import register_wake
+
+            register_wake(self.anima_name, self._pending_executor.wake)
             # Wire active parallel tasks getter for Priming channel E
             if hasattr(self.anima, "_set_active_parallel_tasks_getter"):
                 self.anima._set_active_parallel_tasks_getter(lambda: self.anima._active_parallel_tasks)
@@ -1076,6 +1073,10 @@ class AnimaRunner:
                 await self.pending_task_watcher_task
             except asyncio.CancelledError:
                 pass
+
+        from core.tasks.wake import unregister_wake
+
+        unregister_wake(self.anima_name)
 
         if self._orphan_cleanup_task:
             self._orphan_cleanup_task.cancel()

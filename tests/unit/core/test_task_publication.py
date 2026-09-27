@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -188,13 +189,19 @@ def test_submit_tool_accepts_id_only_resume(anima_dir):
     handler = object.__new__(SkillsToolsMixin)
     handler._anima_dir = anima_dir
     handler._anima_name = "worker"
-    handler._pending_executor_wake = MagicMock()
-    result = handler._handle_submit_tasks(
-        {"batch_id": "resume-event", "tasks": [{"task_id": "task-one", "resume": True}]}
-    )
-    assert json.loads(result)["status"] == "submitted"
-    assert manager.store.pending("worker") == [payload()]
-    handler._pending_executor_wake.assert_called_once()
+    from core.tasks.wake import register_wake, unregister_wake
+
+    wake_called = []
+    register_wake("worker", lambda: wake_called.append(True))
+    try:
+        result = handler._handle_submit_tasks(
+            {"batch_id": "resume-event", "tasks": [{"task_id": "task-one", "resume": True}]}
+        )
+        assert json.loads(result)["status"] == "submitted"
+        assert manager.store.pending("worker") == [payload()]
+        assert wake_called == [True]  # submit fanned out to the registered wake
+    finally:
+        unregister_wake("worker")
 
 
 def test_dependency_can_reference_an_existing_canonical_task(anima_dir):
@@ -254,3 +261,43 @@ def test_host_publication_propagates_execution_attempt_identity(anima_dir):
         publish_tasks(anima_dir, [{"task_id": "task-one", "resume": True}])
     assert post.call_args.kwargs["json"]["attempt_identity"] == identity
     assert post.call_args.kwargs["json"]["tasks"] == [{"task_id": "task-one", "resume": True}]
+
+
+def test_submit_tasks_records_human_source_from_conversation(anima_dir):
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    handler = object.__new__(SkillsToolsMixin)
+    handler._anima_dir = anima_dir
+    handler._anima_name = "worker"
+    handler._session_origin = "human"
+    result = handler._handle_submit_tasks(
+        {"batch_id": "b", "tasks": [{"task_id": "t1", "title": "T", "description": "d"}]}
+    )
+    assert json.loads(result)["status"] == "submitted"
+    entry = TaskQueueManager(anima_dir).store.read("worker")["t1"]
+    assert entry.source == "human"
+
+
+def test_submit_tasks_defaults_to_anima_source(anima_dir):
+    from core.tooling.handler_skills import SkillsToolsMixin
+
+    handler = object.__new__(SkillsToolsMixin)
+    handler._anima_dir = anima_dir
+    handler._anima_name = "worker"
+    handler._session_origin = ""
+    result = handler._handle_submit_tasks(
+        {"batch_id": "b", "tasks": [{"task_id": "t2", "title": "T", "description": "d"}]}
+    )
+    assert json.loads(result)["status"] == "submitted"
+    entry = TaskQueueManager(anima_dir).store.read("worker")["t2"]
+    assert entry.source == "anima"
+
+
+def test_pending_orders_human_before_anima_within_same_batch(anima_dir):
+    from core.tasks.dispatch import publish_tasks
+
+    publish_tasks(anima_dir, [payload("A"), payload("C")], source="anima")
+    publish_tasks(anima_dir, [payload("B")], source="human")
+    store = TaskQueueManager(anima_dir).store
+    ordered = [row["task_id"] for row in store.pending("worker")]
+    assert ordered == ["B", "A", "C"]

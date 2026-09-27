@@ -431,10 +431,6 @@ class ToolHandler(
         """Attach a process-safe state-file lock for concurrent write protection."""
         self._state_file_lock = lock
 
-    def set_pending_executor_wake(self, wake_fn: Callable[[], Any]) -> None:
-        """Attach the PendingTaskExecutor's wake callback for submit_tasks."""
-        self._pending_executor_wake = wake_fn
-
     def set_task_cwd(self, cwd: Path | None) -> None:
         """Set override cwd for TaskExec command execution."""
         self._task_cwd = cwd

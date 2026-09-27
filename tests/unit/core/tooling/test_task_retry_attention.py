@@ -15,7 +15,6 @@ def _make_handler(tmp_path: Path) -> Any:
     handler._anima_dir = tmp_path / "data" / "animas" / "sakura"
     handler._anima_name = "sakura"
     handler._activity = MagicMock()
-    handler._pending_executor_wake = None
     (handler._anima_dir / "state").mkdir(parents=True, exist_ok=True)
     return handler
 

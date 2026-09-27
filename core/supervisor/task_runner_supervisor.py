@@ -968,6 +968,13 @@ class TaskRunnerSupervisor:
                 if envelope.kind == "event" and envelope.body["event"] == "capabilities":
                     job.capabilities["steer"] = envelope.body["data"].get("steer") is True
                     continue
+                if envelope.kind == "event" and envelope.body["event"] == "tasks_submitted":
+                    # A child task runner published tasks; wake the root's
+                    # PendingTaskExecutor so it does not wait a poll interval.
+                    from core.tasks.wake import request_wake
+
+                    request_wake(self.anima_name)
+                    continue
                 if envelope.kind == "event" and envelope.body["event"] == "stream":
                     if job.identity.lane != "chat" or not job.stream_events:
                         raise IPCV2ProtocolError("stream event is only valid for streaming chat jobs")

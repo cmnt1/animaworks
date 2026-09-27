@@ -336,7 +336,10 @@ def _build_pre_tool_hook(
                 _anima_name = anima_dir.name
 
             proxy = _SubmitTasksProxy()
-            proxy._pending_executor_wake = on_task_intercepted
+            from core.execution.session_context import current_runtime_session
+
+            _runtime = current_runtime_session()
+            proxy._session_origin = _runtime.origin if _runtime is not None else ""
             try:
                 result_str = proxy._handle_submit_tasks(tool_input)
             except Exception as exc:

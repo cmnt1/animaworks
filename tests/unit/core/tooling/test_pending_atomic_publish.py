@@ -48,7 +48,6 @@ def test_submit_tasks_atomically_publishes_pending_json(
     handler = object.__new__(SkillsToolsMixin)
     handler._anima_dir = tmp_path / "animas" / "sakura"
     handler._anima_name = "sakura"
-    handler._pending_executor_wake = None
 
     result = handler._handle_submit_tasks(
         {
