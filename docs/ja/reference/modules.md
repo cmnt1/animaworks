@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: b8498ae98a302845eb308de4c9284942b911fe4edc22c406ffd097e285a7ff4f -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 0d0441510ea47d9f7c8f4eec7cd97b9ebc7b70ad1562613d6e281425bb1bbca8 -->
 
 # モジュール一覧
 
@@ -166,7 +166,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 120 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1396 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1395 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -435,19 +435,19 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory` | 22 | — |
 | `core.memory._io（非公開）` | 76 | — |
 | `core.memory._llm_parse（非公開）` | 200 | Shared LLM-output parsing helpers for the memory pipeline. |
-| `core.memory._llm_utils（非公開）` | 913 | Shared LLM helper utilities for memory-management modules. |
+| `core.memory._llm_utils（非公開）` | 885 | Shared LLM helper utilities for memory-management modules. |
 | `core.memory.activity.audit` | 290 | — |
 | `core.memory.activity.conversation` | 492 | — |
 | `core.memory.activity.format` | 567 | — |
-| `core.memory.activity.logger` | 613 | — |
+| `core.memory.activity.logger` | 585 | — |
 | `core.memory.activity.models` | 202 | — |
 | `core.memory.activity.replay` | 537 | — |
 | `core.memory.activity.rotation` | 187 | — |
 | `core.memory.activity.timeline` | 348 | — |
 | `core.memory.config_reader` | 31 | — |
-| `core.memory.conversation.compression` | 344 | Compression logic for conversation memory. |
+| `core.memory.conversation.compression` | 321 | Compression logic for conversation memory. |
 | `core.memory.conversation.finalize` | 477 | Session finalization for conversation memory. |
-| `core.memory.conversation.memory` | 387 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
+| `core.memory.conversation.memory` | 327 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
 | `core.memory.conversation.shortterm` | 349 | Short-term memory (短期記憶) management. |
@@ -464,29 +464,29 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.prompts.en` | 77 | English prompts for entity / fact extraction. |
 | `core.memory.facts.prompts.ja` | 78 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
-| `core.memory.frontmatter` | 443 | — |
+| `core.memory.frontmatter` | 430 | — |
 | `core.memory.maintenance.consolidation` | 901 | — |
-| `core.memory.maintenance.cron_logger` | 190 | — |
+| `core.memory.maintenance.cron_logger` | 159 | — |
 | `core.memory.maintenance.distillation` | 542 | — |
 | `core.memory.maintenance.forgetting` | 499 | — |
 | `core.memory.maintenance.housekeeping` | 1691 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 653 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
-| `core.memory.manager` | 796 | — |
+| `core.memory.manager` | 645 | — |
 | `core.memory.priming.channel_a` | 52 | — |
-| `core.memory.priming.channel_b` | 553 | — |
-| `core.memory.priming.channel_c` | 628 | — |
+| `core.memory.priming.channel_b` | 534 | — |
+| `core.memory.priming.channel_c` | 618 | — |
 | `core.memory.priming.channel_e` | 203 | — |
 | `core.memory.priming.channel_f` | 215 | — |
-| `core.memory.priming.constants` | 103 | — |
+| `core.memory.priming.constants` | 92 | — |
 | `core.memory.priming.engine` | 536 | — |
 | `core.memory.priming.format` | 119 | — |
 | `core.memory.priming.items` | 59 | — |
 | `core.memory.priming.outbound` | 142 | — |
 | `core.memory.priming.policy` | 39 | — |
 | `core.memory.priming.result` | 72 | — |
-| `core.memory.priming.utils` | 308 | — |
+| `core.memory.priming.utils` | 303 | — |
 | `core.memory.rag.cli_access` | 231 | CLI access to phase3 vector stores through the active owner or server. |
 | `core.memory.rag.contextual_header` | 163 | — |
 | `core.memory.rag.direct_access` | 12 | — |
@@ -499,7 +499,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.graph` | 813 | — |
 | `core.memory.rag.http_store` | 13 | — |
 | `core.memory.rag.index_signature` | 27 | Compatibility diagnostics for an existing embedding index signature. |
-| `core.memory.rag.indexer` | 1621 | — |
+| `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
 | `core.memory.rag.repair` | 33 | — |
@@ -514,7 +514,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.shared_meta` | 162 | — |
 | `core.memory.rag.singleton` | 47 | — |
 | `core.memory.rag.sqlite_health` | 359 | — |
-| `core.memory.rag.store` | 736 | — |
+| `core.memory.rag.store` | 720 | — |
 | `core.memory.rag.vector_client` | 466 | — |
 | `core.memory.rag.vector_ops` | 80 | Conversion between vector API requests and the MemoryService wire format. |
 | `core.memory.rag.vector_registry` | 160 | — |
@@ -525,7 +525,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.retrieval.entity` | 632 | — |
 | `core.memory.retrieval.pipeline` | 109 | — |
 | `core.memory.retrieval.query_expansion` | 496 | — |
-| `core.memory.retrieval.rag_search` | 1312 | — |
+| `core.memory.retrieval.rag_search` | 1296 | — |
 | `core.memory.retrieval.reranker` | 264 | — |
 | `core.memory.retrieval.rrf` | 107 | — |
 | `core.memory.retrieval.search_metadata` | 108 | — |
@@ -533,7 +533,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.retrieval.time_expr` | 230 | — |
 | `core.memory.retrieval.types` | 38 | — |
 | `core.memory.retrieval.unified_search` | 895 | — |
-| `core.memory.skill_metadata` | 309 | — |
+| `core.memory.skill_metadata` | 301 | — |
 | `core.memory.state_lock` | 96 | Process-safe locking for ``state/current_state.md`` updates. |
 
 ## `core.memory.activity`
@@ -582,7 +582,7 @@ Model Context Protocol サーバーとクライアント。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.memory.priming` | 68 | Priming layer - automatic memory retrieval (自動想起). |
+| `core.memory.priming` | 50 | Priming layer - automatic memory retrieval (自動想起). |
 
 ## `core.memory.rag`
 
@@ -623,7 +623,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
 | `core.migrations.registry` | 149 | — |
-| `core.migrations.steps` | 2843 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 2887 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 

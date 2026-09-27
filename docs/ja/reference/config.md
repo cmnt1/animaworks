@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 57e8c3203301c8c575bfe4698d022f38976ba6be49017ca771167efbb06a0c2b -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 41863b07f68696c22c9e40617361fadcec0e48d8dc61d82f63828fedd80e02db -->
 
 # 設定リファレンス
 
@@ -79,7 +79,6 @@
 | `consolidation.weekly_ipc_timeout_seconds` | `int` | `3600` | — |
 | `consolidation.weekly_enabled` | `bool` | `false` | — |
 | `consolidation.weekly_time` | `str` | `"sun:03:00"` | Format: day:HH:MM |
-| `consolidation.duplicate_threshold` | `float` | `0.85` | Similarity threshold for duplicate detection |
 | `consolidation.indexing_enabled` | `bool` | `true` | Daily RAG indexing toggle |
 | `consolidation.indexing_time` | `str` | `"04:00"` | Format: HH:MM |
 | `consolidation.knowledge_self_correction_enabled` | `bool` | `true` | — |
