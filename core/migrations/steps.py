@@ -1575,6 +1575,11 @@ def step_v0144_tool_guide_dedup_resync(data_dir: Path, dry_run: bool, verbose: b
     return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
 
 
+def step_v0145_prompt_diet4_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.5: Resync prompts and common_knowledge (prompt-diet4 trimmed static/per-turn text)."""
+    return step_v0142_task_board_cli_resync(data_dir, dry_run, verbose)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1840,6 +1845,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.4: Resync prompts (dedupe tool guide background-command block)",
             "template_sync",
             step_v0144_tool_guide_dedup_resync,
+        ),
+        MigrationStep(
+            "v0145_prompt_diet4_resync",
+            "v0.14.5: Resync prompts and common_knowledge (prompt-diet4)",
+            "template_sync",
+            step_v0145_prompt_diet4_resync,
         ),
         MigrationStep(
             "rename_core_tools_to_integrations",
