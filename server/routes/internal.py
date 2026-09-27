@@ -192,15 +192,24 @@ class SubmitTasksPersistRequest(BaseModel):
 
 def create_internal_router() -> APIRouter:
     from core.notification import CallHumanKeys
-    from server.internal_auth import require_internal_caller
+    from server.internal_auth import (
+        ensure_self,
+        ensure_self_or_descendant,
+        internal_authz_denied,
+        require_internal_caller,
+    )
 
     router = APIRouter()
     internal = APIRouter(dependencies=[Depends(require_internal_caller)])
     _call_human_keys = CallHumanKeys()
 
     @internal.get("/internal/company/boundary")
-    async def internal_company_boundary(from_anima: str, to_anima: str):
+    async def internal_company_boundary(from_anima: str, to_anima: str, request: Request):
         """Resolve company membership on the host for sandboxed handlers."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), from_anima, path=request.url.path)
+        if denied is not None:
+            return denied
+
         from core.anima.factory import validate_anima_name
         from core.config.models import read_anima_company_checked
         from core.org.company import get_company_display_name
@@ -251,6 +260,10 @@ def create_internal_router() -> APIRouter:
         Triggers WebSocket broadcast and updates reply tracking so that
         selective archival (Fix 2) works for CLI-sent messages too.
         """
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.from_person, path=request.url.path)
+        if denied is not None:
+            return denied
+
         await emit(
             request,
             "anima.interaction",
@@ -407,6 +420,11 @@ def create_internal_router() -> APIRouter:
         from core.memory.rag.vector_ops import UnsupportedVectorPath, to_owner_interaction
 
         anima_name = getattr(body, "anima_name", "")
+        caller = getattr(request.state, "internal_caller", None)
+        if isinstance(anima_name, str) and anima_name:
+            denied = ensure_self(caller, anima_name, path=request.url.path)
+            if denied is not None:
+                return denied
         if not isinstance(anima_name, str) or validate_anima_name(anima_name) is not None:
             return JSONResponse(status_code=422, content={"detail": t("rag.invalid_anima_name")})
 
@@ -488,7 +506,11 @@ def create_internal_router() -> APIRouter:
     # thread replies and interactive approvals still route back correctly.
 
     @internal.post("/internal/notification-mapping")
-    async def internal_notification_mapping(body: NotificationMappingRequest):
+    async def internal_notification_mapping(body: NotificationMappingRequest, request: Request):
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima_name, path=request.url.path)
+        if denied is not None:
+            return denied
+
         from core.notification.reply_routing import save_notification_mapping
 
         ok = await asyncio.to_thread(
@@ -502,13 +524,20 @@ def create_internal_router() -> APIRouter:
         return {"ok": ok}
 
     @internal.post("/internal/call-human/confirm")
-    async def internal_call_human_confirm(body: CallHumanConfirmRequest):
+    async def internal_call_human_confirm(body: CallHumanConfirmRequest, request: Request):
         """Check the CLI ``call_human`` confirmation key; keys live in server memory only."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima_name, path=request.url.path)
+        if denied is not None:
+            return denied
         issued_key = _call_human_keys.check(body.anima_name, body.session_id, body.sha)
         return {"ok": issued_key is None, "sha": issued_key or ""}
 
     @internal.post("/internal/interaction/create")
-    async def internal_interaction_create(body: InteractionCreateRequest):
+    async def internal_interaction_create(body: InteractionCreateRequest, request: Request):
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima_name, path=request.url.path)
+        if denied is not None:
+            return denied
+
         from core.notification.interactive import get_interaction_router
 
         try:
@@ -535,12 +564,34 @@ def create_internal_router() -> APIRouter:
         return {"ok": True}
 
     @internal.post("/internal/anima/create")
-    async def internal_anima_create(body: AnimaCreateRequest):
+    async def internal_anima_create(body: AnimaCreateRequest, request: Request):
         """Create an anima outside sandbox EROFS constraints.
 
         Sandboxed Mode C MCP subprocesses cannot write to animas/ root.
         They fall back here so create_from_md runs on the host server.
         """
+        caller = getattr(request.state, "internal_caller", None)
+        denied = ensure_self(caller, body.calling_anima, path=request.url.path)
+        if denied is not None:
+            return denied
+        if caller is not None and caller.kind == "anima":
+            from core.anima.skills_check import has_newstaff_skill
+            from core.paths import get_animas_dir
+
+            if not has_newstaff_skill(get_animas_dir() / caller.name):
+                denied = internal_authz_denied(
+                    caller,
+                    body.calling_anima,
+                    "server.internal_newstaff_required",
+                    path=request.url.path,
+                )
+                if denied is not None:
+                    return denied
+            if body.supervisor is not None:
+                denied = ensure_self_or_descendant(caller, body.supervisor, path=request.url.path)
+                if denied is not None:
+                    return denied
+
         if not body.character_sheet_content and not body.character_sheet_path:
             return JSONResponse(
                 status_code=422,
@@ -609,7 +660,7 @@ def create_internal_router() -> APIRouter:
         return {"status": "ok", "anima_dir": str(anima_dir)}
 
     @internal.post("/internal/send-message")
-    async def internal_send_message(body: InternalSendMessageRequest):
+    async def internal_send_message(body: InternalSendMessageRequest, request: Request):
         """Persist a DM outside sandbox EROFS constraints.
 
         Sandboxed Messenger.send cannot write shared/inbox (write-access
@@ -624,6 +675,9 @@ def create_internal_router() -> APIRouter:
             msg = Message(**body.message)
         except Exception as exc:
             return JSONResponse(status_code=400, content={"detail": f"Invalid message: {exc}"})
+        denied = ensure_self(getattr(request.state, "internal_caller", None), msg.from_person, path=request.url.path)
+        if denied is not None:
+            return denied
         if validate_anima_name(msg.from_person) or not re.fullmatch(r"[A-Za-z0-9_-]+", msg.to_person):
             return JSONResponse(status_code=400, content={"detail": "Invalid sender/recipient name"})
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", msg.id):
@@ -639,8 +693,11 @@ def create_internal_router() -> APIRouter:
         return {"ok": True, "message_id": msg.id, "thread_id": msg.thread_id}
 
     @internal.post("/internal/post-channel")
-    async def internal_post_channel(body: InternalPostChannelRequest):
+    async def internal_post_channel(body: InternalPostChannelRequest, request: Request):
         """Append a channel post outside sandbox EROFS constraints."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.from_anima, path=request.url.path)
+        if denied is not None:
+            return denied
         from core.anima.factory import validate_anima_name
         from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
         from core.messaging.messenger import Messenger
@@ -664,8 +721,18 @@ def create_internal_router() -> APIRouter:
         return {"ok": True}
 
     @internal.get("/internal/tasks")
-    async def internal_tasks(anima_name: str, include_archived: bool = False, task_id: str | None = None):
+    async def internal_tasks(
+        anima_name: str,
+        request: Request,
+        include_archived: bool = False,
+        task_id: str | None = None,
+    ):
         """Read a task snapshot for workers without direct database access."""
+        denied = ensure_self_or_descendant(
+            getattr(request.state, "internal_caller", None), anima_name, path=request.url.path
+        )
+        if denied is not None:
+            return denied
         from core.anima.factory import validate_anima_name
         from core.paths import get_animas_dir
         from core.tasks.queue import TaskQueueManager
@@ -693,8 +760,11 @@ def create_internal_router() -> APIRouter:
         return await asyncio.get_running_loop().run_in_executor(_native_executor, _read)
 
     @internal.post("/internal/submit-tasks")
-    async def internal_submit_tasks(body: SubmitTasksPersistRequest):
+    async def internal_submit_tasks(body: SubmitTasksPersistRequest, request: Request):
         """Publish a complete batch on the host; no sandbox DB grant is needed."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima_name, path=request.url.path)
+        if denied is not None:
+            return denied
         from core.anima.factory import validate_anima_name
         from core.paths import get_animas_dir
         from core.tasks.dispatch import publish_tasks
@@ -721,12 +791,30 @@ def create_internal_router() -> APIRouter:
         return {"ok": True, "tasks": [entry.model_dump(mode="json") for entry in entries]}
 
     @internal.post("/internal/delegate-task")
-    async def internal_delegate_task(body: DelegateTaskPersistRequest):
+    async def internal_delegate_task(body: DelegateTaskPersistRequest, request: Request):
         """Persist a delegated task outside sandbox EROFS constraints.
 
         Sandboxed ``delegate_task`` cannot write the shared task database.
         Mode C handlers use this endpoint for atomic host-side publication.
         """
+        caller = getattr(request.state, "internal_caller", None)
+        denied = ensure_self(caller, body.delegator, path=request.url.path)
+        if denied is not None:
+            return denied
+        if caller is not None and caller.kind == "anima":
+            from core.config.io import load_config
+            from core.org.hierarchy import is_direct_subordinate
+
+            if not is_direct_subordinate(load_config().animas, body.delegator, body.target):
+                denied = internal_authz_denied(
+                    caller,
+                    body.target,
+                    "server.internal_not_subordinate",
+                    path=request.url.path,
+                )
+                if denied is not None:
+                    return denied
+
         from core.anima.factory import validate_anima_name
         from core.org.company import check_company_boundary
         from core.paths import get_animas_dir
@@ -832,8 +920,24 @@ def create_internal_router() -> APIRouter:
         }
 
     @internal.post("/internal/task-board-action")
-    async def internal_task_board_action(body: TaskBoardActionRequest):
+    async def internal_task_board_action(body: TaskBoardActionRequest, request: Request):
         """Run a lease-guarded task board write for a sandboxed anima CLI."""
+        caller = getattr(request.state, "internal_caller", None)
+        if body.actor == "human":
+            if caller is not None and caller.kind == "anima":
+                denied = internal_authz_denied(
+                    caller,
+                    body.actor,
+                    "server.internal_identity_mismatch",
+                    path=request.url.path,
+                )
+                if denied is not None:
+                    return denied
+        else:
+            denied = ensure_self(caller, body.actor, path=request.url.path)
+            if denied is not None:
+                return denied
+
         from core.anima.factory import validate_anima_name
         from core.tasks.board.board_actions import BoardActionError, run_board_action
 
@@ -854,8 +958,11 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=500, content={"detail": str(exc)})
 
     @internal.post("/internal/update-task")
-    async def internal_update_task(body: UpdateTaskPersistRequest):
+    async def internal_update_task(body: UpdateTaskPersistRequest, request: Request):
         """Persist a task update outside sandbox EROFS constraints."""
+        denied = ensure_self(getattr(request.state, "internal_caller", None), body.anima_name, path=request.url.path)
+        if denied is not None:
+            return denied
         from core.anima.factory import validate_anima_name
         from core.paths import get_animas_dir
         from core.tasks.queue import TaskQueueManager
