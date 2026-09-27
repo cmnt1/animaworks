@@ -89,7 +89,6 @@ def authz_client(tmp_path, monkeypatch):
     monkeypatch.setattr("core.messaging.messenger.Messenger.post_channel", lambda *_a, **_k: None)
     monkeypatch.setattr("core.tasks.dispatch.publish_tasks", lambda *_a, **_k: [])
     monkeypatch.setattr("core.tasks.dispatch.publish_delegation", lambda *_a, **_k: None)
-    monkeypatch.setattr("core.tooling.handler_delegation._record_taskboard_delegation", lambda **_k: None)
     monkeypatch.setattr(
         "core.org.company.check_company_boundary",
         lambda *_a, **_k: SimpleNamespace(cross_company=False, resolved_via="config", display_name=""),
