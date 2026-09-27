@@ -1,45 +1,34 @@
 ---
 name: aws-collector-tool
 description: >-
-  AWS infrastructure collector. Fetches ECS status, CloudWatch logs, and metrics.
-  Use when: checking ECS health, inspecting CloudWatch error logs, pulling infra metrics, or monitoring AWS resources.
+  AWS infrastructure information collection tool. Retrieves ECS status, CloudWatch logs, and metrics.
+  Use when: Use when: checking ECS operation, investigating error logs in CloudWatch, retrieving metrics, or monitoring AWS resources is needed.
 tags: [infrastructure, aws, monitoring, external]
 ---
+Understood. Please provide the Japanese content you’d like me to translate, and I’ll follow all the specified instructions.# AWS Collector Tool
 
-# AWS Collector Tool
+An external tool that collects AWS ECS status, CloudWatch logs, and metrics.## How to Call
 
-External tool for collecting AWS ECS status, CloudWatch logs, and metrics.
-
-## Invocation via Bash
-
-Use **Bash** with `animaworks-tool aws_collector <subcommand> [args]`. See Actions below for syntax.
-
-## Actions
-
-### ecs_status — ECS service status
-```json
-{"tool_name": "aws_collector", "action": "ecs_status", "args": {"cluster": "cluster-name", "service": "service-name (optional)"}}
+**Bash**: Run with `animaworks-tool aws_collector <サブコマンド> [引数]`## Action List### ecs_status — ECS Service Status Check
+```bash
+animaworks-tool aws_collector ecs-status [--cluster NAME] [--service NAME]
 ```
-
-### error_logs — CloudWatch error logs
-```json
-{"tool_name": "aws_collector", "action": "error_logs", "args": {"log_group": "log-group-name", "hours": 1, "patterns": "ERROR,Exception"}}
+### error_logs — Retrieve Error Logs
+```bash
+animaworks-tool aws_collector error-logs --log-group NAME [--hours 1] [--patterns "ERROR"]
 ```
-
-### metrics — CloudWatch metrics
-```json
-{"tool_name": "aws_collector", "action": "metrics", "args": {"cluster": "cluster-name", "service": "service-name", "metric": "CPUUtilization", "hours": 1}}
+### metrics — Metric Collection
+```bash
+animaworks-tool aws_collector metrics --cluster NAME --service NAME [--metric CPUUtilization]
 ```
-
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
 animaworks-tool aws_collector ecs-status [--cluster NAME] [--service NAME]
 animaworks-tool aws_collector error-logs --log-group NAME [--hours 1] [--patterns "ERROR"]
 animaworks-tool aws_collector metrics --cluster NAME --service NAME [--metric CPUUtilization]
 ```
-
 ## Notes
 
-- AWS credentials must be configured (environment variables or credentials file)
-- Use --region to specify AWS region
+- AWS authentication information (environment variables or credentials) must be configured
+- The region can be specified with --region

@@ -2,26 +2,26 @@
 
 ## Overview
 
-Action rules are knowledge files that add a pre-action check before side-effect operations such as sending, posting, notifying, or writing memory. Put `[ACTION-RULE]` and `trigger_tools:` in `knowledge/action-rule-*.md`; matching rules are searched before the target tool runs.
+Action rules are knowledge used to insert a confirmation immediately before operations with side effects, such as sending, posting, notifying, or writing to memory. Writing `knowledge/action-rule-*.md` and `[ACTION-RULE]` in `trigger_tools:` causes a search to be performed before the corresponding tool is executed.
 
 ## Basic Format
 
 ```markdown
-## [ACTION-RULE] Rule name
+## [ACTION-RULE] ルール名
 trigger_tools: gmail_draft, gmail_send
-keywords: email, draft, duplicate check
+keywords: メール, 下書き, 重複確認
 ---
-Before executing, read_memory_file(path="procedures/gmail-draft-check.md").
-After completing the check, retry the same tool.
+実行前に必ず read_memory_file(path="procedures/gmail-draft-check.md") を読む。
+必要な確認が終わってから同じツールを再実行する。
 ```
 
 | Field | Required | Description |
-|-------|----------|-------------|
-| `trigger_tools` | Required | Target tool names, comma-separated |
-| `keywords` | Optional | Search hints |
-| Body | Required | Check text displayed when paused. Required files must be written as `read_memory_file(path="...")` |
+|-----------|------|------|
+| `trigger_tools` | Required | Target tool name. Multiple names separated by commas |
+| `keywords` | Optional | Terms that improve search precision |
+| Body | Required | Confirmation content displayed at shutdown. Required reading files are written as `read_memory_file(path="...")` |
 
-## ToolHandler Action Names
+## ToolHandler Target Tool Names
 
 - `call_human`
 - `send_message`
@@ -33,10 +33,10 @@ After completing the check, retry the same tool.
 - `slack_send`
 - `discord_send`
 
-## CLI Mappings
+## CLI Support
 
-| CLI | Action-rule name |
-|-----|------------------|
+| CLI | Name in Action Rules |
+|-----|--------------------------|
 | `animaworks-tool gmail draft` | `gmail_draft` |
 | `animaworks-tool gmail send` | `gmail_send` |
 | `animaworks-tool chatwork send` | `chatwork_send` |
@@ -45,36 +45,36 @@ After completing the check, retry the same tool.
 | `animaworks-tool discord send` | `discord_send` |
 | `animaworks-tool call_human` | `call_human` |
 
-`animaworks-tool submit ...` is not an action-rule target. The actual queued subcommand is checked when it runs.
+`animaworks-tool submit ...` is not covered by action rules. When the background submission target runs, the target subcommand is evaluated again at runtime.
 
 ## Gate Behavior
 
-- Rules below score `0.80` do not block.
-- Search failure, missing vector store, and no matching rule are fail-open.
-- If the body contains `read_memory_file(path="...")`, the gate blocks until all extracted paths have been read in the same action-gate session.
-- Review-only rules without required reads block once per `tool:rule` in the same action-gate session.
-- There is no global maximum-two-pauses limit.
-- When paused, read the displayed rule, perform the required `read_memory_file` or checks, then retry the same operation.
+- Rules with a relevance score below `0.80` will not trigger a shutdown.
+- Search failure, missing vector store, or no matching rule will fail open and not block execution.
+- If the body contains `read_memory_file(path="...")`, shutdown continues until all paths are read within the same action-gate session.
+- Review-only rules without required reading files will trigger a shutdown only once per `tool:rule` in the same action-gate session.
+- There is no global "maximum two shutdowns" limit.
+- If shutdown occurs, read the displayed rules, perform any necessary `read_memory_file` or confirmations, then retry the same operation.
 
-## Examples
+## Creation Example
 
 ```markdown
-## [ACTION-RULE] Duplicate check before Gmail draft
+## [ACTION-RULE] Gmail下書き前の重複確認
 trigger_tools: gmail_draft, gmail_send
-keywords: Gmail, draft, duplicate, thread
+keywords: Gmail, 下書き, 重複, thread
 ---
-Before creating or sending a Gmail draft, read_memory_file(path="procedures/gmail-draft-check.md").
-Check existing threads and drafts for duplicates before proceeding.
+Gmail下書きや送信の前に、必ず read_memory_file(path="procedures/gmail-draft-check.md") を読む。
+既存スレッドと既存下書きの重複を確認してから実行する。
 ```
 
 ```markdown
-## [ACTION-RULE] Verify before customer memory update
+## [ACTION-RULE] 顧客メモ更新前の確認
 trigger_tools: write_memory_file
-keywords: customer, client, profile
+keywords: 顧客, customer, profile
 ---
-Before updating customer-related `knowledge/`, read the related existing files and verify there is no contradiction.
+顧客関連の `knowledge/` を更新する前に、関連する既存ファイルを読んで矛盾がないか確認する。
 ```
 
 ## Location
 
-Create rules under `knowledge/action-rule-{topic}.md`. Before creating a new rule, search `knowledge/` for similar rules and update an existing one when appropriate.
+Normally, create in `knowledge/action-rule-{topic}.md`. Before creating, search for similar rules with `search_memory(scope="knowledge")`, and if an existing rule is found, prioritize updating it.

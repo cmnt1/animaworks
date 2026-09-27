@@ -1,0 +1,35 @@
+<!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/memory/consolidation.md -->
+<!-- i18n: source-sha256=a37f02007d7805fe953c270b8af001c64b43c90d4e8873ce436a204a197977f9 generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+
+> Confirmed commit: 193a5e72
+# Memory Consolidation and Forgetting
+
+Memory consolidation consists of judgment by Anima and candidate collection and index maintenance performed by the framework. The timing is configurable, with the default daily consolidation at 02:00 and weekly consolidation on Sunday at 03:00. Weekly consolidation runs when `weekly_enabled` is enabled.
+## Daily Processing
+
+`core/supervisor/_mgr_scheduler.py` registers the daily job, and `core/lifecycle/system_consolidation.py`'s `_handle_daily_consolidation` selects the target Anima. Execution may be skipped based on inactivity periods or the number of records in the last 24 hours.
+
+Anima's `run_consolidation` summarizes the previous day's activity log into dated episodes and extracts atomic facts from the summary. Subsequent framework post-processing proceeds in the following order.
+
+1. `ForgettingEngine.synaptic_downscaling` marks low-activity candidates on the index.
+2. `knowledge_self_correction` reviews the target knowledge and procedures with an LLM and creates procedures from resolved issues.
+
+This correction runs while `core/lifecycle/knowledge_correction.py` manages the upper limit. Detailed reconsolidation conditions are described later.
+## Weekly Processing
+
+The weekly Anima cycle is handled by `core/anima/lifecycle.py`'s `_run_weekly_consolidation`. `ConsolidationEngine` prepares merges, conflicts between facts, and forgetting candidates, while `hygiene.py` compiles candidates for review of knowledge file format and size into a report. These are included in the weekly prompt, and Anima judges the content to update and archive memory files. The hygiene scan itself does not move or delete memory files.
+
+After weekly processing, `ProceduralDistiller.weekly_pattern_distill` distills recurring patterns from activity logs into procedure candidates. Additionally, if `skill_autolearn_enabled` is enabled, eligible procedures are used to create low-risk probation skills.
+## Forgetting Candidates and Thresholds
+
+`core/memory/maintenance/forgetting.py`'s daily downscaling marks regular knowledge and episodes as low-activity if more than 90 days have passed since last use and usage count is fewer than 3. Procedures use a different criterion: they are marked as low-activity if unused for more than 180 days with total usage below 3, or if there are 3 or more failures and utility is below 0.3. Protected or reused memories are excluded from consideration.
+
+Weekly forgetting candidates include memories that have been in a low-activity state for more than 90 days with a usage count of 2 or fewer. This is not a deletion command but a candidate list for Anima to decide whether to retain based on the content and surrounding context. Candidate presentation scope and protection rule implementation are handled by `ForgettingEngine`.
+## Procedure Usage Tracking and Reconsolidation
+
+After using a procedure, `report_procedure_outcome` records success or failure. The results are used to update `success_count`, `failure_count`, and `confidence` in the frontmatter.
+
+`core/memory/maintenance/reconsolidation.py` marks a procedure as a reconsolidation candidate if it meets `failure_count >= 1` **or** `confidence < 0.6`. When the LLM revises it, the old version is archived, `version` is advanced, and the success and failure counters and confidence are reset to initial values.
+## Regular RAG Index Updates
+
+RAG index updates follow a single schedule separate from weekly consolidation. `core/supervisor/_mgr_scheduler.py`'s daily indexing job runs by default at 04:00, reflecting memory files, facts, and shared data, and also updates the BM25 and entity indexes. There is no separate path for weekly post-processing to rebuild the entire RAG. For index and recovery paths, see [Intentional Recall and Search](retrieval.md).

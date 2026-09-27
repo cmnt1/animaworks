@@ -1,6 +1,6 @@
-## Command execution result
+## Command Execution Result
 
-Below is the cron command execution output. Follow the instructions based on this content.
+The following is the result of executing the cron command. Based on this content, please respond according to the instructions.
 
 ```
 {output}

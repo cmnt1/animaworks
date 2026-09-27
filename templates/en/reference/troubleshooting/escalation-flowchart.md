@@ -1,358 +1,355 @@
-# Flowchart for When You're Stuck
+# Troubleshooting Flowchart
 
-A flowchart for deciding whether to **resolve an issue yourself** or **consult and report to someone else** when a problem occurs.
+A flowchart for deciding whether to resolve a problem yourself or consult/report to someone when an issue occurs.
 
-Refer to this document when you are unsure how to proceed. You do not need this flowchart for problems you can clearly solve on your own.
+Refer to this document when you are unsure how to proceed. If the problem is clearly something you can resolve on your own, this flowchart is not needed.
 
 ---
 
-## Decision flowchart
+## Decision Flowchart
 
 When a problem occurs, work through the following steps in order.
 
-### Step 1: Classify the problem type
+### Step 1: Identify the Type of Problem
 
-Classify the problem into one of the following:
+Classify the problem into one of the following categories:
 
-| Type | Description | Examples |
-|------|-------------|----------|
-| **A. Technical** | Issues with tools or system behavior | Tool errors, insufficient permissions, missing files |
-| **B. Operational** | Issues with how to carry out tasks or make judgments | Unclear requirements, priority trade-offs, blockers |
-| **C. Interpersonal** | Issues coordinating with other Anima | No response, conflicting instructions, unclear ownership |
-| **D. Urgent** | Issues that need immediate action | Risk of data loss, security concerns |
+| Type | Description | Example |
+|------|------|----|
+| **A. Technical Problem** | Issues related to the operation of tools or systems | Tool error, insufficient permission, missing file |
+| **B. Operational Problem** | Issues related to how to proceed with a task or make decisions | Unclear specifications, priority decisions, blockers |
+| **C. Interpersonal Problem** | Issues related to coordination with other Anima instances | No response, contradictory instructions, unclear ownership |
+| **D. Urgent Problem** | Issues requiring immediate action | Risk of data loss, security concern |
 
-### Step 2: Assess urgency
+### Step 2: Determine Urgency
 
 | Urgency | Criteria | Response |
-|---------|----------|----------|
-| **High** | Leaving it unaddressed risks data loss or security issues | MUST: Report to your supervisor immediately |
-| **High** | Another Anima’s work is completely stopped | MUST: Report to your supervisor immediately |
-| **Medium** | Your work is blocked, but you can switch to other tasks | SHOULD: Report to your supervisor within one hour |
-| **Low** | Efficiency drops but you can still make progress | MAY: Report at the next Heartbeat |
+|--------|------|------|
+| **High** | If left unaddressed, there is a risk of data loss or a security risk | MUST: Report to supervisor immediately |
+| **High** | Other Anima instances' work is completely blocked | MUST: Report to supervisor immediately |
+| **Medium** | Your own work is blocked, but you can start other tasks | SHOULD: Report to supervisor within 1 hour |
+| **Low** | Work efficiency decreases, but progress is still possible | MAY: Report at the next heartbeat |
 
-**If urgency is High** → Go to Step 5 (escalate immediately).
+**If urgency is "High"** → Proceed to Step 5 (escalate immediately)
 
-### Step 3: Attempt self-resolution
+### Step 3: Attempt to Resolve on Your Own
 
-Try to resolve the issue yourself using the steps below. Stop as soon as any step fixes the problem.
+Attempt to resolve the problem on your own using the following steps. If resolved at any step, stop there.
 
-1. **Search memory**
+1. **Search your memory**
    ```
-   search_memory(query="keywords related to the problem", scope="all")
+   search_memory(query="問題に関連するキーワード", scope="all")
    ```
-   - Check whether you have encountered the same problem before
-   - Check whether `procedures/` contains remediation steps
-   - To recall **recent actions** (e.g. a tool result or message from earlier in the session), use `search_memory(query="...", scope="activity_log")` in addition to `scope="all"` (which merges vector hits with activity_log BM25 via RRF)
+   - Check whether you have experienced the same problem before
+   - Check whether the procedure manual (procedures/）) contains a way to handle it
+   - **If you want to recall what you just did** (recent tool results, email content, search results, etc.), try `scope="activity_log"`. Even with `scope="all"`, activity_log is merged via BM25 with RRF, but explicitly narrowing to activity_log tends to reduce noise
 
 2. **Search shared knowledge**
    ```
-   search_memory(query="keywords related to the problem", scope="common_knowledge")
+   search_memory(query="問題に関連するキーワード", scope="common_knowledge")
    ```
-   - Check whether `troubleshooting/common-issues.md` covers the issue
+   - Check whether `troubleshooting/common-issues.md` contains a relevant problem
 
-3. **Consider other approaches**
-   - Consider alternative ways to reach the goal
-   - If permissions are insufficient, try another path; if a tool errors, try another tool
+3. **Consider an alternative approach**
+   - Think about whether there is an alternative way to achieve the goal
+   - If permission is insufficient, try another route; if there is a tool error, try another tool
 
-4. **Time limits for self-resolution**
-   - Technical issues: Escalate if not resolved within 15 minutes
-   - Operational issues: Escalate as soon as you are unsure (avoid the risk of a wrong judgment)
-   - Interpersonal issues: Escalate after one retry
+4. **Time limit for self-resolution**
+   - Technical problem: escalate if not resolved within 15 minutes
+   - Operational problem: escalate immediately if unsure (avoid the risk of making the wrong decision)
+   - Interpersonal problem: escalate after one retry
 
-### Step 4: Choose where to escalate
+### Step 4: Determine the Escalation Target
 
-| Problem type | Contact first | If that does not resolve it |
-|--------------|---------------|------------------------------|
-| **A. Technical** | Peer (when it matches their specialty) | Supervisor |
-| **B. Operational** | Supervisor | — |
-| **C. Interpersonal** | Supervisor (ask for mediation) | — |
-| **D. Urgent** | Supervisor (immediately) | — |
+| Type of Problem | Who to Consult First | If Consultation Does Not Resolve It |
+|-----------|----------------|----------------------|
+| **A. Technical Problem** | Colleague (if in the same specialty) | Supervisor |
+| **B. Operational Problem** | Supervisor | ― |
+| **C. Interpersonal Problem** | Supervisor (request mediation) | ― |
+| **D. Urgent Problem** | Supervisor (immediately) | ― |
 
-**Decision rules:**
-- **OK to ask a peer:** Same supervisor, and the issue relates to their specialty.
-- **MUST report to supervisor:** Business judgment required, another area is involved, or urgency is high.
-- **Do not** contact Anima in other departments directly (MUST go through your supervisor).
+**Decision criteria:**
+- Conditions for consulting a colleague: the colleague shares the same supervisor and the problem is related to their specialty
+- Conditions for MUST report to supervisor: operational judgment is required, other departments are involved, or urgency is high
+- Do not contact Anima instances in other departments directly (MUST: go through the supervisor)
 
-### Step 5: Execute the escalation
+### Step 5: Execute the Escalation
 
-Your report MUST include:
+The report message MUST include the following elements:
 
-1. **Situation:** What is happening
-2. **Cause:** What you believe caused it (or “under investigation” if unknown)
-3. **What you tried:** What you attempted on your own
-4. **What you need:** What you want from your supervisor (decision, granting access, mediation, etc.)
+1. **Situation**: What is happening
+2. **Cause**: What is considered to be the cause (if unknown, write "cause under investigation")
+3. **Attempts**: What you have tried on your own
+4. **Request**: What you want the supervisor to do (judgment, permission grant, mediation, etc.)
 
-**`send_message` constraints (aligned with implementation):**
-- `intent` is REQUIRED: `report` or `question` only. It cannot be omitted. `intent="delegation"` is **rejected** (task delegation is only via `delegate_task`)
-- Acknowledgments, thanks, and FYI must not use DM. Use the Board (`post_channel`)
-- Per-run DM recipient caps are set by role / `status.json` (e.g. general/ops: 2, engineer: 5, manager: 10). Only one message per recipient. For broader broadcasts, use the Board
-- DM and the Board **share the same outbound budget** (per-hour and 24-hour limits). See `communication/sending-limits.md`
-- **Recipient:** Anima name, or a configured human alias (Slack / Chatwork / etc. when set in config)
-- **During chat:** Reply to the human user in plain text. Use `send_message` only for other Anima (or external delivery via configured aliases)
-- **Reaching a human** when `send_message` cannot (e.g. no alias): If you are a **top-level** Anima and notifications are configured, use `call_human` (below)
-- For thread replies, set `reply_to` and `thread_id` to keep context
-- If urgency is High and a human must act immediately, consider `call_human` (`subject`, `body`, `priority`)
+**send_message constraints (implementation-compliant)**:
+- `intent` is MUST: either `report` (report) or `question` (question). Cannot be omitted. `intent="delegation"` is **rejected** (task delegation is only possible via `delegate_task`)
+- Acknowledgment, thanks, and FYI cannot be sent via DM. Use Board (post_channel) instead
+- The number of DM recipients per run is limited by the role-specific setting in /status.json (general/ops is 2 people, engineer is 5 people, manager is 10 people, etc.). Only one message per recipient. If the limit is exceeded, use Board
+- DM and Board **share the same outbound budget** (with per-hour and per-24-hour limits). See `communication/sending-limits.md` for details
+- **Recipient**: Anima name, or a human alias (if configured in config, external delivery is made to Slack/Chatwork etc.)
+- **During chat**: Replies to human users are made directly as text. `send_message` is used only for other Anima instances (or externally via configured aliases)
+- **Contacting humans** (destinations not reachable via `send_message`, such as when no alias is set): If you are a top-level Anima and notification settings are enabled, use `call_human` (see below)
+- When replying in a thread, specify `reply_to` and `thread_id` to maintain context
+- If urgency is "High" and immediate human response is needed, consider `call_human` (`subject`, `body`, `priority`)
 
-**`post_channel` (Board) constraints** (use when reaching three or more people):
-- Channels without extra metadata (e.g. `general`, `ops`) are open to everyone. Member-only channels allow posts only for members (ACL). If you lack access, use `manage_channel(action="info", channel="channel_name")` to inspect membership
-- At most one post per channel per run. Further posts to the same channel need a cooldown (`heartbeat.channel_post_cooldown_s` in `config.json`, default 300 seconds)
-- You can mention with `@name` in the body; mentioned parties receive a DM notification
+**post_channel (Board) constraints** (used when communicating to 3 or more people):
+- Channels without metadata (general, ops, etc.) are available to everyone. Member-only channels can only be posted to by members (ACL). If you do not have access, you can check members via `manage_channel(action="info", channel="チャネル名")`
+- Only one post per run per channel. Repeated posts to the same channel require a cooldown (`heartbeat.channel_post_cooldown_s` in `config.json`, default 300 seconds)
+- You can mention people in the body using `@名前`. Mentioned recipients receive a DM notification
 
-**`call_human` and the human notification stack (`core/notification/` implementation):**
+**call_human and the human notification infrastructure (`core/notification/` implementation-compliant)**:
 
-- **When the tool is enabled:** `human_notification.enabled` is `true` in `config.json`, and `HumanNotifier.from_config` successfully builds **at least one delivery channel** (only `channels[]` entries with `enabled: true` and a registered `type` count; `enabled: false` is skipped; unregistered `type` values are skipped after a warning log)
-- **Top-level gate (`supervisor` gate):** When there is an entry for **that Anima’s name** in `config.animas` **and** `supervisor` is non-null, `HumanNotifier` is not attached and `call_human` is unavailable (subordinates escalate to their supervisor with `send_message`). **Anima not listed under `animas` do not pass this gate**, so in theory `call_human` may be available with channels alone. In operations, register every Anima under `animas` and give human notification only to those with `supervisor: null` for safety
-- **Delivery:** `HumanNotifier.notify` sends to each enabled channel **in parallel** (`asyncio.gather(..., return_exceptions=True)`). Each channel returns a success string or a failure string containing `ERROR`; **exceptions in one channel are swallowed and others continue**
-- **Channel types** (`human_notification.channels[].type`): `slack`, `chatwork`, `line`, `telegram`, `ntfy` (see `@register_channel` in `core/notification/channels/*.py`). You can define multiple channels in parallel
-- **Parameters:** `subject` and `body` are required; `priority` is optional. Allowed values are `low` / `normal` / `high` / `urgent` (default `normal`). **Strings outside `PRIORITY_LEVELS` are normalized to `normal` inside `HumanNotifier.notify`**
-- **How priority surfaces:**
-  - **Slack / Chatwork / LINE / Telegram:** For `high` / `urgent`, **`[HIGH]` / `[URGENT]`** is prefixed at the start (`priority.upper()`). Not added for `low` / `normal`
-  - **ntfy:** HTTP header `Priority` is set to `low=2`, `normal=3`, `high=4`, `urgent=5`. Body is the request body (max ~4096 characters); `Title` header carries the subject plus `(from AnimaName)` when needed
+- **Tool availability condition**: `human_notification.enabled` in `config.json` is true, and `HumanNotifier.from_config` has **actually built one or more send channels** (only `enabled: true` among `channels[]` and registered `type` are targeted. `enabled: false` is skipped, unregistered `type` is skipped with a warning log)
+- **Top-level only (supervisor gate)**: If `config.animas` **contains an entry for that Anima name** and `supervisor` is non-null, `HumanNotifier` is not granted and `call_human` cannot be used (subordinates escalate to their supervisor via `send_message`). **An Anima not registered in `animas` does not pass through this gate**, so theoretically `call_human` could be assigned with only a notification channel. In operation, it is safe to explicitly list all Anima instances in `animas` so that only `supervisor: null` has human notifications
+- **Send method**: **Parallel sending** to each channel where `HumanNotifier.notify` is valid (`asyncio.gather(..., return_exceptions=True)`). Each channel returns a success string or a failure string containing `ERROR`; **an exception in one channel is swallowed and the others continue**
+- **Supported channel types** (`human_notification.channels[].type`): `slack`, `chatwork`, `line`, `telegram`, `ntfy` (corresponding to `@register_channel` in `core/notification/channels/*.py`). Multiple channels can be defined in parallel
+- **Parameters**: `subject` and `body` are required. `priority` is optional. Enumeration is `low` / `normal` / `high` / `urgent` (default `normal` when omitted). **Strings outside `PRIORITY_LEVELS` are normalized to `normal` within `HumanNotifier.notify`**
+- **How priority is displayed**:
+  - **Slack / Chatwork / LINE / Telegram**: When `high` / `urgent`, **`[HIGH]` / `[URGENT]`** is prepended (`priority.upper()`). Not added for `low` / `normal`
+  - **ntfy**: Set `low=2`, `normal=3`, `high=4`, `urgent=5` in the HTTP header `Priority`. The body is the request body (max approximately 4096 characters), with the subject in the `Title` header plus `(from Anima名)` if needed
 - **Slack** (`channels/slack.py`):
-  - **Bot Token + `channel`** (`chat.postMessage`) or **Incoming Webhook**. Body text is formatted for Slack via `md_to_slack_mrkdwn`
-  - **Bot mode with `anima_name` set:** The API `username` is set to the Anima name, so **`(from AnimaName)` is not added to the body** (Webhook mode adds `(from AnimaName)` to the body). With matching config and assets, `icon_url` can be set
-  - **Thread reply routing** (`reply_routing.py`): Only when posting with a Bot, `anima_name` is non-empty, and the API response includes `ts`, an entry is saved to `notification_map.json`. Path: `{data_dir}/run/notification_map.json` (typically `~/.animaworks/run/`). Entries are discarded after **up to 7 days** from creation. Webhooks cannot obtain `ts`, so mapping is impossible
-  - When routing, Slack thread summaries are fetched when possible; on failure, a saved summary of the notification text is used. External messages delivered to Inbox use `intent="question"`
-- **Chatwork:** `room_id` must be **numeric only**. Body is converted with `md_to_chatwork` and wrapped in `[info][title]…[/title]…[/info]` format
-- **LINE:** Push API. Text is truncated to a maximum of 5000 characters
-- **Telegram:** `parse_mode=HTML`. Subject in `<b>…</b>`; overall length adjusted within 4096 characters (truncate after escaping)
-- **Credentials:** Base `NotificationChannel._resolve_credential_with_vault` order: **config key env → `{key}__{anima_name}` (vault/shared) → plain key**. Slack Bot also has a `get_credential("slack", "notification", …)` fallback (see each `channels/*.py`)
-- **Chat UI:** Streaming responses emit a **`notification_sent`** event (via `core/anima/messaging.py`; separate path from external channels)
-- **Logging:** On `call_human`, the unified activity log records **`human_notify`** (`via` is fixed in implementation as `configured_channels`), plus `tool_result`. Priming “Pending Human Notifications” aggregates **`human_notify` from the past 24 hours, up to 10 entries** (`core/memory/priming/outbound.py`)
-- **Other `HumanNotifier` use:** The framework may notify humans via the **same `HumanNotifier`** for background tool completion, etc. (not only the `call_human` tool; top-level Anima restriction is the same)
-- **Mode S (CLI):** You can send the same style of notification with `animaworks-tool call_human "subject" "body" [--priority …]`
+  - **Bot Token + `channel`** (`chat.postMessage`) or **Incoming Webhook**. The body is formatted for Slack via `md_to_slack_mrkdwn`
+  - **If Bot and `anima_name` exist**: The Anima name is passed to the API's `username`, so **do not add `(from Anima名)` in the body** (in Webhook mode, `(from Anima名)` is added to the body). If the configuration and assets are in place, `icon_url` can also be added
+  - **Thread reply routing** (`reply_routing.py`): Only when posting as a Bot, `anima_name` is not empty, and the API response contains `ts`, save to `notification_map.json`. The path is `{data_dir}/run/notification_map.json` (usually `~/.animaworks/run/`). Entries are discarded **after a maximum of 7 days** from creation. Webhook cannot obtain `ts` and cannot be mapped
+  - When routing, try to fetch the thread summary via the Slack API if possible; on failure, fall back to a summary of the saved notification text. External messages to the Inbox are `intent="question"`
+- **Chatwork**: `room_id` allows **numeric values only**. The body is converted via `md_to_chatwork` and formatted as `[info][title]…[/title]…[/info]`
+- **LINE**: Push API. Text is truncated to a maximum of 5000 characters
+- **Telegram**: `parse_mode=HTML`. The subject is `<b>…</b>`, and the total is adjusted to within 4096 characters (truncated after escaping)
+- **Credentials**: The base `NotificationChannel._resolve_credential_with_vault` is **configuration key env → `{キー}__{anima_name}` (vault/shared）→ raw key** in that order. Slack Bot additionally has a fallback via `get_credential("slack", "notification", …)` (see each `channels/*.py`)
+- **Chat UI**: A **`notification_sent`** event is sent with streaming responses (via `core/anima/messaging.py`; a separate path from external channels)
+- **Logging**: When `call_human` is executed, **`human_notify`** is written to the unified activity log (`via` is fixed in the implementation as `configured_channels`). `tool_result` is also recorded. Priming's "Pending Human Notifications" aggregates **up to 10 items from the past 24 hours** of `human_notify` (`core/memory/priming/outbound.py`)
+- **Other HumanNotifier uses**: There is a path where the framework sends to humans via **the same `HumanNotifier`** for background tool completions, etc. (other than the `call_human` tool. The same restriction to top-level Anima applies)
+- **Mode S (CLI)**: The same type of notification can be sent via `animaworks-tool call_human "件名" "本文" [--priority …]`
 
-**`call_human` parameters (summary):**
-- `subject` and `body` are required; `priority` is optional (`low` / `normal` / `high` / `urgent`, default `normal`; invalid values are treated as `normal`)
+**call_human parameters (summary)**:
+- `subject` and `body` are required. `priority` is optional (`low` / `normal` / `high` / `urgent`, default `normal`. Invalid values are treated as `normal`)
 
 ---
 
-## Escalation message templates
+## Escalation Message Templates
 
-### Template 1: Blocker report
+### Template 1: Blocked Report
 
 ```
 send_message(
-    to="supervisor_name",
-    content="""[Blocker report]
+    to="上司の名前",
+    content="""【ブロック報告】
 
-■ Situation
-Task “Monthly report creation” is blocked.
+■ 状況
+タスク「月次レポート作成」がブロックされています。
 
-■ Cause
-I do not have read access to `/data/sales/`, where sales data is stored.
+■ 原因
+売上データが格納されている /data/sales/ ディレクトリへの読み取り権限がありません。
 
-■ Already tried
-- Checked `permissions.json` → `/data/sales/` not allowed
-- Looked for alternate data sources → none found
+■ 試行済み
+- permissions.json を確認 → /data/sales/ は未許可
+- 代替データソースを検索 → 該当なし
 
-■ Request
-Please grant read access to `/data/sales/`.""",
+■ 依頼
+/data/sales/ への読み取り権限の追加をお願いします。""",
     intent="report"
 )
 ```
 
-### Template 2: Decision request
+### Template 2: Judgment Request
 
 ```
 send_message(
-    to="supervisor_name",
-    content="""[Decision request]
+    to="上司の名前",
+    content="""【判断依頼】
 
-■ Situation
-Task “Customer support flow improvement” has two plausible directions.
+■ 状況
+タスク「顧客対応フロー改善」で2つの方針が考えられます。
 
-■ Options
-Plan A: Incrementally adjust the existing flow (effort: small, risk: low, impact: medium)
-Plan B: Redesign the flow end-to-end (effort: large, risk: medium, impact: high)
+■ 選択肢
+A案: 既存フローを段階的に修正（工数: 小、リスク: 低、効果: 中）
+B案: フローを全面刷新（工数: 大、リスク: 中、効果: 高）
 
-■ My view
-I recommend Plan A. The pain points in the current flow are narrow, and incremental fixes should be enough.
+■ 私の見解
+A案を推奨します。理由: 現行フローの問題点は限定的であり、段階的修正で十分対応可能なため。
 
-■ Request
-Please choose the direction.""",
+■ 依頼
+方針の決定をお願いします。""",
     intent="question"
 )
 ```
 
-### Template 3: Technical question to a peer
+### Template 3: Technical Consultation with a Colleague
 
 ```
 send_message(
-    to="peer_name",
-    content="""[Technical question]
+    to="同僚の名前",
+    content="""【技術相談】
 
-I am hitting the Slack API rate limit.
+Slack APIの rate limit に引っかかっています。
 
-■ Situation
-- Trying to send 100+ messages in one batch
-- Around the 50th message I get `429 Too Many Requests`
+■ 状況
+- 100件以上のメッセージを一括送信しようとしている
+- 50件目あたりで 429 Too Many Requests が返される
 
-■ Question
-Do you know good ways to work around Slack API rate limits?
-I am considering spacing out batch sends but am unsure what interval is appropriate.""",
+■ 質問
+Slack API の rate limit 回避策について知見はありますか？
+バッチ処理の間隔を空ける方法を検討していますが、適切な間隔がわかりません。""",
     intent="question"
 )
 ```
 
-### Template 4: Urgent report
+### Template 4: Urgent Report
 
-When urgency is High and a human must respond immediately, also use `call_human`. The tool is available only for **top-level** Anima when `human_notification` is enabled. Subordinate Anima should use `send_message` to their supervisor only.
+If urgency is "High" and immediate human response is needed, also use `call_human` (the tool is only available to **top-level Anima** instances and when `human_notification` is valid. Subordinate Anima instances should limit themselves to `send_message` to their supervisor).
 
 ```
 send_message(
-    to="supervisor_name",
-    content="""[Urgent report]
+    to="上司の名前",
+    content="""【緊急報告】
 
-■ Situation
-Authentication errors from external API (XXX service) keep occurring.
+■ 状況
+外部API（XXXサービス）から認証エラーが継続的に発生しています。
 
-■ Impact
-- Task YYY is fully stopped
-- Task ZZZ uses the same API and may be affected
+■ 影響
+- YYYタスクが完全に停止
+- ZZZタスクも同じAPIを使用しており影響の可能性あり
 
-■ Already tried
-- Retried three times → all failed
-- I cannot verify API key validity on my own
+■ 試行済み
+- リトライ3回実施 → すべて失敗
+- APIキーの有効性は自分では確認できない
 
-■ Request
-Please verify the API key and assess blast radius.""",
+■ 依頼
+APIキーの確認と、影響範囲の調査をお願いします。""",
     intent="report"
 )
 ```
 
-When immediate human notification is needed:
-
+If immediate human notification is needed:
 ```
 call_human(
-    subject="[URGENT] Ongoing external API authentication errors",
-    body="Authentication errors keep occurring from XXX service. Task YYY is stopped. Please verify the API key.",
+    subject="【緊急】外部API認証エラー継続発生",
+    body="XXXサービスから認証エラーが継続しています。YYYタスク停止中。APIキー確認をお願いします。",
     priority="urgent"
 )
 ```
 
 ---
 
-## Common escalation scenarios
+## Common Escalation Scenarios
 
-### Scenario 1: Unclear instructions
+### Scenario 1: Unclear Instructions
 
-**Situation:** Your supervisor said “create a report,” but the period, format, and delivery destination are unclear.
+**Situation**: You were instructed by your supervisor to "create a report," but the target period, format, and submission destination are unclear.
 
-**Correct response:**
-1. Organize what you can infer yourself
-2. Ask concrete questions about what is unclear
+**Correct response**:
+1. Organize what you can reasonably infer on your own
+2. Ask specific questions about the unclear points
 
 ```
 send_message(
-    to="supervisor_name",
-    content="""About the report, please confirm:
+    to="上司の名前",
+    content="""レポート作成の件、以下を確認させてください。
 
-1. Period: Should this be for the current month?
-2. Format: Same Markdown format as last time?
-3. Delivery: Should I save it under `knowledge/`?
+1. 対象期間: 今月分でよろしいでしょうか？
+2. フォーマット: 前回と同じMarkdown形式でよろしいでしょうか？
+3. 提出先: knowledge/ に保存でよろしいでしょうか？
 
-If the above is fine, I will start.""",
+上記で問題なければ着手します。""",
     intent="question"
 )
 ```
 
-**Do not:**
-- Proceed on your own interpretation without confirming
-- Reply only “the instructions are unclear” (with no specific questions)
-- Omit `intent` on `send_message` (`report` or `question` is required; omission causes an error)
+**What not to do**:
+- Proceed with your own interpretation without confirming
+- Reply only with "the instructions are unclear" (without specific questions)
+- Omit `intent` in `send_message` (either `report` or `question` is required. Omitting it will cause an error)### Scenario 2: Conflicting instructions from multiple supervisors
 
-### Scenario 2: Conflicting instructions from multiple supervisors
+**Situation**: Your direct supervisor tells you to "prioritize A," but another Anima asks you to "do B first."
 
-**Situation:** Your direct supervisor said “prioritize A,” but another Anima asked you to “do B first.”
-
-**Correct response:**
-1. Follow your direct supervisor’s instruction (MUST)
+**Correct response**:
+1. Prioritize the direct supervisor's instruction (MUST)
 2. Report the situation to your direct supervisor
 
 ```
 send_message(
-    to="direct_supervisor_name",
-    content="""[Priority check]
+    to="直属の上司の名前",
+    content="""【優先順位の確認】
 
-I am working on task A as you directed, but XXX asked me to prioritize task B.
-I will keep prioritizing task A unless you say otherwise—is that OK?
+現在タスクAに着手中ですが、XXXさんからタスクBの優先依頼がありました。
+指示通りタスクAを優先して進めますが、問題ないでしょうか？
 
-Task B request: handle YYY (from XXX)""",
+タスクBの依頼内容: YYYの対応（XXXさんからの依頼）""",
     intent="question"
 )
 ```
 
-### Scenario 3: Repeated errors while working
+### Scenario 3: Repeated errors during work
 
-**Situation:** Sending a message via the Chatwork API failed three times in a row.
+**Situation**: Message sending to the Chatwork API has failed 3 times in a row.
 
-**Correct response:**
-1. Record the errors
-2. Escalate if three retries do not fix it
-3. Move on to other tasks that are not blocked
+**Correct response**:
+1. Record the error details
+2. If the issue is not resolved after 3 retries, escalate it
+3. Start on other tasks that are not blocked
 
 ```
-# Record the errors
+# エラーを記録
 write_memory_file(
     path="state/current_state.md",
-    content="## Blocked\n\nChatwork API repeated failures\n- 1st: 10:00 - 500 Internal Server Error\n- 2nd: 10:05 - 500 Internal Server Error\n- 3rd: 10:10 - 500 Internal Server Error\n\nReported to supervisor. Working on other tasks.",
+    content="## ブロック中\n\nChatwork API連続エラー\n- 1回目: 10:00 - 500 Internal Server Error\n- 2回目: 10:05 - 500 Internal Server Error\n- 3回目: 10:10 - 500 Internal Server Error\n\n上司に報告済み。他タスクに着手中。",
     mode="overwrite"
 )
 
-# Report to supervisor
+# 上司に報告
 send_message(
-    to="supervisor_name",
-    content="[Blocker report] Chatwork API returned HTTP 500 three times in a row. Possible external incident. Waiting for recovery while working on other tasks.",
+    to="上司の名前",
+    content="【ブロック報告】Chatwork APIが3回連続で500エラーを返しています。外部障害の可能性があります。復旧を待ちつつ、他のタスクに着手します。",
     intent="report"
 )
 ```
 
-### Scenario 4: Issue outside your scope
+### Scenario 4: Discovering a problem outside your scope of responsibility
 
-**Situation:** While working, you notice inconsistent data owned by another Anima.
+**Situation**: During your work, you discover an inconsistency in data managed by another Anima.
 
-**Correct response:**
+**Correct response**:
 1. Record what you found
-2. Report to your direct supervisor (do not contact the other department’s Anima directly)
+2. Report it to your direct supervisor (do not contact the Anima in another department directly)
 
 ```
 send_message(
-    to="supervisor_name",
-    content="""[Information share]
+    to="上司の名前",
+    content="""【情報共有】
 
-I noticed the following inconsistency while working. Outside my remit, but sharing.
+作業中に以下の不整合を発見しました。私の担当外ですが共有します。
 
-■ Finding
-`/data/reports/monthly.md` total sales and `/data/sales/summary.md` do not match.
-- monthly.md: ¥1,234,567
-- summary.md: ¥1,234,000
+■ 発見内容
+/data/reports/monthly.md の売上合計と /data/sales/summary.md の値が一致しません。
+- monthly.md: 1,234,567円
+- summary.md: 1,234,000円
 
-■ How I found it
-Spotted while referencing data for the monthly report.
+■ 発見経緯
+月次レポート作成中にデータ参照した際に気づきました。
 
-Whether to act is your call.""",
+対応の要否はお任せします。""",
     intent="report"
 )
 ```
 
 ---
 
-## Checklist when you are unsure
+## Checklist when you are unsure how to proceed
 
-Escalate (MUST) if any of the following applies:
+Escalate with MUST if any of the following apply:
 
-- [ ] A wrong decision could cause irreversible harm
-- [ ] You need an action outside your permission boundary
-- [ ] Another department’s Anima would be affected
-- [ ] No fix has appeared after 15+ minutes
-- [ ] The same problem has happened twice or more
-- [ ] Security or data safety is involved
+- [ ] A wrong decision here would have irreversible consequences
+- [ ] The operation requires going beyond your scope of permission
+- [ ] It affects an Anima in another department
+- [ ] No solution has been found after 15 minutes
+- [ ] The same issue has occurred more than once
+- [ ] It involves security or data safety
 
-You may (MAY) try to self-resolve if:
+You MAY attempt to resolve it on your own if any of the following apply:
 
-- [ ] You have fixed a similar issue before
-- [ ] `procedures/` documents the fix
-- [ ] `common_knowledge/` documents the fix
-- [ ] You can finish within your permission scope
-- [ ] Failure would have limited impact
+- [ ] You have solved a similar problem before
+- [ ] The procedure manual (procedures/）) describes how to handle it
+- [ ] Shared knowledge (common_knowledge/）) contains a solution
+- [ ] It can be completed within your scope of permission
+- [ ] The impact of failure is limited

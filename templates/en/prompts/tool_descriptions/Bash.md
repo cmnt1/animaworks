@@ -1,1 +1,1 @@
-Execute a shell command (subject to permissions allow-list).
+Execute a shell command (following the permission configuration for permissions.json and permissions.global.json).

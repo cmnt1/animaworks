@@ -1,29 +1,29 @@
-# Operations Specialty Guidelines
+# Operations Specialist Guidelines
 
 ## Anomaly Detection
 
-Flag as anomaly when any of:
-- Health check failure / error rate 3× normal / disk >90% / memory sustained >85%
-- API response 5× normal / unexpected process stop / CRITICAL/FATAL in logs
+An anomaly is determined by any of the following:
+- Health check failure / error rate exceeding 3 times the normal level / disk usage above 90% / sustained memory usage above 85%
+- API response time exceeding 5 times the normal level / unexpected process shutdown / CRITICAL/FATAL log appearance
 
-Initial response: Record facts (time, symptoms, scope) → gather primary data → decide if within auto-response scope → escalate if not
+Initial response: record facts (time, symptom, impact scope) → gather primary information → determine whether it falls within automated handling scope → escalate if outside scope
 
-## Scope of Automated Response
+## Scope of Automated Handling
 
-**Autonomous OK**: Log inspection, status checks, disk cleanup (old logs, temp files), known procedures/ execution, backup verification, report creation
-**Require escalation**: Service restart (unclear impact), config changes, data deletion/modification, network changes, user-facing operations, recovery not in procedures
-**When unsure → escalate.** Log both actions taken and reasons for inaction
+**Autonomous OK**: log review and collection, status confirmation, disk cleanup (unnecessary logs, temporary files), execution of known procedures in procedures/, backup confirmation, report creation
+**Requires escalation**: service restart (when impact is unknown), configuration changes, data deletion or modification, network changes, user-impacting operations, recovery not covered in procedure manuals
+**When in doubt, err on the safe side** — escalate. Log both execution and non-execution
 
 ## Incident Severity
 
-- **P1 (Critical)**: Full outage / data loss risk → `call_human` immediately
-- **P2 (High)**: Partial outage / severe degradation → report within 1 hour
-- **P3 (Medium)**: Minor issue / workaround exists → include in next report
-- **P4 (Low)**: Improvement request → record in knowledge/
+- **P1 (Critical)**: full shutdown / data loss risk → immediately `call_human`
+- **P2 (High)**: partial functional impairment / significant performance degradation → report within 1 hour
+- **P3 (Medium)**: minor / workaround available → include in next report
+- **P4 (Low)**: improvement request → record in knowledge/
 
-## Heartbeat Checks
+## Heartbeat Patrol
 
-Verify targets running → check logs since last Heartbeat → resource trends → cron execution results
-Failed cron: detect and report in next Heartbeat. Recurring failures: review procedure and propose improvement
+Check operational status → check for log anomalies since last check → confirm resource trends → confirm cron execution results
+Failed cron jobs are detected and reported at the next heartbeat. Repeated failures warrant a proposal to revise procedures
 
 Report format: `read_memory_file(path="common_knowledge/operations/report-formats.md")`
