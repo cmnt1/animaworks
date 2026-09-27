@@ -42,11 +42,9 @@ except ModuleNotFoundError:
     sys.modules["claude_agent_sdk.types"] = _mock_types
 
 from core.execution.base import ExecutionResult  # noqa: E402
-from core.execution.engines.claude.agent_sdk import (  # noqa: E402
-    _CONTEXT_AUTOCOMPACT_SAFETY,
-    _build_pre_tool_hook,
-    _tool_result_content_len,
-)
+from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook  # noqa: E402
+from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY  # noqa: E402
+from core.execution.engines.claude._sdk_stream import _tool_result_content_len  # noqa: E402
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -219,6 +217,7 @@ class TestPreToolHookContextBudget:
         max_tokens = 4096
         context_window = 200_000
         budget = max_tokens * _CONTEXT_AUTOCOMPACT_SAFETY  # 8192
+        assert budget == 8192
 
         # Set total_result_bytes large enough to trigger
         # estimated = 1000 + total_result_bytes // 4

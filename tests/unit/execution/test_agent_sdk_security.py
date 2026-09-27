@@ -13,11 +13,13 @@ import pytest
 
 from core.config.global_permissions import GlobalPermissionsCache
 from core.execution.engines.claude._sdk_hooks import _collect_all_subordinates
-from core.execution.engines.claude.agent_sdk import (
+from core.execution.engines.claude._sdk_security import (
     _PROTECTED_FILES,
     _WRITE_COMMANDS,
     _check_a1_bash_command,
     _check_a1_file_access,
+)
+from core.execution.engines.claude._sdk_stream import (
     _log_tool_use,
     _sanitise_tool_args,
     _summarise_tool_input,

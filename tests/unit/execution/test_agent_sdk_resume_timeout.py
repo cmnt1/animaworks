@@ -145,7 +145,7 @@ class TestClearSessionId:
     """_clear_session_id() removes the session file."""
 
     def test_removes_existing_file(self, anima_dir: Path) -> None:
-        from core.execution.engines.claude.agent_sdk import _clear_session_id, _save_session_id
+        from core.execution.engines.claude._sdk_session import _clear_session_id, _save_session_id
 
         _save_session_id(anima_dir, "sess-001", "chat")
         path = anima_dir / "state" / "current_session_chat.json"
@@ -155,14 +155,14 @@ class TestClearSessionId:
         assert not path.exists()
 
     def test_noop_when_no_file(self, anima_dir: Path) -> None:
-        from core.execution.engines.claude.agent_sdk import _clear_session_id
+        from core.execution.engines.claude._sdk_session import _clear_session_id
 
         # Should not raise
         _clear_session_id(anima_dir, "chat")
         _clear_session_id(anima_dir, "heartbeat")
 
     def test_clears_heartbeat_session(self, anima_dir: Path) -> None:
-        from core.execution.engines.claude.agent_sdk import _clear_session_id, _save_session_id
+        from core.execution.engines.claude._sdk_session import _clear_session_id, _save_session_id
 
         _save_session_id(anima_dir, "sess-hb", "heartbeat")
         path = anima_dir / "state" / "current_session_heartbeat.json"
@@ -525,7 +525,8 @@ class TestResumeTimeoutGuard:
             return await coro
 
         with _patch_sdk_for_streaming(fresh_messages):
-            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor, _clear_session_id
+            from core.execution.engines.claude._sdk_session import _clear_session_id
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
             from core.prompt.context import ContextTracker
 
             original_clear = _clear_session_id

@@ -14,7 +14,7 @@ class TestLogToolResult:
     """Test the _log_tool_result() helper function."""
 
     def test_writes_tool_result_entry(self, tmp_path: Path) -> None:
-        from core.execution.engines.claude.agent_sdk import _log_tool_result
+        from core.execution.engines.claude._sdk_stream import _log_tool_result
 
         _log_tool_result(
             tmp_path,
@@ -39,7 +39,7 @@ class TestLogToolResult:
         assert raw["meta"]["is_error"] is False
 
     def test_writes_error_flag(self, tmp_path: Path) -> None:
-        from core.execution.engines.claude.agent_sdk import _log_tool_result
+        from core.execution.engines.claude._sdk_stream import _log_tool_result
 
         _log_tool_result(
             tmp_path,
@@ -56,7 +56,7 @@ class TestLogToolResult:
 
     def test_never_raises(self, tmp_path: Path) -> None:
         """_log_tool_result should silently swallow errors."""
-        from core.execution.engines.claude.agent_sdk import _log_tool_result
+        from core.execution.engines.claude._sdk_stream import _log_tool_result
 
         # Use a path that will cause an error (e.g., read-only or missing dir)
         with patch("core.memory.activity.logger.ActivityLogger.log", side_effect=RuntimeError("disk full")):

@@ -9,11 +9,15 @@ import inspect
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.schemas import ModelConfig
+
+if TYPE_CHECKING:
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -408,7 +412,7 @@ class TestBashSendRemoved:
 
     def test_pending_sends_not_in_pre_tool_hook_signature(self) -> None:
         """pending_sends is NOT in the _build_pre_tool_hook signature."""
-        from core.execution.engines.claude.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         sig = inspect.signature(_build_pre_tool_hook)
         assert "pending_sends" not in sig.parameters
