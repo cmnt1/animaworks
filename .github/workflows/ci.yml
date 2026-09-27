@@ -89,6 +89,24 @@ jobs:
         run: |
           pytest tests/unit/ -x -q --timeout=30 -m "not live and not azure and not ollama" --cov=core --cov-report=term-missing --cov-report=xml --cov-fail-under=70
 
+  i18n-freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install translation-check dependency
+        run: pip install pyyaml
+
+      - name: Check translation freshness
+        run: python scripts/translate.py all --check
+
   e2e-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30

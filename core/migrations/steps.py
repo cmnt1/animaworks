@@ -1503,6 +1503,33 @@ def step_v0120_prompt_deadline_engine_neutral_resync(
     return StepResult(changed=total, skipped=skipped, details=details, error=error)
 
 
+def step_i18n_regenerated_templates_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Resync shared runtime files after regenerating localized templates.
+
+    Anima-specific templates are consumed when new animas are created and are
+    not copied over existing anima directories by migrations.
+    """
+    details: list[str] = []
+    total = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for resync_fn in (step_common_knowledge_resync, step_common_skills_resync, step_reference_resync):
+        result = resync_fn(data_dir, dry_run, verbose)
+        total += result.changed
+        skipped += result.skipped
+        details.extend(result.details)
+        if result.error:
+            errors.append(f"{resync_fn.__name__}: {result.error}")
+
+    return StepResult(
+        changed=total,
+        skipped=skipped,
+        details=details,
+        error="; ".join(errors) or None,
+    )
+
+
 _V0140_STALE_PROMPTS = (
     "communication_rules_s.md",
     "hiring_context.md",
@@ -2504,6 +2531,12 @@ def register_all_steps(runner: Any) -> None:
             "Retire TaskBoard presentation metadata (tasks are the only board source)",
             "db_sync",
             step_taskboard_metadata_retire,
+        ),
+        MigrationStep(
+            "20260927_i18n_regenerated_templates_resync",
+            "Resync shared runtime files after localized template regeneration",
+            "template_sync",
+            step_i18n_regenerated_templates_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]
