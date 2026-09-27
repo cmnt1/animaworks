@@ -257,3 +257,53 @@ def test_empty_priming_has_no_headers_or_subheaders() -> None:
     assert format_priming_section(PrimingResult()) == ""
     assert format_priming_section(PrimingResult(related_knowledge=" \n\t")) == ""
     assert format_priming_section(PrimingResult(pending_human_notifications="notice")) == ""
+
+
+def test_own_personal_tools_are_counted_not_listed(data_dir: Path, tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    (anima_dir / "tools").mkdir(parents=True)
+    own = anima_dir / "tools" / "one_off_pdf.py"
+    own.write_text("", encoding="utf-8")
+    common = tmp_path / "common_tools" / "obsidian_note.py"
+    common.parent.mkdir()
+    common.write_text("", encoding="utf-8")
+    arguments = (
+        anima_dir,
+        data_dir,
+        SimpleNamespace(anima_dir=anima_dir),
+        1.0,
+        "s",
+        SimpleNamespace(all_skills=[]),
+        False,
+        False,
+        False,
+        False,
+    )
+    personal = {"one_off_pdf": str(own), "obsidian_note": str(common)}
+    content = _sections_by_id(_build_group4(*arguments, ["slack"], personal, {}, {}))["external_tools"]
+
+    assert "one_off_pdf" not in content
+    assert "obsidian_note, slack" in content
+    assert t("builder.external_tools.personal_count", count=1) in content
+
+
+def test_only_personal_tools_still_render_count(data_dir: Path, tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "bob"
+    (anima_dir / "tools").mkdir(parents=True)
+    own = anima_dir / "tools" / "mine.py"
+    own.write_text("", encoding="utf-8")
+    arguments = (
+        anima_dir,
+        data_dir,
+        SimpleNamespace(anima_dir=anima_dir),
+        1.0,
+        "b",
+        SimpleNamespace(all_skills=[]),
+        False,
+        False,
+        False,
+        False,
+    )
+    content = _sections_by_id(_build_group4(*arguments, [], {"mine": str(own)}, {}, {}))["external_tools"]
+
+    assert content.strip() == t("builder.external_tools.personal_count", count=1)

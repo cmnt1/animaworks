@@ -195,6 +195,14 @@ def _filter_identity_business_sections(identity: str, excluded_headings: list[st
     return filtered if filtered.strip() else identity
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    """Return whether *path* resolves inside *root*."""
+    try:
+        return path.resolve().is_relative_to(root)
+    except (OSError, ValueError):
+        return False
+
+
 def _priming_has_content(content: str) -> bool:
     """Return whether priming contains data beyond headings and empty wrappers."""
     without_tags = _PRIMING_TAG_RE.sub("", content)
@@ -854,9 +862,14 @@ def _build_group4(
             _add(ns, "tool_guides", 2)
 
     if not is_heartbeat and (tool_registry or personal_tools):
-        cats = sorted(set((tool_registry or []) + list((personal_tools or {}).keys())))
-        if cats:
-            et = t("builder.external_tools", categories=", ".join(cats))
+        own_tools_dir = (pd / "tools").resolve()
+        own_tools = {name for name, path in (personal_tools or {}).items() if _is_under(Path(str(path)), own_tools_dir)}
+        cats = sorted(set((tool_registry or []) + [n for n in (personal_tools or {}) if n not in own_tools]))
+        if cats or own_tools:
+            et = t("builder.external_tools", categories=", ".join(cats)) if cats else ""
+            if own_tools:
+                own_line = t("builder.external_tools.personal_count", count=len(own_tools))
+                et = f"{et}\n{own_line}" if et else own_line
             if _is_mcp_mode(execution_mode) or execution_mode == "a":
                 et += "\n" + t("builder.external_tools.direct")
             _add(et, "external_tools", 2)
