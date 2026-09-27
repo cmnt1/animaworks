@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import re
-import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,12 +18,9 @@ from core.config.file_access_policy import (
     resolve_effective_denied_roots,
 )
 from core.config.models import PermissionsConfig, load_permissions
-from core.config.schemas import command_deny_matches
 from core.i18n import t
 from core.tooling.handler_base import (
     _error_result,
-    _get_blocked_patterns,
-    _get_injection_re,
     _is_global_permissions_write_blocked,
     _is_protected_write,
 )
@@ -385,135 +380,55 @@ class PermissionsMixin:
             logger.warning("permission_denied anima=%s command=<empty>", self._anima_name)
             return _error_result("PermissionDenied", "Empty command")
 
-        # Layer 1: Injection vectors — same rollout switch as the SDK path
-        # (sdk_bash_injection.mode: off / log / enforce, default log).
-        from core.config.global_permissions import GlobalPermissionsCache
-        from core.execution.engines.claude._sdk_security import _log_sdk_bash_injection_hit, _matching_injection_pattern
+        # Single shared command-policy decision function (all layers, same order
+        # as Mode S and the Codex hook).  Loader failures are fail-closed.
+        from core.tooling.command_policy import (
+            evaluate_command,
+            load_command_policy_context,
+            record_injection_hit,
+        )
 
-        cache = GlobalPermissionsCache.get()
-        injection_mode = cache.config.sdk_bash_injection.mode if cache.loaded and cache.config else "log"
-        inj_re = _get_injection_re()
-        if inj_re and injection_mode != "off" and inj_re.search(command):
-            pattern_name = _matching_injection_pattern(command, cache.config)
-            _log_sdk_bash_injection_hit(
-                command,
+        try:
+            ctx = load_command_policy_context(
                 self._anima_dir,
-                pattern_name=pattern_name,
+                cwd=self._task_cwd or self._anima_dir,
+                superuser=self._superuser,
+                permissions=self._load_permissions_config(),
+            )
+        except Exception as exc:
+            logger.error("command_policy load failed anima=%s: %s", self._anima_name, exc, exc_info=True)
+            return _error_result(
+                "PermissionDenied",
+                t("tooling.command_policy_check_failed", error=type(exc).__name__),
+            )
+
+        decision = evaluate_command(command, ctx)
+        if decision.injection_hit:
+            record_injection_hit(
+                command,
+                ctx,
+                pattern_name=decision.injection_hit,
                 trigger=getattr(self, "_trigger", ""),
-                mode=injection_mode,
             )
-            if injection_mode == "enforce":
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=injection_pattern",
-                    self._anima_name,
-                    command[:80],
-                )
-                return _error_result(
-                    "PermissionDenied",
-                    f"Command contains injection pattern: {pattern_name}",
-                    suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid embedded newlines.",
-                )
+        if decision.allowed:
+            return None
 
-        # Layer 2: Dangerous command patterns
-        for pattern, reason in _get_blocked_patterns():
-            if pattern.search(command):
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=blocked_pattern(%s)",
-                    self._anima_name,
-                    command[:80],
-                    reason,
-                )
-                return _error_result("PermissionDenied", reason)
-
-        # Layer 2.6: Recursive searches over the runtime data tree — same guard
-        # as the codex PreToolUse hook. Broad grep/find over ~/.animaworks
-        # (activity_log is >1GB per anima) saturates disk IO fleet-wide
-        # (2026-09-01 storm); non-codex engines bypass the hook, so enforce here.
-        from core.tooling.codex_command_hook import check_recursive_search
-
-        search_reason = check_recursive_search(command, self._anima_dir, self._anima_dir.resolve().parent.parent)
-        if search_reason:
-            logger.warning(
-                "permission_denied anima=%s command=%s reason=broad_recursive_search",
-                self._anima_name,
-                command[:80],
+        logger.warning(
+            "permission_denied anima=%s command=%s reason=%s",
+            self._anima_name,
+            command[:80],
+            decision.layer,
+        )
+        if decision.layer == "injection":
+            return _error_result(
+                "PermissionDenied",
+                decision.reason,
+                suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid embedded newlines.",
             )
-            return _error_result("PermissionDenied", search_reason)
-
-        # Layer 2.5: Per-anima denied commands from permissions config
-        config = self._load_permissions_config()
-        denied_items = config.commands.deny
-        if denied_items:
-            segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()]
-            for segment in segments:
-                try:
-                    seg_argv = shlex.split(segment)
-                except ValueError:
-                    continue
-                if not seg_argv:
-                    continue
-                cmd_base = seg_argv[0]
-                for denied in denied_items:
-                    if command_deny_matches(denied, segment, cmd_base):
-                        logger.warning(
-                            "permission_denied anima=%s command=%s reason=denied_list(%s)",
-                            self._anima_name,
-                            command[:80],
-                            denied,
-                        )
-                        return _error_result(
-                            "PermissionDenied",
-                            f"Command '{cmd_base}' is in denied list ('{denied}')",
-                        )
-
-        # Layer 3: If commands.allow_all is False, check commands.allow whitelist
-        if not config.commands.allow_all:
-            allowed = config.commands.allow
-            if not allowed:
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=cmd_not_enabled", self._anima_name, command[:80]
-                )
-                return _error_result("PermissionDenied", "Command execution not enabled in permissions")
-            segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()]
-            for segment in segments:
-                try:
-                    seg_argv = shlex.split(segment)
-                except ValueError as e:
-                    return _error_result("PermissionDenied", f"Invalid command syntax: {e}")
-                if not seg_argv:
-                    continue
-                cmd_base = seg_argv[0]
-                if cmd_base not in allowed:
-                    logger.warning(
-                        "permission_denied anima=%s command=%s reason=not_in_allowed_list cmd=%s",
-                        self._anima_name,
-                        command[:80],
-                        cmd_base,
-                    )
-                    return _error_result(
-                        "PermissionDenied",
-                        f"Command '{cmd_base}' not in allowed list",
-                        context={"allowed_commands": allowed},
-                    )
-        else:
-            segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()] or [command]
-
-        # Layer 5: Path traversal check on all segments
-        for segment in segments:
-            try:
-                seg_argv = shlex.split(segment)
-            except ValueError:
-                continue
-            for arg in seg_argv[1:]:
-                if ".." in arg:
-                    try:
-                        resolved = (self._anima_dir / arg).resolve()
-                        if not resolved.is_relative_to(self._anima_dir.resolve()):
-                            return _error_result(
-                                "PermissionDenied",
-                                "Command argument resolves outside anima directory",
-                            )
-                    except (ValueError, OSError):
-                        pass
-
-        return None
+        if decision.layer == "allowlist":
+            return _error_result(
+                "PermissionDenied",
+                decision.reason,
+                context={"allowed_commands": ctx.permissions.commands.allow},
+            )
+        return _error_result("PermissionDenied", decision.reason)

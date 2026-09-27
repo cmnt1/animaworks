@@ -95,6 +95,20 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
 _SKILL_MANAGEMENT_TOOL_NAMES: frozenset[str] = frozenset(SKILL_MANAGEMENT_TOOLS)
 
 
+def _trigger_scoped_tools_enabled() -> bool:
+    """Return whether trigger-scoped tool exposure is enabled (default True).
+
+    Reads ``mcp.trigger_scoped_tools`` from the runtime config; any load
+    failure falls back to True (the historical default).
+    """
+    try:
+        from core.config.models import load_config
+
+        return bool(load_config().mcp.trigger_scoped_tools)
+    except Exception:
+        return True
+
+
 def _trigger_scoped_tool_names(trigger: str) -> frozenset[str]:
     """Return the default exposed tool names for *trigger*.
 
@@ -672,12 +686,18 @@ async def list_tools() -> list[Tool]:
     The full MCP_TOOLS list may already be trigger-scoped by the parent
     process via the ``ANIMAWORKS_MCP_TOOLS`` env var.  As defense-in-depth
     we re-apply the same trigger scoping from ``ANIMAWORKS_TRIGGER`` so the
-    set is correct even if the subprocess is reused across sessions.
+    set is correct even if the subprocess is reused across sessions — unless
+    ``mcp.trigger_scoped_tools`` is False, in which case the full tool set
+    (including skill-management tools) is always exposed.
     """
     trigger = (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
     scoped = _trigger_scoped_tool_names(trigger)
     tools = [t for t in MCP_TOOLS if t.name in scoped]
     blocked = _runtime_blocked_tool_names()
+    if not _trigger_scoped_tools_enabled():
+        # ``mcp.trigger_scoped_tools=false`` disables trigger scoping: expose the
+        # full tool set (including skill-management tools) for every trigger.
+        tools = list(MCP_TOOLS)
     tools = [t for t in tools if t.name not in blocked]
     if not _has_subordinates_for_anima():
         tools = [t for t in tools if t.name not in _SUPERVISOR_TOOL_NAMES]

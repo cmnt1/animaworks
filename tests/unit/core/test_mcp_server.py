@@ -541,6 +541,42 @@ class TestTriggerScopedTools:
         assert _mcp_tools_env_for_trigger("heartbeat", enabled=True) is None
         assert _mcp_tools_env_for_trigger("inbox", enabled=False) is None
 
+    @staticmethod
+    def _config_with_trigger_scoped(trigger_scoped: bool) -> MagicMock:
+        cfg = MagicMock()
+        cfg.mcp.trigger_scoped_tools = trigger_scoped
+        return cfg
+
+    async def test_trigger_scoped_tools_false_includes_skill_management(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """mcp.trigger_scoped_tools=false exposes skill tools for a scoped trigger."""
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "chat")
+        with (
+            patch("core.config.models.load_config", return_value=self._config_with_trigger_scoped(False)),
+            patch.object(mcp_mod, "_is_supervisor", True),
+            patch.object(mcp_mod, "_has_newstaff", True),
+        ):
+            result = await list_tools()
+        result_names = {t.name for t in result}
+        assert result_names & mcp_mod._SKILL_MANAGEMENT_TOOL_NAMES
+
+    async def test_trigger_scoped_tools_true_excludes_skill_management(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """mcp.trigger_scoped_tools=true keeps scoping (skill tools hidden for chat)."""
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "chat")
+        with (
+            patch("core.config.models.load_config", return_value=self._config_with_trigger_scoped(True)),
+            patch.object(mcp_mod, "_is_supervisor", True),
+            patch.object(mcp_mod, "_has_newstaff", True),
+        ):
+            result = await list_tools()
+        result_names = {t.name for t in result}
+        assert not result_names & mcp_mod._SKILL_MANAGEMENT_TOOL_NAMES
+
     def test_inbox_tool_json_total_under_12000(self) -> None:
         """Inbox-trigger aw MCP tool definitions stay under 12,000 chars.
 
