@@ -38,7 +38,7 @@ from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
 from core.execution.tool_evidence import ToolEvidence
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
+from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -137,6 +137,9 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
     Codex's ``sandbox_mode`` and MCP integration with ``core/mcp/server.py``.
     """
 
+    engine_mode = "C"
+    errors_always_terminal = False
+
     def __init__(
         self,
         model_config: ModelConfig,
@@ -157,7 +160,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
 
     def _format_stream_exception(self, error: Exception) -> tuple[str, str]:
         logger.exception("Codex execution failed after observed usage")
-        metadata = events._codex_error_metadata(str(error), self._model_config.model)
+        metadata = self._error_metadata(str(error))
         return f"[Codex SDK Error: {error}]", str(metadata.get("reason") or "")
 
     def _stream_exception_usage(self, error: Exception) -> TokenUsage | None:
@@ -438,7 +441,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         break
                     except TimeoutError as e:
                         raise StreamDisconnectedError(
-                            f"Codex SDK stream idle timeout after {DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS:.0f}s",
+                            f"Codex SDK stream idle timeout after {self.event_idle_timeout_seconds:.0f}s",
                             partial_text=_current_full_text(),
                             immediate_retry=True,
                         ) from e
@@ -719,7 +722,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             yield {
                                 "type": "error",
                                 "message": f"[Codex turn failed: {error_msg}]",
-                                **events._codex_error_metadata(error_msg, self._model_config.model),
+                                **self._error_metadata(error_msg),
                             }
                         continue
 
@@ -733,7 +736,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         yield {
                             "type": "error",
                             "message": f"[Codex turn failed: {error_msg}]",
-                            **events._codex_error_metadata(error_msg, self._model_config.model),
+                            **self._error_metadata(error_msg),
                         }
                         continue
 
@@ -746,7 +749,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         yield {
                             "type": "error",
                             "message": f"[Codex error: {error_msg}]",
-                            **events._codex_error_metadata(error_msg, self._model_config.model),
+                            **self._error_metadata(error_msg),
                         }
                         continue
 

@@ -18,27 +18,25 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from core.execution.base import ExecutionResult, ToolCallRecord, _truncate_for_record, join_answer_parts
 from core.execution.cli_stream import CLIStreamExecutor
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error_message,
-    guard_key,
-    provider_family_of,
-)
+from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_event
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
+from core.platform.cursor import (
+    find_cursor_agent_binary as _find_cursor_agent_binary,
+)
+from core.platform.cursor import (
+    is_cursor_agent_available,
+)
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -58,67 +56,8 @@ __all__ = [
 
 # ── Constants ───────────────────────────────────────────────────
 
-_CURSOR_AGENT_BINARY_NAMES = ("agent", "cursor-agent", "cursor")
-_EVENT_IDLE_TIMEOUT_SECONDS = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
-_GRACEFUL_KILL_WAIT = 3.0
 _RESUMABLE_TRIGGERS = frozenset({"chat"})
 _MAX_RESUME_TURNS = 10
-
-
-# ── Rate-guard wiring ───────────────────────────────────────
-
-# Realm for Cursor's credential pool — mirrors the ``codex`` / ``grok``
-# realm split so a quota hit on Cursor blocks cursor calls (and frees the
-# shared fleet guard to prefer other realms) without touching other engines.
-_CURSOR_REALM = "cursor"
-
-
-def _cursor_error_metadata(message: str, model: str) -> dict[str, Any]:
-    """Classify a Cursor failure, report fleet blocks, and return chunk metadata.
-
-    Mirrors ``codex._codex_error_metadata`` / ``grok._grok_error_metadata``:
-    RATE / OVERLOAD / QUOTA failures are registered against the shared rate
-    guard so the fleet handler can begin a backoff / failover for the realm.
-    """
-    reason, hint = classify_llm_error_message(message)
-    guarded_reasons = {
-        FailoverReason.RATE_LIMIT,
-        FailoverReason.OVERLOADED,
-        FailoverReason.QUOTA_EXHAUSTED,
-    }
-    if reason in guarded_reasons:
-        try:
-            guard = get_rate_guard()
-            cfg = guard.config
-            block_seconds = (
-                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
-            )
-            guard.report_block(
-                guard_key(provider_family_of(model), _CURSOR_REALM),
-                block_seconds,
-                reason.value,
-                reset_in_s=hint.reset_in_s,
-            )
-        except Exception:
-            logger.debug("Failed to report cursor error to rate guard", exc_info=True)
-    return {"terminal": True, "reason": reason.value}
-
-
-# ── Binary discovery ───────────────────────────────────────────
-
-
-def _find_cursor_agent_binary() -> str | None:
-    """Return path to cursor-agent binary, or None if not found."""
-    for name in _CURSOR_AGENT_BINARY_NAMES:
-        path = shutil.which(name)
-        if path:
-            return path
-    return None
-
-
-def is_cursor_agent_available() -> bool:
-    """Return True when cursor-agent CLI is available on PATH."""
-    return _find_cursor_agent_binary() is not None
 
 
 # ── Session (chat ID) persistence ─────────────────────────────
@@ -180,6 +119,8 @@ class CursorAgentExecutor(CLIStreamExecutor):
     Spawns cursor-agent as a subprocess with NDJSON streaming output.
     MCP integration with core/mcp/server.py provides AnimaWorks tools.
     """
+
+    engine_mode = "D"
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -328,17 +269,6 @@ class CursorAgentExecutor(CLIStreamExecutor):
         env.update(resolve_github_token_env(self._anima_dir))
         return env
 
-    def _parse_ndjson_event(self, stdout_line: str) -> dict[str, Any] | None:
-        """Parse a single NDJSON line. Return dict or None on parse error."""
-        line = stdout_line.strip()
-        if not line:
-            return None
-        return self.parse_json_line(line)
-
-    async def _kill_process(self, proc: asyncio.subprocess.Process, timeout: float = _GRACEFUL_KILL_WAIT) -> None:
-        """Delegate process-tree shutdown to the shared process runner."""
-        await ProcessRunner.terminate_process(proc, timeout=timeout)
-
     def _extract_tool_record(self, tc: dict[str, Any]) -> ToolCallRecord | None:
         """Parse tool_call event data into ToolCallRecord."""
         tool_name = ""
@@ -427,7 +357,9 @@ class CursorAgentExecutor(CLIStreamExecutor):
 
         binary = self._find_binary()
         if not binary:
-            return ExecutionResult(text=t("cursor_agent.not_installed"))
+            text = t("cursor_agent.not_installed")
+            self._error_metadata(text)
+            return ExecutionResult(text=text, error=True, reason="unknown")
 
         self._ensure_workspace()
         self._write_mcp_config()
@@ -566,8 +498,11 @@ class CursorAgentExecutor(CLIStreamExecutor):
             result = await task
             if result.text and not streamed_text:
                 yield {"type": "text_delta", "text": result.text}
+            if result.error:
+                yield engine_error_event(result.text, {"terminal": True, "reason": result.reason})
             yield {
                 "type": "done",
+                **({"error": True, "reason": result.reason} if result.error else {}),
                 "full_text": result.text,
                 "result_message": result.result_message,
                 "replied_to_from_transcript": result.replied_to_from_transcript,
@@ -603,6 +538,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
         tool_records: list[ToolCallRecord] = []
         session_id: str | None = None
         failed = False
+        error_reason = ""
         started_tools: set[str] = set()
 
         async def _emit(event: dict[str, Any]) -> None:
@@ -619,7 +555,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
 
         proc: asyncio.subprocess.Process | None = None
         try:
-            process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT)
+            process_runner = ProcessRunner(graceful_timeout=GRACEFUL_KILL_WAIT_SECONDS)
             proc = await process_runner.start(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -712,16 +648,19 @@ class CursorAgentExecutor(CLIStreamExecutor):
                                 await _emit({"type": "text_delta", "text": result_text})
 
             except TimeoutError:
-                logger.warning("Cursor agent timed out after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
+                logger.warning("Cursor agent timed out after %ds", self.event_idle_timeout_seconds)
                 await self._kill_process(proc)
-                timeout_msg = t("cursor_agent.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
+                timeout_msg = t("cursor_agent.timeout", timeout=self.event_idle_timeout_seconds)
                 full_text = _full_text()
                 timeout_text = f"\n\n{timeout_msg}" if full_text else timeout_msg
                 await _emit({"type": "text_delta", "text": timeout_text})
+                self._error_metadata(timeout_msg)
                 return (
                     ExecutionResult(
                         text=full_text + f"\n\n{timeout_msg}" if full_text else timeout_msg,
                         tool_call_records=tool_records,
+                        error=True,
+                        reason="timeout",
                     ),
                     session_id,
                     True,
@@ -739,15 +678,17 @@ class CursorAgentExecutor(CLIStreamExecutor):
                     proc.returncode,
                     stderr_text[:500],
                 )
-                _cursor_error_metadata(stderr_text, self._model_config.model)
-                if (
-                    "auth" in stderr_text.lower()
-                    or "login" in stderr_text.lower()
-                    or "unauthorized" in stderr_text.lower()
-                ):
+                metadata = self._error_metadata(stderr_text)
+                is_auth_error = any(word in stderr_text.lower() for word in ("auth", "login", "unauthorized"))
+                error_reason = "auth" if is_auth_error else str(metadata.get("reason") or "unknown")
+                if is_auth_error:
                     error_text = t("cursor_agent.not_authenticated")
                     await _emit({"type": "text_delta", "text": error_text})
-                    return (ExecutionResult(text=error_text), session_id, False)
+                    return (
+                        ExecutionResult(text=error_text, error=True, reason=error_reason),
+                        session_id,
+                        False,
+                    )
                 if not _full_text():
                     error_text = f"[Cursor Agent Error (exit {proc.returncode}): {stderr_text[:500]}]"
                     current_turn_chunks.append(error_text)
@@ -756,13 +697,18 @@ class CursorAgentExecutor(CLIStreamExecutor):
         except FileNotFoundError:
             error_text = t("cursor_agent.not_installed")
             await _emit({"type": "text_delta", "text": error_text})
-            return (ExecutionResult(text=error_text), None, True)
+            self._error_metadata(error_text)
+            return (ExecutionResult(text=error_text, error=True, reason="unknown"), None, True)
         except Exception as e:
             logger.exception("Cursor agent execution error")
-            _cursor_error_metadata(str(e), self._model_config.model)
+            metadata = self._error_metadata(str(e))
             error_text = f"[Cursor Agent Error: {e}]"
             await _emit({"type": "text_delta", "text": error_text})
-            return (ExecutionResult(text=error_text), None, True)
+            return (
+                ExecutionResult(text=error_text, error=True, reason=str(metadata.get("reason") or "unknown")),
+                None,
+                True,
+            )
         finally:
             # Ensure the subprocess is killed on CancelledError or any
             # other exception that bypasses the normal exit path.
@@ -776,6 +722,8 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 text=_full_text(),
                 replied_to_from_transcript=replied_to,
                 tool_call_records=tool_records,
+                error=bool(error_reason),
+                reason=error_reason,
             ),
             session_id,
             failed,

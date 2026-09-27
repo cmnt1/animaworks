@@ -18,7 +18,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -30,19 +29,14 @@ from typing import Any
 
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
 from core.execution.cli_stream import CLIStreamExecutor
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error_message,
-    guard_key,
-    provider_family_of,
-)
+from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.i18n import t
+from core.platform.grok import get_grok_executable as _find_grok_binary
+from core.platform.grok import is_grok_cli_available
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -63,13 +57,9 @@ __all__ = [
     "_session_id_path",
 ]
 
-_GROK_BINARY_NAMES = ("grok",)
-_EVENT_IDLE_TIMEOUT_SECONDS = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
-_GRACEFUL_KILL_WAIT = 3.0
 # ACP NDJSON lines carry whole tool outputs / context blobs in one line;
 # asyncio's default 64KiB StreamReader limit truncates them (LimitOverrunError).
 _STDOUT_LIMIT_BYTES = 16 * 1024 * 1024
-_GRACEFUL_KILL_WAIT = 3.0
 _MAX_RESUME_TURNS = 10
 _RESUMABLE_TRIGGERS = frozenset({"chat"})
 _AUTH_ERROR_WORDS = (
@@ -83,20 +73,6 @@ _AUTH_ERROR_WORDS = (
 _REAL_ERROR_LOG_BYTES = 256 * 1024
 _REAL_ERROR_CLOCK_SKEW_SECONDS = 5.0
 _REAL_ERROR_MESSAGES = frozenset({"shell.turn.inference_failed", "turn.terminal_failure"})
-
-
-def _find_grok_binary() -> str | None:
-    """Return the Grok CLI path, or ``None`` when it is unavailable."""
-    for name in _GROK_BINARY_NAMES:
-        path = shutil.which(name)
-        if path:
-            return path
-    return None
-
-
-def is_grok_cli_available() -> bool:
-    """Return whether the Grok CLI is available on ``PATH``."""
-    return _find_grok_binary() is not None
 
 
 def _resolve_grok_model(model: str) -> str:
@@ -198,36 +174,6 @@ def _resolve_real_error(
         return None
 
 
-def _grok_error_metadata(message: str, model: str) -> dict[str, Any]:
-    """Classify a Grok failure, report fleet blocks, and return chunk metadata."""
-    reason, hint = classify_llm_error_message(message)
-    guarded_reasons = {
-        FailoverReason.RATE_LIMIT,
-        FailoverReason.OVERLOADED,
-        FailoverReason.QUOTA_EXHAUSTED,
-    }
-    if reason in guarded_reasons:
-        try:
-            guard = get_rate_guard()
-            cfg = guard.config
-            block_seconds = (
-                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
-            )
-            guard.report_block(
-                guard_key(provider_family_of(model), "grok"),
-                block_seconds,
-                reason.value,
-                reset_in_s=hint.reset_in_s,
-            )
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to report Grok error to rate guard", exc_info=True)
-
-    # At this point the short-lived Grok ACP process has already failed and
-    # exited.  Unlike an in-flight SDK notification, every such failure is a
-    # terminal outcome for this attempt, including otherwise retryable classes.
-    return {"terminal": True, "reason": reason.value}
-
-
 @dataclass
 class GrokResultMessage:
     """Session metadata adapter required by :class:`BaseExecutor`."""
@@ -271,6 +217,8 @@ class _ACPError(RuntimeError):
 
 class GrokCLIExecutor(CLIStreamExecutor):
     """Execute Grok Build CLI turns through ACP stdio (Mode X)."""
+
+    engine_mode = "X"
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -435,15 +383,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 ],
             }
         ]
-
-    @staticmethod
-    def _parse_ndjson_event(line: str | bytes) -> dict[str, Any] | None:
-        if isinstance(line, bytes):
-            line = line.decode("utf-8", errors="replace")
-        stripped = line.strip()
-        if not stripped:
-            return None
-        return CLIStreamExecutor.parse_json_line(stripped)
 
     @staticmethod
     def _tool_name(update: dict[str, Any]) -> str:
@@ -677,14 +616,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
         except (BrokenPipeError, ConnectionError, RuntimeError):
             logger.debug("Could not send Grok ACP session/cancel", exc_info=True)
 
-    async def _kill_process(
-        self,
-        proc: asyncio.subprocess.Process,
-        timeout: float = _GRACEFUL_KILL_WAIT,
-    ) -> None:
-        """Delegate the process-tree shutdown to the shared process runner."""
-        await ProcessRunner.terminate_process(proc, timeout=timeout)
-
     @staticmethod
     async def _drain_stderr(proc: asyncio.subprocess.Process) -> str:
         if proc.stderr is None:
@@ -701,7 +632,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
 
     def _translated_error(self, detail: str, *, timed_out: bool = False) -> str:
         if timed_out:
-            return t("grok_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
+            return t("grok_cli.timeout", timeout=self.event_idle_timeout_seconds)
         if self._auth_error(detail):
             return t("grok_cli.not_authenticated")
         return f"[Grok CLI Error: {detail}]"
@@ -733,7 +664,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
         env["GROK_CLAUDE_SKILLS_ENABLED"] = "false"
 
         proc: asyncio.subprocess.Process | None = None
-        process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT, drain_stderr=False)
+        process_runner = ProcessRunner(graceful_timeout=GRACEFUL_KILL_WAIT_SECONDS, drain_stderr=False)
         stderr_task: asyncio.Task[str] | None = None
         pending_tools: dict[str, dict[str, Any]] = {}
         next_id = 1
@@ -1104,10 +1035,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
             if not state.full_text:
                 state.full_text = "[Session interrupted by user]"
         elif state.error_text:
-            error_metadata = _grok_error_metadata(
-                state.error_text,
-                self._model_config.model,
-            )
+            error_metadata = self._error_metadata(state.error_text)
             if error_metadata.get("terminal") is True:
                 yield {
                     "type": "error",

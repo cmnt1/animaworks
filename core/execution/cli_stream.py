@@ -16,10 +16,12 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, ClassVar
 
 from core.execution.base import BaseExecutor, ExecutionResult, TokenUsage, ToolCallRecord
-from core.execution.watchdog import wait_for_engine_event
+from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_metadata
+from core.execution.process_runner import ProcessRunner
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData
 
@@ -32,6 +34,31 @@ class CLIStreamExecutor(BaseExecutor):
     Subclasses provide their own command, protocol adapter, and streaming
     execution. Raw JSONL reading and stream-to-result collection are shared.
     """
+
+    engine_mode: ClassVar[str] = ""
+    errors_always_terminal: ClassVar[bool] = True
+    event_idle_timeout_seconds: ClassVar[float] = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
+
+    def _error_metadata(self, message: str) -> dict[str, Any]:
+        """Return normalized metadata for this engine's provider error."""
+        return engine_error_metadata(
+            message,
+            mode=self.engine_mode,
+            model=self._model_config.model,
+            always_terminal=self.errors_always_terminal,
+        )
+
+    def _parse_ndjson_event(self, line: str | bytes) -> dict[str, Any] | None:
+        """Parse one engine NDJSON event using the shared JSONL boundary."""
+        return self.parse_json_line(line)
+
+    async def _kill_process(
+        self,
+        proc: asyncio.subprocess.Process,
+        timeout: float = GRACEFUL_KILL_WAIT_SECONDS,
+    ) -> None:
+        """Terminate a CLI process and its descendants."""
+        await ProcessRunner.terminate_process(proc, timeout=timeout)
 
     @staticmethod
     async def read_line(stream: Any) -> bytes:

@@ -2338,7 +2338,7 @@ class TestProgressiveStreaming:
         events = []
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.engines.codex.events.get_rate_guard", return_value=guard),
+            patch("core.execution.engine_base.get_rate_guard", return_value=guard),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             async for ev in executor.execute_streaming(
@@ -2397,7 +2397,7 @@ class TestProgressiveStreaming:
         events = []
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.engines.codex.events.get_rate_guard", return_value=guard),
+            patch("core.execution.engine_base.get_rate_guard", return_value=guard),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             async for event in executor.execute_streaming(

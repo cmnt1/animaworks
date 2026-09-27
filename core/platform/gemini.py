@@ -18,9 +18,14 @@ def gemini_config_dir() -> Path:
     return Path(home) / ".gemini"
 
 
+def find_gemini_binary() -> str | None:
+    """Return the path to the ``gemini`` CLI executable, if available."""
+    return shutil.which("gemini")
+
+
 def is_gemini_cli_available() -> bool:
     """Return True when the ``gemini`` CLI is available on PATH."""
-    return shutil.which("gemini") is not None
+    return find_gemini_binary() is not None
 
 
 def is_gemini_authenticated() -> bool:
