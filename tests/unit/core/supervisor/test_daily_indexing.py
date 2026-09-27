@@ -52,13 +52,13 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
     get_vs_calls: list[str | None] = []
     mock_store = MagicMock()
 
-    def capture_get_vs(anima_name=None):
+    def capture_get_vs(*_args, anima_name=None, **_kwargs):
         get_vs_calls.append(anima_name)
         return mock_store
 
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", side_effect=capture_get_vs),
+        patch("core.memory.rag.http_store.HttpVectorStore", side_effect=capture_get_vs),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -220,7 +220,7 @@ async def test_daily_indexing_rebuilds_entity_collection(tmp_path: Path) -> None
 
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.http_store.HttpVectorStore", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
@@ -327,7 +327,7 @@ async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(t
     mock_store.collection_exists.return_value = CollectionExistence.UNAVAILABLE
     with (
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.http_store.HttpVectorStore", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),

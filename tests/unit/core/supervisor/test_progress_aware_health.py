@@ -36,10 +36,15 @@ def _make_supervisor(health_config: HealthConfig | None = None) -> HealthMixin:
     supervisor = object.__new__(HealthMixin)
     supervisor.health_config = health_config or HealthConfig()
     supervisor._shutdown = False
-    supervisor._permanently_failed = set()
-    supervisor._failed_log_times = {}
     supervisor._restarting = set()
-    supervisor._restart_counts = {}
+    from core.supervisor.restart_state import RestartController
+
+    supervisor._restart_ctl = RestartController(
+        failed_threshold=5,
+        base_delay_sec=2.0,
+        max_delay_sec=60.0,
+        stable_reset_sec=300.0,
+    )
     supervisor.restart_policy = MagicMock()
     supervisor.restart_policy.max_retries = 5
     supervisor.restart_policy.backoff_base_sec = 2.0

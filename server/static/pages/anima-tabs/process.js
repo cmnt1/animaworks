@@ -75,6 +75,13 @@ async function _load() {
     const uptime = proc.uptime_sec ? formatUptime(proc.uptime_sec) : "--";
     const restarts = proc.restart_count ?? "--";
     const lastPing = proc.last_ping ? timeStr(proc.last_ping) : "--";
+    const failedAutoRecovery =
+      proc.restart_state === "failed" && proc.next_retry_at
+        ? t("processes.failed_auto_recovery", { time: timeStr(proc.next_retry_at) })
+        : null;
+    const lastError = proc.last_error
+      ? escapeHtml(String(proc.last_error))
+      : null;
     const pid = proc.pid || "--";
     const subprocesses = Array.isArray(proc.subprocesses) ? proc.subprocesses : [];
     const processCount = proc.process_count || (proc.pid ? 1 : 0);
@@ -92,6 +99,7 @@ async function _load() {
                 <th style="width:10rem;">${t("processes.table_health")}</th>
                 <td>${health}</td>
               </tr>
+              ${failedAutoRecovery ? `<tr><th>${t("processes.table_health")}</th><td style="color:#c0392b;font-weight:600;">${escapeHtml(failedAutoRecovery)}</td></tr>` : ""}
               <tr>
                 <th>${t("processes.table_anima")}</th>
                 <td style="font-weight:600;">${escapeHtml(_animaName)}</td>
@@ -120,6 +128,7 @@ async function _load() {
                 <th>${t("processes.table_restarts")}</th>
                 <td>${escapeHtml(String(restarts))}</td>
               </tr>
+              ${lastError ? `<tr><th>${t("processes.table_last_error")}</th><td>${lastError}</td></tr>` : ""}
               <tr>
                 <th>${t("processes.table_missed_pings")}</th>
                 <td>${escapeHtml(String(missedPings))}</td>

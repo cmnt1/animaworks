@@ -509,6 +509,8 @@
   "processes.table_process_count": "프로세스 수",
   "processes.table_subprocesses": "하위 프로세스",
   "processes.table_restarts": "재시작 횟수",
+  "processes.table_last_error": "마지막 오류",
+  "processes.failed_auto_recovery": "FAILED（자동 복구 중・다음 {time}）",
   "processes.table_status": "상태",
   "processes.table_uptime": "가동 시간",
   "router.page_load_failed": "페이지를 불러오지 못했습니다",

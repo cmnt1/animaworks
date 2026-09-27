@@ -679,8 +679,11 @@ class ServerConfig(BaseModel):
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)
-    supervisor_respawn_max_retries: int = Field(default=3, ge=1)
-    supervisor_respawn_retry_interval_seconds: float = Field(default=30.0, ge=0.0)
+    supervisor_respawn_max_retries: int = Field(
+        default=3, ge=1
+    )  # consecutive failures before FAILED display; auto-recovery continues after
+    supervisor_respawn_retry_interval_seconds: float = Field(default=30.0, ge=0.0)  # base backoff interval (seconds)
+    supervisor_respawn_backoff_max_seconds: float = Field(default=1800.0, ge=0.0)  # max backoff (seconds)
     stream_checkpoint_enabled: bool = True  # save tool results during streaming
     stream_retry_max: int = 3  # max automatic retries on stream disconnect
     stream_retry_delay_s: float = 5.0  # delay between retries (seconds)

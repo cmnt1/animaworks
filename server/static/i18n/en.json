@@ -557,6 +557,8 @@
   "processes.table_process_count": "Processes",
   "processes.table_subprocesses": "Subprocesses",
   "processes.table_restarts": "Restarts",
+  "processes.table_last_error": "Last error",
+  "processes.failed_auto_recovery": "FAILED (auto-recovering, next retry {time})",
   "processes.table_status": "Status",
   "processes.table_uptime": "Uptime",
   "router.page_load_failed": "Failed to load page",

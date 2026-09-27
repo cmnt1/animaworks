@@ -162,16 +162,19 @@ class HealthMixin:
         handle: ProcessHandle,
     ) -> None:
         """Check health of a single process."""
-        # Skip permanently failed processes (log at WARNING every 5 minutes)
-        if anima_name in self._permanently_failed:
-            now = asyncio.get_running_loop().time()
-            last_log = self._failed_log_times.get(anima_name, 0)
-            if now - last_log >= 300:
+        # Skip FAILED processes (log at WARNING every 5 minutes). Auto-recovery
+        # is driven by the restart worker with exponential backoff.
+        if (
+            self._restart_ctl is not None
+            and self._restart_ctl.is_failed(anima_name)
+            and anima_name not in self.processes
+        ):
+            if self._restart_ctl.should_log_failed(anima_name):
                 logger.warning(
-                    "Process still in FAILED state: %s (awaiting reconciliation recovery)",
+                    "Process still in FAILED state: %s (auto-recovery continues, next retry in %.0fs)",
                     anima_name,
+                    self._restart_ctl.seconds_until_due(anima_name),
                 )
-                self._failed_log_times[anima_name] = now
             return
 
         # Detect handles stuck in STOPPING state (e.g. after failed shutdown)
@@ -256,15 +259,9 @@ class HealthMixin:
             logger.debug("Skipping health check for %s (startup grace)", anima_name)
             return
 
-        # Reset restart counter after stable uptime
-        if uptime > self.restart_policy.reset_after_sec:
-            if self._restart_counts.get(anima_name, 0) > 0:
-                self._restart_counts[anima_name] = 0
-                logger.info(
-                    "Restart counter reset for %s (stable for %.0fs)",
-                    anima_name,
-                    uptime,
-                )
+        # Reset restart state after stable uptime
+        if self._restart_ctl is not None:
+            self._restart_ctl.record_stable(anima_name, uptime)
 
         # Ping process
         ping_result = await handle.ping(
@@ -330,117 +327,140 @@ class HealthMixin:
         self,
         anima_name: str,
         handle: ProcessHandle,
+        reason: str = "",
     ) -> None:
-        """Handle process exit/crash.
+        """Record a failure and (re)ensure the restart worker.
 
-        Runs as an independent task so the health-check loop is not blocked
-        by backoff sleeps.  A per-anima guard prevents duplicate restarts.
+        Runs as an independent task (created by callers).  The per-anima
+        ``_restarting`` guard prevents duplicate workers.  Only records the
+        failure and marks READY to restart; the backoff wait and single spawn
+        attempt live in ``_restart_worker``.
         """
         # Entrance guard: during shutdown the whole failure/restart machinery
         # is a no-op — shutdown_all stops every process anyway, and any state
-        # recorded here (_restart_counts, _permanently_failed, ...) would only
-        # pollute the next server start.
+        # recorded here would only pollute the next server start.
         if self._shutdown:
             logger.info("Skip failure handling during shutdown: %s", anima_name)
             return
         if anima_name in self._restarting:
             return
+
+        # Reserve the per-anima guard synchronously before the first await so
+        # concurrent failure notifications cannot record duplicate attempts.
         self._restarting.add(anima_name)
-
-        # リスタート中であることをハンドルに反映
-        handle.state = ProcessState.RESTARTING
-
         try:
-            # Disabled before any retry/max-retry logic: clean stop, no pollution.
+            # リスタート対象であることをハンドルに反映
+            if handle is not None:
+                handle.state = ProcessState.RESTARTING
+
+            # Disabled before any retry logic: clean stop, no state pollution.
             if not self.read_anima_enabled(self.animas_dir / anima_name):
-                logger.info(
-                    "Skip restart: anima disabled: %s",
-                    anima_name,
-                )
+                logger.info("Skip restart: anima disabled: %s", anima_name)
                 if anima_name in self.processes:
                     await self.stop_anima(anima_name)
+                if self._restart_ctl is not None:
+                    self._restart_ctl.forget(anima_name)
                 return
 
-            # Check restart count (supervisor-level, survives handle recreation)
-            count = self._restart_counts.get(anima_name, 0)
-            if count >= self.restart_policy.max_retries:
-                logger.error(
-                    "Max restart retries exceeded for %s. Manual intervention required.",
-                    anima_name,
-                )
-                await self._mark_process_error(
-                    anima_name,
-                    f"max restart retries exceeded ({count}/{self.restart_policy.max_retries})",
-                    handle,
-                )
-                return
+            if self._restart_ctl is not None:
+                self._restart_ctl.record_failure(anima_name, reason)
+                if self._restart_ctl.is_failed(anima_name):
+                    await self._mark_process_error(anima_name, reason, handle)
+        finally:
+            # Always release this handler's reservation and ensure recovery,
+            # including when status broadcast (or another body operation) fails.
+            self._restarting.discard(anima_name)
+            if not self._shutdown and self._restart_ctl is not None and self._restart_ctl.get(anima_name) is not None:
+                self._ensure_restart_worker(anima_name)
 
-            # Calculate backoff delay
-            backoff = min(
-                self.restart_policy.backoff_base_sec * (2**count),
-                self.restart_policy.backoff_max_sec,
-            )
+    def _ensure_restart_worker(self, anima_name: str) -> None:
+        """Spawn a singleton restart worker for ``anima_name`` if needed."""
+        if anima_name in self._restarting:
+            return
+        self._restarting.add(anima_name)
+        self._restart_worker_tasks[anima_name] = asyncio.create_task(self._restart_worker(anima_name))
 
-            logger.info(
-                "Scheduling restart for %s (retry %d/%d, delay=%.1fs)",
-                anima_name,
-                count + 1,
-                self.restart_policy.max_retries,
-                backoff,
-            )
+    async def _restart_worker(self, anima_name: str) -> None:
+        """Single restart worker: await backoff, then one spawn attempt.
 
-            # Wait and restart
-            await asyncio.sleep(backoff)
-
-            # Disabled during backoff: clean stop, no error / retry pollution.
-            if not self.read_anima_enabled(self.animas_dir / anima_name):
-                logger.info(
-                    "Skip restart: anima disabled: %s",
-                    anima_name,
-                )
-                if anima_name in self.processes:
-                    await self.stop_anima(anima_name)
-                return
-
-            self._restart_counts[anima_name] = count + 1
-            new_handle = await self._respawn_anima_transaction(anima_name)
-
-            if new_handle:
-                logger.info(
-                    "Process restarted: %s (PID %s, retry=%d/%d)",
-                    anima_name,
-                    new_handle.get_pid(),
-                    count + 1,
-                    self.restart_policy.max_retries,
-                )
-            else:
-                # Disabled/shutdown mid-respawn is a clean skip (respawn
-                # returns None without marking permanently failed). Roll back
-                # the count increment so a later re-enable/restart starts
-                # from a clean slate.
-                if self._shutdown or not self.read_anima_enabled(self.animas_dir / anima_name):
-                    if count == 0:
-                        self._restart_counts.pop(anima_name, None)
-                    else:
-                        self._restart_counts[anima_name] = count
-                    logger.info(
-                        "Restart skipped (disabled or shutdown): %s",
-                        anima_name,
-                    )
+        Loops until a spawn succeeds, the anima is disabled, or shutdown.
+        Even in FAILED state the worker keeps trying with exponential backoff.
+        """
+        worker_record = self._restart_ctl.get(anima_name) if self._restart_ctl is not None else None
+        try:
+            while not self._shutdown:
+                # Poll enablement during long exponential-backoff waits so a
+                # disabled anima does not retain a worker or retry record.
+                while not self._shutdown:
+                    if (
+                        worker_record is not None
+                        and self._restart_ctl is not None
+                        and self._restart_ctl.get(anima_name) is not worker_record
+                    ):
+                        return
+                    if not self.read_anima_enabled(self.animas_dir / anima_name):
+                        logger.info("Restart worker: anima disabled: %s", anima_name)
+                        if anima_name in self.processes:
+                            await self.stop_anima(anima_name)
+                        if self._restart_ctl is not None:
+                            self._restart_ctl.forget(anima_name)
+                        return
+                    if self._restart_ctl is None or self._restart_ctl.is_due(anima_name):
+                        break
+                    await asyncio.sleep(min(1.0, self._restart_ctl.seconds_until_due(anima_name)))
+                if self._shutdown:
                     return
-                logger.error(
-                    "Restart transaction failed with no handle: %s",
-                    anima_name,
-                )
-                handle.state = ProcessState.FAILED
 
-        except Exception as e:
-            logger.error("Failed to restart %s: %s", anima_name, e)
-            if not self._shutdown:
-                handle.state = ProcessState.FAILED
-            await self._mark_process_error(anima_name, f"{type(e).__name__}: {e}", handle)
+                # Recheck after the final wait before touching the process.
+                if not self.read_anima_enabled(self.animas_dir / anima_name):
+                    logger.info("Restart worker: anima disabled: %s", anima_name)
+                    if anima_name in self.processes:
+                        await self.stop_anima(anima_name)
+                    if self._restart_ctl is not None:
+                        self._restart_ctl.forget(anima_name)
+                    return
+
+                try:
+                    if anima_name in self.processes:
+                        await self.stop_anima(anima_name)
+                    if (
+                        worker_record is not None
+                        and self._restart_ctl is not None
+                        and self._restart_ctl.get(anima_name) is not worker_record
+                    ):
+                        return
+                    await self.start_anima(anima_name)
+                except Exception as exc:
+                    reason = f"{type(exc).__name__}: {exc}"
+                    logger.error("Restart attempt failed for %s: %s", anima_name, exc)
+                    if self._restart_ctl is not None and (
+                        worker_record is None or self._restart_ctl.get(anima_name) is worker_record
+                    ):
+                        self._restart_ctl.record_failure(anima_name, reason)
+                        if self._restart_ctl.is_failed(anima_name):
+                            await self._mark_process_error(anima_name, reason)
+                    continue
+
+                # Success: mark started and report running.
+                if (
+                    worker_record is not None
+                    and self._restart_ctl is not None
+                    and self._restart_ctl.get(anima_name) is not worker_record
+                ):
+                    return
+                if self._restart_ctl is not None:
+                    self._restart_ctl.record_started(anima_name)
+                await self._broadcast_event(
+                    "anima.status",
+                    {"name": anima_name, "status": "running"},
+                )
+                logger.info("Process restarted: %s", anima_name)
+                return
         finally:
             self._restarting.discard(anima_name)
+            worker_task = self._restart_worker_tasks.get(anima_name)
+            if worker_task is asyncio.current_task():
+                self._restart_worker_tasks.pop(anima_name, None)
 
     async def _handle_process_hang(
         self,
@@ -454,7 +474,7 @@ class HealthMixin:
         await handle.kill()
 
         # Restart
-        await self._handle_process_failure(anima_name, handle)
+        await self._handle_process_failure(anima_name, handle, reason="hang")
 
     # ── Reconciliation helper ────────────────────────────────────
 

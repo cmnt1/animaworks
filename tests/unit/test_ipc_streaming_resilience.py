@@ -199,17 +199,20 @@ class TestHandleProcessFailureSetsRestarting:
     async def test_state_set_to_restarting(self, tmp_path: Path):
         """After _handle_process_failure is called, handle.state is RESTARTING."""
         from core.supervisor.manager import ProcessSupervisor
+        from core.supervisor.restart_state import RestartController
 
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._shutdown = False
         supervisor._restarting = set()
-        supervisor._restart_counts = {}
         supervisor.animas_dir = tmp_path / "animas"
-        supervisor.restart_policy = MagicMock()
-        supervisor.restart_policy.max_retries = 3
-        supervisor.restart_policy.backoff_base_sec = 0.01
-        supervisor.restart_policy.backoff_max_sec = 0.01
         supervisor.processes = {}
+        supervisor._restart_ctl = RestartController(
+            failed_threshold=3,
+            base_delay_sec=0.01,
+            max_delay_sec=0.01,
+            stable_reset_sec=300,
+        )
+        supervisor._ensure_restart_worker = MagicMock()
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -221,26 +224,28 @@ class TestHandleProcessFailureSetsRestarting:
         handle.state = ProcessState.FAILED
         supervisor.processes["test-anima"] = handle
 
-        # Mock respawn transaction to be a no-op
-        supervisor._respawn_anima_transaction = AsyncMock(return_value=handle)
-
         await supervisor._handle_process_failure("test-anima", handle)
 
-        # The state should have been set to RESTARTING during the call
-        # (it may have been changed back by respawn, but the transaction call
-        # proves the RESTARTING path was entered)
-        supervisor._respawn_anima_transaction.assert_awaited_once_with("test-anima")
+        # The state should have been set to RESTARTING during the call and the
+        # restart worker ensured.
+        assert handle.state == ProcessState.RESTARTING
+        supervisor._ensure_restart_worker.assert_called_once_with("test-anima")
 
     @pytest.mark.asyncio
     async def test_health_check_skips_restarting(self, tmp_path: Path):
         """_check_process_health returns early for RESTARTING state."""
         from core.supervisor.manager import ProcessSupervisor
+        from core.supervisor.restart_state import RestartController
 
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._restarting = set()
-        supervisor._restart_counts = {}
-        supervisor._permanently_failed = set()
-        supervisor._failed_log_times = {}
+        supervisor.processes = {}
+        supervisor._restart_ctl = RestartController(
+            failed_threshold=3,
+            base_delay_sec=0.01,
+            max_delay_sec=0.01,
+            stable_reset_sec=300,
+        )
 
         handle = ProcessHandle(
             anima_name="test-anima",
