@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 8eada34fac32ec662b6e58c9e95085e725ed2eaef3154f3f7a0c19b3560f4916 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 6fed4c3d0ac4cb212200146f4bb246d1ce734c8049866361cc9076ea109318c5 -->
 
 # 設定リファレンス
 
@@ -158,19 +158,9 @@
 | `gpu.embedding_batch_size` | `int` | `32` | — |
 | `gpu.embedding_bulk_yield_batches` | `int` | `5` | Maximum consecutive embedding batches bulk work may yield to waiting interactive work. |
 | `memory` | `MemoryConfig` | `{MemoryConfig}` | 記憶保存・検索の共通設定。 |
-| `memory.backend` | `Literal['legacy', 'neo4j']` | `"legacy"` | — |
-| `memory.neo4j` | `Neo4jConfig` | `{Neo4jConfig}` | — |
-| `memory.neo4j.uri` | `str` | `"bolt://localhost:7687"` | — |
-| `memory.neo4j.user` | `str` | `"neo4j"` | — |
-| `memory.neo4j.password` | `str` | `"animaworks"` | — |
-| `memory.neo4j.database` | `str` | `"neo4j"` | — |
-| `memory.neo4j_realtime_ingest` | `bool` | `false` | — |
 | `memory.fact_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
 | `memory.fact_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
 | `memory.fact_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
-| `memory.neo4j_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
-| `memory.neo4j_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
-| `memory.neo4j_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
 | `skills` | `SkillsConfig` | `{SkillsConfig}` | スキル読み込みと管理の設定。 |
 | `skills.promotion` | `SkillPromotionConfig` | `{SkillPromotionConfig}` | — |
 | `skills.promotion.success_count_threshold` | `int` | `3` | — |

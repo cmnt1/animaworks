@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: c042c974880ab96fbb961fb26b395b49ad3e216ae017912bb532cc7d844d800f -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 65dd1d0bbcced15062aa125bad45850094d791ee3fa4d0147d18d8392cb70d4f -->
 
 # CLI リファレンス: `animaworks`
 
@@ -17,7 +17,7 @@
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-memory-backend,set-outbound-limit,reload,set-role,rename,merge,merge-finalize,audit,detect-communities}
+                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,merge,merge-finalize,audit}
                         ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
@@ -79,17 +79,6 @@ Delete an anima (with optional archive)
 | anima | positional | — | — | Anima name to delete |
 | --no-archive | flag | false | — | Skip creating a ZIP archive before deletion |
 | --force | flag | false | — | Skip confirmation prompt |
-
-## `anima detect-communities`
-
-Run batch community detection for Neo4j backend
-
-`usage: animaworks anima detect-communities [-h] [--all] [anima]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name (omit with --all) |
-| --all | flag | false | — | Run for all Neo4j-enabled animas |
 
 ## `anima disable`
 
@@ -238,18 +227,6 @@ Set heartbeat/cron model
 | --credential | option | — | — | Credential name |
 | --all | flag | false | — | Apply to all enabled animas |
 | --clear | flag | false | — | Remove background model override |
-
-## `anima set-memory-backend`
-
-Set per-anima memory backend
-
-`usage: animaworks anima set-memory-backend [-h] [--clear] [anima] [backend]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
-| backend | positional | — | — | Backend type (legacy/neo4j) |
-| --clear | flag | false | — | Remove per-anima override (use global) |
 
 ## `anima set-model`
 
@@ -782,102 +759,6 @@ Run a stdio MCP server for an anima
 | --anima | option | — | — | Anima name |
 | --project | option | — | — | Default project archive |
 | --tools | option | "search_memory,read_memory_file,write_memory_file" | — | Comma-separated exposed tools |
-
-## `memory`
-
-Memory backend management
-
-`usage: animaworks memory [-h] {status,migrate,rollback,backup,cleanup} ...`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `memory backup`
-
-Backup management
-
-`usage: animaworks memory backup [-h] {list,create} ...`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `memory backup create`
-
-Create manual backup
-
-`usage: animaworks memory backup create [-h]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `memory backup list`
-
-List available backups
-
-`usage: animaworks memory backup list [-h]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `memory cleanup`
-
-Clean up graph data by source prefix
-
-`usage: animaworks memory cleanup [-h] --anima ANIMA --source-prefix
-                                 SOURCE_PREFIX [--include-orphans] [--dry-run]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| --anima | option | — | — | Anima name |
-| --source-prefix | option | — | — | Episode source prefix to match |
-| --include-orphans | flag | false | — | Also delete orphaned entities |
-| --dry-run | flag | false | — | Show what would be deleted without deleting |
-
-## `memory migrate`
-
-Migrate to new backend
-
-`usage: animaworks memory migrate [-h] --to {neo4j}
-                                 (--all | --anima MIGRATE_ANIMA) [--dry-run]
-                                 [--resume] [--activate-global]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| --to | option | — | neo4j | — |
-| --all | flag | false | — | — |
-| --anima | option | — | — | — |
-| --dry-run | flag | false | — | — |
-| --resume | flag | false | — | — |
-| --activate-global | flag | false | — | After migration, set global memory.backend to neo4j. Neo4j is experimental; default is migration only. |
-
-## `memory rollback`
-
-Rollback to backup
-
-`usage: animaworks memory rollback [-h] --from-backup BACKUP_NAME
-                                  [--purge-neo4j]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| --from-backup | option | — | — | — |
-| --purge-neo4j | flag | false | — | — |
-
-## `memory status`
-
-Show current memory backend status
-
-`usage: animaworks memory status [-h] [--anima STATUS_ANIMA | --all-animas]
-                                [--json]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| --anima | option | — | — | Show one Anima's effective backend |
-| --all-animas | flag | false | — | Show every Anima's effective backend |
-| --json | flag | false | — | Print structured JSON |
 
 ## `migrate`
 

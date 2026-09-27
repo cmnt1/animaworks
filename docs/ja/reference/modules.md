@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 7106b5dc0489bd558cc500fa7da06aa98916215eb656ca50c921ea7690b15e7e -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: c6d1620e665d30adfeb8dad541c2192839f9f4aecedfe00355fbca4182f3d01b -->
 
 # モジュール一覧
 
@@ -15,7 +15,7 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 112 | — |
 | `cli.demo` | 392 | Native ``animaworks demo`` command. |
-| `cli.parser` | 1137 | — |
+| `cli.parser` | 1099 | — |
 
 ## `cli.commands`
 
@@ -25,9 +25,8 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
-| `cli.commands.anima_communities` | 77 | CLI commands for Neo4j community maintenance. |
 | `cli.commands.anima_merge` | 72 | — |
-| `cli.commands.anima_mgmt` | 1513 | CLI commands for anima process management. |
+| `cli.commands.anima_mgmt` | 1451 | CLI commands for anima process management. |
 | `cli.commands.board` | 191 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
@@ -38,8 +37,6 @@
 | `cli.commands.internal_cmd` | 347 | — |
 | `cli.commands.logs` | 206 | CLI commands for viewing anima logs. |
 | `cli.commands.mcp_cmd` | 66 | — |
-| `cli.commands.memory_cmd` | 343 | CLI commands for memory backend management: status, migrate, rollback, backup. |
-| `cli.commands.memory_ops` | 257 | Operational helpers for ``animaworks memory`` CLI commands. |
 | `cli.commands.messaging` | 204 | — |
 | `cli.commands.migrate_cmd` | 119 | — |
 | `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
@@ -154,7 +151,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.config` | 45 | — |
+| `core.config` | 43 | — |
 | `core.config.anima_registry` | 295 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.cli` | 348 | CLI handlers for the ``animaworks config`` subcommand. |
 | `core.config.env_slots` | 118 | — |
@@ -164,12 +161,12 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.local_llm` | 100 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 944 | Migrate legacy config.md files to unified config.json. |
 | `core.config.model_catalog` | 171 | Static model catalog and per-request model override validation. |
-| `core.config.model_config` | 866 | Model configuration resolution: load_model_config, penalties, max_tokens. |
+| `core.config.model_config` | 860 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 124 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 122 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1465 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1447 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -324,7 +321,6 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.infra.gpu` | 173 | — |
 | `core.infra.logging_config` | 530 | Centralized logging configuration for AnimaWorks. |
 | `core.infra.runtime_init` | 395 | First-launch initialization: copy templates to runtime data directory. |
-| `core.infra.services` | 168 | — |
 | `core.infra.startup_progress` | 191 | — |
 | `core.infra.tmp_cleanup` | 254 | — |
 
@@ -403,14 +399,14 @@ anima の起動、停止、初期化のライフサイクル。
 | `core.lifecycle.anima_merge.content_refs` | 386 | — |
 | `core.lifecycle.anima_merge.credential_refs` | 65 | — |
 | `core.lifecycle.anima_merge.external_refs` | 447 | — |
-| `core.lifecycle.anima_merge.finalize` | 460 | — |
-| `core.lifecycle.anima_merge.journal` | 187 | — |
-| `core.lifecycle.anima_merge.service` | 1751 | — |
+| `core.lifecycle.anima_merge.finalize` | 440 | — |
+| `core.lifecycle.anima_merge.journal` | 188 | — |
+| `core.lifecycle.anima_merge.service` | 1672 | — |
 | `core.lifecycle.anima_merge.task_refs` | 402 | — |
 | `core.lifecycle.anima_merge.taskboard_refs` | 162 | — |
 | `core.lifecycle.anima_merge.verification` | 268 | — |
 | `core.lifecycle.knowledge_correction` | 127 | — |
-| `core.lifecycle.system_consolidation` | 506 | — |
+| `core.lifecycle.system_consolidation` | 437 | — |
 
 ## `core.lifecycle.anima_merge`
 
@@ -448,10 +444,6 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.activity.replay` | 537 | — |
 | `core.memory.activity.rotation` | 187 | — |
 | `core.memory.activity.timeline` | 348 | — |
-| `core.memory.backend.base` | 190 | — |
-| `core.memory.backend.legacy` | 479 | — |
-| `core.memory.backend.neo4j_graph` | 813 | — |
-| `core.memory.backend.registry` | 100 | — |
 | `core.memory.config_reader` | 31 | — |
 | `core.memory.conversation.compression` | 344 | Compression logic for conversation memory. |
 | `core.memory.conversation.finalize` | 477 | Session finalization for conversation memory. |
@@ -461,8 +453,6 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.conversation.shortterm` | 349 | Short-term memory (短期記憶) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
-| `core.memory.extraction.minhash` | 53 | MinHash-based approximate Jaccard similarity for entity deduplication. |
-| `core.memory.extraction.resolver` | 170 | Entity Resolution: Vector + MinHash candidate filtering, new-entity default. |
 | `core.memory.facts.config` | 110 | — |
 | `core.memory.facts.entity_index` | 457 | — |
 | `core.memory.facts.extraction` | 466 | — |
@@ -470,17 +460,12 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.facts.invalidation` | 497 | — |
 | `core.memory.facts.invalidation_llm` | 109 | — |
 | `core.memory.facts.observability` | 41 | — |
-| `core.memory.facts.ontology` | 249 | Pydantic models for entity / fact extraction results. |
+| `core.memory.facts.ontology` | 241 | Pydantic models for entity / fact extraction results. |
 | `core.memory.facts.prompts.en` | 77 | English prompts for entity / fact extraction. |
 | `core.memory.facts.prompts.ja` | 78 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 443 | — |
-| `core.memory.graph.community` | 337 | — |
-| `core.memory.graph.driver` | 170 | — |
-| `core.memory.graph.queries` | 463 | — |
-| `core.memory.graph.schema` | 271 | — |
-| `core.memory.graph.search` | 413 | — |
-| `core.memory.maintenance.consolidation` | 1535 | — |
+| `core.memory.maintenance.consolidation` | 1454 | — |
 | `core.memory.maintenance.cron_logger` | 190 | — |
 | `core.memory.maintenance.distillation` | 715 | — |
 | `core.memory.maintenance.forgetting` | 499 | — |
@@ -489,9 +474,6 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.maintenance.reconsolidation` | 653 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
 | `core.memory.manager` | 796 | — |
-| `core.memory.migration.backup` | 150 | — |
-| `core.memory.migration.checkpoint` | 74 | — |
-| `core.memory.migration.migrator` | 146 | — |
 | `core.memory.priming.channel_a` | 52 | — |
 | `core.memory.priming.channel_b` | 553 | — |
 | `core.memory.priming.channel_c` | 628 | — |
@@ -544,7 +526,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.retrieval.pipeline` | 109 | — |
 | `core.memory.retrieval.query_expansion` | 496 | — |
 | `core.memory.retrieval.rag_search` | 1312 | — |
-| `core.memory.retrieval.reranker` | 298 | — |
+| `core.memory.retrieval.reranker` | 264 | — |
 | `core.memory.retrieval.rrf` | 107 | — |
 | `core.memory.retrieval.search_metadata` | 108 | — |
 | `core.memory.retrieval.temporal` | 196 | — |
@@ -561,14 +543,6 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.memory.activity` | 24 | — |
-
-## `core.memory.backend`
-
-—
-
-| モジュール | 行数 | docstring 1行目 |
-|---|---:|---|
-| `core.memory.backend` | 12 | — |
 
 ## `core.memory.conversation`
 
@@ -594,14 +568,6 @@ Model Context Protocol サーバーとクライアント。
 |---|---:|---|
 | `core.memory.facts.prompts` | 3 | — |
 
-## `core.memory.graph`
-
-—
-
-| モジュール | 行数 | docstring 1行目 |
-|---|---:|---|
-| `core.memory.graph` | 12 | — |
-
 ## `core.memory.maintenance`
 
 —
@@ -609,14 +575,6 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.memory.maintenance` | 6 | — |
-
-## `core.memory.migration`
-
-—
-
-| モジュール | 行数 | docstring 1行目 |
-|---|---:|---|
-| `core.memory.migration` | 12 | — |
 
 ## `core.memory.priming`
 
@@ -665,7 +623,7 @@ anima 間および外部とのメッセージ配送。
 | `core.migrations` | 21 | — |
 | `core.migrations.legacy_flat_skills` | 204 | — |
 | `core.migrations.registry` | 159 | — |
-| `core.migrations.steps` | 2515 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 2660 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.tool_prompts` | 194 | — |
 | `core.migrations.tracker` | 110 | — |
 
@@ -702,7 +660,7 @@ anima 間および外部とのメッセージ配送。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.org` | 6 | — |
-| `core.org.company` | 1217 | Company membership and cross-company boundary helpers. |
+| `core.org.company` | 1213 | Company membership and cross-company boundary helpers. |
 | `core.org.company_resources` | 86 | — |
 | `core.org.hierarchy` | 39 | — |
 | `core.org.org_sync` | 552 | — |
@@ -975,7 +933,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1462 | — |
+| `server.app` | 1453 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
