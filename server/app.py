@@ -8,10 +8,8 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 import asyncio
 import html
-import inspect
 import json
 import logging
-import os
 import re
 import time
 import uuid
@@ -68,17 +66,6 @@ def _get_app_version() -> str:
         except Exception:
             logger.debug("Failed to read application version from pyproject.toml", exc_info=True)
     return "0.0.0"
-
-
-async def _call_optional_async(obj: object | None, method_name: str) -> None:
-    if obj is None:
-        return
-    method = getattr(obj, method_name, None)
-    if not callable(method):
-        return
-    result = method()
-    if inspect.isawaitable(result):
-        await result
 
 
 class RequestLoggingMiddleware:
@@ -195,11 +182,10 @@ class BasePathMiddleware:
         await self.app(updated_scope, receive, send)
 
 
-def _startup_default_preflight_runner(*, force_all_vectordb: bool = False) -> None:
-    from cli.commands.server import _run_execution_sdk_preflight, _run_rag_startup_preflight
+def _startup_default_preflight_runner() -> None:
+    from cli.commands.server import _run_execution_sdk_preflight
 
     _run_execution_sdk_preflight()
-    _run_rag_startup_preflight(force_all_vectordb=force_all_vectordb)
 
 
 def _format_startup_elapsed(seconds: object) -> str:
@@ -664,18 +650,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
             raise
 
 
-async def _prepare_startup_vector_worker(app: FastAPI) -> None:
-    vector_worker = getattr(app.state, "vector_worker", None)
-    previous_vector_url_present = "ANIMAWORKS_VECTOR_URL" in os.environ
-    previous_vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
-    app.state._previous_vector_url_present = previous_vector_url_present
-    app.state._previous_vector_url = previous_vector_url
-    await _call_optional_async(vector_worker, "start")
-    vector_worker_url = getattr(vector_worker, "base_url", None)
-    if isinstance(vector_worker_url, str) and vector_worker_url:
-        os.environ["ANIMAWORKS_VECTOR_URL"] = vector_worker_url
-        logger.info("Server RAG vector access routed through vector worker: %s", vector_worker_url)
-
+def _prepare_child_env_urls(app: FastAPI) -> None:
     _embed_config = load_config()
     _server_port = getattr(app.state, "listen_port", getattr(_embed_config.server, "port", 18500))
     app.state.child_env_urls = {
@@ -704,12 +679,11 @@ async def _run_startup_initialization(app: FastAPI) -> None:
     """Run heavyweight startup work after the ASGI app is accepting requests."""
     app.state.worker_services_ready = False
     try:
-        startup_progress.set_phase("preflight", detail=t("startup.detail_vector_worker"), reset_counts=True)
-        await _prepare_startup_vector_worker(app)
+        _prepare_child_env_urls(app)
 
         preflight_runner = getattr(app.state, "startup_preflight_runner", _startup_default_preflight_runner)
         startup_progress.set_phase("preflight", detail=t("startup.detail_preflight"), reset_counts=True)
-        await asyncio.to_thread(preflight_runner, force_all_vectordb=False)
+        await asyncio.to_thread(preflight_runner)
 
         startup_progress.raise_if_cancelled()
         app.state.worker_services_ready = True
@@ -1021,14 +995,6 @@ async def lifespan(app: FastAPI):
         if governor:
             await governor.stop()
         await app.state.supervisor.shutdown_all()
-        vector_worker = getattr(app.state, "vector_worker", None)
-        await _call_optional_async(vector_worker, "stop")
-        if getattr(app.state, "_previous_vector_url_present", False) is True:
-            previous = getattr(app.state, "_previous_vector_url", None)
-            if isinstance(previous, str):
-                os.environ["ANIMAWORKS_VECTOR_URL"] = previous
-        else:
-            os.environ.pop("ANIMAWORKS_VECTOR_URL", None)
         if hasattr(app.state, "msg_log_scheduler"):
             app.state.msg_log_scheduler.shutdown(wait=False)
     logger.info("Server stopped")
@@ -1037,8 +1003,6 @@ async def lifespan(app: FastAPI):
 def create_app(
     animas_dir: Path,
     shared_dir: Path,
-    *,
-    force_startup_repair_all_vectordb: bool = False,
 ) -> FastAPI:
     app = FastAPI(title="AnimaWorks", version=_get_app_version(), lifespan=lifespan)
 
@@ -1065,10 +1029,6 @@ def create_app(
     log_dir = get_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    from core.memory.rag.vector_worker_client import VectorWorkerManager
-
-    vector_worker = VectorWorkerManager.from_config(config, log_dir=log_dir)
-
     from core.supervisor.manager import HealthConfig
 
     health_cfg = HealthConfig()
@@ -1085,7 +1045,6 @@ def create_app(
         log_dir=log_dir,
         ws_manager=ws_manager,
         health_config=health_cfg,
-        vector_worker_manager=vector_worker,
     )
 
     # Auto-migrate old Japanese cron.md format to standard cron expressions
@@ -1118,8 +1077,6 @@ def create_app(
     app.state.shared_dir = shared_dir
     app.state.setup_complete = config.setup_complete
     app.state.worker_services_ready = False
-    app.state.vector_worker = vector_worker
-    app.state.force_startup_repair_all_vectordb = False
     app.state.startup_preflight_runner = _startup_default_preflight_runner
 
     # Meeting room manager

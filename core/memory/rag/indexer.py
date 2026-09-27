@@ -510,7 +510,7 @@ class MemoryIndexer:
 
         Args:
             file_path: Path to the memory file
-            memory_type: Memory type (knowledge, episodes, procedures, skills, shared_users)
+            memory_type: Memory type (knowledge, episodes, procedures, skills)
             force: Force re-indexing even if file hasn't changed
             origin: Provenance origin category (e.g. "consolidation", "external_platform").
                 Stored in chunk metadata for trust-level resolution at retrieval time.
@@ -1177,7 +1177,7 @@ class MemoryIndexer:
             if time_chunks:
                 return time_chunks
             return self._chunk_by_markdown_headings(file_path, content, memory_type, origin=origin)
-        # procedures, skills, shared_users
+        # procedures, skills
         return self._chunk_whole_file(file_path, content, memory_type, origin=origin)
 
     def _chunk_by_markdown_headings(

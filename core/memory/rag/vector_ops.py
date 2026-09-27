@@ -16,8 +16,8 @@ from typing import Any
 
 # Endpoints that mirror a root MemoryService method. These are exactly the
 # requests the server forwards for a phase3 owner (see
-# server/routes/internal.py). Reset / repair / health are worker-only and
-# intentionally absent here — they must not open a second native owner.
+# server/routes/internal.py). Reset / repair / health are intentionally absent
+# because they must not open a second native owner.
 _PATH_TO_METHOD: dict[str, str] = {
     "/query": "memory.query",
     "/upsert": "memory.upsert",

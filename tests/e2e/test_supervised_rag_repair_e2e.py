@@ -9,7 +9,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> None:
-    """Corruption detection records a request that supervisor repairs out-of-process."""
+    """Corruption detection records a request that the root memory owner repairs."""
     from core.memory.rag.repair_service import RAGRepairService, _reset_for_testing
     from core.supervisor.manager import ProcessSupervisor
 
@@ -17,7 +17,7 @@ async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> N
     anima_dir = data_dir / "animas" / "sora"
     (anima_dir / "state").mkdir(parents=True)
     (anima_dir / "vectordb").mkdir()
-    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
+    (anima_dir / "status.json").write_text('{"enabled": true}', encoding="utf-8")
 
     service = RAGRepairService(enabled=True, threshold=1, window_minutes=5, cooldown_minutes=60)
     assert service.record_chroma_error(
@@ -37,21 +37,13 @@ async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> N
         shared_dir=data_dir / "shared",
         run_dir=data_dir / "run",
     )
-    calls: list[str] = []
     sup.processes["sora"] = object()
-
-    async def repair_cli(name: str, *, reason: str, include_shared: bool) -> dict[str, object]:
-        calls.append(f"repair:{name}:{reason}:{include_shared}")
-        return {"ok": True, "status": "success"}
 
     sup.stop_anima = AsyncMock()
     sup.start_anima = AsyncMock()
     sup.send_request = AsyncMock(return_value={"ok": True, "status": "success"})
-    sup._run_rag_repair_cli_process = repair_cli
-
     await sup._run_supervised_rag_repair("sora", requested)
 
-    assert calls == []
     sup.send_request.assert_awaited_once()
     request = sup.send_request.await_args
     assert request.args == (

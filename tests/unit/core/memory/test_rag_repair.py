@@ -14,33 +14,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.repair import (
     RAGRepairService,
-    RepairResult,
     classify_corruption_error,
     collection_owner,
 )
 from core.memory.rag.repair_utils import SINGLE_SHOT_REASONS
-from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path
 from core.memory.rag.sqlite_health import SQLiteHealthResult
-
-
-class _RebuiltStore:
-    """Fake vector store standing in for a healthy rebuilt DB.
-
-    The post-rebuild verification calls ``list_collections``; returning a
-    non-empty list lets repairs that indexed chunks report success.
-    """
-
-    def __init__(self, collections: list[str] | None = None) -> None:
-        self._collections = collections if collections is not None else ["rebuilt"]
-
-    def list_collections(self) -> list[str]:
-        return list(self._collections)
-
-    def list_collections_checked(self) -> list[str] | None:
-        return self.list_collections()
 
 
 def test_classifies_today_error_finding_id():
@@ -94,17 +74,6 @@ def test_chroma_transient_is_not_single_shot_and_does_not_start_repair(data_dir:
 def test_collection_owner_uses_default_anima_for_shared_collection():
     assert collection_owner("shared_common_knowledge", default_anima="sora") == ("sora", True)
     assert collection_owner("mikoto_knowledge") == ("mikoto", False)
-
-
-def test_rebuild_verification_rejects_unavailable_collection_list(monkeypatch):
-    from core.memory.rag.repair_rebuild import RebuildVerificationError, verify_rebuilt_vectordb
-
-    store = MagicMock()
-    store.list_collections_checked.return_value = None
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name=None: store)
-
-    with pytest.raises(RebuildVerificationError, match="unreadable"):
-        verify_rebuilt_vectordb("sora", expected_chunks=1)
 
 
 def test_record_chroma_error_triggers_after_threshold(data_dir: Path):
@@ -176,7 +145,6 @@ def test_store_init_failed_is_single_shot_and_not_refuted_by_quick_check(data_di
         collection="sora_knowledge",
         source="vector_store_init",
         include_shared=True,
-        background=True,
     )
     service._sqlite_quick_check_ok.assert_not_called()
     state = json.loads((data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8"))
@@ -425,7 +393,7 @@ def test_discover_suspect_animas_includes_quick_check_corruption(data_dir: Path,
         )
 
     monkeypatch.setattr(
-        "core.memory.rag.sqlite_health.check_anima_vectordb_health_via_worker_or_direct",
+        "core.memory.rag.sqlite_health.check_anima_vectordb_health",
         fake_quick_check,
     )
 
@@ -452,7 +420,7 @@ def test_discover_suspect_animas_includes_phase3_db_in_quick_check(data_dir: Pat
     (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
     quick_check = MagicMock(return_value=MagicMock(corrupt=False))
     monkeypatch.setattr(
-        "core.memory.rag.sqlite_health.check_anima_vectordb_health_via_worker_or_direct",
+        "core.memory.rag.sqlite_health.check_anima_vectordb_health",
         quick_check,
     )
 
@@ -747,53 +715,18 @@ def test_discover_suspect_animas_ignores_legacy_unclean_exit_state(data_dir: Pat
     assert suspects == []
 
 
-def test_repair_animas_if_allowed_runs_each_target(data_dir: Path):
-    service = RAGRepairService(enabled=True)
-    service.repair_anima_if_allowed = MagicMock(  # type: ignore[method-assign]
-        side_effect=lambda anima_name, **kwargs: RepairResult(
-            status="success",
-            anima_name=anima_name,
-            reason=kwargs["reason"],
-        )
-    )
-
-    results = service.repair_animas_if_allowed(
-        {"sora", "rin"},
-        reason="startup_chroma_crash_preflight",
-        source="startup_preflight",
-        include_shared=True,
-    )
-
-    assert list(results) == ["rin", "sora"]
-    assert service.repair_anima_if_allowed.call_count == 2
-
-
-def test_request_repair_sync_uses_guard(data_dir: Path):
-    (data_dir / "animas" / "sora" / "state").mkdir(parents=True)
-    service = RAGRepairService(enabled=True)
-    service.repair_anima = MagicMock(  # type: ignore[method-assign]
-        return_value=RepairResult(status="success", anima_name="sora", reason="test")
-    )
-
-    assert service.request_repair("sora", reason="test", source="test", background=False) is True
-    service.repair_anima.assert_called_once()
-
-
 def test_request_repair_disabled_is_blocked(data_dir: Path):
     service = RAGRepairService(enabled=False)
 
-    assert service.request_repair("sora", reason="test", source="test", background=False) is False
+    assert service.request_repair("sora", reason="test", source="test") is False
 
 
-def test_request_repair_background_records_request_without_running_repair(data_dir: Path):
+def test_request_repair_records_request_without_running_repair(data_dir: Path):
     anima_dir = data_dir / "animas" / "sora"
     (anima_dir / "state").mkdir(parents=True)
     service = RAGRepairService(enabled=True)
-    service.repair_anima = MagicMock()  # type: ignore[method-assign]
 
-    assert service.request_repair("sora", reason="sqlite_malformed", source="query", background=True) is True
-
-    service.repair_anima.assert_not_called()
+    assert service.request_repair("sora", reason="sqlite_malformed", source="query") is True
     state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
     assert state["status"] == "requested"
     assert state["stage"] == "detect"
@@ -807,112 +740,11 @@ def test_background_duplicate_request_is_not_started_twice(data_dir: Path):
     (anima_dir / "state").mkdir(parents=True)
     service = RAGRepairService(enabled=True)
 
-    assert service.request_repair("sora", reason="sqlite_malformed", source="query", background=True) is True
-    assert service.request_repair("sora", reason="sqlite_malformed", source="query", background=True) is False
+    assert service.request_repair("sora", reason="sqlite_malformed", source="query") is True
+    assert service.request_repair("sora", reason="sqlite_malformed", source="query") is False
 
     state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
     assert state["status"] == "requested"
-
-
-def test_quarantine_resets_worker_before_local_cache_and_move(data_dir: Path, monkeypatch):
-    from core.memory.rag.http_store import HttpVectorStore
-    from core.memory.rag.repair_rebuild import quarantine_vectordb
-
-    anima_dir = data_dir / "animas" / "sora"
-    vectordb = anima_dir / "vectordb"
-    vectordb.mkdir(parents=True)
-    (vectordb / "broken.bin").write_text("broken", encoding="utf-8")
-
-    events: list[str] = []
-    store = HttpVectorStore("http://worker", anima_name="sora")
-    store.reset_store = MagicMock(side_effect=lambda: events.append("worker") or True)  # type: ignore[method-assign]
-    local_reset = MagicMock(side_effect=lambda anima_name: events.append("local"))
-
-    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name=None: store)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", local_reset)
-
-    archive = quarantine_vectordb("sora")
-
-    # Worker cache is reset before the move (release handles for the OS move) and
-    # again after the move (discard any handle a concurrent read pinned while the
-    # directory was missing), with the local cache reset each time.
-    assert events == ["worker", "local", "worker", "local"]
-    assert store.reset_store.call_count == 2
-    assert local_reset.call_count == 2
-    local_reset.assert_called_with("sora")
-    assert archive is not None
-    # The vectordb dir is recreated empty so racing reads open a valid (empty) DB
-    # rather than a schema-less stub; the corrupt contents live in the archive.
-    assert vectordb.exists()
-    assert not any(vectordb.iterdir())
-    assert (archive / "broken.bin").read_text(encoding="utf-8") == "broken"
-
-
-class _FakeBuildStore:
-    """Fake direct ChromaVectorStore used to drive ``atomic_rebuild_vectordb``."""
-
-    def __init__(self, collections: list[str] | None = None) -> None:
-        self._collections = ["rebuilt"] if collections is None else collections
-        self.closed = False
-
-    def list_collections(self) -> list[str]:
-        return list(self._collections)
-
-    def list_collections_checked(self) -> list[str] | None:
-        return self.list_collections()
-
-    def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
-        if expected_chunks and not self._collections:
-            raise RuntimeError("no collections")
-        return {
-            "collections": len(self._collections),
-            "chunks": expected_chunks,
-            "query_results": int(bool(expected_chunks)),
-        }
-
-    def close(self) -> None:
-        self.closed = True
-
-
-def _patch_atomic_build(
-    monkeypatch,
-    *,
-    chunks_per_dir=2,
-    collections=None,
-    indexer_calls=None,
-    files_failed=0,
-    files_unprocessed=0,
-):
-    """Patch the pieces ``atomic_rebuild_vectordb`` builds with (no real chroma)."""
-
-    class FakeIndexer:
-        def __init__(self, *args, **kwargs):
-            self.anima_name = kwargs.get("anima_name")
-
-        def index_directory(self, *args, **kwargs):
-            if indexer_calls is not None:
-                indexer_calls.append((self.anima_name, str(args[1])))
-            return IndexDirectoryResult(
-                chunks_indexed=chunks_per_dir,
-                files_indexed=0 if files_failed else 1,
-                files_failed=files_failed,
-                files_unprocessed=files_unprocessed,
-            )
-
-        def index_conversation_summary(self, *args, **kwargs):
-            return chunks_per_dir
-
-    monkeypatch.setattr("core.memory.rag.MemoryIndexer", FakeIndexer)
-    monkeypatch.setattr(
-        "core.memory.rag.store.create_chroma_vector_store",
-        lambda *a, **k: _FakeBuildStore(collections=collections),
-    )
-    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", lambda anima_name: True)
-    monkeypatch.setattr(
-        "core.memory.rag.repair_rebuild.verify_worker_vector_store",
-        lambda anima_name, expected_chunks: True,
-    )
 
 
 def test_staging_rebuild_rejects_non_staging_direct_chroma_path(tmp_path: Path) -> None:
@@ -928,374 +760,6 @@ def test_staging_rebuild_rejects_non_staging_direct_chroma_path(tmp_path: Path) 
             anima_dir=anima_dir,
             staging=anima_dir / "vectordb",
         )
-
-
-def test_repair_rebuilds_swaps_and_archives(data_dir: Path, monkeypatch):
-    """Atomic repair builds in staging, swaps in, and archives the old DB."""
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    (anima_dir / "knowledge" / "topic.md").write_text("# Topic\n\n## A\n\nbody", encoding="utf-8")
-    (anima_dir / "state").mkdir()
-    (anima_dir / "state" / "conversation.json").write_text(
-        '{"compressed_summary": "## Summary\\n\\nhello"}', encoding="utf-8"
-    )
-    vectordb = anima_dir / "vectordb"
-    vectordb.mkdir()
-    (vectordb / "broken.bin").write_text("broken", encoding="utf-8")
-
-    _patch_atomic_build(monkeypatch, chunks_per_dir=2)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-
-    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
-    result = service.repair_anima("sora", reason="chroma_error_finding_id", source="test")
-
-    assert result.ok
-    assert result.chunks_indexed == 4  # knowledge dir (2) + conversation summary (2)
-    # Live DB swapped in; the old corrupt DB archived; no staging dir left behind.
-    assert vectordb.exists()
-    assert not (vectordb / "broken.bin").exists()
-    assert not list(anima_dir.glob("vectordb.staging-*"))
-    archive_dirs = list((anima_dir / "archive").glob("vectordb-corrupt-*"))
-    assert len(archive_dirs) == 1
-    assert (archive_dirs[0] / "broken.bin").read_text(encoding="utf-8") == "broken"
-
-    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
-    assert state["status"] == "success"
-    assert state["consecutive_failures"] == 0
-    assert state["last_chunks_indexed"] == 4
-
-
-def test_atomic_rebuild_includes_facts_and_conversation_summary(data_dir: Path, monkeypatch):
-    """The shared rebuild path indexes every canonical vector category."""
-    from core.memory.rag import repair_state
-    from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
-
-    anima_dir = data_dir / "animas" / "sora"
-    for memory_type, filename in (
-        ("knowledge", "note.md"),
-        ("episodes", "episode.md"),
-        ("procedures", "procedure.md"),
-        ("skills", "SKILL.md"),
-        ("facts", "facts.jsonl"),
-    ):
-        directory = anima_dir / memory_type
-        directory.mkdir(parents=True, exist_ok=True)
-        (directory / filename).write_text("content", encoding="utf-8")
-    (anima_dir / "state").mkdir()
-    (anima_dir / "state" / "conversation.json").write_text(
-        '{"compressed_summary": "A sufficiently long summary for indexing"}',
-        encoding="utf-8",
-    )
-    calls: list[tuple[str | None, str]] = []
-    _patch_atomic_build(monkeypatch, chunks_per_dir=2, indexer_calls=calls)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-    repair_state.update_repair_state("sora", status="repairing", stage="repair")
-
-    chunks, _archive = atomic_rebuild_vectordb(
-        "sora",
-        include_shared=False,
-        anima_dir=anima_dir,
-    )
-
-    assert chunks == 12
-    assert [memory_type for _name, memory_type in calls] == [
-        "knowledge",
-        "episodes",
-        "procedures",
-        "skills",
-        "facts",
-    ]
-
-
-def test_atomic_rebuild_invalidates_shared_check_ttl(data_dir: Path, monkeypatch):
-    from core.memory.rag import repair_state
-    from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
-    from core.memory.rag.shared_check_registry import (
-        SharedCheckOutcome,
-        make_shared_check_key,
-        reset_shared_check_registry,
-        run_shared_check,
-    )
-
-    anima_dir = data_dir / "animas" / "sora"
-    knowledge_dir = anima_dir / "knowledge"
-    knowledge_dir.mkdir(parents=True)
-    (knowledge_dir / "note.md").write_text("content", encoding="utf-8")
-    _patch_atomic_build(monkeypatch, chunks_per_dir=2)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-    repair_state.update_repair_state("sora", status="repairing", stage="repair")
-
-    store = MagicMock()
-    store._base_url = "http://vector.example/api"
-    key = make_shared_check_key("sora", store, "shared_common_knowledge", "source:hash")
-    calls = 0
-
-    def check() -> SharedCheckOutcome:
-        nonlocal calls
-        calls += 1
-        return SharedCheckOutcome.SUCCESS
-
-    def run() -> None:
-        run_shared_check(
-            key,
-            check,
-            ttl_seconds=30,
-            backoff_initial_seconds=5,
-            backoff_max_seconds=300,
-        )
-
-    reset_shared_check_registry()
-    try:
-        run()
-        run()
-        assert calls == 1
-        atomic_rebuild_vectordb("sora", include_shared=False, anima_dir=anima_dir)
-        run()
-        assert calls == 2
-    finally:
-        reset_shared_check_registry()
-
-
-def test_atomic_rebuild_refuses_swap_without_active_fence(data_dir: Path, monkeypatch):
-    from core.memory.rag.repair_rebuild import RebuildVerificationError, atomic_rebuild_vectordb
-
-    anima_dir = data_dir / "animas" / "sora"
-    knowledge_dir = anima_dir / "knowledge"
-    knowledge_dir.mkdir(parents=True)
-    (knowledge_dir / "note.md").write_text("content", encoding="utf-8")
-    live = anima_dir / "vectordb"
-    live.mkdir()
-    (live / "live.bin").write_text("live", encoding="utf-8")
-
-    _patch_atomic_build(monkeypatch, chunks_per_dir=2)
-    local_reset = MagicMock()
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", local_reset)
-
-    with pytest.raises(RebuildVerificationError, match="access fence missing"):
-        atomic_rebuild_vectordb(
-            "sora",
-            include_shared=False,
-            anima_dir=anima_dir,
-        )
-
-    assert (live / "live.bin").read_text(encoding="utf-8") == "live"
-    assert not list(anima_dir.glob("vectordb.staging-*"))
-    local_reset.assert_not_called()
-
-
-def test_repair_skips_rebuild_when_sqlite_healthy_after_stop(data_dir: Path, monkeypatch):
-    """A refutable corruption signal is re-verified before the rebuild.
-
-    The signal-time gate runs inside the process whose poisoned WAL view /
-    chroma cache raised the error; by repair time this fresh process re-runs
-    quick_check, and a passing result must skip the destructive
-    quarantine/rebuild, resetting only the worker's cached store.
-    """
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    vectordb = anima_dir / "vectordb"
-    vectordb.mkdir()
-    (vectordb / "live.bin").write_text("live-data", encoding="utf-8")
-
-    rebuild = MagicMock()
-    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
-    worker_reset = MagicMock(return_value=True)
-    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", worker_reset)
-    reset = MagicMock()
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", reset)
-
-    service = RAGRepairService(enabled=True)
-    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
-
-    result = service.repair_anima("sora", reason="sqlite_malformed", source="test")
-
-    assert result.ok
-    assert result.stage == "skipped_healthy"
-    rebuild.assert_not_called()
-    worker_reset.assert_called_once_with("sora")
-    reset.assert_called_once_with("sora")
-    # Live DB untouched, nothing quarantined.
-    assert (vectordb / "live.bin").read_text(encoding="utf-8") == "live-data"
-    assert not (anima_dir / "archive").exists()
-    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
-    assert state["status"] == "success"
-    assert state["stage"] == "skipped_healthy"
-    assert state["consecutive_failures"] == 0
-
-
-def test_store_init_failed_skips_rebuild_only_when_chroma_store_opens(
-    data_dir: Path,
-    monkeypatch,
-):
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "vectordb").mkdir()
-
-    rebuild = MagicMock()
-    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
-    worker_reset = MagicMock(return_value=True)
-    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", worker_reset)
-    reset = MagicMock()
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", reset)
-
-    service = RAGRepairService(enabled=True)
-    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
-    service._chroma_store_opens = MagicMock(return_value=True)  # type: ignore[method-assign]
-
-    result = service.repair_anima("sora", reason="store_init_failed", source="test")
-
-    assert result.ok
-    assert result.stage == "skipped_healthy"
-    rebuild.assert_not_called()
-    service._chroma_store_opens.assert_called_once_with("sora")
-    worker_reset.assert_called_once_with("sora")
-    reset.assert_called_once_with("sora")
-
-
-def test_store_init_failed_rebuilds_when_chroma_store_cannot_open(
-    data_dir: Path,
-    monkeypatch,
-):
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "vectordb").mkdir()
-
-    rebuild = MagicMock(return_value=(3, None))
-    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-
-    service = RAGRepairService(enabled=True)
-    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
-    service._chroma_store_opens = MagicMock(return_value=False)  # type: ignore[method-assign]
-
-    result = service.repair_anima("sora", reason="store_init_failed", source="test")
-
-    assert result.ok
-    rebuild.assert_called_once_with("sora", include_shared=False)
-
-
-def test_repair_rebuilds_when_sqlite_check_fails_before_rebuild(data_dir: Path, monkeypatch):
-    """A failing/ambiguous re-check must not suppress a real repair."""
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "vectordb").mkdir()
-
-    rebuild = MagicMock(return_value=(3, None))
-    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-
-    service = RAGRepairService(enabled=True)
-    service._sqlite_quick_check_ok = MagicMock(return_value=False)  # type: ignore[method-assign]
-
-    result = service.repair_anima("sora", reason="sqlite_malformed", source="test")
-
-    assert result.ok
-    rebuild.assert_called_once()
-
-
-def test_repair_hnsw_reason_not_gated_by_pre_rebuild_check(data_dir: Path, monkeypatch):
-    """hnsw corruption cannot be refuted by a SQLite check; always rebuild."""
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "vectordb").mkdir()
-
-    rebuild = MagicMock(return_value=(3, None))
-    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-
-    service = RAGRepairService(enabled=True)
-    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
-
-    result = service.repair_anima("sora", reason="hnsw_corruption", source="test")
-
-    assert result.ok
-    rebuild.assert_called_once()
-    service._sqlite_quick_check_ok.assert_not_called()
-
-
-def test_repair_reindexes_shared_collections_when_requested(data_dir: Path, monkeypatch):
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    common_knowledge = data_dir / "common_knowledge"
-    common_knowledge.mkdir(exist_ok=True)
-    (common_knowledge / "ref.md").write_text("# Reference", encoding="utf-8")
-    common_skills = data_dir / "common_skills"
-    (common_skills / "tool").mkdir(parents=True, exist_ok=True)
-    (common_skills / "tool" / "SKILL.md").write_text("# Tool", encoding="utf-8")
-
-    calls: list[tuple[str | None, str]] = []
-    _patch_atomic_build(monkeypatch, indexer_calls=calls)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-
-    result = RAGRepairService(enabled=True).repair_anima(
-        "sora", reason="chroma_corruption", source="test", include_shared=True
-    )
-
-    assert result.ok
-    assert ("shared", "common_knowledge") in calls
-    assert ("shared", "common_skills") in calls
-    assert read_shared_hash(anima_dir, "shared_common_knowledge_hash") is not None
-    assert read_shared_hash(anima_dir, "shared_common_skills_hash") is not None
-    assert shared_index_meta_path(anima_dir).is_file()
-    # Shared hashes stay in their separate file. Publication now also commits
-    # the rebuilt personal metadata, which is empty for this synthetic indexer.
-    assert json.loads((anima_dir / "index_meta.json").read_text(encoding="utf-8")) == {}
-
-
-def test_repair_failure_preserves_live_db_and_records_state(data_dir: Path, monkeypatch):
-    """A rebuild that fails must leave the live DB intact and engage cooldown."""
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    vectordb = anima_dir / "vectordb"
-    vectordb.mkdir()
-    (vectordb / "live.bin").write_text("live-data", encoding="utf-8")
-
-    reset = MagicMock()
-    monkeypatch.setattr(
-        "core.memory.rag.repair_service.atomic_rebuild_vectordb",
-        lambda anima_name, include_shared=False: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", reset)
-
-    result = RAGRepairService(enabled=True).repair_anima("sora", reason="chroma_corruption", source="test")
-
-    assert result.status == "failed"
-    assert result.error == "boom"
-    reset.assert_called_once_with("sora")
-    # The live DB is untouched — a failed atomic rebuild never destroys data.
-    assert (vectordb / "live.bin").read_text(encoding="utf-8") == "live-data"
-    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
-    assert state["status"] == "failed"
-    assert state["consecutive_failures"] == 1
-
-
-def test_atomic_rebuild_stub_fails_and_keeps_live_db(data_dir: Path, monkeypatch):
-    """A staged DB with no collections (failed upserts) fails before the swap.
-
-    The live DB must remain in place so the false-success re-quarantine loop
-    cannot start and no data is lost.
-    """
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    (anima_dir / "knowledge" / "topic.md").write_text("# Topic\n\n## A\n\nbody", encoding="utf-8")
-    (anima_dir / "state").mkdir()
-    vectordb = anima_dir / "vectordb"
-    vectordb.mkdir()
-    (vectordb / "live.bin").write_text("live-data", encoding="utf-8")
-
-    # Staged store reports no collections despite indexed chunks -> stub.
-    _patch_atomic_build(monkeypatch, chunks_per_dir=3, collections=[])
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
-
-    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
-    result = service.repair_anima("sora", reason="chroma_corruption", source="test")
-
-    assert result.status == "failed"
-    assert (vectordb / "live.bin").read_text(encoding="utf-8") == "live-data"  # live preserved
-    assert not list(anima_dir.glob("vectordb.staging-*"))  # staging cleaned up
-    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
-    assert state["status"] == "failed"
-    assert state["consecutive_failures"] == 1
 
 
 def test_record_chroma_error_suppressed_during_active_repair(data_dir: Path):
@@ -1355,168 +819,6 @@ def test_store_init_failed_is_persisted_during_active_repair(data_dir: Path):
     assert state["recent_signals"][-1]["reason"] == "store_init_failed"
 
 
-def test_repair_missing_anima_fails(data_dir: Path):
-    result = RAGRepairService(enabled=True).repair_anima(
-        "missing",
-        reason="chroma_corruption",
-        source="test",
-    )
-
-    assert result.status == "failed"
-    assert result.error == "anima not found"
-
-
-def test_repair_if_allowed_respects_failed_cooldown(data_dir: Path):
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "state" / "rag_repair.json").write_text(
-        json.dumps(
-            {
-                "status": "failed",
-                "last_attempt_at": datetime.now(UTC).isoformat(),
-                "last_failure_at": datetime.now(UTC).isoformat(),
-                "consecutive_failures": 2,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
-    result = service.repair_anima_if_allowed(
-        "sora",
-        reason="recent_rag_corruption",
-        source="test",
-    )
-
-    assert result.status == "cooldown"
-
-
-def test_repair_if_allowed_retries_before_failure_limit(data_dir: Path):
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "state" / "rag_repair.json").write_text(
-        json.dumps(
-            {
-                "status": "failed",
-                "last_attempt_at": datetime.now(UTC).isoformat(),
-                "last_failure_at": datetime.now(UTC).isoformat(),
-                "consecutive_failures": 1,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
-    service.repair_anima = MagicMock(  # type: ignore[method-assign]
-        return_value=RepairResult(status="success", anima_name="sora", reason="recent_rag_corruption")
-    )
-
-    result = service.repair_anima_if_allowed(
-        "sora",
-        reason="recent_rag_corruption",
-        source="test",
-    )
-
-    assert result.status == "success"
-    service.repair_anima.assert_called_once()
-
-
-def test_atomic_rebuild_reset_failure_keeps_live_db(data_dir: Path, monkeypatch) -> None:
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    (anima_dir / "knowledge" / "topic.md").write_text("content", encoding="utf-8")
-    (anima_dir / "state").mkdir()
-    live = anima_dir / "vectordb"
-    live.mkdir()
-    (live / "live.bin").write_text("old-vector", encoding="utf-8")
-
-    _patch_atomic_build(monkeypatch)
-    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", lambda _name: False)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
-
-    result = RAGRepairService(enabled=True).repair_anima("sora", reason="hnsw_corruption", source="test")
-
-    assert result.status == "failed"
-    assert "reset failed before swap" in (result.error or "")
-    assert (live / "live.bin").read_text(encoding="utf-8") == "old-vector"
-    assert not (anima_dir / "archive").exists()
-
-
-def test_atomic_rebuild_verify_failure_rolls_back_vector_and_bm25(data_dir: Path, monkeypatch) -> None:
-    from core.memory.retrieval.bm25 import longterm_bm25_dirty_path, longterm_bm25_index_path
-
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    (anima_dir / "knowledge" / "topic.md").write_text("content", encoding="utf-8")
-    (anima_dir / "state").mkdir()
-    live = anima_dir / "vectordb"
-    live.mkdir()
-    (live / "live.bin").write_text("old-vector", encoding="utf-8")
-    longterm_bm25_index_path(anima_dir).write_text("old-bm25", encoding="utf-8")
-    longterm_bm25_dirty_path(anima_dir).write_text("dirty", encoding="utf-8")
-
-    _patch_atomic_build(monkeypatch)
-    monkeypatch.setattr(
-        "core.memory.rag.repair_rebuild.verify_worker_vector_store",
-        lambda _name, expected_chunks: False,
-    )
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
-
-    result = RAGRepairService(enabled=True).repair_anima("sora", reason="hnsw_corruption", source="test")
-
-    assert result.status == "failed"
-    assert "verification failed after swap" in (result.error or "")
-    assert (live / "live.bin").read_text(encoding="utf-8") == "old-vector"
-    assert longterm_bm25_index_path(anima_dir).read_text(encoding="utf-8") == "old-bm25"
-    assert longterm_bm25_dirty_path(anima_dir).read_text(encoding="utf-8") == "dirty"
-    assert list((anima_dir / "archive").glob("vectordb-rebuild-failed-*"))
-    assert not list((anima_dir / "archive").glob("vectordb-corrupt-*"))
-
-
-def test_atomic_rebuild_partial_failure_does_not_swap_or_write_shared_hash(data_dir: Path, monkeypatch) -> None:
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    live = anima_dir / "vectordb"
-    live.mkdir()
-    (live / "live.bin").write_text("old-vector", encoding="utf-8")
-    common = data_dir / "common_knowledge"
-    common.mkdir(exist_ok=True)
-    (common / "topic.md").write_text("content", encoding="utf-8")
-
-    _patch_atomic_build(monkeypatch, chunks_per_dir=0, files_failed=1)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
-
-    result = RAGRepairService(enabled=True).repair_anima(
-        "sora",
-        reason="hnsw_corruption",
-        source="test",
-        include_shared=True,
-    )
-
-    assert result.status == "failed"
-    assert "failed to fully rebuild" in (result.error or "")
-    assert (live / "live.bin").read_text(encoding="utf-8") == "old-vector"
-    assert read_shared_hash(anima_dir, "shared_common_knowledge_hash") is None
-    assert not list(anima_dir.glob("vectordb.staging-*"))
-
-
-def test_healthy_skip_reset_failure_is_recorded_as_repair_failure(data_dir: Path, monkeypatch) -> None:
-    anima_dir = data_dir / "animas" / "sora"
-    (anima_dir / "state").mkdir(parents=True)
-    (anima_dir / "vectordb").mkdir()
-    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", lambda _name: False)
-    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
-
-    service = RAGRepairService(enabled=True)
-    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
-    result = service.repair_anima("sora", reason="sqlite_malformed", source="test")
-
-    assert result.status == "failed"
-    assert "healthy repair skip" in (result.error or "")
-    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
-    assert state["status"] == "failed"
-
-
 def test_chroma_repair_verification_runs_real_query() -> None:
     from core.memory.rag.store import ChromaVectorStore
 
@@ -1549,41 +851,6 @@ def test_chroma_repair_verification_rejects_wrong_chunk_count() -> None:
 
     with pytest.raises(RuntimeError, match="expected 1 chunks.*found 0"):
         store.verify_rebuilt_data(expected_chunks=1)
-
-
-def test_reset_worker_vector_store_logs_missing_vector_url(monkeypatch, caplog) -> None:
-    import logging
-
-    from core.memory.rag.repair_rebuild import reset_worker_vector_store
-
-    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
-    with caplog.at_level(logging.WARNING, logger="animaworks.rag.repair"):
-        assert reset_worker_vector_store("rin") is False
-    assert any("ANIMAWORKS_VECTOR_URL is unset" in r.message for r in caplog.records)
-
-
-def test_reset_worker_vector_store_logs_store_type_mismatch(monkeypatch, caplog) -> None:
-    import logging
-
-    from core.memory.rag.repair_rebuild import reset_worker_vector_store
-
-    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name=None: object())
-    with caplog.at_level(logging.WARNING, logger="animaworks.rag.repair"):
-        assert reset_worker_vector_store("rin") is False
-    assert any("store type mismatch" in r.message for r in caplog.records)
-
-
-def test_verify_worker_vector_store_logs_missing_nonce(monkeypatch, caplog) -> None:
-    import logging
-
-    from core.memory.rag.repair_rebuild import verify_worker_vector_store
-
-    monkeypatch.delenv("ANIMAWORKS_RAG_REPAIR_NONCE", raising=False)
-    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
-    with caplog.at_level(logging.WARNING, logger="animaworks.rag.repair"):
-        assert verify_worker_vector_store("rin", expected_chunks=10) is False
-    assert any("ANIMAWORKS_RAG_REPAIR_NONCE is unset" in r.message for r in caplog.records)
 
 
 def test_rag_repair_nonce_env_sets_and_restores(monkeypatch) -> None:

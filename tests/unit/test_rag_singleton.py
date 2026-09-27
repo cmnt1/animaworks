@@ -61,7 +61,7 @@ def mock_sentence_transformers():
 
 class TestGetVectorStore:
     def test_returns_same_instance(self):
-        """get_vector_store() should return the same instance on repeated calls."""
+        """get_vector_store("sora") should return the same instance on repeated calls."""
         mock_store = MagicMock()
         with patch(
             "core.memory.rag.store.ChromaVectorStore",
@@ -69,8 +69,8 @@ class TestGetVectorStore:
         ):
             from core.memory.rag.singleton import get_vector_store
 
-            store1 = get_vector_store()
-            store2 = get_vector_store()
+            store1 = get_vector_store("sora")
+            store2 = get_vector_store("sora")
 
         assert store1 is store2
         assert store1 is mock_store
@@ -84,14 +84,26 @@ class TestGetVectorStore:
         ):
             from core.memory.rag.singleton import get_vector_store
 
-            get_vector_store()
-            get_vector_store()
-            get_vector_store()
+            get_vector_store("sora")
+            get_vector_store("sora")
+            get_vector_store("sora")
 
         mock_cls.assert_called_once()
 
+    def test_shared_store_is_disabled_and_warned_once(self, caplog):
+        import logging
+
+        from core.memory.rag.singleton import get_vector_store
+
+        with caplog.at_level(logging.WARNING, logger="core.memory.rag.singleton"):
+            assert get_vector_store(None) is None
+            assert get_vector_store(None) is None
+
+        warnings = [record for record in caplog.records if "Shared vector store access is disabled" in record.message]
+        assert len(warnings) == 1
+
     def test_per_anima_init_failure_persists_repair_signal(self, data_dir):
-        """A per-anima latch must remain observable outside the worker process."""
+        """A per-anima latch must remain observable by the root process."""
         anima_state = data_dir / "animas" / "sora" / "state"
         anima_state.mkdir(parents=True)
 
@@ -361,7 +373,7 @@ class TestResetForTesting:
             "core.memory.rag.store.ChromaVectorStore",
             return_value=mock_store_1,
         ):
-            store1 = get_vector_store()
+            store1 = get_vector_store("sora")
 
         _reset_for_testing()
 
@@ -369,7 +381,7 @@ class TestResetForTesting:
             "core.memory.rag.store.ChromaVectorStore",
             return_value=mock_store_2,
         ):
-            store2 = get_vector_store()
+            store2 = get_vector_store("sora")
 
         assert store1 is not store2
         assert store1 is mock_store_1
@@ -400,7 +412,7 @@ class TestResetForTesting:
 
 def test_reset_waits_for_in_flight_operation_and_reopens_store(monkeypatch):
     """A reset must not close a handle until its active worker operation ends."""
-    from core.memory.rag import singleton, vector_worker
+    from core.memory.rag import singleton
 
     monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
     singleton._reset_for_testing()
@@ -426,9 +438,12 @@ def test_reset_waits_for_in_flight_operation_and_reopens_store(monkeypatch):
         return "first-result"
 
     result: list[object] = []
-    operation_thread = threading.Thread(
-        target=lambda: result.append(vector_worker._call_vector_store("sora", action)),
-    )
+
+    def run_action() -> None:
+        with singleton.vector_store_operation("sora"):
+            result.append(action(singleton._vector_stores["sora"]))
+
+    operation_thread = threading.Thread(target=run_action)
     operation_thread.start()
     assert operation_started.wait(timeout=2)
 
@@ -448,12 +463,12 @@ def test_reset_waits_for_in_flight_operation_and_reopens_store(monkeypatch):
 
     reopened_store = MagicMock()
     with patch("core.memory.rag.store.ChromaVectorStore", return_value=reopened_store):
-        assert vector_worker._call_vector_store("sora", lambda store: store) is reopened_store
+        assert singleton.get_vector_store("sora") is reopened_store
 
 
 def test_in_flight_self_heal_can_upgrade_to_reset_without_deadlock(monkeypatch):
     """An operation-triggered reset upgrades its own shared gate immediately."""
-    from core.memory.rag import singleton, vector_worker
+    from core.memory.rag import singleton
 
     monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
     singleton._reset_for_testing()
@@ -466,7 +481,8 @@ def test_in_flight_self_heal_can_upgrade_to_reset_without_deadlock(monkeypatch):
         return "recovered"
 
     started = time.monotonic()
-    result = vector_worker._call_vector_store("sora", reset_during_action)
+    with singleton.vector_store_operation("sora"):
+        result = reset_during_action(singleton._vector_stores["sora"])
 
     assert result == "recovered"
     assert time.monotonic() - started < 1.0
@@ -475,7 +491,7 @@ def test_in_flight_self_heal_can_upgrade_to_reset_without_deadlock(monkeypatch):
 
 def test_timed_out_close_waits_for_reader_drain_and_blocks_new_operations(monkeypatch):
     """A timed-out reset condemns the old handle without closing active readers."""
-    from core.memory.rag import singleton, vector_worker
+    from core.memory.rag import singleton
 
     monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
     monkeypatch.setattr(singleton, "_VECTOR_STORE_CLOSE_TIMEOUT_SECONDS", 0.05)
@@ -495,15 +511,12 @@ def test_timed_out_close_waits_for_reader_drain_and_blocks_new_operations(monkey
     old_store = BlockingCloseStore()
     singleton._vector_stores["sora"] = old_store
 
-    active = threading.Thread(
-        target=lambda: vector_worker._call_vector_store(
-            "sora",
-            lambda _store: (
-                operation_started.set(),
-                release_operation.wait(timeout=2),
-            ),
-        ),
-    )
+    def run_active_operation() -> None:
+        with singleton.vector_store_operation("sora"):
+            operation_started.set()
+            release_operation.wait(timeout=2)
+
+    active = threading.Thread(target=run_active_operation)
     active.start()
     assert operation_started.wait(timeout=2)
 
@@ -513,24 +526,21 @@ def test_timed_out_close_waits_for_reader_drain_and_blocks_new_operations(monkey
     assert reset.is_alive()
     assert not close_started.is_set()
 
-    reopened_store = MagicMock()
-    with patch("core.memory.rag.store.ChromaVectorStore", return_value=reopened_store):
-        late = threading.Thread(
-            target=lambda: vector_worker._call_vector_store(
-                "sora",
-                lambda _store: late_operation_started.set(),
-            ),
-        )
-        late.start()
-        assert not late_operation_started.wait(timeout=0.1)
+    def run_late_operation() -> None:
+        with singleton.vector_store_operation("sora"):
+            late_operation_started.set()
 
-        release_operation.set()
-        assert close_started.wait(timeout=2)
-        assert not late_operation_started.is_set()
-        release_close.set()
-        assert late_operation_started.wait(timeout=2)
-        reset.join(timeout=2)
-        late.join(timeout=2)
+    late = threading.Thread(target=run_late_operation)
+    late.start()
+    assert not late_operation_started.wait(timeout=0.1)
+
+    release_operation.set()
+    assert close_started.wait(timeout=2)
+    assert not late_operation_started.is_set()
+    release_close.set()
+    assert late_operation_started.wait(timeout=2)
+    reset.join(timeout=2)
+    late.join(timeout=2)
 
     active.join(timeout=2)
 
@@ -544,7 +554,7 @@ def test_timed_out_close_waits_for_reader_drain_and_blocks_new_operations(monkey
 
 class TestThreadSafety:
     def test_concurrent_get_vector_store(self):
-        """Multiple threads calling get_vector_store() concurrently
+        """Multiple threads calling get_vector_store("sora") concurrently
         should all receive the same instance."""
         mock_store = MagicMock()
         results: list[object] = []
@@ -558,7 +568,7 @@ class TestThreadSafety:
 
             def worker():
                 try:
-                    store = get_vector_store()
+                    store = get_vector_store("sora")
                     results.append(store)
                 except Exception as e:
                     errors.append(e)

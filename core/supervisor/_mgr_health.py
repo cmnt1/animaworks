@@ -375,10 +375,6 @@ class HealthMixin:
                 )
                 return
 
-            repaired = await self._maybe_repair_rag_before_restart(anima_name, handle)
-            if repaired:
-                count = 0
-
             # Calculate backoff delay
             backoff = min(
                 self.restart_policy.backoff_base_sec * (2**count),

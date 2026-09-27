@@ -123,21 +123,22 @@ class TestHousekeepingConfig:
         assert restored.housekeeping.prompt_log_retention_days == 3
 
     @pytest.mark.asyncio
-    async def test_run_housekeeping_rotates_vector_worker_log(self, tmp_path: Path):
+    async def test_run_housekeeping_leaves_retired_vector_log_untouched(self, tmp_path: Path):
         from core.config.models import HousekeepingConfig
         from core.memory.maintenance.housekeeping import run_housekeeping
 
         logs = tmp_path / "logs"
         logs.mkdir()
-        (logs / "vector-worker.log").write_bytes(b"x" * 2048)
+        vector_log = logs / "vector-worker.log"
+        vector_log.write_bytes(b"x" * 2048)
 
         results = await run_housekeeping(
             tmp_path,
             housekeeping=HousekeepingConfig(daemon_log_max_size_mb=0, daemon_log_keep_generations=5),
         )
 
-        assert results["vector_worker_log"]["rotated"] is True
-        assert (logs / "vector-worker.log.1").exists()
+        assert "vector_worker_log" not in results
+        assert vector_log.read_bytes() == b"x" * 2048
 
     @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_suppressed_messages_log(self, tmp_path: Path):

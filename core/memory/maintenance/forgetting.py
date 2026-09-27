@@ -42,8 +42,8 @@ DOWNSCALING_ACCESS_THRESHOLD = 3  # Minimum access count to avoid marking
 FORGETTING_LOW_ACTIVATION_DAYS = 90  # Days in low activation before deletion
 FORGETTING_MAX_ACCESS_COUNT = 2  # Max access count to still be eligible for deletion
 
-# Protected memory types (skills and shared_users are fully protected)
-PROTECTED_MEMORY_TYPES = frozenset({"skills", "shared_users"})
+# Protected memory types (skills are fully protected)
+PROTECTED_MEMORY_TYPES = frozenset({"skills"})
 
 # [IMPORTANT] safety net: after this many days without access,
 # important chunks lose protection (conceptual integration should
@@ -92,7 +92,7 @@ class ForgettingEngine:
     def _is_protected(self, metadata: dict) -> bool:
         """Check if a chunk is protected from forgetting.
 
-        Fully protected types (skills, shared_users) are always skipped.
+        Fully protected types (skills) are always skipped.
         Procedures use utility-based protection via ``_is_protected_procedure``.
         Knowledge with ``success_count >= 2`` is protected via
         ``_is_protected_knowledge``.

@@ -102,13 +102,8 @@ class TestStreamingHandlerBaseException:
                 responses.append(resp)
 
         # CancelledError must NOT produce FATAL_STREAM_ERROR
-        fatal_errors = [
-            r for r in responses
-            if r.error and r.error.get("code") == "FATAL_STREAM_ERROR"
-        ]
-        assert len(fatal_errors) == 0, (
-            f"CancelledError should not produce FATAL_STREAM_ERROR, got: {fatal_errors}"
-        )
+        fatal_errors = [r for r in responses if r.error and r.error.get("code") == "FATAL_STREAM_ERROR"]
+        assert len(fatal_errors) == 0, f"CancelledError should not produce FATAL_STREAM_ERROR, got: {fatal_errors}"
 
     @pytest.mark.asyncio
     async def test_keyboard_interrupt_in_stream_yields_fatal_error(self):
@@ -215,7 +210,6 @@ class TestHandleProcessFailureSetsRestarting:
         supervisor.restart_policy.backoff_base_sec = 0.01
         supervisor.restart_policy.backoff_max_sec = 0.01
         supervisor.processes = {}
-        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)
 
         handle = ProcessHandle(
             anima_name="test-anima",

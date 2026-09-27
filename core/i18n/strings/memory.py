@@ -70,6 +70,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "{reason} Skipping daily indexing — verify provenance or perform a backed-up full rebuild.",
         "ko": "{reason} 일일 색인 갱신을 건너뜁니다. 이력 검증 또는 백업 후 전체 재구축이 필요합니다.",
     },
+    "rag.unsupported_vector_path": {
+        "ja": "このベクトル操作は root 経由では実行できません",
+        "en": "This vector operation is not supported through the root owner",
+        "ko": "이 벡터 작업은 root 소유자를 통해 실행할 수 없습니다",
+    },
     "rag.invalid_anima_name": {
         "ja": "Anima名が不正です。",
         "en": "Invalid Anima name",
@@ -109,11 +114,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "Anima名変更後のRAG再構築要求を登録しました。新しいAnimaのroot起動後に実行されます。",
         "en": "Queued a RAG rebuild after the rename. It will run when the renamed anima's root starts.",
         "ko": "이름 변경 후 RAG 재구축 요청을 등록했습니다. 새 Anima의 root가 시작된 후 실행됩니다.",
-    },
-    "rag.worker_operation_disabled": {
-        "ja": "phase3 Animaのvector worker操作は禁止されています: {anima}",
-        "en": "Vector worker operation disabled for phase3 anima: {anima}",
-        "ko": "phase3 Anima의 vector worker 작업이 금지되어 있습니다: {anima}",
     },
     "conversation.activity_context_header": {
         "ja": "## セッション中のその他の活動",

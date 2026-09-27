@@ -15,7 +15,7 @@ Tests cover:
 - _is_protected() delegation to _is_protected_procedure() for procedures
 - Procedure-specific downscaling (180-day inactivity, utility score)
 - Procedures included in forgetting candidate scan
-- Skills and shared_users remain in PROTECTED_MEMORY_TYPES
+- Skills remain in PROTECTED_MEMORY_TYPES while legacy shared-user index data does not
 - Edge cases: version >= 3 protection, IMPORTANT tag with low utility
 """
 
@@ -113,9 +113,9 @@ class TestProtectedMemoryTypes:
         """Skills should remain in PROTECTED_MEMORY_TYPES."""
         assert "skills" in PROTECTED_MEMORY_TYPES
 
-    def test_shared_users_still_protected(self):
-        """shared_users should remain in PROTECTED_MEMORY_TYPES."""
-        assert "shared_users" in PROTECTED_MEMORY_TYPES
+    def test_shared_users_are_not_a_protected_vector_type(self):
+        """Legacy shared-user index data is no longer in PROTECTED_MEMORY_TYPES."""
+        assert "shared_users" not in PROTECTED_MEMORY_TYPES
 
 
 # ── _is_protected_procedure Tests ──────────────────────────────────
@@ -202,10 +202,10 @@ class TestIsProtectedIntegration:
         meta = {"memory_type": "skills", "importance": "normal"}
         assert engine._is_protected(meta) is True
 
-    def test_shared_users_still_protected(self, engine):
-        """shared_users remain fully protected via PROTECTED_MEMORY_TYPES."""
+    def test_shared_users_are_not_a_protected_vector_type(self, engine):
+        """Legacy shared-user index entries are not blanket-protected."""
         meta = {"memory_type": "shared_users", "importance": "normal"}
-        assert engine._is_protected(meta) is True
+        assert engine._is_protected(meta) is False
 
     def test_knowledge_not_protected(self, engine):
         """Normal knowledge chunks are not protected."""

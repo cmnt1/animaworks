@@ -642,7 +642,6 @@ class SchedulerMixin:
 
         try:
             from core.memory.rag import MemoryIndexer
-            from core.memory.rag.singleton import get_vector_store
             from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
         except ImportError:
             logger.warning("RAG dependencies not available, skipping daily indexing")
@@ -679,14 +678,6 @@ class SchedulerMixin:
         from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash
         from core.memory.retrieval.rag_search import _compute_dir_hash
 
-        quick_check_timeout = 10.0
-        try:
-            from core.config import load_config
-
-            quick_check_timeout = float(getattr(load_config().rag, "quick_check_timeout_seconds", 10.0))
-        except Exception:
-            logger.debug("Config load failed for RAG quick_check timeout", exc_info=True)
-
         loop = asyncio.get_running_loop()
         total_chunks = 0
         ck_dir = get_common_knowledge_dir()
@@ -706,39 +697,14 @@ class SchedulerMixin:
                     logger.warning("Skipping daily RAG indexing for %s: RAG repair lock is held", anima_name)
                     continue
 
-                from core.config import resolver as _resolver
+                from core.memory.rag.http_store import HttpVectorStore
+                from core.memory.rag.vector_ops import supervisor_transport
 
-                # R07: 非 phase3 分岐ごと削除予定
-                if _resolver.is_root_memory_owner(anima_dir):
-                    from core.memory.rag.http_store import HttpVectorStore
-                    from core.memory.rag.vector_ops import supervisor_transport
-
-                    vector_store = HttpVectorStore(
-                        base_url="",
-                        anima_name=anima_name,
-                        transport=supervisor_transport(self.send_request, anima_name),
-                    )
-                else:
-                    from core.memory.rag.sqlite_health import check_anima_vectordb_health_via_worker_or_direct
-
-                    health = await loop.run_in_executor(
-                        None,
-                        functools.partial(
-                            check_anima_vectordb_health_via_worker_or_direct,
-                            anima_name,
-                            timeout_seconds=quick_check_timeout,
-                            source="daily_indexing_quick_check",
-                        ),
-                    )
-                    if health.corrupt:
-                        logger.warning(
-                            "Skipping daily RAG indexing for %s: quick_check status=%s db=%s",
-                            anima_name,
-                            health.status,
-                            health.db_path,
-                        )
-                        continue
-                    vector_store = get_vector_store(anima_name)
+                vector_store = HttpVectorStore(
+                    base_url="",
+                    anima_name=anima_name,
+                    transport=supervisor_transport(self.send_request, anima_name),
+                )
                 if vector_store is None:
                     logger.warning("Vector store unavailable for %s, skipping indexing", anima_name)
                     continue

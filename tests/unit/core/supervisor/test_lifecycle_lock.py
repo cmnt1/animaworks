@@ -322,7 +322,6 @@ class TestDisableMidRespawnCountRollback:
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=True)
         supervisor.restart_policy.max_retries = 3
-        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)
 
         old_handle = MagicMock()
         old_handle.state = ProcessState.FAILED

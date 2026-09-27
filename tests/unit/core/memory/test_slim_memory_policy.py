@@ -102,7 +102,7 @@ def test_defaults_keep_storage_but_reenable_automatic_mutation():
     assert not config.weekly_enabled
     assert config.knowledge_self_correction_enabled
     assert config.weekly_distillation_enabled and config.skill_autolearn_enabled
-    assert RAGConfig().enabled and RAGConfig().repair_enabled and RAGConfig().vector_worker_enabled
+    assert RAGConfig().enabled and RAGConfig().repair_enabled
     assert RAGConfig().rerank_enabled and RAGConfig().facts_extraction_enabled
 
 

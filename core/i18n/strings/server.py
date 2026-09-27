@@ -55,15 +55,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Preparing startup",
         "ko": "시작 준비 중",
     },
-    "startup.detail_vector_worker": {
-        "ja": "ベクターワーカーを起動中",
-        "en": "Starting vector worker",
-        "ko": "벡터 워커 시작 중",
-    },
     "startup.detail_preflight": {
-        "ja": "RAG preflight を実行中",
-        "en": "Running RAG preflight",
-        "ko": "RAG preflight 실행 중",
+        "ja": "実行エンジンの事前確認を実行中",
+        "en": "Checking execution engine prerequisites",
+        "ko": "실행 엔진 사전 점검 중",
     },
     "startup.detail_spawning": {
         "ja": "Anima プロセスを起動中",
