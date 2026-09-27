@@ -114,8 +114,8 @@ class TestIndexerOriginMetadata:
         for doc in documents:
             assert doc.metadata.get("origin") == "consolidation"
 
-    def test_index_file_no_origin_no_metadata_key(self, indexer, anima_dir: Path) -> None:
-        """index_file without origin does not add origin to metadata."""
+    def test_index_file_knowledge_without_origin_defaults_to_consolidation(self, indexer, anima_dir: Path) -> None:
+        """Knowledge indexed without an explicit origin is treated as consolidation output."""
         test_file = anima_dir / "knowledge" / "test2.md"
         test_file.write_text(
             "# Test Knowledge 2\n\nThis is knowledge content without origin.",
@@ -129,8 +129,39 @@ class TestIndexerOriginMetadata:
 
         call_args = indexer.vector_store.upsert.call_args
         documents = call_args[0][1]
+        assert documents
         for doc in documents:
-            assert "origin" not in doc.metadata
+            assert doc.metadata["origin"] == "consolidation"
+
+    def test_index_file_uses_knowledge_frontmatter_origin(self, indexer, anima_dir: Path) -> None:
+        test_file = anima_dir / "knowledge" / "external.md"
+        test_file.write_text(
+            "---\norigin: external_web\n---\n\n# External source\n\nThis knowledge was gathered from an external web source for verification.",
+            encoding="utf-8",
+        )
+        indexer.vector_store.create_collection = MagicMock()
+        indexer.vector_store.upsert = MagicMock()
+
+        indexer.index_file(test_file, "knowledge", force=True)
+
+        documents = indexer.vector_store.upsert.call_args[0][1]
+        assert documents
+        assert all(document.metadata["origin"] == "external_web" for document in documents)
+
+    def test_index_file_non_knowledge_without_origin_remains_originless(self, indexer, anima_dir: Path) -> None:
+        test_file = anima_dir / "episodes" / "2026-02-28.md"
+        test_file.write_text(
+            "# Episode\n\nThis is an episode that has enough body text to create a vector index chunk.",
+            encoding="utf-8",
+        )
+        indexer.vector_store.create_collection = MagicMock()
+        indexer.vector_store.upsert = MagicMock()
+
+        indexer.index_file(test_file, "episodes", force=True)
+
+        documents = indexer.vector_store.upsert.call_args[0][1]
+        assert documents
+        assert all("origin" not in document.metadata for document in documents)
 
     def test_chunk_by_time_headings_with_origin(self, indexer, anima_dir: Path) -> None:
         """Episode chunking by time headings preserves origin."""
@@ -386,32 +417,6 @@ class TestConsolidationOrigin:
         mock_indexer.index_file.assert_called_once()
         call_kwargs = mock_indexer.index_file.call_args
         assert call_kwargs[1]["origin"] == "consolidation"
-
-    def test_rebuild_rag_index_knowledge_has_consolidation_origin(
-        self,
-        engine,
-        tmp_path: Path,
-    ) -> None:
-        """_rebuild_rag_index passes origin='consolidation' for knowledge files."""
-        test_file = engine.knowledge_dir / "test.md"
-        test_file.write_text("# Test\n\nContent.", encoding="utf-8")
-
-        mock_indexer = MagicMock()
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.singleton.get_vector_store"),
-        ):
-            engine._rebuild_rag_index()
-
-        # Find the knowledge index_file call
-        knowledge_calls = [
-            c
-            for c in mock_indexer.index_file.call_args_list
-            if c[1].get("memory_type") == "knowledge" or (len(c[0]) > 1 and c[0][1] == "knowledge")
-        ]
-        assert len(knowledge_calls) >= 1
-        for call in knowledge_calls:
-            assert call[1].get("origin") == "consolidation"
 
 
 # ── resolve_trust integration with origin values ──────────────

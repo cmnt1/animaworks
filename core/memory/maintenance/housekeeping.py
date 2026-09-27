@@ -30,6 +30,7 @@ _PRESERVED_TMP_SUBDIRS = frozenset({"attachments", "skill_hub"})
 _ANIMA_LOG_DATE_RE = re.compile(r"(20\d{6})")
 _CODEX_LOG_DB_NAME = "logs_2.sqlite"
 _PROTECTED_PREFIXES = ("current_session_", "streaming_journal")
+_ARCHIVE_VERSION_RE = re.compile(r"^(?P<stem>.+)_v(?P<version>\d+)_(?P<ts>\d{8}_\d{6})(?P<suffix>\.[^.]+)$")
 
 
 # ── Public API ──────────────────────────────────────────────────
@@ -68,7 +69,7 @@ async def run_housekeeping(
     suppressed_messages_max_size_mb: int = 10,
     suppressed_messages_keep_generations: int = 5,
     archive_superseded_retention_days: int = 7,
-    hygiene_grace_days: int = 21,
+    archive_versions_keep_per_file: int = 5,
     inbox_ttl_hours: float = 24.0,
     inbox_expired_retention_days: int = 7,
     inbox_processed_retention_days: int = 30,
@@ -79,19 +80,6 @@ async def run_housekeeping(
     results: dict[str, Any] = {}
 
     animas_dir = data_dir / "animas"
-
-    # Memory hygiene scan and stale semantic-cleanup fallback
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _archive_stale_merge_leftovers,
-            animas_dir,
-            hygiene_grace_days,
-        )
-        results["memory_hygiene"] = r
-    except Exception:
-        logger.exception("Housekeeping: memory hygiene fallback failed")
-        results["memory_hygiene"] = {"error": True}
 
     # 1. Prompt logs
     try:
@@ -350,6 +338,19 @@ async def run_housekeeping(
         logger.exception("Housekeeping: archive_superseded rotation failed")
         results["archive_superseded"] = {"error": True}
 
+    # 9b. Archive/versions generation retention
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _prune_archive_versions,
+            animas_dir,
+            archive_versions_keep_per_file,
+        )
+        results["archive_versions"] = r
+    except Exception:
+        logger.exception("Housekeeping: archive/versions pruning failed")
+        results["archive_versions"] = {"error": True}
+
     # 10. Shared inbox stale-file cleanup
     try:
         r = await loop.run_in_executor(
@@ -378,276 +379,6 @@ async def run_housekeeping(
 
 
 # ── Sub-functions ───────────────────────────────────────────────
-
-
-def _archive_stale_merge_leftovers(animas_dir: Path, hygiene_grace_days: int) -> dict[str, Any]:
-    """Move stale merge leftovers to the canonical archive without deleting them."""
-    if not animas_dir.is_dir():
-        return {"skipped": True, "scanned_animas": 0, "moved_items": 0}
-
-    from core.memory.maintenance.hygiene import scan_memory_hygiene
-
-    scanned_animas = 0
-    moved_items = 0
-    for anima_dir in sorted(path for path in animas_dir.iterdir() if path.is_dir()):
-        try:
-            report = scan_memory_hygiene(anima_dir)
-            scanned_animas += 1
-            moved_for_anima = _archive_stale_hygiene_entries(
-                anima_dir,
-                report,
-                hygiene_grace_days,
-            )
-            moved_items += moved_for_anima
-            if moved_for_anima:
-                # Refresh all categories so entries nested below a moved inherited
-                # directory also disappear while unaffected first_seen dates remain.
-                scan_memory_hygiene(anima_dir)
-        except Exception:
-            logger.exception("Memory hygiene fallback failed for %s", anima_dir)
-
-    return {"scanned_animas": scanned_animas, "moved_items": moved_items}
-
-
-def _archive_stale_hygiene_entries(
-    anima_dir: Path,
-    report: dict[str, list[dict[str, Any]]],
-    hygiene_grace_days: int,
-) -> int:
-    knowledge_dir = anima_dir / "knowledge"
-    archive_dir = knowledge_dir / "archive" / "unmerged"
-    moved = 0
-
-    # Moving an inherited directory first prevents separately moving leftovers
-    # contained inside that same directory.
-    for category in ("inherited_dirs", "merged_leftovers"):
-        for entry in report.get(category, []):
-            if not _hygiene_entry_is_stale(entry, hygiene_grace_days):
-                continue
-            source = _validated_hygiene_source(anima_dir, knowledge_dir, entry, category)
-            if source is None or not source.exists():
-                continue
-            try:
-                relative = source.relative_to(knowledge_dir)
-                destination_base = archive_dir / relative
-                if not _prepare_hygiene_destination_parent(
-                    knowledge_dir,
-                    archive_dir,
-                    destination_base.parent,
-                ):
-                    continue
-                destination = _unique_hygiene_destination(destination_base)
-                shutil.move(str(source), str(destination))
-                moved += 1
-                logger.info("Archived stale memory hygiene item: %s -> %s", source, destination)
-            except (OSError, RuntimeError):
-                logger.exception("Failed to archive stale memory hygiene item: %s", source)
-
-    moved += _archive_stale_noncanonical_episodes(anima_dir, report, hygiene_grace_days)
-    return moved
-
-
-def _archive_stale_noncanonical_episodes(
-    anima_dir: Path,
-    report: dict[str, list[dict[str, Any]]],
-    hygiene_grace_days: int,
-) -> int:
-    """Move stale non-canonical episode files into ``episodes/archive/``."""
-    episodes_dir = anima_dir / "episodes"
-    archive_dir = episodes_dir / "archive"
-    moved = 0
-
-    for entry in report.get("noncanonical_episodes", []):
-        if not _hygiene_entry_is_stale(entry, hygiene_grace_days):
-            continue
-        source = _validated_noncanonical_episode_source(anima_dir, episodes_dir, entry)
-        if source is None or not source.exists():
-            continue
-        try:
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            if not _prepare_episode_archive_destination(episodes_dir, archive_dir):
-                continue
-            destination = _unique_hygiene_destination(archive_dir / source.name)
-            relative_source = source.relative_to(anima_dir).as_posix()
-            shutil.move(str(source), str(destination))
-            moved += 1
-            logger.info("Archived stale noncanonical episode: %s -> %s", source, destination)
-            # Index deletion is best-effort; file move already succeeded.
-            _delete_episode_index_entry(anima_dir, relative_source)
-        except (OSError, RuntimeError):
-            logger.exception("Failed to archive stale noncanonical episode: %s", source)
-    return moved
-
-
-def _validated_noncanonical_episode_source(
-    anima_dir: Path,
-    episodes_dir: Path,
-    entry: dict[str, Any],
-) -> Path | None:
-    """Validate a hygiene entry path is a file directly under episodes/."""
-    raw_path = entry.get("path")
-    if not isinstance(raw_path, str):
-        return None
-    relative = Path(raw_path)
-    if relative.is_absolute() or ".." in relative.parts:
-        return None
-    source = anima_dir / relative
-    try:
-        resolved = source.resolve()
-        resolved.relative_to(episodes_dir.resolve())
-    except (OSError, ValueError):
-        return None
-    # Only direct children of episodes/ (not archive/ or nested dirs).
-    if source.parent != episodes_dir or not source.is_file():
-        return None
-    if source.name == "archive":
-        return None
-    return source
-
-
-def _prepare_episode_archive_destination(episodes_dir: Path, archive_dir: Path) -> bool:
-    """Validate ``episodes/archive`` is a real directory (no symlink escape)."""
-    try:
-        if archive_dir.is_symlink():
-            logger.warning("Skipping episode archive through symlink: %s", archive_dir)
-            return False
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        if archive_dir.is_symlink():
-            logger.warning("Skipping episode archive through symlink: %s", archive_dir)
-            return False
-        resolved_episodes = episodes_dir.resolve(strict=True)
-        resolved_archive = archive_dir.resolve(strict=True)
-        resolved_archive.relative_to(resolved_episodes)
-    except (OSError, ValueError):
-        logger.warning("Skipping unsafe episode archive destination: %s", archive_dir)
-        return False
-    return True
-
-
-def _delete_episode_index_entry(anima_dir: Path, source_file: str) -> None:
-    """Best-effort removal of vector-index chunks for an archived episode file.
-
-    Failures are logged as warnings and never raise — the file has already
-    been moved successfully.
-    """
-    anima_name = anima_dir.name
-    collection_name = f"{anima_name}_episodes"
-    try:
-        from core.memory.rag.singleton import get_vector_store
-
-        store = get_vector_store(anima_name)
-        if store is None:
-            return
-        results = store.get_by_metadata(collection_name, {"source_file": source_file}, limit=10_000)
-        ids = [result.document.id for result in results]
-        if not ids:
-            return
-        if not store.delete_documents(collection_name, ids):
-            logger.warning(
-                "Failed to delete indexed episode chunks for %s/%s",
-                collection_name,
-                source_file,
-            )
-    except Exception:
-        logger.warning(
-            "Failed to delete indexed episode chunks for %s/%s",
-            collection_name,
-            source_file,
-            exc_info=True,
-        )
-
-
-def _hygiene_entry_is_stale(entry: dict[str, Any], hygiene_grace_days: int) -> bool:
-    first_seen = entry.get("first_seen")
-    if not isinstance(first_seen, str):
-        return False
-    try:
-        first_seen_date = date.fromisoformat(first_seen[:10])
-    except ValueError:
-        return False
-    return (today_local() - first_seen_date).days > hygiene_grace_days
-
-
-def _validated_hygiene_source(
-    anima_dir: Path,
-    knowledge_dir: Path,
-    entry: dict[str, Any],
-    category: str,
-) -> Path | None:
-    raw_path = entry.get("path")
-    if not isinstance(raw_path, str):
-        return None
-    relative = Path(raw_path)
-    if relative.is_absolute() or ".." in relative.parts:
-        return None
-    source = anima_dir / relative
-    try:
-        source.resolve().relative_to(knowledge_dir.resolve())
-    except (OSError, ValueError):
-        return None
-    knowledge_relative = source.relative_to(knowledge_dir)
-    if "archive" in knowledge_relative.parts:
-        return None
-    if category == "inherited_dirs":
-        if source.parent != knowledge_dir or not source.name.startswith("inherited-") or not source.is_dir():
-            return None
-    elif not source.name.startswith("_merged_") or not source.is_file():
-        return None
-    return source
-
-
-def _unique_hygiene_destination(destination: Path) -> Path:
-    if not destination.exists():
-        return destination
-    stem = destination.stem
-    suffix = destination.suffix
-    for index in range(1, 10_000):
-        candidate = destination.with_name(f"{stem}-{index}{suffix}")
-        if not candidate.exists():
-            return candidate
-    raise RuntimeError(f"Could not allocate archive destination for {destination}")
-
-
-def _prepare_hygiene_destination_parent(
-    knowledge_dir: Path,
-    archive_dir: Path,
-    destination_parent: Path,
-) -> bool:
-    """Create and validate an archive parent without traversing symlinks."""
-    try:
-        relative_parent = destination_parent.relative_to(knowledge_dir)
-        destination_parent.relative_to(archive_dir)
-    except ValueError:
-        logger.warning("Skipping memory hygiene archive outside unmerged directory: %s", destination_parent)
-        return False
-
-    current = knowledge_dir
-    for part in relative_parent.parts:
-        current /= part
-        if current.is_symlink():
-            logger.warning("Skipping memory hygiene archive through symlink: %s", current)
-            return False
-
-    destination_parent.mkdir(parents=True, exist_ok=True)
-
-    # Recheck after creation and confirm the physical path remains within both
-    # the canonical unmerged directory and the resolved knowledge directory.
-    current = knowledge_dir
-    for part in relative_parent.parts:
-        current /= part
-        if current.is_symlink():
-            logger.warning("Skipping memory hygiene archive through symlink: %s", current)
-            return False
-    try:
-        resolved_knowledge = knowledge_dir.resolve(strict=True)
-        resolved_archive = archive_dir.resolve(strict=True)
-        resolved_parent = destination_parent.resolve(strict=True)
-        resolved_archive.relative_to(resolved_knowledge)
-        resolved_parent.relative_to(resolved_archive)
-    except (OSError, ValueError):
-        logger.warning("Skipping unsafe memory hygiene archive destination: %s", destination_parent)
-        return False
-    return True
 
 
 def _run_skill_curator_reports(animas_dir: Path) -> dict[str, Any]:
@@ -1519,6 +1250,58 @@ def _rotate_archive_superseded(
     if total_deleted:
         logger.info("Archive/superseded cleanup: deleted %d files", total_deleted)
     return {"deleted_files": total_deleted}
+
+
+def _prune_archive_versions(animas_dir: Path, keep_per_file: int) -> dict[str, Any]:
+    """Keep only the newest archive versions for each source file and suffix."""
+    if not animas_dir.is_dir():
+        return {"skipped": True}
+
+    found_versions_dir = False
+    total_files = 0
+    deleted_files = 0
+
+    for anima_dir in sorted(animas_dir.iterdir()):
+        if not anima_dir.is_dir():
+            continue
+        versions_dir = anima_dir / "archive" / "versions"
+        if not versions_dir.is_dir():
+            logger.debug("Archive versions directory not found: %s", versions_dir)
+            continue
+
+        found_versions_dir = True
+        groups: dict[tuple[str, str], list[tuple[str, int, Path]]] = {}
+        for path in versions_dir.iterdir():
+            if not path.is_file():
+                logger.debug("Ignoring non-file in archive versions: %s", path)
+                continue
+            match = _ARCHIVE_VERSION_RE.match(path.name)
+            if match is None:
+                logger.debug("Ignoring unrecognized archive version filename: %s", path)
+                continue
+            stem = match.group("stem")
+            suffix = match.group("suffix")
+            version = int(match.group("version"))
+            timestamp = match.group("ts")
+            groups.setdefault((stem, suffix), []).append((timestamp, version, path))
+
+        for versions in groups.values():
+            versions.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            total_files += len(versions)
+            for _, _, path in versions[keep_per_file:]:
+                try:
+                    path.unlink()
+                    deleted_files += 1
+                except OSError:
+                    logger.warning("Failed to prune archived version: %s", path, exc_info=True)
+
+    if not found_versions_dir:
+        return {"skipped": True}
+
+    kept_files = total_files - deleted_files
+    if deleted_files:
+        logger.info("Archive/versions cleanup: deleted %d files, kept %d", deleted_files, kept_files)
+    return {"deleted_files": deleted_files, "kept_files": kept_files}
 
 
 def _cleanup_pending_failed(

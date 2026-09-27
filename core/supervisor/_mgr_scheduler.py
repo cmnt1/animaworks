@@ -654,8 +654,8 @@ class SchedulerMixin:
         Incrementally indexes all memory files (knowledge, episodes,
         procedures, skills, facts) into each anima's per-anima vectordb.
         Also indexes shared collections (common_knowledge, common_skills).
-        Runs at 04:00 (configured TZ), after consolidation (02:00) and
-        weekly/monthly jobs (03:00) to capture all generated/modified files.
+        Runs at 04:00 (configured TZ) as the sole scheduled RAG index update,
+        capturing files generated or modified by earlier consolidation jobs.
         """
         logger.info("Starting system-wide daily RAG indexing")
 
@@ -802,6 +802,22 @@ class SchedulerMixin:
                     anima_name,
                     bm25_result.documents,
                 )
+
+                try:
+                    from core.memory.facts.entity_index import rebuild_entity_collection
+
+                    ok = await loop.run_in_executor(
+                        None,
+                        functools.partial(rebuild_entity_collection, anima_dir, vector_store=vector_store),
+                    )
+                    if not ok:
+                        logger.warning("Entity collection rebuild failed during daily indexing for %s", anima_name)
+                except Exception:
+                    logger.warning(
+                        "Entity collection rebuild failed during daily indexing for %s",
+                        anima_name,
+                        exc_info=True,
+                    )
 
                 # Refresh the spreading-activation graph cache so newly
                 # indexed memories become reachable via graph search.
@@ -1030,7 +1046,7 @@ class SchedulerMixin:
                 suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
                 suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
                 archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,
-                hygiene_grace_days=hk_cfg.hygiene_grace_days,
+                archive_versions_keep_per_file=hk_cfg.archive_versions_keep_per_file,
                 inbox_ttl_hours=inbox_cfg.ttl_hours,
                 inbox_expired_retention_days=inbox_cfg.expired_retention_days,
                 inbox_processed_retention_days=inbox_cfg.processed_retention_days,

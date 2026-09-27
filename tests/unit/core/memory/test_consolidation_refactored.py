@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from core.memory.maintenance.consolidation import ConsolidationEngine
@@ -53,13 +51,6 @@ class TestListKnowledgeFiles:
 
         files = engine._list_knowledge_files()
         assert len(files) == 2
-
-
-class TestRebuildRagIndex:
-    def test_rebuild_no_error(self, engine):
-        """_rebuild_rag_index should not raise even when RAG is unavailable."""
-        with patch("core.memory.rag.singleton.get_vector_store", return_value=None):
-            engine._rebuild_rag_index()
 
 
 class TestRemovedMethods:

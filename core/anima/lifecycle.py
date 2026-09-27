@@ -812,6 +812,15 @@ class LifecycleMixin:
             forgetting_candidates = []
         forgetting_candidates_text = _format_forgetting_candidates(forgetting_candidates)
 
+        hygiene_section = ""
+        if project is None:
+            try:
+                from core.memory.maintenance.hygiene import scan_memory_hygiene
+
+                hygiene_section = _format_hygiene_section(scan_memory_hygiene(self.anima_dir))
+            except Exception:
+                logger.debug("[%s] memory hygiene scan failed", self.name, exc_info=True)
+
         prompt = load_prompt(
             "memory/weekly_consolidation_instruction",
             anima_name=self.name,
@@ -820,7 +829,7 @@ class LifecycleMixin:
             conflict_candidates=conflict_candidates_text,
             forgetting_candidates=forgetting_candidates_text,
             total_knowledge_count=0,
-            hygiene_section="",
+            hygiene_section=hygiene_section,
         )
         if project is not None:
             prompt += (

@@ -1708,6 +1708,38 @@ def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: b
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove the retired housekeeping hygiene grace-period setting."""
+    del verbose
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["config.json not found; skip"])
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(config, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+        housekeeping = config.get("housekeeping")
+        if housekeeping is None:
+            return StepResult(changed=0, skipped=1, details=["housekeeping section not found; skip"])
+        if not isinstance(housekeeping, dict):
+            return StepResult(changed=0, skipped=1, details=["housekeeping section is not an object"])
+        retired_setting = "hygiene_grace_days"
+        if retired_setting not in housekeeping:
+            return StepResult(changed=0, skipped=1, details=["No retired memory maintenance settings found"])
+
+        del housekeeping[retired_setting]
+        detail = "Removed housekeeping.hygiene_grace_days"
+        if dry_run:
+            return StepResult(changed=1, skipped=0, details=[f"Would {detail.lower()}"])
+
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return StepResult(changed=1, skipped=0, details=[detail])
+    except Exception as exc:
+        logger.exception("step_memory_maintenance_config_cleanup_20260927 failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_update_version(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """No-op step for display; version update is handled by runner."""
     return StepResult(changed=1, skipped=0, details=["migration_state.json"])
@@ -1929,6 +1961,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove retired engine timeout settings and rename runner liveness timeout",
             "structural",
             step_engine_timeout_config_cleanup,
+        ),
+        MigrationStep(
+            "memory_maintenance_config_cleanup_20260927",
+            "Drop housekeeping.hygiene_grace_days and hygiene first_seen state",
+            "structural",
+            step_memory_maintenance_config_cleanup_20260927,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]
