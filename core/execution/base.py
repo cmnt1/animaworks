@@ -599,9 +599,8 @@ class BaseExecutor(ABC):
     | shortterm        | no*    | no*    | YES          | no      | YES      |
     +------------------+--------+--------+--------------+---------+----------+
 
-    * S and C session chaining is managed externally by AgentCore.
-      A and Fallback handle session chaining inline via
-      handle_session_chaining().
+    * S and C session state is managed externally by AgentCore.
+      A saves threshold-triggered state for resumption on the next message.
     """
 
     session_engine: ClassVar[SessionEngine | None] = None
@@ -757,10 +756,6 @@ class BaseExecutor(ABC):
                 val = extra.get(key) or os.environ.get(key.upper())
                 if val:
                     kwargs[key] = val
-
-    def _resolve_llm_timeout(self) -> int:
-        """Return the shared 20-minute maximum interval for an engine response."""
-        return 1200
 
     def _resolve_num_retries(self) -> int:
         """Resolve LLM API retry count from ``config.server.llm_num_retries``."""

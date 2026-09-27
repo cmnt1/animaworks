@@ -54,7 +54,6 @@ def model_config():
         max_tokens=4096,
         credential="cursor",
         context_threshold=0.50,
-        max_chains=2,
     )
 
 

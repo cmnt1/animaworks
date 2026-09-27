@@ -161,15 +161,11 @@ def _make_context_mixin():
             self._model_config.max_tokens = 4096
             self._model_config.thinking = None
             self._model_config.api_base_url = None
-            self._model_config.llm_timeout = 60
             self._model_config.credential = None
             self._model_config.thinking_effort = None
 
         def _resolve_api_key(self):
             return None
-
-        def _resolve_llm_timeout(self):
-            return 60
 
         def _resolve_num_retries(self):
             return 5

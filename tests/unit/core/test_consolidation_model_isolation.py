@@ -665,7 +665,6 @@ class _FakeMessagingAgent:
                 "summary": "ok",
                 "duration_ms": 1,
                 "context_usage_ratio": 0.0,
-                "session_chained": False,
                 "total_turns": 1,
                 "tool_call_records": [],
             },

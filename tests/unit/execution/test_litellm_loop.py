@@ -60,7 +60,6 @@ def model_config() -> ModelConfig:
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
 
 
@@ -302,31 +301,29 @@ class TestExecuteContextTracking:
             await executor.execute("test", system_prompt="sys", tracker=tracker)
         assert tracker.usage_ratio > 0
 
-    async def test_session_chaining(self, executor, anima_dir: Path):
+    async def test_saves_shortterm_when_context_threshold_is_exceeded(self, executor, anima_dir: Path):
         tracker = ContextTracker(model="openai/gpt-4o", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
 
-        resp_threshold = make_litellm_response(
+        response = make_litellm_response(
             content="Partial",
             prompt_tokens=100_000,
             completion_tokens=10_000,
         )
-        resp_final = make_litellm_response(content="Continued", prompt_tokens=1000)
-
-        mock = AsyncMock(side_effect=[resp_threshold, resp_final])
+        mock = AsyncMock(return_value=response)
         _install_litellm_mock(mock)
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.engines.litellm.litellm_loop.build_system_prompt", return_value="sys"),
-            patch("core.execution._session.load_prompt", return_value="continue"),
-        ):
+        with patch("litellm.acompletion", mock):
             result = await executor.execute(
                 "test",
                 system_prompt="sys",
                 tracker=tracker,
                 shortterm=shortterm,
             )
-        assert "Continued" in result.text or "Partial" in result.text
+
+        assert result.text == "Partial"
+        saved_state = shortterm.load()
+        assert saved_state is not None
+        assert saved_state.accumulated_response == "Partial"
 
 
 async def test_oversized_prompt_returns_structured_context_overflow(executor):
@@ -509,35 +506,24 @@ class TestToolExecutionErrorHandling:
         assert "serial write failed" in parsed["message"]
 
 
-# ── session chaining — execution_mode ─────────────────────
+# ── threshold shortterm metadata ───────────────────────────
 
 
-class TestSessionChainingExecutionMode:
-    """H1: Session chaining partial must pass execution_mode='a'."""
+class TestThresholdShorttermMetadata:
+    """Mode A threshold state records the session metadata for later resumption."""
 
-    async def test_session_chaining_preserves_a_mode(self, executor, anima_dir: Path):
-        """When session chaining triggers, build_system_prompt must be called
-        with execution_mode='a'."""
+    async def test_saves_session_metadata(self, executor, anima_dir: Path):
         tracker = ContextTracker(model="openai/gpt-4o", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
-
-        resp_threshold = make_litellm_response(
+        response = make_litellm_response(
             content="Partial",
             prompt_tokens=100_000,
             completion_tokens=10_000,
         )
-        resp_final = make_litellm_response(content="Continued", prompt_tokens=1000)
-
-        mock = AsyncMock(side_effect=[resp_threshold, resp_final])
+        mock = AsyncMock(return_value=response)
         _install_litellm_mock(mock)
 
-        build_spy = MagicMock(return_value="new-system-prompt")
-
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.engines.litellm.litellm_loop.build_system_prompt", build_spy),
-            patch("core.execution._session.load_prompt", return_value="continue"),
-        ):
+        with patch("litellm.acompletion", mock):
             await executor.execute(
                 "test",
                 system_prompt="sys",
@@ -545,12 +531,12 @@ class TestSessionChainingExecutionMode:
                 shortterm=shortterm,
             )
 
-        # Verify build_system_prompt was called with execution_mode="a"
-        if build_spy.called:
-            _, kwargs = build_spy.call_args
-            assert kwargs.get("execution_mode") == "a", (
-                f"Expected execution_mode='a', got {kwargs.get('execution_mode')!r}"
-            )
+        saved_state = shortterm.load()
+        assert saved_state is not None
+        assert saved_state.session_id == "litellm-a"
+        assert saved_state.trigger == "a_tool_loop"
+        assert saved_state.original_prompt == "test"
+        assert saved_state.accumulated_response == "Partial"
 
 
 # ── _BG_POOL_TOOLS ──────────────────────────────────────────
@@ -612,7 +598,6 @@ class TestBuildLlmKwargsTimeoutAndNumCtx:
             api_key="sk-test",
             max_tokens=1024,
             context_threshold=0.50,
-            max_chains=2,
         )
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
         from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor

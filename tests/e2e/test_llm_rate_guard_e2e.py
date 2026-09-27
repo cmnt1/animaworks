@@ -72,7 +72,6 @@ def _make_executor(anima_dir: Path):
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
     tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
     return LiteLLMExecutor(

@@ -110,26 +110,6 @@ class TestBaseExecutor:
             )
 
 
-# ── _resolve_llm_timeout ─────────────────────────────────────
-
-
-class TestResolveLlmTimeout:
-    """LLM requests use the shared 20-minute response timeout."""
-
-    @pytest.mark.parametrize(
-        "config",
-        [
-            ModelConfig(model="claude-sonnet-4-6", llm_timeout=120),
-            ModelConfig(model="ollama/gemma3:27b", llm_timeout=None),
-            ModelConfig(model="claude-sonnet-4-6", llm_timeout=None),
-            ModelConfig(model="ollama/gemma3:27b", llm_timeout=60),
-        ],
-    )
-    def test_all_engines_use_1200_seconds(self, tmp_path: Path, config: ModelConfig) -> None:
-        executor = ConcreteExecutor(model_config=config, anima_dir=tmp_path)
-        assert executor._resolve_llm_timeout() == 1200
-
-
 # ── ToolCallRecord ───────────────────────────────────────────
 
 

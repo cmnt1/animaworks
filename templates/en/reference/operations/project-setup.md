@@ -108,14 +108,12 @@ Role of each section:
 | `max_turns` | `int` | `10000` |  |
 | `credential` | `str` | `"anthropic"` |  |
 | `context_threshold` | `float` | `0.5` |  |
-| `max_chains` | `int` | `2` |  |
 | `conversation_history_threshold` | `float` | `0.3` |  |
 | `execution_mode` | `str | None` | None |  |
 | `supervisor` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
-| `llm_timeout` | `int` | `1200` |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `max_outbound_per_hour` | `int | None` | None |  |
 | `max_outbound_per_day` | `int | None` | None |  |
@@ -412,7 +410,6 @@ Path: `~/.animaworks/animas/{name}/status.json`
   "credential": "anthropic",
   "max_tokens": 16384,
   "max_turns": 10000,
-  "max_chains": 10,
   "context_threshold": 0.80,
   "execution_mode": null
 }
@@ -461,7 +458,6 @@ Same applies if you edit `status.json` manually.
 | `max_turns` | `10000` | Max turns per session |
 | `credential` | `"anthropic"` | Credential name to use |
 | `context_threshold` | `0.50` | Short-term memory is externalized when context usage exceeds this threshold |
-| `max_chains` | `2` | Max automatic session continuation count |
 
 ### Hierarchy
 

@@ -22,7 +22,7 @@ from typing import Any
 from core.anima.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.anima.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.anima.response_normalize import normalize_user_facing_response_text
-from core.config.model_config import resolve_effective_model_config
+from core.config.model_config import effective_model_key, resolve_effective_model_config, same_effective_model
 from core.exceptions import (
     ExecutionError,
     LLMAPIError,
@@ -78,14 +78,6 @@ def _chat_fallback_reason_from_result(result: CycleResult | dict[str, Any]) -> F
     if reason is FailoverReason.UNKNOWN and data.get("action") != "error":
         return None
     return reason if hint.fallback_ok else None
-
-
-def _same_effective_model(left: Any, right: Any) -> bool:
-    """Compare the fields that determine executor/model routing."""
-    return all(
-        getattr(left, field, None) == getattr(right, field, None)
-        for field in ("model", "execution_mode", "resolved_mode", "credential")
-    )
 
 
 def _resolve_chat_model_config(
@@ -234,7 +226,7 @@ def _resolve_chat_retry_config(
     _classified, hint = classify_llm_error_message(reason.value.replace("_", " "))
     report_capacity_block(active_config, reason, hint)
     retry_config = resolve_effective_model_config(primary_config)
-    if _same_effective_model(retry_config, active_config):
+    if same_effective_model(retry_config, active_config):
         return None
     log_model_fallback(
         owner._activity,
@@ -299,12 +291,7 @@ async def _run_chat_stream_with_fallback(
     attempted: set[tuple[Any, ...]] = set()
 
     while True:
-        attempted.add(
-            tuple(
-                getattr(current_config, field, None)
-                for field in ("model", "execution_mode", "resolved_mode", "credential")
-            )
-        )
+        attempted.add(effective_model_key(current_config))
         retry_config = None
         emitted_payload = False
         try:
@@ -337,10 +324,7 @@ async def _run_chat_stream_with_fallback(
                         reason,
                     )
                     if retry_config is not None:
-                        retry_key = tuple(
-                            getattr(retry_config, field, None)
-                            for field in ("model", "execution_mode", "resolved_mode", "credential")
-                        )
+                        retry_key = effective_model_key(retry_config)
                         if retry_key in attempted:
                             retry_config = None
                     if retry_config is not None:
@@ -358,10 +342,7 @@ async def _run_chat_stream_with_fallback(
                     _chat_fallback_reason_from_exception(exc),
                 )
                 if retry_config is not None:
-                    retry_key = tuple(
-                        getattr(retry_config, field, None)
-                        for field in ("model", "execution_mode", "resolved_mode", "credential")
-                    )
+                    retry_key = effective_model_key(retry_config)
                     if retry_key in attempted:
                         retry_config = None
             if retry_config is None:

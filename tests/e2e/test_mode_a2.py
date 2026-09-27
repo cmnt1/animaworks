@@ -194,8 +194,7 @@ class TestModeA2Mock:
         agent = make_agent_core(
             name="a2-chain",
             model="openai/gpt-4o",
-            context_threshold=0.001,  # Very low to force chaining
-            max_chains=1,
+            context_threshold=0.001,  # Very low to force short-term state saving
         )
 
         # First response with high token count to trigger threshold

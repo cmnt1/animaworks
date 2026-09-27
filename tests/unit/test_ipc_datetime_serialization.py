@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from core.time_utils import now_jst
 from pathlib import Path
 
-
 from core.schemas import CycleResult
-from core.supervisor.ipc import IPCRequest, IPCResponse, IPCEvent
-
+from core.supervisor.ipc import IPCEvent, IPCRequest, IPCResponse
+from core.time_utils import now_jst
 
 # ── CycleResult model_dump(mode="json") Tests ────────────────────────
 
@@ -59,7 +57,6 @@ class TestCycleResultJsonMode:
             summary="Test response",
             duration_ms=500,
             context_usage_ratio=0.42,
-            session_chained=True,
             total_turns=3,
         )
         dumped = result.model_dump(mode="json")

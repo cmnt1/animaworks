@@ -18,6 +18,7 @@ import logging
 import types
 from typing import Any
 
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
@@ -110,7 +111,7 @@ class ContextMixin:
         kwargs: dict[str, Any] = {
             "model": _model_name,
             "max_tokens": _eff_max,
-            "timeout": self._resolve_llm_timeout(),
+            "timeout": int(DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS),
             "num_retries": self._resolve_num_retries(),
         }
         api_key = self._resolve_api_key()

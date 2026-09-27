@@ -12,30 +12,49 @@ are resolved at runtime via MRO when mixed into ``AgentCore``.
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
 
 logger = logging.getLogger("animaworks.agent")
 
-# Execution mode -> ("module:ExecutorClass", "module:availability_check" or None).
+
+@dataclass(frozen=True)
+class EngineAdapter:
+    """Lazy executor path plus its availability check and constructor extras."""
+
+    executor_path: str
+    availability_path: str | None = None
+    availability_attr: str | None = None
+    extra_kwargs: tuple[str, ...] = ()
+
+
 # Imported lazily so a missing optional SDK/CLI only disables its own mode.
-ENGINE_ADAPTERS: dict[str, tuple[str, str | None]] = {
-    "s": ("core.execution.engines.claude.agent_sdk:AgentSDKExecutor", None),
-    "c": (
+ENGINE_ADAPTERS: dict[str, EngineAdapter] = {
+    "s": EngineAdapter(
+        "core.execution.engines.claude.agent_sdk:AgentSDKExecutor",
+        availability_attr="_sdk_available",
+    ),
+    "c": EngineAdapter(
         "core.execution.engines.codex.codex_sdk:CodexSDKExecutor",
-        "core.execution.engines.codex.setup:is_codex_sdk_available",
+        availability_path="core.execution.engines.codex.setup:is_codex_sdk_available",
+        extra_kwargs=("codex_home",),
     ),
-    "d": (
+    "d": EngineAdapter(
         "core.execution.engines.cursor.cursor_agent:CursorAgentExecutor",
-        "core.execution.engines.cursor.cursor_agent:is_cursor_agent_available",
+        availability_path="core.execution.engines.cursor.cursor_agent:is_cursor_agent_available",
     ),
-    "g": (
+    "g": EngineAdapter(
         "core.execution.engines.gemini.gemini_cli:GeminiCLIExecutor",
-        "core.execution.engines.gemini.gemini_cli:is_gemini_cli_available",
+        availability_path="core.execution.engines.gemini.gemini_cli:is_gemini_cli_available",
     ),
-    "x": (
+    "x": EngineAdapter(
         "core.execution.engines.grok.grok_cli:GrokCLIExecutor",
-        "core.execution.engines.grok.grok_cli:is_grok_cli_available",
+        availability_path="core.execution.engines.grok.grok_cli:is_grok_cli_available",
+    ),
+    "a": EngineAdapter(
+        "core.execution:LiteLLMExecutor",
+        extra_kwargs=("tool_handler", "memory"),
     ),
 }
 
@@ -85,7 +104,6 @@ class ExecutorFactoryMixin:
         """Construct the selected adapter; only configured alternatives may replace it."""
         from core.config.model_config import resolve_unavailable_model_config
         from core.exceptions import ExecutorUnavailableError
-        from core.execution import LiteLLMExecutor
         from core.i18n import t
 
         active_config = model_config or self.model_config
@@ -98,40 +116,45 @@ class ExecutorFactoryMixin:
             "interrupt_event": self._interrupt_event,
         }
         adapter = ENGINE_ADAPTERS.get(mode)
-        if adapter is not None:
-            executor_path, availability_path = adapter
-            class_name = executor_path.rpartition(":")[2]
-            try:
-                if mode == "s" and not self._sdk_available:
-                    raise ImportError("claude_agent_sdk unavailable")
-                if availability_path and not _resolve(availability_path)():
-                    raise ImportError(f"{class_name} unavailable")
-                executor_class = _resolve(executor_path)
-            except ImportError as exc:
-                unavailable = _unavailable_modes | {mode.upper()}
-                fallback = resolve_unavailable_model_config(active_config, unavailable_modes=unavailable)
-                if fallback is None:
-                    raise ExecutorUnavailableError(
-                        t("executor.unavailable_no_configured_fallback", mode=mode.upper(), model=active_config.model)
-                    ) from exc
-                from core.execution.fallback_activity import log_model_fallback
-                from core.memory.activity.logger import ActivityLogger
+        if adapter is None:
+            raise ExecutorUnavailableError(
+                t("executor.unavailable_no_configured_fallback", mode=mode.upper(), model=active_config.model)
+            )
+        class_name = adapter.executor_path.rpartition(":")[2]
+        try:
+            if adapter.availability_attr and not getattr(self, adapter.availability_attr):
+                raise ImportError(f"{class_name} unavailable")
+            if adapter.availability_path and not _resolve(adapter.availability_path)():
+                raise ImportError(f"{class_name} unavailable")
+            executor_class = _resolve(adapter.executor_path)
+            if executor_class is None:
+                raise ImportError(f"{class_name} unavailable")
+        except ImportError as exc:
+            unavailable = _unavailable_modes | {mode.upper()}
+            fallback = resolve_unavailable_model_config(active_config, unavailable_modes=unavailable)
+            if fallback is None:
+                raise ExecutorUnavailableError(
+                    t("executor.unavailable_no_configured_fallback", mode=mode.upper(), model=active_config.model)
+                ) from exc
+            from core.execution.fallback_activity import log_model_fallback
+            from core.memory.activity.logger import ActivityLogger
 
-                log_model_fallback(
-                    ActivityLogger(self.anima_dir),
-                    active_config,
-                    fallback,
-                    channel="executor",
-                    phase="unavailable",
-                )
-                return self._create_executor(fallback, _unavailable_modes=unavailable)
-            if mode == "c":
-                common["codex_home"] = self._codex_home
-            return executor_class(**common)
+            log_model_fallback(
+                ActivityLogger(self.anima_dir),
+                active_config,
+                fallback,
+                channel="executor",
+                phase="unavailable",
+            )
+            return self._create_executor(fallback, _unavailable_modes=unavailable)
 
-        common.update(tool_handler=self._tool_handler, memory=self.memory)
-        # Mode A: LiteLLM tool_use loop.
-        return LiteLLMExecutor(**common)
+        extra_value_getters = {
+            "codex_home": lambda: self._codex_home,
+            "tool_handler": lambda: self._tool_handler,
+            "memory": lambda: self.memory,
+        }
+        common.update({key: extra_value_getters[key]() for key in adapter.extra_kwargs})
+        return executor_class(**common)
 
     def _resolve_api_key(self) -> str | None:
         """Resolve the actual API key (direct value from config.json, then env var)."""

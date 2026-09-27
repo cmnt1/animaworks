@@ -79,7 +79,6 @@ def _log_session_token_usage(
     usage: dict[str, int] | None,
     duration_ms: int = 0,
     turns: int = 0,
-    chains: int = 0,
 ) -> None:
     """Fire-and-forget token usage log entry."""
     if not usage or not any(usage.values()):
@@ -97,7 +96,6 @@ def _log_session_token_usage(
             cache_read_tokens=usage.get("cache_read_tokens", 0),
             cache_write_tokens=usage.get("cache_write_tokens", 0),
             turns=turns,
-            chains=chains,
             duration_ms=duration_ms,
         )
     except Exception:
@@ -813,7 +811,6 @@ class CycleMixin:
             context_usage_ratio=tracker.usage_ratio,
             context_window=tracker.context_window,
             context_threshold=tracker.threshold,
-            session_chained=False,
             total_turns=total_turns,
             tool_call_records=tool_records,
             usage=usage,
@@ -1493,7 +1490,6 @@ class CycleMixin:
         if not uses_chat_session:
             shortterm.clear_checkpoint()
 
-        session_chained = False
         total_turns = result_message.num_turns if result_message else 0
 
         # Session chaining — force_chain from mid-session auto-compact.
@@ -1545,11 +1541,10 @@ class CycleMixin:
         final_summary = full_text or terminal_error_message
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.info(
-            "run_cycle_streaming END trigger=%s duration_ms=%d response_len=%d chained=%s retries=%d",
+            "run_cycle_streaming END trigger=%s duration_ms=%d response_len=%d retries=%d",
             trigger,
             duration_ms,
             len(full_text),
-            session_chained,
             retry_count,
         )
 
@@ -1569,7 +1564,6 @@ class CycleMixin:
                 context_usage_ratio=tracker.usage_ratio,
                 context_window=tracker.context_window,
                 context_threshold=tracker.threshold,
-                session_chained=session_chained,
                 total_turns=total_turns,
                 tool_call_records=all_tool_call_records,
                 # Preserve the inner-cycle replay guard across IPC and the

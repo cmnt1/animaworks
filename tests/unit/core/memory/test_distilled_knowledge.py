@@ -49,7 +49,6 @@ def data_dir(tmp_path, monkeypatch):
             "max_tokens": 1024,
             "credential": "anthropic",
             "context_threshold": 0.50,
-            "max_chains": 2,
             "conversation_history_threshold": 0.30,
         },
         "animas": {

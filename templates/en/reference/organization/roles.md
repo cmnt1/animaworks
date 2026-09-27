@@ -228,7 +228,6 @@ Role templates are split between `templates/_shared` and locale-specific paths:
 | `background_model` | Model for Heartbeat, cron, and other background work | engineer / manager only (other roles omit the key) |
 | `context_threshold` | Compaction threshold | All roles |
 | `max_turns` | Maximum turns | All roles |
-| `max_chains` | Maximum chains | All roles |
 | `conversation_history_threshold` | Conversation history compression threshold | All roles (templates use roughly 0.30–0.40) |
 | `max_outbound_per_hour` | Hourly outbound cap (DM / Board) | Rate limiting |
 | `max_outbound_per_day` | Daily outbound cap | Rate limiting |
@@ -240,14 +239,14 @@ Valid role names must match `VALID_ROLES` in code (`engineer`, `researcher`, `ma
 
 Model and execution parameters:
 
-| Role | model | background_model | context_threshold | max_turns | max_chains | conversation_history_threshold |
-|------|-------|------------------|-------------------|-----------|------------|--------------------------------|
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 10000 | 3 | 0.30 |
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 10000 | 10 | 0.40 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 10000 | 2 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 10000 | 5 | 0.30 |
-| ops | ollama/glm-4.7 | — | 0.50 | 10000 | 2 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 10000 | 2 | 0.30 |
+| Role | model | background_model | context_threshold | max_turns | conversation_history_threshold |
+|------|-------|------------------|-------------------|-----------|--------------------------------|
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 10000 | 0.30 |
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 10000 | 0.40 |
+| researcher | claude-sonnet-4-6 | — | 0.50 | 10000 | 0.30 |
+| writer | claude-sonnet-4-6 | — | 0.70 | 10000 | 0.30 |
+| ops | ollama/glm-4.7 | — | 0.50 | 10000 | 0.30 |
+| general | claude-sonnet-4-6 | — | 0.50 | 10000 | 0.30 |
 
 Messaging caps (rate-related keys inside `defaults.json`):
 
@@ -268,7 +267,7 @@ Messaging caps (rate-related keys inside `defaults.json`):
    - `_apply_defaults_from_sheet()` … from the character sheet to `identity.md` / `injection.md` / (if a permissions section exists) `permissions.md` → migrate to `permissions.json`
    - `_apply_role_defaults()` … **overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (sheet-derived `permissions.json` is overwritten by the role template)
    - `_create_status_json()` … read all keys in the table above from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), override with sheet "model" / "credential" when present, and write `status.json`. `execution_mode` is written only when the sheet's execution-mode field has a value (`Execution Mode` on English sheets, `実行モード` on Japanese; see `FIELD_NAMES` in `core/anima/factory.py`); if omitted, the key is left out and pattern resolution in `models.json` etc. applies (`_create_status_json` in `core/anima/factory.py`).
-2. **On role change** (`animaworks anima set-role`): `_apply_role_defaults()` recopies `permissions.json` and `specialty_prompt.md`. Only `model`, `context_threshold`, `max_turns`, `max_chains`, and `conversation_history_threshold` are merged from `defaults.json` into `status.json`. **`background_model` and `max_outbound_*` are not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only the `role` field and those numeric keys and does not touch template files. `--no-restart` skips API-triggered automatic restart. The CLI success message mentions `permissions.md`, but what is actually overwritten is **`permissions.json`** (`cmd_anima_set_role` in `cli/commands/anima_mgmt.py`).
+2. **On role change** (`animaworks anima set-role`): `_apply_role_defaults()` recopies `permissions.json` and `specialty_prompt.md`. Only `model`, `context_threshold`, `max_turns`, and `conversation_history_threshold` are merged from `defaults.json` into `status.json`. **`background_model` and `max_outbound_*` are not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only the `role` field and those numeric keys and does not touch template files. `--no-restart` skips API-triggered automatic restart. The CLI success message mentions `permissions.md`, but what is actually overwritten is **`permissions.json`** (`cmd_anima_set_role` in `cli/commands/anima_mgmt.py`).
 
 ### Prompt injection
 

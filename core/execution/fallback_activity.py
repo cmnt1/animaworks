@@ -6,7 +6,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from core.config.model_config import fallback_event_meta, resolve_effective_model_config
+from core.config.model_config import (
+    effective_model_key,
+    fallback_event_meta,
+    resolve_effective_model_config,
+    same_effective_model,
+)
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error,
@@ -180,10 +185,7 @@ def runtime_fallback_config(
     except Exception:  # pragma: no cover - defensive
         _logger.debug("Runtime fallback resolution failed", exc_info=True)
         return None
-    if all(
-        getattr(retry_config, field, None) == getattr(active_config, field, None)
-        for field in ("model", "execution_mode", "resolved_mode", "credential")
-    ):
+    if same_effective_model(retry_config, active_config):
         return None
     try:
         from core.memory.activity.logger import ActivityLogger
@@ -220,9 +222,7 @@ async def run_with_model_fallback(
     last_failure: Exception | None = None
 
     while True:
-        key = tuple(
-            getattr(current_config, field, None) for field in ("model", "execution_mode", "resolved_mode", "credential")
-        )
+        key = effective_model_key(current_config)
         if key in seen:
             if last_failure is not None:
                 raise last_failure
@@ -265,9 +265,7 @@ async def run_with_model_fallback(
 
         report_capacity_block(current_config, reason, hint)
         retry_config = resolve_effective_model_config(primary_config)
-        retry_key = tuple(
-            getattr(retry_config, field, None) for field in ("model", "execution_mode", "resolved_mode", "credential")
-        )
+        retry_key = effective_model_key(retry_config)
         if retry_key in seen:
             if last_failure is not None:
                 raise last_failure

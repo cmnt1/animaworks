@@ -48,7 +48,6 @@ class TestModelConfig:
         assert mc.api_key_env == "ANTHROPIC_API_KEY"
         assert mc.api_base_url is None
         assert mc.context_threshold == 0.50
-        assert mc.max_chains == 2
         assert mc.conversation_history_threshold == 0.30
         assert mc.execution_mode is None
         assert mc.supervisor is None
@@ -188,7 +187,6 @@ class TestCycleResult:
         assert cr.duration_ms == 0
         assert isinstance(cr.timestamp, datetime)
         assert cr.context_usage_ratio == 0.0
-        assert cr.session_chained is False
         assert cr.total_turns == 0
 
     def test_custom_values(self):
@@ -198,13 +196,11 @@ class TestCycleResult:
             summary="All done",
             duration_ms=1500,
             context_usage_ratio=0.45,
-            session_chained=True,
             total_turns=5,
         )
         assert cr.summary == "All done"
         assert cr.duration_ms == 1500
         assert cr.context_usage_ratio == 0.45
-        assert cr.session_chained is True
         assert cr.total_turns == 5
 
     def test_rejects_unknown_stop_kind(self):

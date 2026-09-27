@@ -281,7 +281,6 @@ class TestCreateStatusJsonWithRole:
             {
                 "model": "claude-opus-4-6",
                 "context_threshold": 0.80,
-                "max_chains": 10,
                 "conversation_history_threshold": 0.40,
             },
         )
@@ -297,7 +296,6 @@ class TestCreateStatusJsonWithRole:
         status = _read_status_json(anima_dir)
         assert status["model"] == "claude-opus-4-6"
         assert status["context_threshold"] == 0.80
-        assert status["max_chains"] == 10
         assert status["conversation_history_threshold"] == 0.40
         assert status["role"] == "engineer"
 
@@ -377,7 +375,6 @@ class TestCreateStatusJsonWithRole:
             {
                 "model": "claude-opus-4-6",
                 "context_threshold": 0.80,
-                "max_chains": 10,
                 "conversation_history_threshold": 0.40,
             },
         )
@@ -394,7 +391,6 @@ class TestCreateStatusJsonWithRole:
         assert status["role"] == "engineer"
         assert status["model"] == "claude-opus-4-6"
         assert status["context_threshold"] == 0.80
-        assert status["max_chains"] == 10
         assert status["conversation_history_threshold"] == 0.40
         assert status["enabled"] is True
 
@@ -483,7 +479,6 @@ class TestLoadStatusJson:
             {
                 "model": "claude-opus-4-6",
                 "context_threshold": 0.80,
-                "max_chains": 10,
                 "conversation_history_threshold": 0.40,
                 "credential": "anthropic",
                 "execution_mode": "autonomous",
@@ -495,7 +490,6 @@ class TestLoadStatusJson:
         assert result["model"] == "claude-opus-4-6"
         assert result["context_threshold"] == 0.80
         assert "max_turns" not in result
-        assert result["max_chains"] == 10
         assert result["conversation_history_threshold"] == 0.40
         assert result["credential"] == "anthropic"
         assert result["execution_mode"] == "autonomous"
@@ -683,24 +677,24 @@ class TestResolveAnimaConfig2Layer:
             anima_dir,
             {
                 "model": "status-model",
-                "max_chains": 8,
+                "context_threshold": 0.80,
             },
         )
 
         config = self._make_config(
             defaults_overrides={
                 "model": "default-model",
-                "max_chains": 2,
                 "context_threshold": 0.50,
+                "conversation_history_threshold": 0.30,
             },
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
         # status.json wins
         assert resolved.model == "status-model"
-        assert resolved.max_chains == 8
+        assert resolved.context_threshold == 0.80
         # defaults used (not in status.json)
-        assert resolved.context_threshold == 0.50
+        assert resolved.conversation_history_threshold == 0.30
 
     def test_without_anima_dir_uses_defaults(self) -> None:
         """When anima_dir is None, only anima_defaults are used."""
@@ -876,7 +870,6 @@ class TestRoleTemplateIntegration:
                 {
                     "model": "claude-opus-4-6",
                     "context_threshold": 0.80,
-                    "max_chains": 10,
                     "conversation_history_threshold": 0.40,
                 }
             ),

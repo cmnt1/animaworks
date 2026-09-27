@@ -28,6 +28,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.config")
 
+EFFECTIVE_MODEL_FIELDS = ("model", "execution_mode", "resolved_mode", "credential")
+
+
+def effective_model_key(cfg: Any) -> tuple[Any, ...]:
+    """Return the fields that determine effective executor/model routing."""
+    return tuple(getattr(cfg, field, None) for field in EFFECTIVE_MODEL_FIELDS)
+
+
+def same_effective_model(left: Any, right: Any) -> bool:
+    """Compare configs by the fields that determine executor/model routing."""
+    return effective_model_key(left) == effective_model_key(right)
+
+
 # ---------------------------------------------------------------------------
 # load_model_config
 # ---------------------------------------------------------------------------
@@ -75,7 +88,6 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         task_compaction_tokens=resolved.task_compaction_tokens,
         task_compaction_max=resolved.task_compaction_max,
         max_session_age_hours=resolved.max_session_age_hours,
-        max_chains=resolved.max_chains,
         conversation_history_threshold=resolved.conversation_history_threshold,
         execution_mode=resolved.execution_mode,
         supervisor=resolved.supervisor,
@@ -87,7 +99,6 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         voice_thinking_effort=resolved.voice_thinking_effort,
         heartbeat_enabled=resolved.heartbeat_enabled,
         token_budget_monthly=resolved.token_budget_monthly,
-        llm_timeout=resolved.llm_timeout,
         extra_keys=credential.keys or {},
         mode_s_auth=resolved.mode_s_auth,
         extra_mcp_servers=resolved.extra_mcp_servers,
@@ -834,6 +845,9 @@ def smart_update_model(
 
 
 __all__ = [
+    "EFFECTIVE_MODEL_FIELDS",
+    "effective_model_key",
+    "same_effective_model",
     "ModelSelection",
     "resolve_model_selection",
     "resolve_unavailable_model_config",

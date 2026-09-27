@@ -48,7 +48,6 @@ def model_config():
         max_tokens=4096,
         credential="gemini",
         context_threshold=0.50,
-        max_chains=2,
     )
 
 

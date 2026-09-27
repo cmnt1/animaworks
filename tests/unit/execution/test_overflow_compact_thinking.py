@@ -174,7 +174,6 @@ class TestKeepRecentCompaction:
 class TestDeepseekThinkingKwargs:
     def _kwargs(self, thinking, effort="high"):
         obj = _make_mixin(thinking=thinking, effort=effort)
-        obj._resolve_llm_timeout = lambda: 600
         obj._resolve_num_retries = lambda: 2
         obj._resolve_api_key = lambda: "k"
         obj._apply_provider_kwargs = lambda kw: None

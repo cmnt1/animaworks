@@ -4,3 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 """Mode S: Claude Agent SDK executor and its hooks, options, session and stream handling."""
+
+from core.execution.engines.claude._sdk_patch import apply_sdk_transport_patch
+
+apply_sdk_transport_patch()

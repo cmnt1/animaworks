@@ -139,7 +139,6 @@ class TestCreateFromMdEngineerRole:
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Engineer defaults.json specifies these values
         assert status["model"] == "claude-opus-4-6"
-        assert status["max_chains"] == 10
         assert status["context_threshold"] == 0.80
         assert status["conversation_history_threshold"] == 0.40
         assert status["role"] == "engineer"
@@ -174,8 +173,6 @@ class TestCreateFromMdEngineerRole:
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # Character sheet model should override role default
         assert status["model"] == "claude-sonnet-4-6"
-        # But other role defaults should still be applied
-        assert status["max_chains"] == 10
 
 
 # ── Test 2: create_from_md with role="general" (default) ───
@@ -216,7 +213,6 @@ class TestCreateFromMdGeneralRole:
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         # general defaults.json values
         assert status["model"] == "claude-sonnet-4-6"
-        assert status["max_chains"] == 2
         assert status["context_threshold"] == 0.50
         assert status["conversation_history_threshold"] == 0.30
 
@@ -249,7 +245,6 @@ class TestCreateFromMdResearcherRole:
 
         status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["model"] == expected["model"]
-        assert status["max_chains"] == expected["max_chains"]
         assert status["context_threshold"] == expected["context_threshold"]
         assert status["conversation_history_threshold"] == expected["conversation_history_threshold"]
         assert status["role"] == "researcher"
@@ -275,7 +270,6 @@ class TestTwoLayerConfigResolution:
 
         # Engineer role defaults in status.json should override global defaults
         assert model_config.model == "claude-opus-4-6"
-        assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
         assert model_config.conversation_history_threshold == 0.40
 
@@ -307,7 +301,6 @@ class TestTwoLayerConfigResolution:
         assert model_config.model == "claude-sonnet-4-6"
         assert not hasattr(model_config, legacy_key)
         # Non-updated fields still come from original status.json (engineer role)
-        assert model_config.max_chains == 10
         assert model_config.context_threshold == 0.80
 
     def test_resolve_anima_config_directly(self, data_dir: Path, tmp_path: Path):
@@ -334,7 +327,6 @@ class TestTwoLayerConfigResolution:
         # Layer 1: status.json (engineer role defaults + our override)
         assert not hasattr(resolved, legacy_key)
         assert resolved.model == "claude-opus-4-6"
-        assert resolved.max_chains == 10
         assert resolved.context_threshold == 0.80
         # Layer 2: global defaults (for fields not set in status.json)
         assert resolved.max_tokens == 1024  # from test config anima_defaults

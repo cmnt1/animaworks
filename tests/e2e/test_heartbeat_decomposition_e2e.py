@@ -36,7 +36,7 @@ pytestmark = pytest.mark.e2e
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with AgentCore, ConversationMemory, and load_prompt mocked."""
     with (
-        patch("core.anima.digital_anima.AgentCore") as MockAgent,
+        patch("core.anima.digital_anima.AgentCore"),
         patch("core.anima.heartbeat.ConversationMemory") as MockConv,
         patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
     ):
@@ -129,7 +129,6 @@ class TestHeartbeatBasicFlow:
         assert hasattr(result, "duration_ms")
         assert hasattr(result, "timestamp")
         assert hasattr(result, "context_usage_ratio")
-        assert hasattr(result, "session_chained")
         assert hasattr(result, "total_turns")
 
 
@@ -162,7 +161,7 @@ class TestInboxProcessing:
         assert len(list(inbox_dir.glob("*.json"))) == 2
 
         with (
-            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.AgentCore"),
             patch("core.anima.heartbeat.ConversationMemory") as MockConv,
             patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -207,7 +206,7 @@ class TestInboxProcessing:
         )
 
         with (
-            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.AgentCore"),
             patch("core.anima.heartbeat.ConversationMemory") as MockConv,
             patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -357,7 +356,7 @@ class TestHeartbeatFailureWritesRecoveryNote:
         assert len(list(inbox_dir.glob("*.json"))) == 1
 
         with (
-            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.AgentCore"),
             patch("core.anima.heartbeat.ConversationMemory") as MockConv,
             patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):

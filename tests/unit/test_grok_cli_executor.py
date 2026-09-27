@@ -56,7 +56,6 @@ def model_config() -> ModelConfig:
         max_tokens=4096,
         credential="grok",
         context_threshold=0.5,
-        max_chains=2,
     )
 
 

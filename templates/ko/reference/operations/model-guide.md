@@ -358,14 +358,14 @@ animaworks anima restart {name}
 
 `animaworks anima set-role`로 역할을 변경하면 기본 모델도 변경됩니다:
 
-| 역할 | 기본 모델 | background_model | max_turns | max_chains |
-|------|----------|-----------------|-----------|------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 | 10 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 | 3 |
-| writer | claude-sonnet-4-6 | — | 80 | 5 |
-| researcher | claude-sonnet-4-6 | — | 30 | 2 |
-| ops | openai/glm-4.7-flash | — | 30 | 2 |
-| general | claude-sonnet-4-6 | — | 20 | 2 |
+| 역할 | 기본 모델 | background_model | max_turns |
+|------|----------|-----------------|-----------|
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 |
+| writer | claude-sonnet-4-6 | — | 80 |
+| researcher | claude-sonnet-4-6 | — | 30 |
+| ops | openai/glm-4.7-flash | — | 30 |
+| general | claude-sonnet-4-6 | — | 20 |
 
 Opus 계열 역할(engineer, manager)은 `background_model`로 Sonnet이 자동 설정됩니다.
 Sonnet 이하의 역할은 이미 비용 효율적이므로 `background_model`이 미설정입니다.

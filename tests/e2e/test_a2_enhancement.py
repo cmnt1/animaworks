@@ -49,7 +49,6 @@ def model_config() -> ModelConfig:
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
-        max_chains=2,
     )
 
 

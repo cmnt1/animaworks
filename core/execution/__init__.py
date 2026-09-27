@@ -16,41 +16,37 @@ Each engine implements one execution mode:
   - ``GeminiCLIExecutor`` (G): Gemini CLI -- gemini subprocess with stream-json
   - ``GrokCLIExecutor`` (X): Grok Build CLI -- ACP subprocess over stdio
   - ``LiteLLMExecutor``   (A): LiteLLM + tool_use loop -- any model with tool support
+
+Engine classes are resolved on first access so importing shared execution
+utilities does not load every optional engine and its dependencies.
 """
 
-# AgentSDKExecutor requires claude_agent_sdk which may not be installed.
-# Import it lazily so the rest of the package works regardless.
-try:
-    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
-except ImportError:  # pragma: no cover
-    AgentSDKExecutor = None  # type: ignore[assignment,misc]
-
-# CodexSDKExecutor requires openai_codex (optional dependency).
-try:
-    from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
-except ImportError:  # pragma: no cover
-    CodexSDKExecutor = None  # type: ignore[assignment,misc]
-
-# CursorAgentExecutor requires cursor-agent CLI (optional).
-try:
-    from core.execution.engines.cursor.cursor_agent import CursorAgentExecutor
-except ImportError:  # pragma: no cover
-    CursorAgentExecutor = None  # type: ignore[assignment,misc]
-
-# GeminiCLIExecutor requires gemini CLI (optional).
-try:
-    from core.execution.engines.gemini.gemini_cli import GeminiCLIExecutor
-except ImportError:  # pragma: no cover
-    GeminiCLIExecutor = None  # type: ignore[assignment,misc]
-
-# GrokCLIExecutor requires grok CLI (optional).
-try:
-    from core.execution.engines.grok.grok_cli import GrokCLIExecutor
-except ImportError:  # pragma: no cover
-    GrokCLIExecutor = None  # type: ignore[assignment,misc]
+from importlib import import_module
+from typing import Any
 
 from core.execution.base import BaseExecutor, ExecutionResult
-from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+
+_LAZY = {
+    "AgentSDKExecutor": "core.execution.engines.claude.agent_sdk",
+    "CodexSDKExecutor": "core.execution.engines.codex.codex_sdk",
+    "CursorAgentExecutor": "core.execution.engines.cursor.cursor_agent",
+    "GeminiCLIExecutor": "core.execution.engines.gemini.gemini_cli",
+    "GrokCLIExecutor": "core.execution.engines.grok.grok_cli",
+    "LiteLLMExecutor": "core.execution.engines.litellm.litellm_loop",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _LAZY.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    try:
+        value = getattr(import_module(module_name), name)
+    except ImportError:
+        value = None
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "AgentSDKExecutor",

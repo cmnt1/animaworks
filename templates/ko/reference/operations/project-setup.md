@@ -108,14 +108,12 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 위치합�
 | `max_turns` | `int` | `10000` |  |
 | `credential` | `str` | `"anthropic"` |  |
 | `context_threshold` | `float` | `0.5` |  |
-| `max_chains` | `int` | `2` |  |
 | `conversation_history_threshold` | `float` | `0.3` |  |
 | `execution_mode` | `str | None` | None |  |
 | `supervisor` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
-| `llm_timeout` | `int` | `1200` |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `max_outbound_per_hour` | `int | None` | None |  |
 | `max_outbound_per_day` | `int | None` | None |  |
@@ -388,7 +386,6 @@ Anima의 모델 설정은 **`status.json`이 Single Source of Truth (SSoT)**입�
   "credential": "anthropic",
   "max_tokens": 16384,
   "max_turns": 10000,
-  "max_chains": 10,
   "context_threshold": 0.80,
   "execution_mode": null
 }
@@ -437,7 +434,6 @@ animaworks anima reload --all
 | `max_turns` | `10000` | 1세션의 최대 턴 수 |
 | `credential` | `"anthropic"` | 사용할 credential 이름 |
 | `context_threshold` | `0.50` | 컨텍스트 사용률이 이 임계값을 초과하면 단기 기억을 외부화 |
-| `max_chains` | `2` | 자동 세션 연속의 최대 횟수 |
 
 ### 계층 구조
 

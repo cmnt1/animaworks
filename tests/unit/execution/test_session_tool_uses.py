@@ -1,11 +1,11 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for session chaining tool_uses parameter and shortterm _render_markdown changes.
+"""Tests for threshold-triggered shortterm saving and tool-use rendering.
 
 Covers:
-- handle_session_chaining() backward compatibility with tool_uses=None
-- handle_session_chaining() passing tool_uses through to SessionState
+- save_threshold_shortterm() threshold and storage guards
+- saved response fragments and tool uses in SessionState
 - SessionState including tool_uses in rendered markdown
 - _render_markdown() tool entries limit (20), input truncation (500 chars),
   and result display
@@ -19,12 +19,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._session import handle_session_chaining
+from core.execution._session import save_threshold_shortterm
 from core.memory.conversation.shortterm import (
     SessionState,
     ShortTermMemory,
 )
-from core.prompt.builder import BuildResult
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -62,20 +61,6 @@ def mock_tracker_below() -> MagicMock:
 
 
 @pytest.fixture
-def mock_memory() -> MagicMock:
-    """Return a mock MemoryManager."""
-    return MagicMock()
-
-
-@pytest.fixture
-def system_prompt_builder() -> MagicMock:
-    """Return a callable that produces a BuildResult."""
-    builder = MagicMock()
-    builder.return_value = BuildResult(system_prompt="base system prompt")
-    return builder
-
-
-@pytest.fixture
 def sample_tool_uses() -> list[dict[str, Any]]:
     """Return representative tool_uses list."""
     return [
@@ -85,266 +70,74 @@ def sample_tool_uses() -> list[dict[str, Any]]:
     ]
 
 
-# ── handle_session_chaining with tool_uses=None ────────────────
+# ── save_threshold_shortterm ────────────────────────────────────
 
 
-class TestHandleSessionChainingToolUsesNone:
-    """Backward compatibility: tool_uses=None produces empty tool_uses."""
-
-    @pytest.mark.asyncio
-    async def test_no_tool_uses_stored_when_none(
+class TestSaveThresholdShortterm:
+    def test_saves_when_threshold_is_exceeded(
         self,
         mock_tracker: MagicMock,
         shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
+        sample_tool_uses: list[dict[str, Any]],
     ) -> None:
-        """When tool_uses is not passed, SessionState.tool_uses should be []."""
         with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
-            result, chain_count = await handle_session_chaining(
-                tracker=mock_tracker,
-                shortterm=shortterm,
-                memory=mock_memory,
-                current_text="some response",
-                system_prompt_builder=system_prompt_builder,
-                max_chains=3,
-                chain_count=0,
-                session_id="test-sess",
-                trigger="heartbeat",
-                original_prompt="Do something",
+            saved = save_threshold_shortterm(
+                mock_tracker,
+                shortterm,
+                session_id="session-a",
+                trigger="message",
+                original_prompt="Do work",
+                accumulated_response="earlier response",
+                current_text="latest fragment",
+                turn_count=3,
+                tool_uses=sample_tool_uses,
             )
 
-        assert result is None
-        assert chain_count == 0
+        assert saved is True
+        state = shortterm.load()
+        assert state is not None
+        assert state.session_id == "session-a"
+        assert state.accumulated_response == "earlier response\nlatest fragment"
+        assert state.turn_count == 3
+        assert state.tool_uses == sample_tool_uses
 
-        # Verify the saved state has empty tool_uses
-        loaded = shortterm.load()
-        assert loaded is not None
-        assert loaded.tool_uses == []
-
-    @pytest.mark.asyncio
-    async def test_backward_compatible_signature(
-        self,
-        mock_tracker: MagicMock,
-        shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-    ) -> None:
-        """Calling without tool_uses keyword at all still works."""
-        with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
-            # Call without tool_uses parameter — should not raise
-            result, chain_count = await handle_session_chaining(
-                tracker=mock_tracker,
-                shortterm=shortterm,
-                memory=mock_memory,
-                current_text="response text",
-                system_prompt_builder=system_prompt_builder,
-                max_chains=5,
-                chain_count=0,
-            )
-
-        assert result is None
-        assert chain_count == 0
-
-    @pytest.mark.asyncio
-    async def test_no_chaining_when_shortterm_is_none(
-        self,
-        mock_tracker: MagicMock,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-    ) -> None:
-        """When shortterm=None, no chaining occurs regardless of tool_uses."""
-        result, chain_count = await handle_session_chaining(
-            tracker=mock_tracker,
-            shortterm=None,
-            memory=mock_memory,
-            current_text="text",
-            system_prompt_builder=system_prompt_builder,
-            max_chains=3,
-            chain_count=0,
-            tool_uses=[{"name": "search", "input": "q"}],
-        )
-
-        assert result is None
-        assert chain_count == 0
-
-    @pytest.mark.asyncio
-    async def test_no_chaining_below_threshold(
+    def test_does_not_save_below_threshold(
         self,
         mock_tracker_below: MagicMock,
         shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
     ) -> None:
-        """When threshold is not exceeded, tool_uses are irrelevant."""
-        result, chain_count = await handle_session_chaining(
-            tracker=mock_tracker_below,
-            shortterm=shortterm,
-            memory=mock_memory,
-            current_text="text",
-            system_prompt_builder=system_prompt_builder,
-            max_chains=3,
-            chain_count=0,
-            tool_uses=[{"name": "search", "input": "q"}],
+        saved = save_threshold_shortterm(
+            mock_tracker_below,
+            shortterm,
+            session_id="session-a",
+            trigger="message",
+            original_prompt="Do work",
+            accumulated_response="",
+            current_text="response",
+            turn_count=1,
+            tool_uses=[],
         )
 
-        assert result is None
-        assert chain_count == 0
+        assert saved is False
+        assert shortterm.load() is None
 
-
-# ── handle_session_chaining with tool_uses list ────────────────
-
-
-class TestHandleSessionChainingWithToolUses:
-    """tool_uses are passed through to SessionState when chaining occurs."""
-
-    @pytest.mark.asyncio
-    async def test_tool_uses_stored_in_session_state(
+    def test_does_not_save_without_shortterm(
         self,
         mock_tracker: MagicMock,
-        shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-        sample_tool_uses: list[dict[str, Any]],
     ) -> None:
-        """tool_uses passed to handle_session_chaining appear in saved state."""
-        with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
-            result, chain_count = await handle_session_chaining(
-                tracker=mock_tracker,
-                shortterm=shortterm,
-                memory=mock_memory,
-                current_text="completed work",
-                system_prompt_builder=system_prompt_builder,
-                max_chains=3,
-                chain_count=0,
-                session_id="sess-with-tools",
-                trigger="message",
-                original_prompt="Use some tools",
-                tool_uses=sample_tool_uses,
-            )
-
-        assert result is None
-        assert chain_count == 0
-
-        # Check saved state has the tool_uses
-        loaded = shortterm.load()
-        assert loaded is not None
-        assert len(loaded.tool_uses) == 3
-        assert loaded.tool_uses[0]["name"] == "web_search"
-        assert loaded.tool_uses[1]["name"] == "read_file"
-        assert loaded.tool_uses[2]["name"] == "bash"
-
-    @pytest.mark.asyncio
-    async def test_tool_uses_appear_in_new_system_prompt(
-        self,
-        mock_tracker: MagicMock,
-        shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-        sample_tool_uses: list[dict[str, Any]],
-    ) -> None:
-        """The rebuilt system prompt includes tool_uses from the session state."""
-        with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
-            result, _ = await handle_session_chaining(
-                tracker=mock_tracker,
-                shortterm=shortterm,
-                memory=mock_memory,
-                current_text="response",
-                system_prompt_builder=system_prompt_builder,
-                max_chains=3,
-                chain_count=0,
-                session_id="sess-tools",
-                trigger="message",
-                original_prompt="Do work",
-                tool_uses=sample_tool_uses,
-            )
-
-        assert result is None
-        # tool_uses are saved in shortterm state (injected into prompt on next message)
-        loaded = shortterm.load()
-        assert loaded is not None
-        rendered = shortterm._render_markdown(loaded)
-        assert "web_search" in rendered
-        assert "read_file" in rendered
-        assert "bash" in rendered
-
-    @pytest.mark.asyncio
-    async def test_empty_list_treated_as_no_tools(
-        self,
-        mock_tracker: MagicMock,
-        shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-    ) -> None:
-        """Explicitly passing tool_uses=[] behaves the same as None."""
-        with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
-            result, chain_count = await handle_session_chaining(
-                tracker=mock_tracker,
-                shortterm=shortterm,
-                memory=mock_memory,
-                current_text="response",
-                system_prompt_builder=system_prompt_builder,
-                max_chains=3,
-                chain_count=0,
-                tool_uses=[],
-            )
-
-        assert result is None
-        # The rendered markdown should show "(なし)" for tools
-        loaded = shortterm.load()
-        assert loaded is not None
-        rendered = shortterm._render_markdown(loaded)
-        assert "(なし)" in rendered
-
-    @pytest.mark.asyncio
-    async def test_accumulated_response_includes_current_text(
-        self,
-        mock_tracker: MagicMock,
-        shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-    ) -> None:
-        """current_text is appended to accumulated_response in saved state."""
-        with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
-            await handle_session_chaining(
-                tracker=mock_tracker,
-                shortterm=shortterm,
-                memory=mock_memory,
-                current_text="new fragment",
-                system_prompt_builder=system_prompt_builder,
-                max_chains=3,
-                chain_count=0,
-                accumulated_response="previous text",
-                tool_uses=[{"name": "tool1", "input": "i1"}],
-            )
-
-        loaded = shortterm.load()
-        assert loaded is not None
-        assert "previous text" in loaded.accumulated_response
-        assert "new fragment" in loaded.accumulated_response
-
-    @pytest.mark.asyncio
-    async def test_max_chains_prevents_chaining(
-        self,
-        mock_tracker: MagicMock,
-        shortterm: ShortTermMemory,
-        mock_memory: MagicMock,
-        system_prompt_builder: MagicMock,
-    ) -> None:
-        """When chain_count >= max_chains, no chaining occurs even with tool_uses."""
-        result, chain_count = await handle_session_chaining(
-            tracker=mock_tracker,
-            shortterm=shortterm,
-            memory=mock_memory,
-            current_text="text",
-            system_prompt_builder=system_prompt_builder,
-            max_chains=3,
-            chain_count=3,
-            tool_uses=[{"name": "search", "input": "q"}],
+        saved = save_threshold_shortterm(
+            mock_tracker,
+            None,
+            session_id="session-a",
+            trigger="message",
+            original_prompt="Do work",
+            accumulated_response="",
+            current_text="response",
+            turn_count=1,
+            tool_uses=[],
         )
 
-        assert result is None
-        assert chain_count == 3
+        assert saved is False
 
 
 # ── SessionState includes tool_uses in markdown render ─────────

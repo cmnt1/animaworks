@@ -111,7 +111,6 @@ class TestAnimaDefaults:
         assert pd.max_tokens == 8192
         assert pd.credential == "anthropic"
         assert pd.context_threshold == 0.50
-        assert pd.max_chains == 2
         assert pd.conversation_history_threshold == 0.30
 
 
