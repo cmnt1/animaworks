@@ -35,11 +35,7 @@ _SENTINEL = object()
 
 
 def load_model_config(anima_dir: Path) -> ModelConfig:
-    """Build a ModelConfig for *anima_dir* from the unified config.json.
-
-    This is a standalone version of ``MemoryManager.read_model_config()``
-    for use in server routes that do not have a live DigitalAnima instance.
-    """
+    """The sole function that builds a ``ModelConfig`` for *anima_dir* from config.json."""
     from core.config.models import get_config_path, load_config, resolve_anima_config, resolve_execution_mode
     from core.schemas import ModelConfig
 

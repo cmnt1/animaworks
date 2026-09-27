@@ -130,8 +130,7 @@ class ExecutorFactoryMixin:
             return executor_class(**common)
 
         common.update(tool_handler=self._tool_handler, memory=self.memory)
-        # Mode A (and the former Mode B, now treated identically) both use
-        # LiteLLM's tool_use loop.
+        # Mode A: LiteLLM tool_use loop.
         return LiteLLMExecutor(**common)
 
     def _resolve_api_key(self) -> str | None:

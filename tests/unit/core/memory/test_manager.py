@@ -512,31 +512,16 @@ class TestReadModelConfig:
         assert isinstance(mc, ModelConfig)
         assert mc.model == "gpt-4o"
 
-    def test_legacy_fallback(self, tmp_path, monkeypatch):
-        # Set up isolated environment where config.json does NOT exist
-        fake_data = tmp_path / "fake_data"
-        fake_data.mkdir()
-        anima_dir = tmp_path / "anima_legacy"
-        anima_dir.mkdir()
-        (anima_dir / "config.md").write_text(
-            "- model: custom-model\n- max_tokens: 2048\n",
-            encoding="utf-8",
-        )
-        # Redirect ANIMAWORKS_DATA_DIR to a dir without config.json
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(fake_data))
-        with (
-            patch("core.memory.manager.get_company_dir", return_value=fake_data / "co"),
-            patch("core.memory.manager.get_common_skills_dir", return_value=fake_data / "cs"),
-            patch("core.memory.manager.get_shared_dir", return_value=fake_data / "sh"),
-        ):
-            from core.config.models import invalidate_cache
+    def test_missing_config_returns_default(self, anima_dir, data_dir, tmp_path):
+        from core.config.models import invalidate_cache
 
+        config_path = tmp_path / "missing-config.json"
+        with patch("core.config.models.get_config_path", return_value=config_path):
             invalidate_cache()
-            mm = MemoryManager(anima_dir)
-            mc = mm.read_model_config()
+            mc = MemoryManager(anima_dir).read_model_config()
             invalidate_cache()
-            assert mc.model == "custom-model"
-            assert mc.max_tokens == 2048
+
+        assert mc == ModelConfig()
 
 
 class TestResolveApiKey:
@@ -554,38 +539,6 @@ class TestResolveApiKey:
         mc.api_key_env = "TEST_API_KEY_RESOLVE"
         with patch.dict("os.environ", {"TEST_API_KEY_RESOLVE": "sk-env"}):
             assert mm.resolve_api_key(mc) == "sk-env"
-
-
-# ── _read_model_config_from_md ────────────────────────────
-
-
-class TestReadModelConfigFromMd:
-    def test_empty(self, anima_dir, data_dir):
-        mm = MemoryManager(anima_dir)
-        mc = mm._read_model_config_from_md()
-        assert isinstance(mc, ModelConfig)
-        assert mc.model == "claude-sonnet-4-6"
-
-    def test_parses_fields(self, anima_dir, data_dir):
-        (anima_dir / "config.md").write_text(
-            "# Config\n- model: gpt-4o\n- max_tokens: 8192\n- max_turns: 10\n- api_base_url: http://localhost:8000\n",
-            encoding="utf-8",
-        )
-        mm = MemoryManager(anima_dir)
-        mc = mm._read_model_config_from_md()
-        assert mc.model == "gpt-4o"
-        assert mc.max_tokens == 8192
-        assert not hasattr(mc, "max_turns")
-        assert mc.api_base_url == "http://localhost:8000"
-
-    def test_ignores_biko_section(self, anima_dir, data_dir):
-        (anima_dir / "config.md").write_text(
-            "- model: real\n\n## 備考\n- model: fake\n",
-            encoding="utf-8",
-        )
-        mm = MemoryManager(anima_dir)
-        mc = mm._read_model_config_from_md()
-        assert mc.model == "real"
 
 
 class TestReadTodayEpisodes:

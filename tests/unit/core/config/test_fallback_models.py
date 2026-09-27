@@ -94,16 +94,26 @@ class TestParseFallbackEntry:
             "ollama/qwen3:14b",
         )
 
-    @pytest.mark.parametrize("entry", ["z:model", "X:grok/grok-4.5"])
-    def test_invalid_explicit_mode_warns_and_skips(
+    def test_unknown_explicit_mode_defaults_to_a_with_warning(
         self,
-        entry: str,
         fallback_config: AnimaWorksConfig,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         with caplog.at_level(logging.WARNING, logger="animaworks.config"):
-            assert parse_fallback_entry(entry, fallback_config) is None
-        assert "invalid mode" in caplog.text
+            assert parse_fallback_entry("z:model", fallback_config) == ("a", "model")
+        assert "Unrecognised execution mode 'z'" in caplog.text
+
+    def test_uppercase_canonical_mode_is_normalized(self, fallback_config: AnimaWorksConfig) -> None:
+        assert parse_fallback_entry("X:grok/grok-4.5", fallback_config) == (
+            "x",
+            "grok/grok-4.5",
+        )
+
+    def test_retired_b_fallback_prefix_maps_to_a(self, fallback_config: AnimaWorksConfig) -> None:
+        assert parse_fallback_entry("b:ollama/qwen3:14b", fallback_config) == (
+            "a",
+            "ollama/qwen3:14b",
+        )
 
     @pytest.mark.parametrize("entry", ["", "   ", "x:"])
     def test_empty_entry_warns_and_skips(
@@ -315,9 +325,7 @@ class TestResolveEffectiveModelConfig:
         primary_config: ModelConfig,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        primary = primary_config.model_copy(
-            update={"fallback_models": ["x:grok/grok-4.5", "a:openai/gpt-4.1"]}
-        )
+        primary = primary_config.model_copy(update={"fallback_models": ["x:grok/grok-4.5", "a:openai/gpt-4.1"]})
         guard = _guard_with_blocks({"openai:codex": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),

@@ -567,10 +567,6 @@ class MemoryManager:
         """Facade: ConfigReader.read_model_config."""
         return self._config_reader.read_model_config()
 
-    def _read_model_config_from_md(self) -> ModelConfig:
-        """Facade: ConfigReader._read_model_config_from_md."""
-        return self._config_reader._read_model_config_from_md()
-
     def resolve_api_key(self, config: ModelConfig | None = None) -> str | None:
         """Facade: ConfigReader.resolve_api_key."""
         return self._config_reader.resolve_api_key(config)

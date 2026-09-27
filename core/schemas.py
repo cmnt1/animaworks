@@ -89,10 +89,10 @@ class ModelConfig(BaseModel):
     max_session_age_hours: float = 24.0
     max_chains: int = 2  # max auto-continuation sessions
     conversation_history_threshold: float = 0.30  # conversation compression trigger
-    execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/A/B) or None for auto-resolve
+    execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/A) or None for auto-resolve
     supervisor: str | None = None  # supervisor Anima name
     speciality: str | None = None  # free-text specialisation
-    resolved_mode: str | None = None  # "S"/"C"/"D"/"G"/"X"/"A"/"B" — resolved from config
+    resolved_mode: str | None = None  # "S"/"C"/"D"/"G"/"X"/"A" — resolved from config
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think param)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
     llm_timeout: int | None = None  # LLM API呼び出しタイムアウト（秒）

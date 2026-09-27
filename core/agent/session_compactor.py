@@ -454,11 +454,6 @@ async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]
     }
 
 
-async def _compact_mode_b(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
-    """Mode B: same as Mode A."""
-    return await _compact_mode_a(anima, thread_id)
-
-
 async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode C: conversation compress + shortterm save + codex thread discard."""
     from core.execution.engines.codex.codex_sdk import _clear_thread_id
@@ -564,8 +559,6 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
             _record_result(await _compact_mode_a(anima, thread_id))
         elif mode == "c":
             _record_result(await _compact_mode_c(anima, thread_id))
-        elif mode == "b":
-            _record_result(await _compact_mode_b(anima, thread_id))
         else:
             _record_result(await _compact_mode_a(anima, thread_id))
     except Exception:

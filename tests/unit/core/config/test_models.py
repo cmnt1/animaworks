@@ -40,6 +40,7 @@ from core.config.models import (
     load_config,
     load_model_config,
     load_permissions,
+    parse_fallback_entry,
     read_anima_supervisor,
     register_anima_in_config,
     resolve_anima_config,
@@ -722,7 +723,7 @@ class TestPatternSpecificity:
 
 class TestMatchPatternTable:
     def test_exact_match(self):
-        table = {"ollama/qwen3:14b": "A2", "ollama/*": "B"}
+        table = {"ollama/qwen3:14b": "A2", "ollama/*": "A"}
         assert _match_pattern_table("ollama/qwen3:14b", table) == "A2"
 
     def test_prefix_wildcard(self):
@@ -744,10 +745,10 @@ class TestMatchPatternTable:
     def test_specific_pattern_beats_catchall(self):
         table = {
             "ollama/qwen3:14b": "A2",
-            "ollama/*": "B",
+            "ollama/*": "A",
         }
         assert _match_pattern_table("ollama/qwen3:14b", table) == "A2"
-        assert _match_pattern_table("ollama/some-other", table) == "B"
+        assert _match_pattern_table("ollama/some-other", table) == "A"
 
     def test_empty_table_returns_none(self):
         assert _match_pattern_table("claude-sonnet-4-6", {}) is None
@@ -785,7 +786,7 @@ class TestResolveExecutionModeWildcard:
 
     def test_explicit_override_assisted(self):
         config = AnimaWorksConfig()
-        # 'assisted' (legacy Mode B name) normalises to A now that B is removed
+        # The legacy 'assisted' alias maps to the canonical autonomous mode.
         assert resolve_execution_mode(config, "any-model", "assisted") == "A"
 
     def test_explicit_override_legacy_a1(self):
@@ -800,11 +801,31 @@ class TestResolveExecutionModeWildcard:
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "any-model", "A2") == "A"
 
-    def test_explicit_override_new_sab(self):
+    def test_explicit_override_canonical_and_legacy_modes(self):
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "any-model", "S") == "S"
         assert resolve_execution_mode(config, "any-model", "A") == "A"
-        assert resolve_execution_mode(config, "any-model", "B") == "B"
+        assert resolve_execution_mode(config, "any-model", "B") == "A"
+        assert resolve_execution_mode(config, "any-model", "b") == "A"
+        assert resolve_execution_mode(config, "any-model", "basic") == "A"
+        assert _normalise_mode("B") == "A"
+        assert _normalise_mode("b") == "A"
+        assert _normalise_mode("basic") == "A"
+
+    def test_unknown_mode_defaults_to_a_with_warning(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="animaworks.config"):
+            assert _normalise_mode("Z") == "A"
+        assert "Unrecognised execution mode 'Z'" in caplog.text
+
+    def test_fallback_legacy_b_mode_normalizes_to_a(self):
+        config = AnimaWorksConfig()
+        assert parse_fallback_entry("b:ollama/qwen3:14b", config) == ("a", "ollama/qwen3:14b")
+
+    def test_resolved_b_mode_is_canonical_a(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "x", "B") == "A"
 
     def test_claude_wildcard_s(self):
         config = AnimaWorksConfig()

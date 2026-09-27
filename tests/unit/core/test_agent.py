@@ -302,10 +302,10 @@ class TestRunCycle:
         assert result.reason == "quota_exhausted"
         assert result.stop_kind == "stream_error"
 
-    async def test_mode_b_returns_result(self, tmp_path):
+    async def test_retired_b_mode_returns_result_via_mode_a(self, tmp_path):
         agent = _make_agent(tmp_path, resolved_mode="B")
         mock_result = MagicMock()
-        mock_result.text = "Assisted response"
+        mock_result.text = "Autonomous response"
         mock_result.usage = None
         agent._executor.execute = AsyncMock(return_value=mock_result)
 
@@ -320,7 +320,7 @@ class TestRunCycle:
 
             result = await agent.run_cycle("Hello", trigger="test")
             assert isinstance(result, CycleResult)
-            assert result.summary == "Assisted response"
+            assert result.summary == "Autonomous response"
             assert result.trigger == "test"
 
     async def test_mode_a2_returns_result(self, tmp_path):

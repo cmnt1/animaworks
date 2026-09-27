@@ -862,12 +862,6 @@ class MessagingMixin:
                 elif mode == "a":
                     prior_messages = conv_memory.build_structured_messages(content)
                     prompt = content
-                elif mode == "b":
-                    prompt = conv_memory.build_chat_prompt(
-                        content,
-                        from_person,
-                        max_history_chars=2000,
-                    )
                 else:
                     prompt = conv_memory.build_chat_prompt(content, from_person)
 
@@ -1207,12 +1201,6 @@ class MessagingMixin:
                 elif mode == "a":
                     prior_messages = conv_memory.build_structured_messages(content)
                     prompt = content
-                elif mode == "b":
-                    prompt = conv_memory.build_chat_prompt(
-                        content,
-                        from_person,
-                        max_history_chars=2000,
-                    )
                 else:
                     prompt = conv_memory.build_chat_prompt(content, from_person)
 
