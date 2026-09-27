@@ -16,10 +16,8 @@ def _make_executor(tmp_path: Path, stop_kind: str = "normal") -> PendingTaskExec
     (anima_dir / "state").mkdir(parents=True)
     anima = MagicMock()
     anima._background_lock = asyncio.Lock()
-    anima._task_semaphore = None
     anima._status_slots = {"background": "idle"}
     anima._task_slots = {"background": ""}
-    anima._active_parallel_tasks = {}
     anima._active_background_workers = {}
 
     async def stream(*_args, **_kwargs):

@@ -951,7 +951,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
         session_id: str,
         num_turns: int,
         *,
-        session_rotated: bool = False,
         session_rotation_pending: bool = False,
         stop_kind: str = "normal",
     ) -> dict[str, Any]:
@@ -967,7 +966,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
             "tool_call_records": [asdict(record) for record in records],
             "usage": usage_dict,
             "stop_kind": stop_kind,
-            "session_rotated": session_rotated,
             "session_rotation_pending": session_rotation_pending,
         }
 
@@ -998,7 +996,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
         decision = load_turn_limited_session(self._anima_dir, "grok", trigger, thread_id)
         is_resumable = decision.resumable
         resume_session_id = decision.session_id
-        session_rotated = decision.rotated
         rotated_during_run = False
 
         state = _RunState()
@@ -1017,7 +1014,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
             )
             _clear_session_id(self._anima_dir, session_type, thread_id)
             state = _RunState()
-            session_rotated = True
             rotated_during_run = True
             async for event in self._run_acp(
                 prompt,
@@ -1086,7 +1082,6 @@ class GrokCLIExecutor(CLIStreamExecutor):
             state.usage,
             state.session_id,
             new_turn,
-            session_rotated=session_rotated,
             session_rotation_pending=rotation_pending,
             stop_kind="interrupted" if state.interrupted else "normal",
         )

@@ -119,7 +119,6 @@ async def test_system_mixin_daily_and_weekly_skip_inactive_anima(tmp_path, monke
     )
     runner = SystemConsolidationMixin()
     runner.animas = {"sleepy": anima}
-    runner._ws_broadcast = None
     config = SimpleNamespace(
         consolidation=SimpleNamespace(
             daily_enabled=True,

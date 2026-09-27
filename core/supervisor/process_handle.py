@@ -741,10 +741,6 @@ class ProcessHandle:
             self.process = None
 
         if self.ipc_client:
-            try:
-                await self.ipc_client.close()
-            except OSError:
-                logger.debug("IPC close error during cleanup", exc_info=True)
             self.ipc_client = None
 
         if self._stderr_file:

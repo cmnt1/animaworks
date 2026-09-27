@@ -506,12 +506,3 @@ class IPCClient:
                 chunk_count,
                 elapsed,
             )
-
-    async def close(self) -> None:
-        """No-op — kept for backward compatibility.
-
-        With per-request dedicated connections there is no persistent
-        connection to close.  Each :meth:`send_request` and
-        :meth:`send_request_stream` call manages its own connection
-        lifecycle.
-        """

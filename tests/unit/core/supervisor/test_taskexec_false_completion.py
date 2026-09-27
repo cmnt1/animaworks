@@ -39,7 +39,6 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     mock_anima._background_lock = asyncio.Lock()
     mock_anima._status_slots = {"background": "idle"}
     mock_anima._task_slots = {"background": ""}
-    mock_anima._active_parallel_tasks = {}
     return PendingTaskExecutor(
         anima=mock_anima,
         anima_name="test-anima",

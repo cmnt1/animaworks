@@ -218,10 +218,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "### {sender_name} について",
         "en": "### About {sender_name}",
     },
-    "priming.active_parallel_tasks_header": {
-        "ja": "## 実行中の並列タスク",
-        "en": "## Active Parallel Tasks",
-    },
     "priming.completed_bg_tasks_header": {
         "ja": "## 完了済みバックグラウンドタスク",
         "en": "## Completed Background Tasks",

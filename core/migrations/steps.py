@@ -1767,9 +1767,9 @@ def step_rag_vector_worker_config_cleanup(data_dir: Path, dry_run: bool, verbose
 
 
 def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Remove retired max_chains and llm_timeout settings from runtime config."""
+    """Remove retired model keys (max_turns/max_chains/llm_timeout) from runtime config."""
     del verbose
-    retired_keys = {"max_chains", "llm_timeout"}
+    retired_keys = {"max_turns", "max_chains", "llm_timeout"}
     changed_files = 0
     details: list[str] = []
 
@@ -1782,7 +1782,11 @@ def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool)
     try:
         config_path = data_dir / "config.json"
         if config_path.is_file():
-            config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            except (ValueError, OSError):
+                details.append("config.json is not valid JSON; skip")
+                return StepResult(changed=0, skipped=1, details=details)
             if not isinstance(config, dict):
                 return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
 
@@ -1830,7 +1834,7 @@ def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool)
                 status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
         if not changed_files:
-            details.append("No retired max_chains / llm_timeout settings found")
+            details.append("No retired model keys found")
         return StepResult(changed=changed_files, skipped=0 if changed_files else 1, details=details)
     except Exception as exc:
         logger.exception("step_retire_chain_timeout_keys failed")
@@ -2489,7 +2493,7 @@ def register_all_steps(runner: Any) -> None:
         ),
         MigrationStep(
             "retire_chain_timeout_keys",
-            "Remove retired max_chains / llm_timeout settings",
+            "Remove retired model keys (max_turns/max_chains/llm_timeout)",
             "structural",
             step_retire_chain_timeout_keys,
         ),

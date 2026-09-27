@@ -17,9 +17,9 @@ def test_removes_retired_keys_from_config_and_status(tmp_path: Path) -> None:
     _write_json(
         config_path,
         {
-            "anima_defaults": {"max_chains": 2, "llm_timeout": 600, "model": "claude"},
+            "anima_defaults": {"max_turns": 10000, "max_chains": 2, "llm_timeout": 600, "model": "claude"},
             "animas": {
-                "alpha": {"max_chains": 3, "llm_timeout": 300, "enabled": True},
+                "alpha": {"max_turns": 10000, "max_chains": 3, "llm_timeout": 300, "enabled": True},
                 "beta": {"model": "gpt"},
             },
         },
@@ -28,7 +28,7 @@ def test_removes_retired_keys_from_config_and_status(tmp_path: Path) -> None:
     (alpha / "identity.md").parent.mkdir(parents=True)
     (alpha / "identity.md").write_text("alpha", encoding="utf-8")
     status_path = alpha / "status.json"
-    _write_json(status_path, {"max_chains": 4, "llm_timeout": 200, "role": "engineer"})
+    _write_json(status_path, {"max_turns": 10000, "max_chains": 4, "llm_timeout": 200, "role": "engineer"})
 
     result = step_retire_chain_timeout_keys(tmp_path, dry_run=False, verbose=False)
 
@@ -43,7 +43,7 @@ def test_removes_retired_keys_from_config_and_status(tmp_path: Path) -> None:
 
 def test_dry_run_does_not_write_and_repeat_run_is_idempotent(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
-    original = '{"anima_defaults": {"max_chains": 2, "llm_timeout": 600}}\n'
+    original = '{"anima_defaults": {"max_turns": 10000, "max_chains": 2, "llm_timeout": 600}}\n'
     config_path.write_text(original, encoding="utf-8")
 
     dry_run = step_retire_chain_timeout_keys(tmp_path, dry_run=True, verbose=False)
@@ -66,3 +66,14 @@ def test_migration_is_registered_before_version_update(tmp_path: Path) -> None:
     ids = [step["id"] for step in runner.list_steps()]
 
     assert ids.index("retire_chain_timeout_keys") < ids.index("update_version")
+
+
+def test_broken_json_is_skipped_not_error(tmp_path: Path) -> None:
+    """Corrupt JSON files are skipped without producing an error result."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{not valid json", encoding="utf-8")
+
+    result = step_retire_chain_timeout_keys(tmp_path, dry_run=False, verbose=False)
+
+    assert result.error is None
+    assert result.changed == 0

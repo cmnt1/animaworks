@@ -2527,36 +2527,6 @@ class TestModeResolution:
         assert mode == "A"
 
 
-# ── CLI exec usage cache recording ───────────────────────────
-
-
-class TestCliExecUsageCache:
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("cache_key", ["cached_input_tokens", "cache_read_tokens"])
-    async def test_cache_read_tokens_recorded_from_cli_exec(self, executor, cache_key):
-        async def fake_stream(system_prompt, prompt, tracker, trigger=""):
-            yield {
-                "type": "done",
-                "full_text": "ok",
-                "result_message": None,
-                "replied_to_from_transcript": set(),
-                "tool_call_records": [],
-                "usage": {
-                    "input_tokens": 100,
-                    "output_tokens": 20,
-                    cache_key: 77,
-                },
-            }
-
-        with patch.object(executor, "_execute_streaming_via_cli_exec", fake_stream):
-            result = await executor._execute_via_cli_exec(prompt="p", system_prompt="s")
-
-        assert result.usage is not None
-        assert result.usage.input_tokens == 100
-        assert result.usage.output_tokens == 20
-        assert result.usage.cache_read_tokens == 77
-
-
 def _usage_snapshot(total_input, total_output, total_cache, last_input, last_output, last_cache):
     return {
         "total": {

@@ -260,8 +260,6 @@ class TestAnimaRunnerPingReadiness:
         mock_anima._inbox_lock = asyncio.Lock()
         mock_anima._last_progress_at = None
         mock_anima._busy_since = None
-        mock_anima._active_parallel_tasks = {}
-        mock_anima._set_active_parallel_tasks_getter = MagicMock()
         mock_anima.set_on_lock_released = MagicMock()
         mock_anima.set_on_message_sent = MagicMock()
         mock_anima.process_inbox_message = slow_process_inbox_message
@@ -331,7 +329,6 @@ class TestAnimaRunnerPingReadiness:
                 assert ping_during_inbox.result and ping_during_inbox.result["status"] == "ok"
                 await asyncio.wait_for(inbox_finished.wait(), timeout=1.0)
             finally:
-                await client.close()
                 runner.shutdown_event.set()
                 await asyncio.wait_for(task, timeout=5.0)
 

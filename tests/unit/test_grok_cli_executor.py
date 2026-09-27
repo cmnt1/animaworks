@@ -1073,7 +1073,7 @@ class TestSessions:
             patch("core.execution.engines.grok.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
             patch("asyncio.create_subprocess_exec", side_effect=[failed, fresh]) as create,
         ):
-            events = [
+            _events = [
                 event
                 async for event in executor.execute_streaming(
                     "system", "hello", ContextTracker(model="grok/grok-4.5"), trigger="chat"
@@ -1083,7 +1083,6 @@ class TestSessions:
         assert _requests(failed)[1]["method"] == "session/load"
         assert _requests(fresh)[1]["method"] == "session/new"
         assert _load_session_id(anima_dir, "chat") == ("recovered", 1)
-        assert events[-1]["session_rotated"] is True
 
     @pytest.mark.asyncio
     async def test_turn_rotation_and_pending(self, executor: GrokCLIExecutor, anima_dir: Path):
@@ -1091,13 +1090,11 @@ class TestSessions:
         rotated = _FakeProc(_success_events(session_id="fresh"))
         rotated_events = await _stream(executor, rotated, trigger="chat")
         assert _requests(rotated)[1]["method"] == "session/new"
-        assert rotated_events[-1]["session_rotated"] is True
         assert rotated_events[-1]["session_rotation_pending"] is False
 
         _save_session_id(anima_dir, "almost", "chat", "default", _MAX_RESUME_TURNS - 1)
         pending = _FakeProc(_success_events(session_id="almost", load=True))
         pending_events = await _stream(executor, pending, trigger="chat")
-        assert pending_events[-1]["session_rotated"] is False
         assert pending_events[-1]["session_rotation_pending"] is True
         assert _load_session_id(anima_dir, "chat") == ("almost", _MAX_RESUME_TURNS)
 

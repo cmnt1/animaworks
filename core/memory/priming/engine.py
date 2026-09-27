@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -75,7 +75,6 @@ class PrimingEngine:
         self._retriever: Any | None = None
         self._config_loaded = False
         self._channel_timeout_seconds = 60.0
-        self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
 
     def _get_or_create_retriever(self):
         """Get or create a retriever instance from the RetrieverCache."""
@@ -506,7 +505,6 @@ class PrimingEngine:
     async def _channel_e_pending_tasks(self) -> str:
         return await _channel_e.channel_e_pending_tasks(
             self.anima_dir,
-            self._get_active_parallel_tasks,
         )
 
     async def _collect_recent_outbound(self, max_entries: int = 3) -> str:

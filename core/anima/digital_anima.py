@@ -136,12 +136,6 @@ class DigitalAnima(
         self._taskexec_session_lock = asyncio.Lock()
         self._state_file_lock = self.memory.state_lock
 
-        # Parallel task execution (DAG scheduler)
-        self._task_semaphore: asyncio.Semaphore | None = None  # lazy init from config
-        self._active_parallel_tasks: dict[
-            str, dict[str, Any]
-        ] = {}  # task_id -> {title, description, started_at, batch_id, status}
-        self._ws_broadcast: Callable[[dict], Any] | None = None
         self._pending_executor: Any | None = None  # set by runner after PendingTaskExecutor init
         self.agent = self._create_lane_agent("chat")
         self._lane_agents: dict[str, AgentCore] = {
@@ -297,11 +291,6 @@ class DigitalAnima(
         if isinstance(lock, asyncio.Lock):
             return lock
         return nullcontext()
-
-    def _set_active_parallel_tasks_getter(self, getter: Callable[[], dict[str, dict[str, Any]]]) -> None:
-        """Wire active parallel task visibility into every lane AgentCore."""
-        for agent in self._iter_lane_agents():
-            agent._active_parallel_tasks_getter = getter
 
     # ── Progress tracking ────────────────────────────────────────
 
@@ -551,10 +540,6 @@ class DigitalAnima(
         """Inject a callback invoked when the anima's lock is released."""
         self._on_lock_released = fn
 
-    def set_ws_broadcast(self, fn: Callable[[dict], Any]) -> None:
-        """Inject a WebSocket broadcast function for background task notifications."""
-        self._ws_broadcast = fn
-
     # ── Background task management ──────────────────────────────
 
     async def _on_background_task_complete(self, task: BackgroundTask) -> None:
@@ -566,28 +551,6 @@ class DigitalAnima(
             task.tool_name,
             task.status.value,
         )
-
-        # Broadcast via WebSocket
-        if self._ws_broadcast:
-            try:
-                await self._ws_broadcast(
-                    {
-                        "type": "background_task.done",
-                        "data": {
-                            "task_id": task.task_id,
-                            "anima": self.name,
-                            "tool_name": task.tool_name,
-                            "status": task.status.value,
-                            "result_summary": task.summary(),
-                        },
-                    }
-                )
-            except Exception:
-                logger.exception(
-                    "[%s] WebSocket broadcast failed for bg task %s",
-                    self.name,
-                    task.task_id,
-                )
 
         # Notify human via configured channels
         if self.agent.has_human_notifier:

@@ -78,7 +78,6 @@ class TestSubmitDrainIntegration:
         mock_agent.has_human_notifier = False
         anima.agent = mock_agent
         anima.name = "test-anima"
-        anima._ws_broadcast = None
 
         result = anima.drain_background_notifications()
         assert len(result) == 1
@@ -102,7 +101,6 @@ class TestSubmitDrainIntegration:
         mock_agent.has_human_notifier = False
         anima.agent = mock_agent
         anima.name = "test-anima"
-        anima._ws_broadcast = None
 
         # Step 1: _on_background_task_complete writes notification
         task = BackgroundTask(

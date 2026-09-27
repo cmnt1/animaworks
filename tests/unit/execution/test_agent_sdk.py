@@ -838,24 +838,3 @@ class TestAgentSDKImageInput:
 
             result = _build_sdk_query_input("hello", [])
             assert isinstance(result, str)
-
-
-# ── ExecutionResult.unconfirmed_sends ────────────────────
-
-
-class TestExecutionResultUnconfirmedSends:
-    """Verify the new field on ExecutionResult."""
-
-    def test_default_empty(self):
-        from core.execution.base import ExecutionResult
-
-        result = ExecutionResult(text="hello")
-        assert result.unconfirmed_sends == []
-
-    def test_with_unconfirmed(self):
-        from core.execution.base import ExecutionResult
-
-        sends = [{"to": "kotoha", "command": "send kotoha msg"}]
-        result = ExecutionResult(text="hello", unconfirmed_sends=sends)
-        assert result.unconfirmed_sends == sends
-        assert len(result.unconfirmed_sends) == 1

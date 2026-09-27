@@ -47,7 +47,6 @@ class TestAnimaActivityLogging:
         anima._heartbeat_context = ""
         anima._HEARTBEAT_HISTORY_N = 3
         anima._RECENT_REFLECTIONS_N = 3
-        anima._ws_broadcast = None
         anima.memory = MagicMock()
         anima.model_config = MagicMock()
         anima.messenger = MagicMock()
