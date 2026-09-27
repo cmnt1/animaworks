@@ -1,1 +1,1 @@
-Send a DM to another Anima or human user. Messages to humans are delivered via configured external channel (e.g. Slack). intent must be 'report' or 'question' only. Use delegate_task for task delegation. Use for 1:1 reports, questions. Use post_channel for broadcast.
+Send a DM to another Anima or a human user (human DMs are delivered via external channels such as Slack). Max 2 recipients per run. intent must be 'report' or 'question' only. Use for 1:1 reports and questions; use post_channel for broadcast and delegate_task for delegation.

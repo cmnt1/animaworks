@@ -15,11 +15,10 @@ WORKSPACE_TOOLS: list[dict[str, Any]] = [
     {
         "name": "grant_workspace_access",
         "description": (
-            "Register a workspace and grant explicit write access to a top-level Anima "
-            "or one of its descendant Animas. This tool is allowed only for human-origin "
-            "instructions handled by a top-level Anima. It updates the global workspace "
-            "registry, the target Anima's permissions.json file_roots, and optionally "
-            "the target Anima's default_workspace."
+            "Grant explicit write access to a workspace for a top-level Anima or a descendant. "
+            "Only allowed for human-origin instructions handled by a top-level Anima. "
+            "Updates the global workspace registry and the target Anima's permissions; "
+            "optionally sets its default_workspace."
         ),
         "parameters": {
             "type": "object",
@@ -30,17 +29,15 @@ WORKSPACE_TOOLS: list[dict[str, Any]] = [
                 },
                 "path": {
                     "type": "string",
-                    "description": "Existing directory path to grant as a writable workspace.",
+                    "description": "Existing directory path to grant as writable.",
                 },
                 "target_anima": {
                     "type": "string",
-                    "description": (
-                        "Optional target Anima name or alias. Omit to grant access to the calling top-level Anima."
-                    ),
+                    "description": "Target Anima name or alias. Omit = calling top-level Anima.",
                 },
                 "make_default": {
                     "type": "boolean",
-                    "description": "Whether to set target status.json default_workspace to alias#hash. Default: true.",
+                    "description": "Set target default_workspace to alias#hash. Default: true.",
                 },
             },
             "required": ["alias", "path"],
