@@ -22,10 +22,6 @@ AnimaWorks の操作は全て `animaworks` コマンドで行う。
 ## 非推奨・互換エイリアス
 
 ```bash
-# トップレベル（警告が出る）
-animaworks list                          # → animaworks anima list を使用
-animaworks create-anima ...              # → animaworks anima create を使用
-
 # --local（deprecated: ProcessSupervisor をバイパスする直接実行。HTTP API 経由が推奨）
 animaworks chat {名前} "..." --local
 animaworks heartbeat {名前} --local
@@ -71,10 +67,8 @@ animaworks anima permissions {名前}      # ツール許可を表示（load_per
 ```
 
 `anima info` の出力項目:
-- Anima名、Enabled、Role、Model、Execution Mode（組み込みラベルは主に S/C/A/B。D・G 等は解決値がそのまま表示されうる）
-- Credential、Fallback Model、Max Turns、Max Chains
-- Context Threshold、Max Tokens、LLM Timeout
-- Thinking / Thinking Effort、Supervisor、Mode S Auth
+- Anima名、Enabled、Role、Model、Execution Mode（組み込みラベルは S/C/D/G/X/A）
+- Credential、Fallback Model、Context Threshold、Max Tokens、Thinking / Thinking Effort、Supervisor、Mode S Auth
 - Voice設定（tts_provider、voice_id、speed、pitch 等、status.json の voice 辞書を列挙）
 
 ### 作成
@@ -162,7 +156,7 @@ animaworks anima set-role {名前} {role} --no-restart
 ```
 
 set-role で自動更新されるファイル（`--status-only` 以外）:
-- `status.json` — role およびロール `defaults.json` 由来の model / max_turns 等をマージ
+- `status.json` — role およびロール `defaults.json` 由来の model / context_threshold / conversation_history_threshold 等をマージ
 - `specialty_prompt.md` — ロールテンプレートから上書き
 - `permissions.json` — ロールテンプレートから上書き（従来の `permissions.md` は読み込み時に JSON へ移行されうる）
 
@@ -240,8 +234,6 @@ animaworks config list --show-secrets    # API keyを表示
 animaworks config get {キー}             # 特定の設定値取得（ドット記法: system.log_level）
 animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
-animaworks config export-sections        # tool_prompts.sqlite3 → ロケール別 templates/{ja|en}/prompts/
-animaworks config export-sections --dry-run
 ```
 
 **注意**: Animaのモデル・credential等は `status.json` がSSoT。`animas.{名前}.model` 等の直接設定は非推奨。`animaworks anima set-model` を使用すること。
@@ -335,7 +327,6 @@ animaworks migrate --dry-run             # 変更プレビュー
 animaworks migrate --verbose             # ファイル単位の詳細
 animaworks migrate --list                # ステップ一覧と適用済みフラグ
 animaworks migrate --force               # 状態に関わらず再適用
-animaworks migrate --resync-db          # SQLite プロンプト DB の再同期のみ
 ```
 
 実行中サーバーがあると警告が出る。`~/.animaworks/config.json` が無い場合は失敗する。
@@ -397,7 +388,7 @@ animaworks-tool submit {ツール名} {サブコマンド} [引数...]
 
 ```bash
 animaworks-tool web_search query "AnimaWorks framework"
-animaworks slack send --channel "#general" --text "おはようございます"   # 上記ショートカット可
+animaworks-tool slack send "#general" "おはようございます"   # gated: 明示的な許可が必要
 animaworks-tool github issues --repo owner/repo
 animaworks-tool submit image_gen pipeline "1girl, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 ```
@@ -468,10 +459,10 @@ animaworks init --template {名前}       # テンプレートからAnimaを非�
 animaworks init --from-md {PATH}         # MDファイルからAnimaを非対話で作成
 animaworks init --blank {名前}           # ブランクAnimaを非対話で作成
 animaworks init --from-md {PATH} --name {名前}  # 作成時の名前を上書き
-animaworks migrate-cron                  # cron.md を日本語形式→標準cron式に変換
+旧形式の cron.md はサーバ起動時と `animaworks migrate` で自動変換される。
 ```
 
-スキーマ移行・DB再同期は `animaworks migrate`（上記）を参照。
+スキーマ移行は `animaworks migrate`（上記）を参照。
 
 ---
 

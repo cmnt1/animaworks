@@ -344,7 +344,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "⚠️ Security scan: {verdict} ({count} finding(s) detected)",
     },
     "handler.tool_creation_denied": {
-        "ja": "ツール作成が許可されていません。permissions.md に「ツール作成」セクションを追加してください。",
-        "en": "Tool creation is not permitted. Add a tool creation section to permissions.md.",
+        "ja": "ツール作成が許可されていません。permissions.json の許可設定を確認してください。",
+        "en": "Tool creation is not permitted. Check the permissions in permissions.json.",
     },
 }

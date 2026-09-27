@@ -229,7 +229,7 @@ share_tool(tool_name="my_tool")
 
 ## 呼び出しとスキーマ名
 
-- **`use_tool`**: `schema_name = f"{tool_name}_{action}"` でモジュールの `dispatch`（または同名関数）に渡る。許可判定は **コア**: `tool_registry`（`get_permitted_tools` の結果に `tool_name` が含まれること）、**ファイルベース（共通・個人）**: マージ済み `_personal_tools` に `tool_name` があること（`core/tooling/handler.py` の `_handle_use_tool`）。拒否メッセージに `permissions.md` と出ることがあるが、実体は **`load_permissions`（JSON 優先）** の `external_tools`。
+- **`use_tool`**: `schema_name = f"{tool_name}_{action}"` でモジュールの `dispatch`（または同名関数）に渡る。許可判定は **コア**: `tool_registry`（`get_permitted_tools` の結果に `tool_name` が含まれること）、**ファイルベース（共通・個人）**: マージ済み `_personal_tools` に `tool_name` があること（`core/tooling/handler.py` の `_handle_use_tool`）。
 - **`animaworks-tool`**: 第1トークンが `submit` の場合はバックグラウンド投入（下記）。**コア**は `TOOL_MODULES` から import して `cli_main`、**共通・個人**はファイルからロードして `cli_main`。未知の第1引数はメイン CLI（`animaworks`）へフォールバックする場合あり（`core/integrations/__init__.py` の `_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS`）。
 - **ゲート付きサブコマンド（コアのみ）**: `EXECUTION_PROFILE` の該当アクションに `"gated": True` があると、`permissions` の許可集合に **`{tool_name}_{action}`**（例: `gmail_send`）が含まれていないと CLI / ディスパッチの両方でブロックされる。**ファイルベースの個人・共有ツール**は `TOOL_MODULES` に無いため、このゲート機構の対象外。
 
@@ -307,4 +307,3 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 - ツールは実行可能な Python。スキル（Markdown）とは別物。
 - **起動後**に追加したツールだけ **`refresh_tools`** が必要（起動前から存在するファイルは起動時スキャン済み）。
 - コアと同名の個人・共有ファイルは採用されない。
-- `use_tool` のスキーマ説明（`core/tooling/schemas/skill.py`）に `permissions.md` とある箇所があるが、実体は **`load_permissions`（`permissions.json` 優先）**。

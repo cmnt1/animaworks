@@ -1,32 +1,26 @@
 # Priming チャネル技術リファレンス
 
-既定の `compact` は送信者・正本タスク・明示的な `always_prime` 保護条件と、必要なときだけ上限付き関連検索を取得する。最近の活動・エピソード・グラフの各チャネルは検索前に除外する。下記のチャネル一覧はオプトインの `full` の機能一覧で、すべてのトリガーで全チャネルが動く意味ではない。想起にはフレームワーク本文の目標とは独立したトークン予算を使う。
+既定の `compact` は送信者、タスク、常駐知識を取得し、条件を満たす場合だけ関連知識を検索する。オプトインの `full` は最近の活動とエピソードも取得する。チャネル構成は `priming.profile` で選択され、すべてのトリガーで全チャネルが動くわけではない。
 
-PrimingEngine が実行する全チャネルの詳細仕様。
-バジェット、検索ソース、フィルタリング、動的調整を含む。
-
-並列取得は **6 チャネル**（A / B / C / E / F / G）である。C0（important_knowledge）は Channel C と同一パイプライン内の補助ブロック。旧 Distilled Knowledge は独立したプライミングチャネルではなくなった。
-
----
+`PrimingEngine` が取得するチャネルと予算の仕様を示す。C0（important_knowledge）は Channel C の知識パイプライン内の補助ブロック。
 
 ## チャネル一覧
 
-| チャネル | バジェット（トークン） | ソース | trust |
-|---------|---------------------|--------|-------|
-| A: sender_profile | 500 | `shared/users/{sender}/index.md` | medium |
-| B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
-| C: related_knowledge | 1200 | RAG ベクトル検索（knowledge + common_knowledge） | medium / untrusted |
-| C0: important_knowledge | 300 | `[IMPORTANT]` タグ付きチャンク | medium |
-| E: pending_tasks | 500 | TaskStore + accepted task results | trusted |
-| F: episodes | 400 | RAG ベクトル検索（episodes/） | medium |
-| G: graph_context | 500 | MemoryBackend の community context + recent facts | medium |
+| チャネル | ソース | trust |
+|---------|--------|-------|
+| A: sender_profile | `shared/users/{sender}/index.md` | medium |
+| B: recent_activity | `activity_log/` + shared channels | trusted |
+| C: related_knowledge | RAG ベクトル検索（knowledge + common_knowledge） | medium / untrusted |
+| C0: important_knowledge | `[IMPORTANT]` タグ付きチャンク | medium |
+| E: pending_tasks | TaskStore + task results | trusted |
+| F: episodes | RAG ベクトル検索（episodes/） | medium |
 
 追加注入:
 
-| 項目 | バジェット | ソース | trust |
-|------|-----------|--------|-------|
-| Recent outbound | 上限なし（最大3件） | activity_log（直近2時間、`channel_post` / `message_sent`） | trusted |
-| Pending human notifications | 500 | `human_notify` イベント（直近24時間） | trusted |
+| 項目 | ソース | trust |
+|------|--------|-------|
+| Recent outbound | activity_log（最大3件、`channel_post` / `message_sent`） | trusted |
+| Pending human notifications | `human_notify` イベント | trusted |
 
 スキル・手続きの本文は Priming では注入されない。システムプロンプトのスキルカタログに示されたパス（例: `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`）を `read_memory_file` で読み込む。
 
@@ -37,7 +31,7 @@ PrimingEngine が実行する全チャネルの詳細仕様。
 送信者のユーザープロファイルを注入する。
 
 - **ソース**: `shared/users/{sender}/index.md` を直接読み取り
-- **バジェット**: 500トークン
+- **上限**: `min(400, max_tokens // 4)`
 - **送信者不明時**: スキップ
 
 ---
@@ -47,16 +41,15 @@ PrimingEngine が実行する全チャネルの詳細仕様。
 直近の活動タイムラインを注入する。
 
 - **ソース**: `activity_log/{date}.jsonl` + 共有チャネルの最新投稿
-- **バジェット**: 1300トークン
 
-**Priming 注入と明示検索の違い**: Channel B は **自動**でバジェット内に要約注入する。過去の行動ログを **キーワードで広く探す** 用途は `search_memory(scope="activity_log")`（BM25。`scope="all"` では activity_log BM25 を RRF でベクトル結果と統合）。注入は予算・フィルタ制約あり、ツール検索はクエリ主導で別物。
+**Priming 注入と明示検索の違い**: Channel B は `full` プロファイルで取得する。過去の行動ログをキーワードで広く探す用途は `search_memory(scope="activity_log")` を使う。注入とツール検索は別の経路である。
 
 ### トリガー別フィルタリング
 
 | トリガー | 除外されるイベントタイプ |
 |---------|----------------------|
-| `heartbeat` / `cron:*` | `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_end`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
-| `chat` | `cron_executed` |
+| `heartbeat` / `cron` / `inbox` / `task` | `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
+| その他 | `tool_use`, `tool_result`, `memory_write`, `cron_executed`, `heartbeat_start`, `heartbeat_end`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
 
 ---
 
@@ -64,7 +57,6 @@ PrimingEngine が実行する全チャネルの詳細仕様。
 
 RAG ベクトル検索で関連知識を注入する。
 
-- **バジェット**: 1200トークン
 - **検索方式**: Dual-query（メッセージコンテキスト + キーワードのみ）
 - **検索対象**: 個人 `knowledge/` + `shared_common_knowledge` コレクション
 - **最小スコア**: `config.json` の `rag.min_retrieval_score`（デフォルト 0.3）
@@ -75,19 +67,18 @@ RAG ベクトル検索で関連知識を注入する。
 
 | trust | 対象 | 処理 |
 |-------|------|------|
-| `medium` | 個人 knowledge、common_knowledge | 優先的にバジェットを消費 |
-| `untrusted` | 外部プラットフォーム由来（`origin_chain` に `external_platform` を含む） | 残りバジェットで注入。`origin=ORIGIN_EXTERNAL_PLATFORM` タグ付き |
+| `medium` | 個人 knowledge、common_knowledge | 優先的に予算を消費 |
+| `untrusted` | 外部プラットフォーム由来（`origin_chain` に `external_platform` を含む） | 残り予算で注入。`origin=ORIGIN_EXTERNAL_PLATFORM` タグ付き |
 
 ---
 
 ## Channel C0: important_knowledge
 
-`[IMPORTANT]` タグ付きチャンクの概要ポインタを常時注入する。
+`[IMPORTANT]` タグ付きチャンクの概要ポインタを注入する。
 
-- **バジェット**: 300トークン
 - **対象**: `knowledge/` 内の `[IMPORTANT]` タグ付きチャンク
-- **注入形式**: 概要ポインタのみ（全文ではない）。詳細は `read_memory_file` で取得
-- **用途**: 重要な業務ルール・判断基準の確実な想起
+- **注入形式**: 概要ポインタ。詳細は `read_memory_file` で取得
+- **用途**: 重要な業務ルール・判断基準の想起
 
 ---
 
@@ -95,16 +86,14 @@ RAG ベクトル検索で関連知識を注入する。
 
 タスクキューの要約を注入する。
 
-- **バジェット**: 500トークン
+- **上限**: `min(500, max_tokens // 3)`
 - **ソース**: `TaskQueueManager.format_for_priming()`
 - **内容**:
   - `pending` / `in_progress` タスクの一覧と要約
-  - `source: human` タスクに 🔴 HIGH マーカー
-  - 30分以上更新なしのタスクに ⚠️ STALE マーカー
-  - 期限超過タスクに 🔴 OVERDUE マーカー
-  - アクティブな並列タスク（submit_tasks バッチ）の進捗
+  - 人間が起票したタスクに 🔴 HIGH マーカー
+  - 30分以上更新がないタスクに ⚠️ STALE マーカー
+  - 委譲タスクの状態
   - `task_results/` からの完了タスク結果
-  - `status: failed` + `meta.executor == "taskexec"` の失敗タスク
 
 ---
 
@@ -112,43 +101,19 @@ RAG ベクトル検索で関連知識を注入する。
 
 RAG ベクトル検索で関連エピソードを注入する。
 
-- **バジェット**: 400トークン
-- **検索対象**: `episodes/` コレクション（ChromaDB）
+- **検索対象**: `episodes/` コレクション
 - **最小スコア**: Channel C と共通（`rag.min_retrieval_score`）
 
 ---
 
-## Channel G: graph_context
+## 予算とプロファイル
 
-MemoryBackend から graph/community context と recent facts を注入する。
+`config.json` の `priming.profile` は `compact` または `full` を指定する（デフォルト: `compact`）。Anima ごとの `status.json` に `priming_profile` を指定すると、その設定が優先される。`priming.max_tokens` は想起のトークン予算（デフォルト: 2000）、`priming.channel_timeout_seconds` はチャネルごとの取得タイムアウト（デフォルト: 60秒）。
 
-- **バジェット**: 500トークン
-- **ソース**: `MemoryBackend.get_priming_context()`
-- **バックエンド利用不可時**: スキップ
-
----
-
-## 動的バジェット調整
-
-`config.json` の `priming.dynamic_budget: true`（デフォルト）で有効。
-
-### メッセージタイプ別バジェット
-
-| メッセージタイプ | バジェット | 設定キー |
-|----------------|-----------|---------|
-| greeting | 500 | `priming.budget_greeting` |
-| question | 2000 | `priming.budget_question` |
-| request | 3000 | `priming.budget_request` |
-| heartbeat（フォールバック） | 200 | `priming.budget_heartbeat` |
-
-### Heartbeat バジェット計算
-
-```
-heartbeat_budget = max(budget_heartbeat, context_window × heartbeat_context_pct)
-```
-
-- `heartbeat_context_pct`: デフォルト 0.05（コンテキストウィンドウの5%）
-- 例: context_window=200000 → `max(200, 200000 × 0.05)` = 10000
+- `compact` は A（送信者）、E（タスク）、C0（常駐知識）、最近の送信、保留中の人間通知を取得する。C（関連知識）は chat/task トリガー、または question/request/delegation 意図があり、メッセージがある場合に取得する。B（最近の活動）・F（エピソード）・G（並列タスク表示）は取得しない。
+- `full` は A / B / C0 / C / E / F と最近の送信、人間通知を取得する。
+- A の上限は `min(400, max_tokens // 4)`、E の上限は `min(500, max_tokens // 3)`。最近の送信は最大3件・250トークン。`full` のチャネル項目と `compact` の関連知識は、`max_tokens` の残り枠に収める。
+- 保留中の人間通知は想起予算とは別に扱われる。
 
 ---
 

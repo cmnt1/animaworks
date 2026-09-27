@@ -61,12 +61,12 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "dynamic_budget": true },
+  "priming": { "profile": "compact" },
   "image_gen": {}
 }
 ```
 
-**注意**: `animas` セクションは組織レイアウト（`supervisor`, `speciality`）のみを保持する。モデル名・credential・max_turns 等のモデル設定は各 Anima の `status.json` に記録される（後述の「Anima 設定の解決」参照）。
+**注意**: `animas` セクションは組織レイアウト（`supervisor`, `speciality`）のみを保持する。モデル名・credential などのモデル設定は各 Anima の `status.json` に記録される（後述の「Anima 設定の解決」参照）。
 
 各セクションの役割:
 
@@ -312,13 +312,7 @@ tool_use をサポートするクラウド・ローカルモデル向け。LiteL
 - **特徴**: LiteLLM 経由で tool_use ループを回す。ツール実行はフレームワークがディスパッチ
 - **credential**: 各プロバイダに対応した credential を指定
 
-### Mode B (Basic): Assisted（LLM は思考のみ）
-
-tool_use 非対応モデル向け。LLM は思考のみ行い、記憶 I/O はフレームワークが代行する。
-
-- **対象モデル**: `ollama/gemma3*`, `ollama/phi4*`, 小規模 Ollama モデル等
-- **特徴**: 1ショットで応答を生成。ツール実行不可
-- **credential**: 通常 `ollama` 等のローカル credential
+Mode B は廃止されています。tool_use 非対応モデルは推奨しません。設定に残る `execution_mode: "B"` は Mode A として扱われます。
 
 ### モード自動判定の仕組み
 
@@ -329,7 +323,7 @@ tool_use 非対応モデル向け。LLM は思考のみ行い、記憶 I/O は�
 {
   "model_modes": {
     "ollama/my-custom-model": "A",
-    "ollama/experimental-*": "B"
+    "ollama/experimental-*": "A"
   }
 }
 ```
@@ -339,7 +333,7 @@ tool_use 非対応モデル向け。LLM は思考のみ行い、記憶 I/O は�
 2. `~/.animaworks/models.json`（完全一致 → ワイルドカード）
 3. `config.json` の `model_modes`（非推奨フォールバック）
 4. コードのデフォルトパターン（完全一致 → ワイルドカード）
-5. いずれにもマッチしない場合は `B`（安全側にフォールバック）
+5. いずれにもマッチしない場合は Mode A
 
 ## クレデンシャル設定
 
@@ -430,7 +424,7 @@ Anima のモデル設定は **`status.json` が Single Source of Truth（SSoT）
 | 2（フォールバック） | `anima_defaults` | `config.json` の全体デフォルト。`status.json` に未設定のフィールドに適用 |
 
 `config.json` の `animas` セクションは **組織レイアウト**（`supervisor`, `speciality`）のみを保持する。
-モデル名・credential・max_turns 等のモデル設定は `status.json` に記録される。
+モデル名・credential などのモデル設定は `status.json` に記録される。
 
 ### status.json の構造
 
@@ -443,7 +437,6 @@ Anima のモデル設定は **`status.json` が Single Source of Truth（SSoT）
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 10000,
   "context_threshold": 0.80,
   "execution_mode": null
 }
@@ -489,7 +482,6 @@ animaworks anima reload --all
 |-----------|-------------|------|
 | `model` | `claude-sonnet-4-6` | 使用するLLMモデル |
 | `max_tokens` | `8192` | 1回の応答の最大トークン数 |
-| `max_turns` | `10000` | 1セッションの最大ターン数 |
 | `credential` | `"anthropic"` | 使用する credential 名 |
 | `context_threshold` | `0.50` | コンテキスト使用率がこの閾値を超えると短期記憶を外部化 |
 

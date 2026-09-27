@@ -17,36 +17,37 @@ description: "ツール体系の全体像と使い方ガイド"
 | 区分 | ツール一覧の組み立て |
 |------|----------------------|
 | **Mode S（Agent SDK）** | Claude Code 組み込み（Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch 等）+ MCP `mcp__aw__*`（`core/mcp/server.py` の `_EXPOSED_TOOL_NAMES`）。 |
-| **Mode A（LiteLLM）** | `build_unified_tool_list`（`core/tooling/schemas/builder.py`）— **CC 互換 8 名** + 記憶 3 種（`search_memory` / `read_memory_file` / `write_memory_file`）+ `send_message` + `post_channel` + `submit_tasks` + `update_task` + `todo_write`。**条件付き**で `call_human`（人間通知設定時）・`delegate_task`（部下あり時）。`consolidation:*` トリガーではメッセージング・委譲・`submit_tasks` が除外される。実行中に `refresh_tools`（LiteLLM 側 `_refresh_tools_inline`）で個人/共通 `tools/*.py` のスキーマをリストへマージ可能。 |
-| **Mode B（Assisted）** | Mode A と同じ `build_unified_tool_list` をテキスト仕様として注入。 |
-| **Anthropic SDK フォールバック**（SDK 未導入時の Claude 等） | `build_tool_list` — フラグに応じてファイル・検索・チャネル読取・タスク全種・手順/知識アウトカム・スーパーバイザー・Vault・バックグラウンドタスク確認・`use_tool`・外部スキーマ等を追加（`core/tooling/schemas/builder.py`）。 |
+| **Mode A（LiteLLM）** | `build_unified_tool_list`（`core/tooling/schemas/builder.py`）が実行モード・トリガー・設定に応じてツール一覧を組み立てる。Claude Code 互換ツールに加えて、AnimaWorks の記憶・手順/知識・ワークスペース・通信・タスク管理ツールが含まれる。`call_human` は通知設定時、`delegate_task` は部下がいる場合に含まれ、`submit_tasks` は `background` / `submit_tasks` / `heartbeat` トリガーで利用できる。`consolidation:*` では `send_message` / `post_channel` / `delegate_task` / `submit_tasks` が除外される。 |
 
 ### Mode S（MCP）で公開される AnimaWorks ツール
 
-`core/mcp/server.py` の `_EXPOSED_TOOL_NAMES` に列挙されたものだけが MCP 経由で渡ります。一次情報は同ファイルの集合定義です。
+`core/mcp/server.py` の `_EXPOSED_TOOL_NAMES` に列挙されたものだけが MCP 経由で渡ります。一次情報は同ファイルの `_EXPOSED_TOOL_NAMES` です。
 
-`search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`
+- **記憶**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
+- **メッセージ**: `send_message`, `post_channel`
+- **通知**: `call_human`
+- **タスク**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
+- **ワークスペース**: `grant_workspace_access`
+- **スキル作成**: `create_skill`
+- **スキル管理**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
+- **雇用**: `create_anima`
 
-MCP に載るスキーマは上記 **のみ**（`_build_mcp_tools` が `_EXPOSED_TOOL_NAMES` でフィルタ）。`org_dashboard` 等のその他スーパーバイザー系は **MCP 公開対象外**（Mode S では Claude Code 側ツールや Bash 経由など別ルート）。
+MCP に載るスキーマは `_EXPOSED_TOOL_NAMES` で選ばれます。`mcp.trigger_scoped_tools` が有効な場合、トリガーに応じて一覧が絞り込まれます。スキル管理系のツール（`promote_procedure_to_skill` やライフサイクル管理など）は heartbeat・consolidation のときだけ表示され、`create_skill` はこの制限の対象外です。`delegate_task` は直属部下がいるときだけ表示され、`create_anima` は `newstaff` スキルを持つ場合に利用できます。
 
-`list_tools()`（`core/mcp/server.py`）は **直属部下がいない** とき、`_SUPERVISOR_TOOL_NAMES`（`_supervisor_tools()` 由来の全名）に含まれるツールを一覧から **除外**するため、例として **`delegate_task` は部下ありのときだけ** MCP 一覧に現れます。記憶統合モード（`.consolidation_mode`）では `send_message` / `post_channel` / `delegate_task` / `submit_tasks` が追加でブロックされます。
+### Mode A のツール一覧に含まれない例
 
-### Mode A/B の「統合ツールセット」に含まれない例
+`build_unified_tool_list` の一覧に含まれないツールは、必要に応じて **Bash + `animaworks-tool`** など別の経路で実行します。
 
-`build_unified_tool_list` は `_AW_CORE_NAMES`（`core/tooling/schemas/admin.py`）に含まれる記憶系のみをマージするため、例えば次は **統合リストには入りません**（必要なら **Bash + `animaworks-tool`** やフォールバック経路）。
-
-- **`archive_memory_file`** — スキーマは `MEMORY_TOOLS` にあるが `_AW_CORE_NAMES` 外。**Mode S（MCP）では公開**。
+- **`archive_memory_file`** — Mode S（MCP）では公開される。
 - `read_channel`, `read_dm_history`, `manage_channel`
-- `backlog_task`, `list_tasks`
-- スネークケースのファイル API（`read_file` / `write_file` 等）。統合側は **PascalCase の `Read` / `Write` / `Edit` …**
-- `refresh_tools` / `share_tool` / `create_skill` など（`build_tool_list` のフラグで付与されるツール群）
-- `use_tool` — Anthropic フォールバックでは `include_use_tool` が有効なときのみ（通常の LiteLLM 経路では付与されない）
+- `backlog_task`
+- スネークケースのファイル API（`read_file` / `write_file` 等）。Mode A の一覧では **PascalCase の `Read` / `Write` / `Edit` …** を使う。
 
-外部連携（Slack / Gmail 等）は **許可されている場合でも**、Mode A/B では多くの場面で **`Bash` から `animaworks-tool <モジュール> …` で実行**する運用になります。
+外部連携（Slack / Gmail 等）は **許可されている場合でも**、Mode A では多くの場面で **`Bash` から `animaworks-tool <モジュール> …` で実行**する運用になります。
 
 ## ファイル・シェル操作（Claude Code 互換 8 ツール）
 
-Mode A/B の統合スキーマでは **PascalCase 名**です。`ToolHandler` 内部ではスネークケースのハンドラにエイリアスされます。
+Mode A のスキーマでは **PascalCase 名**です。`ToolHandler` 内部ではスネークケースのハンドラにエイリアスされます。
 
 | ツール | 内部ハンドラ | 説明 | 主な必須パラメータ |
 |--------|----------------|------|-------------------|
@@ -124,7 +125,6 @@ Mode A/B の統合スキーマでは **PascalCase 名**です。`ToolHandler` �
 |--------|------|
 | **todo_write** | セッション内の短い ToDo リスト（Mode A の計画補助） |
 | **create_skill** | `skills/{name}/SKILL.md` または `common_skills/{name}/SKILL.md` を作成。`allowed_tools`、信頼・出自・分類・policy・routing補助メタデータも必要に応じて設定可能 |
-| **refresh_tools** / **share_tool** | 個人/共通ツールの再読込・共有 |
 
 
 スキル本文・手続きの全文は **`read_memory_file`** で相対パスを指定して読み込む（システムプロンプトのスキルカタログに `skills/.../SKILL.md`, `common_skills/.../SKILL.md`, `procedures/...` 等のパスが示される）。
@@ -152,7 +152,6 @@ Mode A/B の統合スキーマでは **PascalCase 名**です。`ToolHandler` �
 | **create_anima** | 新規 Anima 作成（`newstaff` スキル保持時など条件あり） |
 | **vault_get** / **vault_store** / **vault_list** | クレデンシャル Vault |
 | **check_background_task** / **list_background_tasks** | バックグラウンドツール実行の確認 |
-| **use_tool** | 外部ツール名+アクションの統一ディスパッチ（スキーマが有効な構成でのみ） |
 
 ## `core/integrations/` の外部モジュール（CLI / dispatch 用）
 

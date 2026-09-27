@@ -32,7 +32,7 @@ description: >-
 |--------|------|
 | `task_tracker` | `delegate_task` で委譲したタスクの進捗を部下側キューから追跡（`status`: all / active / completed。デフォルト: active） |
 
-**自動同期（`sync_delegated`）**: ハートビート完了後、フレームワークが部下のタスクキューを検査し、完了・失敗した委譲タスクを検出すると、上司側の追跡エントリを自動更新（done / failed）する。アーカイブ済みタスクも検索対象。手動で `task_tracker` を呼ばなくても、次回ハートビート周辺で状態が揃いやすい。
+委譲元の追跡カードは、委譲先の正本タスク記録を参照する。状態の確認には `task_tracker` を使用する。
 
 ## 重要: disable_subordinate と send_message の違い
 
@@ -98,8 +98,8 @@ animaworks anima audit --all --since 09:00  # 全Anima、今日9時以降
 ### タスク委譲
 
 ```
-delegate_task(name="aoi", instruction="週次レポートをまとめて", deadline="1d", summary="週次レポート作成")
-# name, instruction, deadline は必須。summary は省略可（instruction の先頭100文字が使われる）
+delegate_task(name="aoi", instruction="週次レポートをまとめて", summary="週次レポート作成")
+# 必須: `name`, `instruction`。任意: `summary`, `workspace`, `acceptance_criteria`, `model`
 # workspace を指定すると委譲先がそのワークスペースで作業する（workspace-manager スキル参照）
 task_tracker(status="active")      # 委譲タスクの進捗確認（status: all / active / completed）
 ```

@@ -418,7 +418,7 @@ DM（`send_message`）でのやり取りは **1トピック1往復** を原則�
 | 場面 | 宛先 | 例 |
 |------|------|-----|
 | 重要な進捗・問題の報告 | 上司 | `send_message(to="manager", content="タスクA完了", intent="report")` |
-| タスクの指示・委譲 | 部下 | `delegate_task(name="worker", instruction="レポート作成をお願い", deadline="1d")` |
+| タスクの指示・委譲 | 部下 | `delegate_task(name="worker", instruction="レポート作成をお願い")` |
 | 同僚との連携 | 同僚（同じ上司） | `send_message(to="peer", content="レビューお願い", intent="question")` |
 | 他部署への連絡 | 自分の上司を経由 | `send_message(to="manager", content="開発部のXさんに確認してほしい件が...", intent="question")` |
 

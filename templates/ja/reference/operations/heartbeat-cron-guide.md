@@ -149,7 +149,7 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 - **クラッシュ復旧**: 前回ハートビートが失敗した場合、`state/recovery_note.md` にエラー情報が保存される。次回起動時にプロンプトに注入され、復旧後にファイルは削除される。
 - **振り返り記録**: ハートビート出力に `[REFLECTION]...[/REFLECTION]` ブロックがあると、activity_log に `heartbeat_reflection` として記録され、次回以降のハートビートコンテキストに含まれる。
 - **部下チェック**: 部下を持つ Anima には、ハートビート・Cron のプロンプトに部下の状態確認指示が自動注入される。
-- **セッション時間制限**（`config.json` の `heartbeat`）: `soft_timeout_seconds`（デフォルト300秒）経過でラップアップ用のリマインダを注入、`hard_timeout_seconds`（デフォルト600秒）でセッションを強制終了。`max_turns` を設定すると、ハートビート専用のターン上限として per-anima の `max_turns` を上書きできる。
+- **セッション時間制限**（`config.json` の `heartbeat`）: `soft_timeout_seconds`（デフォルト300秒）経過でラップアップ用のリマインダを注入、`hard_timeout_seconds`（デフォルト600秒）でセッションを強制終了する。
 - **アイドル時の自動コンパクト**: `heartbeat.idle_compaction_minutes`（デフォルト10分）— ストリーム終了からこの時間経過後にアイドル自動コンパクションが走る（実行エンジン側の設定）。
 - **Board 投稿の間隔**: `heartbeat.channel_post_cooldown_s`（デフォルト300秒、0 で無制限）— 同一 Anima の `post_channel` 連投を抑止。
 
@@ -224,8 +224,6 @@ heartbeat.md をファイルシステム上で更新すると、次回のハー�
 例: ベース30分、Activity Level 200% → 実効15分
 
 - 実効間隔の下限は5分（どれだけブーストしても5分未満にはならない）
-- Activity Level 100%以下では max_turns も比例してスケールダウン（下限3ターン）
-- Activity Level 100%以上では max_turns は変更なし（間隔のみ短縮）
 
 ### Activity Schedule（時間帯別自動切替 / ナイトモード）
 
@@ -305,7 +303,7 @@ type: llm
 今週のepisodes/を読み返し、パターンを抽出してknowledge/に統合する。
 ```
 
-旧形式（`## タスク名（毎日 9:00 JST）` のように括弧内にスケジュールを書く形式）は、`animaworks migrate-cron` で新形式に変換できる。
+旧形式（`## タスク名（毎日 9:00 JST）` のように括弧内にスケジュールを書く形式）は、サーバー起動時または `animaworks migrate` で新形式に自動変換される。
 
 ### CronTask のスキーマ
 
@@ -440,7 +438,7 @@ cron.md の `schedule:` ディレクティブには **標準5フィールド cro
 
 ### 日本語スケジュールからの移行
 
-旧形式（`## タスク名（毎日 9:00 JST）`）で書かれた cron.md は、`animaworks migrate-cron` で標準 cron 式に変換できる。変換対応表:
+旧形式（`## タスク名（毎日 9:00 JST）`）で書かれた cron.md は、サーバー起動時または `animaworks migrate` で標準 cron 式に自動変換される。変換対応表:
 
 | 日本語記法 | cron 式例 |
 |-----------|----------|

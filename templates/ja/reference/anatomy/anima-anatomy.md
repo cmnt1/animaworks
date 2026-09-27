@@ -154,7 +154,6 @@ injection.md はあなたの**可変の行動指針**。業務方針の変更に
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
-  "max_turns": 10000,
   "supervisor": "aoi"
 }
 ```
@@ -166,7 +165,6 @@ injection.md はあなたの**可変の行動指針**。業務方針の変更に
 | `model` | 使用する LLM モデル |
 | `credential` | API 認証情報の名前 |
 | `max_tokens` | 1回の応答の最大トークン |
-| `max_turns` | 1セッションの最大ターン数 |
 | `supervisor` | 上司の Anima 名（null = トップレベル） |
 | `background_model` | Heartbeat/Cron 用の軽量モデル（未設定時はメインモデル） |
 
