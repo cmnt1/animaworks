@@ -28,6 +28,7 @@ from typing import Any
 
 from core.memory._io import atomic_write_text
 from core.memory.rag.exclusion import is_archive_path
+from core.platform.locks import locked_path
 from core.time_utils import ensure_aware, get_app_timezone, today_local
 
 logger = logging.getLogger("animaworks.memory")
@@ -337,16 +338,9 @@ def longterm_bm25_delta_path(anima_dir: Path) -> Path:
 @contextmanager
 def _longterm_delta_lock(anima_dir: Path):
     """Serialize read-modify-write updates to the source delta store."""
-    import fcntl
-
     path = longterm_bm25_delta_path(anima_dir).with_suffix(".lock")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+    with locked_path(path):
+        yield
 
 
 def _json_dumps(value: Any) -> str:

@@ -18,6 +18,7 @@ from core.config.schemas import (
     DEFAULT_LOCAL_LLM_PRESETS,
     LocalLLMConfig,
 )
+from core.platform.atomic_io import atomic_write_json
 
 
 def normalize_ollama_base_url(base_url: str | None) -> str:
@@ -82,9 +83,7 @@ def apply_local_llm_presets_to_animas(animas_dir: Path, config: Any) -> list[str
             continue
         role = status_data.get("role", "general")
         if apply_local_llm_role_to_status(status_data, config, role):
-            tmp = status_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(status_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            tmp.replace(status_path)
+            atomic_write_json(status_path, status_data)
             updated.append(anima_dir.name)
 
     return updated

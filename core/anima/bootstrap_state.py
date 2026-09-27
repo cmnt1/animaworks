@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import now_local
 
 STATE_PENDING_USER_INPUT = "pending_user_input"
@@ -68,8 +69,6 @@ def read_bootstrap_state(anima_dir: Path) -> dict[str, Any]:
 
 
 def write_bootstrap_state(anima_dir: Path, state: dict[str, Any]) -> dict[str, Any]:
-    state_dir = anima_dir / "state"
-    state_dir.mkdir(parents=True, exist_ok=True)
     payload = dict(state)
     payload["version"] = 1
     payload["updated_at"] = _now_iso()
@@ -78,9 +77,7 @@ def write_bootstrap_state(anima_dir: Path, state: dict[str, Any]) -> dict[str, A
         payload["reason"] = "invalid_bootstrap_state"
 
     path = bootstrap_state_path(anima_dir)
-    tmp_path = path.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp_path.replace(path)
+    atomic_write_json(path, payload)
     return payload
 
 

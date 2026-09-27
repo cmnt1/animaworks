@@ -18,9 +18,9 @@ treated as "not blocked".  A broken guard must never stop a healthy call — the
 same lesson as the shared-knowledge-DB corruption cascade, where a self-heal
 mechanism became the outage.
 
-Writes are serialized with an advisory ``flock`` on a sidecar lock file (the
-JSON body is swapped via ``os.replace`` so its inode changes and cannot itself
-be locked).  If ``flock`` is unavailable or fails, writing proceeds unlocked —
+Writes are serialized with an advisory file lock on a sidecar lock file (the
+JSON body is atomically replaced so its inode changes and cannot itself be
+locked).  If locking is unavailable or fails, writing proceeds unlocked —
 fail-open takes priority over strict mutual exclusion.
 """
 
@@ -30,20 +30,17 @@ import contextlib
 import json
 import logging
 import os
-import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - non-POSIX
-    fcntl = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from core.config.schemas import LlmRateGuardConfig
+
+from core.platform.atomic_io import atomic_write_json
+from core.platform.locks import locked_path
 
 logger = logging.getLogger("animaworks.execution.rate_guard")
 
@@ -276,34 +273,13 @@ class LlmRateGuard:
 
     @contextlib.contextmanager
     def _locked(self) -> Iterator[None]:
-        """Hold an exclusive advisory lock for the write critical section.
-
-        Fail-open: if ``flock`` is unavailable or cannot be acquired, the block
-        is yielded unlocked (last-writer-wins) rather than dropping the write.
-        """
-        if fcntl is None:
+        """Hold an exclusive advisory lock, proceeding unlocked on OS errors."""
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(locked_path(self._resolve_lock_path(), best_effort=True))
+            except OSError:
+                logger.debug("rate guard lock setup failed; proceeding without lock", exc_info=True)
             yield
-            return
-        lock_path = self._resolve_lock_path()
-        lock_file = None
-        try:
-            lock_path.parent.mkdir(parents=True, exist_ok=True)
-            lock_file = open(lock_path, "w")  # noqa: SIM115 - closed in finally
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        except Exception:
-            logger.debug("rate guard flock failed; proceeding without lock", exc_info=True)
-            if lock_file is not None:
-                with contextlib.suppress(OSError):
-                    lock_file.close()
-            yield
-            return
-        try:
-            yield
-        finally:
-            with contextlib.suppress(OSError):
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            with contextlib.suppress(OSError):
-                lock_file.close()
 
     def _read_state_cached(self) -> dict:
         """Read state via a stat+mtime cache (hot path for blocked_remaining)."""
@@ -334,19 +310,13 @@ class LlmRateGuard:
         return data
 
     def _write_state(self, state: dict) -> None:
-        path = self._resolve_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(state, f)
-            os.replace(tmp_path, path)
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                logger.debug("failed to unlink temp guard file %s", tmp_path, exc_info=True)
-            raise
+        atomic_write_json(
+            self._resolve_path(),
+            state,
+            indent=None,
+            ensure_ascii=True,
+            trailing_newline=False,
+        )
 
     def _append_history(self, entry: dict) -> None:
         path = self._resolve_path().with_name(_HISTORY_FILENAME)

@@ -10,11 +10,11 @@ from __future__ import annotations
 """L1 persistence primitives for engine session identifiers."""
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from core.platform.atomic_io import atomic_write_json
 
 SessionEngine = Literal["agent_sdk", "codex", "cursor", "grok"]
 
@@ -123,30 +123,7 @@ class SessionStore:
 
     def write_json(self, data: dict[str, Any]) -> None:
         """Atomically write JSON state, preserving the SDK's durable format."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp_name: str | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.path.parent,
-                prefix=f".{self.path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temp:
-                temp_name = temp.name
-                json.dump(data, temp, ensure_ascii=False)
-                temp.write("\n")
-                temp.flush()
-                os.fsync(temp.fileno())
-            os.replace(temp_name, self.path)
-            temp_name = None
-        finally:
-            if temp_name:
-                try:
-                    os.unlink(temp_name)
-                except OSError:
-                    pass
+        atomic_write_json(self.path, data, indent=None)
 
     def clear(self) -> None:
         """Remove this engine session file if it exists."""

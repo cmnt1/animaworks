@@ -14,6 +14,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
+
 logger = logging.getLogger(__name__)
 
 
@@ -1089,9 +1091,7 @@ def cmd_anima_set_outbound_limit(args: argparse.Namespace) -> None:
     if args.clear:
         for f in fields:
             data.pop(f, None)
-        tmp = status_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        tmp.replace(status_path)
+        atomic_write_json(status_path, data)
         print(t("cli.set_outbound_limit_cleared", name=name))
         return
 
@@ -1110,9 +1110,7 @@ def cmd_anima_set_outbound_limit(args: argparse.Namespace) -> None:
         data["max_recipients_per_run"] = args.per_run
         details.append(f"per_run={args.per_run}")
 
-    tmp = status_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    tmp.replace(status_path)
+    atomic_write_json(status_path, data)
     print(t("cli.set_outbound_limit_success", name=name, details=", ".join(details)))
 
 
@@ -1316,12 +1314,7 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
                 status_data = json.loads(status_file.read_text(encoding="utf-8"))
                 if status_data.get("supervisor") == old_name:
                     status_data["supervisor"] = new_name
-                    tmp = status_file.with_suffix(".tmp")
-                    tmp.write_text(
-                        json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-                        encoding="utf-8",
-                    )
-                    tmp.replace(status_file)
+                    atomic_write_json(status_file, status_data)
                     status_updated += 1
             except Exception:
                 pass

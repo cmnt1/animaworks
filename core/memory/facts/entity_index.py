@@ -10,22 +10,19 @@ import contextlib
 import json
 import logging
 import re
-import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from core.memory._io import atomic_write_text
 from core.memory.facts.store import FactRecord, fact_entity_names, iter_fact_records
-from core.platform.locks import acquire_file_lock, release_file_lock
+from core.platform.locks import locked_path
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.memory.entity_index")
 
 REGISTRY_VERSION = 1
 _NORMALIZE_RE = re.compile(r"[^0-9A-Za-z\u3040-\u30ff\u3400-\u9fff+&'-]+")
-_LOCKS: dict[Path, threading.Lock] = {}
-_LOCKS_GUARD = threading.Lock()
 
 
 def normalize_entity_key(value: object) -> str:
@@ -359,35 +356,12 @@ def record_entities(record: FactRecord) -> list[str]:
     return out
 
 
-def _process_lock(path: Path) -> threading.Lock:
-    resolved = path.resolve()
-    with _LOCKS_GUARD:
-        if resolved not in _LOCKS:
-            _LOCKS[resolved] = threading.Lock()
-        return _LOCKS[resolved]
-
-
 @contextlib.contextmanager
 def _locked_registry(anima_dir: Path) -> Iterator[None]:
     path = entity_registry_path(anima_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
-    thread_lock = _process_lock(lock_path)
-    with thread_lock, lock_path.open("a+", encoding="utf-8") as lock_file:
-        locked = False
-        try:
-            acquire_file_lock(lock_file, exclusive=True)
-            locked = True
-        except OSError:
-            logger.debug("OS file lock unavailable for %s", lock_path, exc_info=True)
-        try:
-            yield
-        finally:
-            if locked:
-                try:
-                    release_file_lock(lock_file)
-                except OSError:
-                    logger.debug("Failed to release registry lock %s", lock_path, exc_info=True)
+    with locked_path(lock_path, thread_lock=True, best_effort=True):
+        yield
 
 
 def _new_entry(canonical: str, source_fact_id: str) -> dict[str, Any]:

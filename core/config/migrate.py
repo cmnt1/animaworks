@@ -26,6 +26,7 @@ from core.config.models import (
     ToolCreationPermission,
 )
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.config_migrate")
 
@@ -741,12 +742,7 @@ def migrate_model_config_to_status(data_dir: Path, *, dry_run: bool = False) -> 
 
     if config_changed and not dry_run:
         raw["animas"] = animas_section
-        tmp_path = config_path.with_suffix(".tmp")
-        tmp_path.write_text(
-            json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        tmp_path.replace(config_path)
+        atomic_write_json(config_path, raw)
         logger.info("Cleaned model fields from config.json animas section")
 
     return results

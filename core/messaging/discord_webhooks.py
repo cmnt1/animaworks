@@ -15,8 +15,6 @@ parameters make each Anima appear as a distinct identity.
 
 import json
 import logging
-import os
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -27,6 +25,7 @@ from core.integrations._base import get_credential
 from core.integrations._discord_client import DiscordAPIError, DiscordClient
 from core.integrations._discord_markdown import DISCORD_MESSAGE_LIMIT
 from core.paths import get_data_dir
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.discord_webhooks")
 _WEBHOOK_NAME = "AnimaWorks"
@@ -246,7 +245,14 @@ class DiscordWebhookManager:
             p.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
                 snapshot = dict(self._webhooks)
-            _atomic_write_json(p, snapshot)
+            atomic_write_json(
+                p,
+                snapshot,
+                indent=2,
+                ensure_ascii=True,
+                trailing_newline=False,
+                mode=0o600,
+            )
         except Exception:
             logger.debug("Failed to persist webhook cache", exc_info=True)
 
@@ -257,28 +263,19 @@ class DiscordWebhookManager:
             p.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
                 snapshot = dict(self._thread_map)
-            _atomic_write_json(p, snapshot)
+            atomic_write_json(
+                p,
+                snapshot,
+                indent=2,
+                ensure_ascii=True,
+                trailing_newline=False,
+                mode=0o600,
+            )
         except Exception:
             logger.debug("Failed to persist thread map", exc_info=True)
 
 
 # ── Helpers ──────────────────────────────────────────────────
-
-
-def _atomic_write_json(path: Path, data: Any) -> None:
-    """Write JSON to *path* atomically via temp file + rename (mode 0o600)."""
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
 
 
 def _split_message(content: str) -> list[str]:

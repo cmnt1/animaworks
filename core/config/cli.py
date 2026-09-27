@@ -23,6 +23,7 @@ from core.config.models import (
     save_config,
 )
 from core.paths import get_animas_dir
+from core.platform.atomic_io import atomic_write_json
 
 # ---------------------------------------------------------------------------
 # Helper utilities
@@ -187,13 +188,7 @@ def cmd_config_set(args: argparse.Namespace) -> None:
             except (json.JSONDecodeError, OSError):
                 pass
         status_data[field] = coerced
-        status_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = status_path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        tmp.replace(status_path)
+        atomic_write_json(status_path, status_data)
         print(f"Set {anima_name}/status.json {field} = {_mask_secret(key, coerced)}")
         return
 
@@ -339,13 +334,7 @@ def _interactive_setup() -> None:
             status_data["credential"] = cred
 
         if model or cred:
-            status_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = status_path.with_suffix(".tmp")
-            tmp.write_text(
-                json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
-            tmp.replace(status_path)
+            atomic_write_json(status_path, status_data)
 
         if anima_name not in config.animas:
             config.animas[anima_name] = AnimaModelConfig()

@@ -14,7 +14,6 @@ decides who should act and calls ``delegate_task`` itself.
 """
 
 import asyncio
-import fcntl
 import json
 import logging
 import os
@@ -30,6 +29,7 @@ from core.config.schemas import GitHubWebhookConfig
 from core.i18n import t
 from core.messaging.messenger import Messenger
 from core.paths import get_shared_dir
+from core.platform.locks import locked_path
 
 logger = logging.getLogger("animaworks.github_gateway")
 
@@ -102,15 +102,10 @@ def locked_dispatch_state(state_file: Path) -> Iterator[dict[str, Any]]:
 
     A stable sidecar inode is locked while the JSON is atomically replaced.
     """
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    with state_file.with_suffix(".lock").open("a+", encoding="utf-8") as lock_handle:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        try:
-            state = _load_state(state_file)
-            yield state
-            _save_state(state_file, state)
-        finally:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+    with locked_path(state_file.with_suffix(".lock")):
+        state = _load_state(state_file)
+        yield state
+        _save_state(state_file, state)
 
 
 class GitHubWebhookManager:

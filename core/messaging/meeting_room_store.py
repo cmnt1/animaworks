@@ -2,21 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
+from core.platform.locks import locked_path
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.meeting_room_store")
 
 _ROOM_ID_RE = re.compile(r"^[a-f0-9]{12}$")
-_ROOM_LOCKS: dict[Path, threading.RLock] = {}
-_ROOM_LOCKS_GUARD = threading.Lock()
 
 
 def _validate_room_id(room_id: str) -> None:
@@ -24,38 +22,11 @@ def _validate_room_id(room_id: str) -> None:
         raise ValueError(f"Invalid room_id: {room_id!r}")
 
 
-def _process_lock(path: Path) -> threading.RLock:
-    resolved = path.resolve()
-    with _ROOM_LOCKS_GUARD:
-        if resolved not in _ROOM_LOCKS:
-            _ROOM_LOCKS[resolved] = threading.RLock()
-        return _ROOM_LOCKS[resolved]
-
-
 @contextmanager
 def _locked_room(path: Path) -> Iterator[None]:
-    path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
-    thread_lock = _process_lock(lock_path)
-    with thread_lock, lock_path.open("a+", encoding="utf-8") as lock_file:
-        locked = False
-        try:
-            from core.platform.locks import acquire_file_lock
-
-            acquire_file_lock(lock_file, exclusive=True)
-            locked = True
-        except OSError:
-            logger.debug("OS file lock unavailable for %s", lock_path, exc_info=True)
-        try:
-            yield
-        finally:
-            if locked:
-                try:
-                    from core.platform.locks import release_file_lock
-
-                    release_file_lock(lock_file)
-                except OSError:
-                    logger.debug("Failed to release meeting room lock %s", lock_path, exc_info=True)
+    with locked_path(lock_path, thread_lock=True, best_effort=True):
+        yield
 
 
 def _room_path(meetings_dir: Path, room_id: str) -> Path:
@@ -76,9 +47,7 @@ def _load_room_data(path: Path) -> dict[str, Any]:
 
 
 def _write_room_data(path: Path, data: dict[str, Any]) -> None:
-    tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
-    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp_path.replace(path)
+    atomic_write_json(path, data, trailing_newline=False)
 
 
 def append_room_message(

@@ -12,7 +12,6 @@ limit after six. Notices are queued per (actor, recipient) instead, and the
 supervisor sends one digest per pair once the actor has been quiet for a while.
 """
 
-import fcntl
 import hashlib
 import json
 import logging
@@ -21,6 +20,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from core.platform.locks import locked_path
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +38,8 @@ def _queue_dir() -> Path:
 
 @contextmanager
 def _locked(queue_dir: Path):
-    queue_dir.mkdir(parents=True, exist_ok=True)
-    with (queue_dir / ".lock").open("a") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    with locked_path(queue_dir / ".lock"):
+        yield
 
 
 def queue_task_notice(

@@ -25,6 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 from core.config.models import ActivityScheduleEntry, load_config, save_config
 from core.config.resolver import resolve_process_model_config
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 from core.schemas import CronTask
 from core.supervisor.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
@@ -511,13 +512,7 @@ class SchedulerManager:
     @staticmethod
     def _write_cron_state(path: Path, data: dict[str, Any]) -> None:
         """Atomically persist cron guard state."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(f"{path.suffix}.tmp")
-        tmp_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        tmp_path.replace(path)
+        atomic_write_json(path, data, sort_keys=True)
 
     @staticmethod
     def _parse_cron_guard_timestamp(value: object, now: datetime) -> datetime | None:

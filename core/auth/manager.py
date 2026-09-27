@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import secrets
 from datetime import UTC
 from pathlib import Path
@@ -21,6 +20,7 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 
 from core.auth.models import AuthConfig, AuthUser, Session
 from core.paths import get_data_dir
+from core.platform.atomic_io import atomic_write_text
 
 logger = logging.getLogger("animaworks.auth")
 
@@ -52,17 +52,7 @@ def load_auth() -> AuthConfig:
 def save_auth(config: AuthConfig) -> None:
     """Atomically save auth configuration to disk with restrictive permissions."""
     path = get_auth_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(
-        config.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
-    os.replace(tmp, path)
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    atomic_write_text(path, config.model_dump_json(indent=2))
     logger.info("Saved auth config to %s", path)
 
 

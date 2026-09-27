@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from core.config.model_mode import _match_models_json
 from core.config.schemas import AnimaWorksConfig
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 
 if TYPE_CHECKING:
     from core.schemas import ModelConfig
@@ -693,12 +694,7 @@ def update_status_model(
             data["memory_backend"] = memory_backend
         else:
             data.pop("memory_backend", None)
-    tmp = status_path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(status_path)
+    atomic_write_json(status_path, data)
 
 
 # ── ModelFamily ──────────────────────────────────────────────────────
@@ -843,12 +839,7 @@ def smart_update_model(
                 cleared.append(field)
 
     # -- atomic write --
-    tmp = status_path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(status_path)
+    atomic_write_json(status_path, data)
 
     return {
         "model": model,

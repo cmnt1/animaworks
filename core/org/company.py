@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import shutil
-import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,6 +24,7 @@ from typing import Any
 
 from core.config.models import read_anima_company, read_anima_company_checked
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -130,22 +130,6 @@ def _managed_company_dir(name: str, data_dir: Path) -> Path:
     return directory
 
 
-def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-
-
 def _read_json_object(path: Path, *, missing_ok: bool = False) -> dict[str, Any]:
     if missing_ok and not path.exists():
         return {}
@@ -204,7 +188,7 @@ def create_company(
     if missing:
         config.update(missing)
         try:
-            _atomic_write_json(config_path, config)
+            atomic_write_json(config_path, config)
         except OSError as exc:
             raise CompanyError(f"Failed to write {config_path}: {exc}") from exc
         changed = True
@@ -332,7 +316,7 @@ def _write_anima_company(anima_dir: Path, company_name: str | None) -> None:
     else:
         status["company"] = company_name
     try:
-        _atomic_write_json(status_path, status)
+        atomic_write_json(status_path, status)
     except OSError as exc:
         raise CompanyError(f"Failed to update {status_path}: {exc}") from exc
 
@@ -1038,7 +1022,7 @@ def export_company(
     vault_references = _collect_vault_references(source_credentials)
     config["credentials"] = _redact_credential_value(source_credentials)
     try:
-        _atomic_write_json(destination / "config.export.json", config)
+        atomic_write_json(destination / "config.export.json", config)
     except OSError as exc:
         raise CompanyError(f"Failed to write exported config: {exc}") from exc
 
