@@ -14,11 +14,12 @@ to protect against data loss on process crash or power failure.
 """
 
 import logging
-import os
 import shutil
-import tempfile
 from pathlib import Path
+from typing import Any
 
+from core.platform.atomic_io import atomic_write_json as _platform_atomic_write_json
+from core.platform.atomic_io import atomic_write_text as _platform_atomic_write_text
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.memory._io")
@@ -42,37 +43,23 @@ def archive_episode_before_write(anima_dir: Path, episode_path: Path) -> Path | 
 
 
 def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
-    """Write content to file atomically using temp + rename pattern.
-
-    Raises:
-        MemoryWriteError: On I/O failure (wraps underlying OSError).
-    """
+    """Write content atomically, wrapping I/O failures as MemoryWriteError."""
     from core.exceptions import MemoryWriteError
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=path.parent,
-        suffix=".tmp",
-        prefix=f".{path.name}.",
-    )
     try:
-        with os.fdopen(fd, "w", encoding=encoding) as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, path)
+        _platform_atomic_write_text(path, content, encoding=encoding)
     except OSError as exc:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            logger.debug("Failed to unlink temp file %s", tmp_path, exc_info=True)
         raise MemoryWriteError(f"Atomic write failed for {path}: {exc}") from exc
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            logger.debug("Failed to unlink temp file %s", tmp_path, exc_info=True)
-        raise
+
+
+def atomic_write_json(path: Path, obj: Any, **kwargs: Any) -> None:
+    """Atomically write JSON, wrapping I/O failures as MemoryWriteError."""
+    from core.exceptions import MemoryWriteError
+
+    try:
+        _platform_atomic_write_json(path, obj, **kwargs)
+    except OSError as exc:
+        raise MemoryWriteError(f"Atomic write failed for {path}: {exc}") from exc
 
 
 def cleanup_tmp_files(directory: Path, prefix: str = ".") -> int:

@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+from core.platform.atomic_io import atomic_write_json
+
 logger = logging.getLogger(__name__)
 
 LeaseLiveness = Literal["live", "dead", "unknown"]
@@ -47,38 +49,6 @@ def _process_create_time(pid: int) -> float | None:
     except Exception:
         # psutil.Error hierarchy plus OS-level failures — treat as unavailable.
         return None
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Write JSON via temp+fsync+replace (+ directory fsync when possible)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    data = json.dumps(payload, ensure_ascii=False)
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as fh:
-            fh.write(data)
-            fh.flush()
-            try:
-                os.fsync(fh.fileno())
-            except OSError:
-                logger.debug("fsync failed for lease temp file %s", tmp_path, exc_info=True)
-        os.replace(tmp_path, path)
-        try:
-            dir_fd = os.open(str(path.parent), os.O_RDONLY)
-        except OSError:
-            return
-        try:
-            os.fsync(dir_fd)
-        except OSError:
-            logger.debug("directory fsync failed for %s", path.parent, exc_info=True)
-        finally:
-            os.close(dir_fd)
-    except Exception:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
 
 
 def write_processing_lease(
@@ -134,7 +104,7 @@ def write_processing_lease(
                 "process_start_time": float(start_time),
             }
         )
-        _atomic_write_json(lease_path, payload)
+        atomic_write_json(lease_path, payload, indent=None, trailing_newline=False, fsync_dir=True)
     else:
         lease_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return lease_path

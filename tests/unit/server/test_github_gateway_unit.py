@@ -638,21 +638,29 @@ class TestSharedStateLocking:
             "future_schema_field": {"nested": [1, 2, 3]},
         }
         state_file.write_text(json.dumps(original), encoding="utf-8")
-        calls: list[int] = []
-        real_flock = github_gateway.fcntl.flock
+        from core.platform import locks
 
-        def recording_flock(fd: int, operation: int) -> None:
-            calls.append(operation)
-            real_flock(fd, operation)
+        calls: list[tuple[str, bool | None]] = []
+        real_acquire = locks.acquire_file_lock
+        real_release = locks.release_file_lock
 
-        monkeypatch.setattr(github_gateway.fcntl, "flock", recording_flock)
+        def recording_acquire(file_obj, *, exclusive: bool, blocking: bool = True) -> None:  # noqa: ANN001
+            calls.append(("acquire", exclusive))
+            real_acquire(file_obj, exclusive=exclusive, blocking=blocking)
+
+        def recording_release(file_obj) -> None:  # noqa: ANN001
+            calls.append(("release", None))
+            real_release(file_obj)
+
+        monkeypatch.setattr(locks, "acquire_file_lock", recording_acquire)
+        monkeypatch.setattr(locks, "release_file_lock", recording_release)
         with locked_dispatch_state(state_file) as state:
             state["prs"]["o/r#1"] = {"sha": "a", "title": "t", "notified": {}}
 
         restored = json.loads(state_file.read_text(encoding="utf-8"))
         assert restored["future_schema_field"] == {"nested": [1, 2, 3]}
         assert restored["prs"]["o/r#1"]["sha"] == "a"
-        assert calls == [github_gateway.fcntl.LOCK_EX, github_gateway.fcntl.LOCK_UN]
+        assert calls == [("acquire", True), ("release", None)]
         assert state_file.with_suffix(".lock").exists()
 
     @pytest.mark.parametrize("initial", ["", "not-json", "[]"])

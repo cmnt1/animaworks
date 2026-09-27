@@ -761,8 +761,8 @@ class TestCleanupFactsLocks:
         assert stale_nonempty.exists()
 
     def test_preserves_lock_held_by_another_file_descriptor(self, tmp_path: Path):
-        fcntl = pytest.importorskip("fcntl")
         from core.memory.maintenance.housekeeping import _cleanup_facts_locks
+        from core.platform.locks import acquire_file_lock
 
         facts_dir = tmp_path / "alice" / "facts"
         facts_dir.mkdir(parents=True)
@@ -772,7 +772,7 @@ class TestCleanupFactsLocks:
         os.utime(held_lock, (stale_time, stale_time))
 
         with held_lock.open("r+b") as lock_handle:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire_file_lock(lock_handle, exclusive=True, blocking=False)
             result = _cleanup_facts_locks(tmp_path, stale_hours=24)
 
             assert held_lock.exists()
@@ -796,9 +796,7 @@ class TestCleanupFactsLocks:
         assert result["skipped"] is True
         assert result["reason"] == "stale_hours_must_be_positive"
 
-    def test_fcntl_unavailable_fails_closed(self, tmp_path: Path):
-        from unittest.mock import patch
-
+    def test_lock_unavailable_fails_closed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from core.memory.maintenance.housekeeping import _cleanup_facts_locks
 
         facts_dir = tmp_path / "alice" / "facts"
@@ -808,12 +806,15 @@ class TestCleanupFactsLocks:
         old_time = time.time() - (25 * 3600)
         os.utime(stale_lock, (old_time, old_time))
 
-        with patch.dict("sys.modules", {"fcntl": None}):
-            result = _cleanup_facts_locks(tmp_path, stale_hours=24)
+        def fail_acquire(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise OSError("locking unavailable")
+
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.acquire_file_lock", fail_acquire)
+        result = _cleanup_facts_locks(tmp_path, stale_hours=24)
 
         assert stale_lock.exists()
-        assert result["skipped"] is True
-        assert result["reason"] == "fcntl_unavailable"
+        assert result["deleted_files"] == 0
+        assert result["lock_failures"] == 1
 
 
 # ── run_housekeeping integration test ──────────────────────────

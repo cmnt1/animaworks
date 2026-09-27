@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
+
 
 def register_cron_guard_command(subparsers: argparse._SubParsersAction) -> None:
     """Register the ``cron-guard`` command group."""
@@ -37,13 +39,7 @@ def _read_object(path: Path) -> dict[str, Any]:
 
 
 def _write_object(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
-    tmp_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    tmp_path.replace(path)
+    atomic_write_json(path, data, sort_keys=True)
 
 
 def _resolve_anima_dir(name: str) -> Path | None:

@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
 from core.config.schemas import AnimaWorksConfig
 from core.config.vault import resolve_vault_references
 from core.exceptions import ConfigError
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.config")
 
@@ -147,16 +147,7 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
                 _apply_vault_updates(path.parent, vault_updates)
         except (json.JSONDecodeError, OSError):
             pass
-    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-
-    # Atomic write: write to a PID-unique sibling temp file then rename so
-    # that concurrent writers (multiple anima workers) never clobber each
-    # other's temp file.  Each process writes to .config.json.<PID>.tmp,
-    # then renames it to config.json atomically.
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp_path.write_text(text, encoding="utf-8")
-    os.chmod(tmp_path, 0o600)
-    os.replace(tmp_path, path)
+    atomic_write_json(path, payload, mode=0o600)
 
     logger.debug("Config saved to %s", path)
 

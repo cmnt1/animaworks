@@ -272,7 +272,7 @@ def test_emit_write_failure_does_not_escape(
     def fail_write(*_args: object, **_kwargs: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(Path, "write_text", fail_write)
+    monkeypatch.setattr("core.infra.event_export.atomic_write_text", fail_write)
 
     exporter.emit({"kind": "activity", "event": {"type": "test"}})
 

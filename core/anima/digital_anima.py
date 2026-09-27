@@ -40,6 +40,7 @@ from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity.logger import ActivityLogger
 from core.messaging.messenger import Messenger
+from core.platform.atomic_io import atomic_write_json
 from core.schemas import AnimaStatus, ModelConfig
 from core.tasks.background import BackgroundTask
 from core.time_utils import now_local
@@ -409,9 +410,7 @@ class DigitalAnima(
                 "lanes": lanes,
                 "processes": subprocesses,
             }
-            tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-            tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-            tmp_path.replace(path)
+            atomic_write_json(path, payload, indent=None, trailing_newline=False)
         except OSError:
             logger.debug("[%s] Failed to write busy status sidecar", self.name, exc_info=True)
 

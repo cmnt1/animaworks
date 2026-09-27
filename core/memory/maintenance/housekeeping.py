@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from core.i18n import t
+from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.housekeeping")
@@ -1078,17 +1079,6 @@ def _cleanup_facts_locks(animas_dir: Path, stale_hours: int) -> dict[str, Any]:
             "deleted_files": 0,
         }
 
-    try:
-        import fcntl
-    except ImportError:
-        logger.info("Facts lock cleanup skipped: fcntl unavailable")
-        return {
-            "skipped": True,
-            "reason": "fcntl_unavailable",
-            "scanned_files": 0,
-            "deleted_files": 0,
-        }
-
     cutoff_ts = (now_local() - timedelta(hours=stale_hours)).timestamp()
     deleted_files = 0
     scanned_files = 0
@@ -1107,27 +1097,31 @@ def _cleanup_facts_locks(animas_dir: Path, stale_hours: int) -> dict[str, Any]:
             scanned_files += 1
             try:
                 with lock_file.open("r+b") as lock_handle:
+                    acquired = False
                     try:
-                        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except OSError as exc:
-                        if exc.errno in (errno.EACCES, errno.EAGAIN):
-                            locked_files += 1
-                        else:
-                            lock_failures += 1
-                            logger.warning("Failed to acquire facts lock file: %s", lock_file)
-                        continue
+                        try:
+                            acquire_file_lock(lock_handle, exclusive=True, blocking=False)
+                            acquired = True
+                        except OSError as exc:
+                            if exc.errno in (errno.EACCES, errno.EAGAIN):
+                                locked_files += 1
+                            else:
+                                lock_failures += 1
+                                logger.warning("Failed to acquire facts lock file: %s", lock_file)
+                            continue
 
-                    stat = os.fstat(lock_handle.fileno())
-                    path_stat = lock_file.stat()
-                    if (stat.st_dev, stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
-                        lock_failures += 1
-                        continue
-                    if stat.st_size != 0 or stat.st_mtime >= cutoff_ts:
-                        continue
-                    # Keep LOCK_EX held until after unlink; closing the handle
-                    # at the end of this block releases the lock safely.
-                    lock_file.unlink()
-                    deleted_files += 1
+                        stat = os.fstat(lock_handle.fileno())
+                        path_stat = lock_file.stat()
+                        if (stat.st_dev, stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
+                            lock_failures += 1
+                            continue
+                        if stat.st_size != 0 or stat.st_mtime >= cutoff_ts:
+                            continue
+                        lock_file.unlink()
+                        deleted_files += 1
+                    finally:
+                        if acquired:
+                            release_file_lock(lock_handle)
             except OSError:
                 logger.warning("Failed to inspect or delete facts lock file: %s", lock_file)
                 lock_failures += 1

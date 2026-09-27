@@ -11,10 +11,8 @@ thread per Anima drains that spool in the background, so network failures can
 never block the runtime path that produced an event.
 """
 
-import fcntl
 import json
 import logging
-import os
 import threading
 import time
 from pathlib import Path
@@ -22,6 +20,8 @@ from typing import Any
 from uuid import uuid4
 
 from core.config.schemas import EventExportConfig
+from core.platform.atomic_io import atomic_write_text
+from core.platform.locks import acquire_file_lock, release_file_lock
 
 logger = logging.getLogger("animaworks.event_export")
 
@@ -87,21 +87,13 @@ class EventExporter:
         if not enabled or not self.spool_dir.is_dir():
             return
 
-        tmp_path: Path | None = None
         try:
             line = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
             name = f"{time.time_ns():020d}-{uuid4().hex}.jsonl"
             path = self.spool_dir / name
-            tmp_path = path.with_suffix(".tmp")
-            tmp_path.write_text(line, encoding="utf-8")
-            os.replace(tmp_path, path)
+            atomic_write_text(path, line)
             self._wake_event.set()
         except Exception:
-            if tmp_path is not None:
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
             # Export is observability only and must never affect the caller.
             logger.warning(
                 "Failed to append event export spool for %s",
@@ -126,8 +118,8 @@ class EventExporter:
 
             lock_file = (self.spool_dir / ".worker.lock").open("a+")
             try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+                acquire_file_lock(lock_file, exclusive=True, blocking=False)
+            except OSError:
                 lock_file.close()
                 return
 
@@ -148,7 +140,7 @@ class EventExporter:
         if self._worker_lock_file is None:
             return
         try:
-            fcntl.flock(self._worker_lock_file.fileno(), fcntl.LOCK_UN)
+            release_file_lock(self._worker_lock_file)
         finally:
             self._worker_lock_file.close()
             self._worker_lock_file = None

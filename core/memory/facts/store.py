@@ -11,7 +11,6 @@ import hashlib
 import json
 import logging
 import os
-import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -19,12 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from core.memory._io import atomic_write_text
+from core.platform.locks import locked_path
 from core.time_utils import ensure_aware, now_iso, now_local, today_local
 
 logger = logging.getLogger("animaworks.memory.facts")
-
-_LOCKS: dict[Path, threading.Lock] = {}
-_LOCKS_GUARD = threading.Lock()
 
 
 def _normalize(value: object) -> str:
@@ -229,35 +226,11 @@ def fact_entity_names(record: FactRecord) -> list[str]:
     return _unique_strings([*record.entities, record.source_entity, record.target_entity])
 
 
-def _process_lock(path: Path) -> threading.Lock:
-    resolved = path.resolve()
-    with _LOCKS_GUARD:
-        if resolved not in _LOCKS:
-            _LOCKS[resolved] = threading.Lock()
-        return _LOCKS[resolved]
-
-
 @contextlib.contextmanager
 def _locked_file(path: Path) -> Iterator[None]:
-    path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
-    thread_lock = _process_lock(lock_path)
-    with thread_lock, open(lock_path, "a+", encoding="utf-8") as lock_file:
-        try:
-            import fcntl
-
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        except (ImportError, OSError):
-            logger.debug("OS file lock unavailable for %s", lock_path, exc_info=True)
-        try:
-            yield
-        finally:
-            try:
-                import fcntl
-
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            except (ImportError, OSError):
-                pass
+    with locked_path(lock_path, thread_lock=True, best_effort=True):
+        yield
 
 
 def read_fact_records(
