@@ -41,9 +41,6 @@ PAGERANK_ALPHA = 0.85  # Damping factor
 PAGERANK_MAX_ITER = 100
 PAGERANK_TOL = 1e-6
 
-# Spreading activation parameters
-MAX_HOPS = 2  # Maximum hops for spreading activation
-
 # Graph cache filename
 GRAPH_CACHE_FILE = "knowledge_graph.json"
 GRAPH_SCHEMA_VERSION = 2
@@ -505,7 +502,6 @@ class KnowledgeGraph:
     def expand_search_results(
         self,
         initial_results: list,  # List of RetrievalResult
-        max_hops: int = MAX_HOPS,
     ) -> list:
         """Expand search results using spreading activation.
 
@@ -514,7 +510,6 @@ class KnowledgeGraph:
 
         Args:
             initial_results: Initial retrieval results
-            max_hops: Maximum hops for expansion (default: 2)
 
         Returns:
             Expanded list of results (original + activated neighbors)
@@ -526,11 +521,7 @@ class KnowledgeGraph:
         if not initial_results:
             return initial_results
 
-        logger.debug(
-            "Expanding %d initial results with spreading activation (max_hops=%d)",
-            len(initial_results),
-            max_hops,
-        )
+        logger.debug("Expanding %d initial results with spreading activation", len(initial_results))
 
         # Extract query nodes from initial results
         query_nodes: list[str] = []

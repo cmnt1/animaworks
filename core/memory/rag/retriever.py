@@ -14,7 +14,6 @@ Implements:
 
 import logging
 import math
-import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -24,6 +23,7 @@ from pathlib import Path
 from time import perf_counter
 
 from core.memory.rag.store import SearchResult
+from core.memory.retrieval.access_boost import PER_ANIMA_ACCESS_PREFIX, access_count_for
 from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.rag.retriever")
@@ -59,8 +59,6 @@ FREQUENCY_LOG_CAP = 3.0
 # lowers activation threshold for emotionally significant memories)
 WEIGHT_IMPORTANCE = 0.20
 
-# Metadata key prefix for per-anima access counts on shared collections.
-_PER_ANIMA_AC_PREFIX = "ac_"
 _ACCESS_WEIGHT_BY_KIND: dict[str, float] = {
     "retrieved": 0.2,
     "used": 1.0,
@@ -133,7 +131,7 @@ class AccessBatch:
                     kind,
                     weight,
                     timestamp,
-                    per_anima_access_key=f"{_PER_ANIMA_AC_PREFIX}{anima_name}" if source == "shared" else None,
+                    per_anima_access_key=f"{PER_ANIMA_ACCESS_PREFIX}{anima_name}" if source == "shared" else None,
                 )
                 increment = self._increments.setdefault(
                     key,
@@ -149,7 +147,7 @@ class AccessBatch:
                 increment["last_accessed_at"] = timestamp
                 increment[f"last_{kind}_at"] = timestamp
                 if source == "shared":
-                    increment["per_anima_access_key"] = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
+                    increment["per_anima_access_key"] = f"{PER_ANIMA_ACCESS_PREFIX}{anima_name}"
 
     def absorb(self, other: AccessBatch) -> None:
         """Replay another query's records without sharing its score overlays."""
@@ -756,12 +754,7 @@ class MemoryRetriever:
             result.source_scores["recency"] = recency_score
 
             # --- Frequency boost (Hebbian LTP analog) ---
-            is_shared = result.metadata.get("anima") == "shared"
-            if is_shared and anima_name:
-                ac_key = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
-                access_count = _metadata_number(result.metadata, ac_key)
-            else:
-                access_count = _metadata_number(result.metadata, "access_count")
+            access_count = access_count_for(result.metadata, anima_name)
             frequency_boost = min(WEIGHT_FREQUENCY * math.log1p(access_count), cap)
             result.score += frequency_boost
             result.source_scores["frequency"] = frequency_boost
@@ -832,7 +825,7 @@ class MemoryRetriever:
             except Exception as e:
                 logger.warning("Failed to record access for %s: %s", collection, e)
 
-        ac_key = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
+        ac_key = f"{PER_ANIMA_ACCESS_PREFIX}{anima_name}"
         for collection, ids in shared_batches.items():
             try:
                 current = (
@@ -943,7 +936,7 @@ class MemoryRetriever:
                         "last_used_at": "",
                     }
                     for key in r.document.metadata:
-                        if key.startswith(_PER_ANIMA_AC_PREFIX):
+                        if key.startswith(PER_ANIMA_ACCESS_PREFIX):
                             patch[key] = 0
                     reset_metas.append(patch)
 
@@ -972,16 +965,10 @@ class MemoryRetriever:
         except Exception:
             return ("knowledge", "episodes")
 
-    @staticmethod
-    def _env_flag_enabled(name: str) -> bool:
-        return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
     def _entity_aware_graph_settings(self, config) -> dict[str, bool | int]:
-        """Resolve optional entity-aware graph settings from config/env."""
+        """Resolve optional entity-aware graph settings from config."""
         rag = getattr(config, "rag", None)
         enabled = bool(getattr(rag, "entity_aware_graph_enabled", False))
-        if self._env_flag_enabled("LOCOMO_ENTITY_AWARE_GRAPH"):
-            enabled = True
         return {
             "enabled": enabled,
             "edge_cap": int(getattr(rag, "graph_entity_edge_cap", 8) or 8),
@@ -1058,11 +1045,7 @@ class MemoryRetriever:
                     self._knowledge_graph_signature = None
                     return initial_results
 
-        max_hops = self._get_config_max_hops()
-        return self._knowledge_graph.expand_search_results(
-            initial_results,
-            max_hops=max_hops,
-        )
+        return self._knowledge_graph.expand_search_results(initial_results)
 
     def _safe_load_config(self):
         """Try loading config; return config or None on failure."""
@@ -1070,13 +1053,6 @@ class MemoryRetriever:
             return self._load_config()
         except Exception:
             return None
-
-    def _get_config_max_hops(self) -> int:
-        """Read ``rag.max_graph_hops`` from config with fallback."""
-        try:
-            return getattr(self._load_config().rag, "max_graph_hops", 2)
-        except Exception:
-            return 2
 
     def _collect_spreading_dirs(self) -> dict[str, Path]:
         """Collect additional memory directories for spreading activation.

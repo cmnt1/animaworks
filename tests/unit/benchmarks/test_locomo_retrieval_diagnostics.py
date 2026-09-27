@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -303,13 +304,21 @@ class TestEntityAwareGraphAblationCli:
 
         assert args.entity_aware_graph_ablation is True
 
-    def test_temporary_entity_aware_graph_sets_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_temporary_entity_aware_graph_updates_and_restores_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        config = SimpleNamespace(rag=SimpleNamespace(entity_aware_graph_enabled=False))
+        saved_values: list[bool] = []
+        monkeypatch.setattr("core.config.load_config", lambda: config)
+        monkeypatch.setattr(
+            "core.config.save_config", lambda value: saved_values.append(value.rag.entity_aware_graph_enabled)
+        )
         monkeypatch.delenv("LOCOMO_ENTITY_AWARE_GRAPH", raising=False)
 
         with _temporary_entity_aware_graph(True):
-            assert os.environ["LOCOMO_ENTITY_AWARE_GRAPH"] == "1"
+            assert config.rag.entity_aware_graph_enabled is True
+            assert "LOCOMO_ENTITY_AWARE_GRAPH" not in os.environ
 
-        assert "LOCOMO_ENTITY_AWARE_GRAPH" not in os.environ
+        assert config.rag.entity_aware_graph_enabled is False
+        assert saved_values == [True, False]
 
     def test_entity_aware_graph_ablation_runs_baseline_then_boosted(
         self,

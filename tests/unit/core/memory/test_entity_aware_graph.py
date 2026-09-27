@@ -180,6 +180,5 @@ def test_entity_activation_maps_to_readable_results_not_bare_entity(tmp_path: Pa
                 source_scores={"vector": 0.9},
             )
         ],
-        max_hops=2,
     )
     assert any(result.metadata.get("memory_type") == "episodes" for result in expanded)

@@ -143,6 +143,43 @@ def test_pipeline_temporal_boost_adds_score_for_temporal_year_match() -> None:
     assert item["score"] == item["base_score"] + 0.10
 
 
+def test_pipeline_access_boost_uses_anima_specific_shared_count() -> None:
+    ranked = [
+        [
+            {
+                "content": "global count only",
+                "score": 0.9,
+                "source_file": "a.md",
+                "chunk_index": 0,
+                "anima": "shared",
+                "access_count": 100,
+                "ac_alice": 0,
+            },
+            {
+                "content": "alice count",
+                "score": 0.9,
+                "source_file": "b.md",
+                "chunk_index": 0,
+                "anima": "shared",
+                "access_count": 0,
+                "ac_alice": 3,
+            },
+        ],
+    ]
+    pipeline = RetrievalPipeline(reranker=MagicMock())
+
+    result = pipeline.run(
+        "q",
+        ranked,
+        limit=2,
+        rerank_enabled=False,
+        access_boost=AccessBoostConfig(weight=0.5, cap=1.0),
+        anima_name="alice",
+    )
+
+    assert result.items[0]["content"] == "alice count"
+
+
 def test_pipeline_access_boost_applies_after_rrf_when_rerank_disabled() -> None:
     ranked = [
         [

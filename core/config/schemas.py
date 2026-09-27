@@ -282,7 +282,6 @@ class RAGConfig(BaseModel):
     )
     use_gpu: bool = False
     enable_spreading_activation: bool = True
-    max_graph_hops: int = 2
     enable_file_watcher: bool = Field(
         default=True,
         description="Deprecated: no effect (file watcher removed 2026-07). Kept for config.json compatibility.",

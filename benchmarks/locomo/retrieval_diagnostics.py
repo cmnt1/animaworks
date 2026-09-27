@@ -374,8 +374,17 @@ def _temporary_entity_boost(enabled: bool) -> Iterator[None]:
 
 @contextmanager
 def _temporary_entity_aware_graph(enabled: bool) -> Iterator[None]:
-    with _temporary_env_flag("LOCOMO_ENTITY_AWARE_GRAPH", enabled):
+    import core.config as core_config
+
+    config = core_config.load_config()
+    previous = config.rag.entity_aware_graph_enabled
+    config.rag.entity_aware_graph_enabled = enabled
+    core_config.save_config(config)
+    try:
         yield
+    finally:
+        config.rag.entity_aware_graph_enabled = previous
+        core_config.save_config(config)
 
 
 @contextmanager

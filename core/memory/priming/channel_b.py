@@ -127,7 +127,7 @@ async def channel_b_recent_activity(
         [] if _tree_intersects_deny(anima_dir / "activity_log", denied_roots) else activity.recent(days=2, limit=100)
     )
 
-    is_background = channel in {"heartbeat", "cron", "inbox", "task"} or channel.startswith("cron:")
+    is_background = channel in {"heartbeat", "cron", "inbox", "task"}
 
     if is_background and entries:
         entries = [e for e in entries if e.type not in _HEARTBEAT_NOISE_TYPES]

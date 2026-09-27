@@ -81,7 +81,7 @@ async def test_compact_never_truncates_an_itemized_memory_pointer(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_compact_cap_applies_to_proportional_heartbeat_budget(tmp_path: Path):
-    engine = PrimingEngine(tmp_path, context_window=1_000_000)
+    engine = PrimingEngine(tmp_path)
     engine._prime_compact = AsyncMock()
     await engine.prime_memories("", channel="heartbeat", profile="compact", max_tokens=1200)
     assert engine._prime_compact.call_args.args[4] == 1200

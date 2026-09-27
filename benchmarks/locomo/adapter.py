@@ -416,6 +416,8 @@ class AnimaWorksLoCoMoAdapter:
         if self._cross_encoder_model:
             cfg.rag.cross_encoder_model = self._cross_encoder_model
         cfg.rag.embedding_e5_prefix_enabled = self._embedding_e5_prefix_enabled
+        if locomo_entity_aware_graph_enabled():
+            cfg.rag.entity_aware_graph_enabled = True
         save_config(cfg)
 
     @property

@@ -4,9 +4,19 @@ from __future__ import annotations
 """Access-count LTP boost for final retrieval ranking."""
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+
+PER_ANIMA_ACCESS_PREFIX = "ac_"
+
+
+def access_count_for(metadata: Mapping[str, Any], anima_name: str | None) -> float:
+    """Return a shared chunk's Anima-specific count when a name is available."""
+    if metadata.get("anima") == "shared" and anima_name:
+        return _coerce_access_count(metadata.get(f"{PER_ANIMA_ACCESS_PREFIX}{anima_name}"))
+    return _coerce_access_count(metadata.get("access_count"))
 
 
 @dataclass(frozen=True)
@@ -23,6 +33,7 @@ def apply_access_boost(
     candidates: list[dict[str, Any]],
     config: AccessBoostConfig | None,
     *,
+    anima_name: str | None = None,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Apply a capped multiplicative access boost and return sorted candidates."""
@@ -34,7 +45,7 @@ def apply_access_boost(
         row = dict(candidate)
         base_score = float(row.get("score", 0.0) or 0.0)
         boost = compute_access_boost(
-            access_count=_candidate_access_count(row),
+            access_count=_candidate_access_count(row, anima_name),
             last_accessed_at=_candidate_last_accessed_at(row),
             config=config,
             now=now,
@@ -66,11 +77,11 @@ def compute_access_boost(
     return raw * _recency_factor(last_accessed_at, config=config, now=now)
 
 
-def _candidate_access_count(candidate: dict[str, Any]) -> Any:
-    for source in (candidate, candidate.get("metadata", {})):
-        if isinstance(source, dict) and "access_count" in source:
-            return source.get("access_count")
-    return 0
+def _candidate_access_count(candidate: dict[str, Any], anima_name: str | None) -> float:
+    nested = candidate.get("metadata", {})
+    metadata = dict(nested) if isinstance(nested, Mapping) else {}
+    metadata.update(candidate)
+    return access_count_for(metadata, anima_name)
 
 
 def _candidate_last_accessed_at(candidate: dict[str, Any]) -> Any:

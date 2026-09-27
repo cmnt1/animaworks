@@ -75,7 +75,6 @@ def test_legacy_entity_aware_graph_expands_episode_to_active_atomic_fact(tmp_pat
                 source_scores={"vector": 0.9},
             )
         ],
-        max_hops=2,
     )
 
     fact_results = [result for result in expanded if result.metadata.get("memory_type") == "facts"]

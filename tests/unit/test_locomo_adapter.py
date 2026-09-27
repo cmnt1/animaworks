@@ -508,6 +508,26 @@ class TestEntityAwareGraphEnv:
         monkeypatch.setenv("LOCOMO_ENTITY_AWARE_GRAPH", "1")
         assert locomo_entity_aware_graph_enabled() is True
 
+    def test_adapter_copies_entity_graph_env_to_isolated_config(self, monkeypatch: pytest.MonkeyPatch):
+        config = SimpleNamespace(
+            rag=SimpleNamespace(
+                entity_aware_graph_enabled=False,
+                embedding_e5_prefix_enabled=False,
+            )
+        )
+        saved: list[object] = []
+        monkeypatch.setattr("core.config.load_config", lambda: config)
+        monkeypatch.setattr("core.config.save_config", lambda value: saved.append(value))
+        monkeypatch.setenv("LOCOMO_ENTITY_AWARE_GRAPH", "1")
+        adapter = AnimaWorksLoCoMoAdapter.__new__(AnimaWorksLoCoMoAdapter)
+        adapter._cross_encoder_model = ""
+        adapter._embedding_e5_prefix_enabled = False
+
+        adapter._write_benchmark_config()
+
+        assert config.rag.entity_aware_graph_enabled is True
+        assert saved == [config]
+
 
 class TestFactIndexEnv:
     def test_fact_index_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch):

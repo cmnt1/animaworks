@@ -613,6 +613,7 @@ def _build_group3(
                 recall.append(item)
         _add("\n\n".join(protected), "priming_required_context", 1, "rigid", budget_group="recall")
         _add("\n\n".join(recall), "priming", 2, "elastic", budget_group="recall")
+    # Keep aligned with priming.outbound.HUMAN_NOTIFICATION_CHANNELS.
     if pending_human_notifications and (is_chat or is_heartbeat):
         _add(pending_human_notifications, "pending_human_notifications", 1, "rigid")
     if shortterm_text:
