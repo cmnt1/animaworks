@@ -180,9 +180,7 @@ class TestLifespan:
         mock_app.state.zoom_gateway_manager = None
         mock_app.state.github_gateway_manager = None
         mock_app.state.usage_governor = None
-        mock_app.state.vector_worker = None
-        mock_app.state.startup_preflight_runner = lambda *, force_all_vectordb=False: None
-        mock_app.state.force_startup_repair_all_vectordb = False
+        mock_app.state.startup_preflight_runner = lambda: None
 
         mock_scheduler = MagicMock()
         mock_scheduler_cls.return_value = mock_scheduler
@@ -194,7 +192,7 @@ class TestLifespan:
             patch("core.org.org_sync.sync_org_structure"),
             patch("core.org.org_sync.detect_orphan_animas"),
             patch("server.app._reconcile_assets_at_startup", new_callable=AsyncMock),
-            patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
+            patch("server.app._prepare_child_env_urls"),
             patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
             patch("server.app._startup_animas_background", new=fake_startup_animas),
             patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,

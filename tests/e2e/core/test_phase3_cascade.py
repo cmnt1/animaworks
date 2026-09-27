@@ -448,12 +448,7 @@ def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
         "constructor": {"core/memory/rag/store.py"},
         "root": {"core/supervisor/memory_service.py"},
         "staging": {"core/memory/rag/repair_rebuild.py"},
-        "worker": {"core/memory/rag/vector_worker.py"},
-        "direct_env": {
-            "core/memory/rag/repair_rebuild.py",
-            "core/memory/rag/repair_service.py",
-            "core/memory/rag/vector_worker_client.py",
-        },
+        "direct_env": {"core/memory/rag/repair_rebuild.py"},
     }
     constructors: set[str] = set()
     direct_access_enablers: set[str] = set()
@@ -500,7 +495,7 @@ def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
                 direct_env_writers.add(relative)
 
     assert constructors == boundary_allowlist["constructor"]
-    assert direct_access_enablers == boundary_allowlist["root"] | boundary_allowlist["worker"]
+    assert direct_access_enablers == boundary_allowlist["root"]
     assert direct_env_writers == boundary_allowlist["direct_env"]
     assert boundary_allowlist["staging"] <= direct_env_writers
 

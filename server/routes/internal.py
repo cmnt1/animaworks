@@ -49,7 +49,7 @@ class RerankRequest(BaseModel):
 
 
 class VectorQueryRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
     embedding: list[float]
     top_k: int = 10
@@ -57,51 +57,44 @@ class VectorQueryRequest(BaseModel):
 
 
 class VectorUpsertRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
     documents: list[dict[str, Any]]
 
 
 class VectorUpdateMetadataRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
     ids: list[str]
     metadatas: list[dict[str, str | int | float]]
 
 
 class VectorDeleteDocumentsRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
     ids: list[str]
 
 
 class VectorGetByMetadataRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
     where: dict[str, str | int | float] = {}
     limit: int = 20
 
 
 class VectorGetByIdsRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
     ids: list[str]
 
 
 class VectorCollectionRequest(BaseModel):
-    anima_name: str | None = None
+    anima_name: str
     collection: str
 
 
 class VectorListCollectionsRequest(BaseModel):
-    anima_name: str | None = None
-
-
-class VectorQuickCheckRequest(BaseModel):
     anima_name: str
-    timeout_seconds: float = 10.0
-    source: str = "internal_vector_quick_check"
-    record_repair: bool = True
 
 
 class NotificationMappingRequest(BaseModel):
@@ -408,124 +401,84 @@ def create_internal_router() -> APIRouter:
             return body.model_dump()
         return body.dict()
 
-    async def _require_vector_worker(request: Request, path: str, body: BaseModel) -> dict[str, Any] | JSONResponse:
+    async def _forward_to_root(request: Request, path: str, body: BaseModel) -> dict[str, Any] | JSONResponse:
+        from core.anima.factory import validate_anima_name
         from core.i18n import t
+        from core.memory.rag.vector_ops import UnsupportedVectorPath, to_owner_interaction
 
-        anima_name = getattr(body, "anima_name", None)
-        if isinstance(anima_name, str) and anima_name:
-            from core.anima.factory import validate_anima_name
-            from core.config import resolver as _resolver
-            from core.paths import get_animas_dir
+        anima_name = getattr(body, "anima_name", "")
+        if not isinstance(anima_name, str) or validate_anima_name(anima_name) is not None:
+            return JSONResponse(status_code=422, content={"detail": t("rag.invalid_anima_name")})
 
-            if validate_anima_name(anima_name) is not None:
-                return JSONResponse(status_code=422, content={"detail": t("rag.invalid_anima_name")})
-            # R07: 非 phase3 分岐ごと削除予定
-            if _resolver.is_root_memory_owner(get_animas_dir() / anima_name):
-                # MCP/CLI subprocesses cannot share a task runner's Python IPC
-                # requester. This is transport forwarding only: the phase3
-                # root retains the sole native handle, queue and repair fence.
-                from core.memory.rag.vector_ops import UnsupportedVectorPath, to_owner_interaction
-
-                try:
-                    method, params = to_owner_interaction(path, _body_payload(body))
-                except UnsupportedVectorPath:
-                    # Reset/repair/health must not open a second native owner.
-                    return JSONResponse(
-                        status_code=409,
-                        content={"detail": t("rag.worker_operation_disabled", anima=anima_name)},
-                    )
-                supervisor = getattr(request.app.state, "supervisor", None)
-                if supervisor is None:
-                    return JSONResponse(
-                        status_code=503,
-                        content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
-                        headers={"Retry-After": "1"},
-                    )
-                try:
-                    result = await supervisor.send_request(
-                        anima_name,
-                        "memory",
-                        {"method": method, "params": params},
-                        timeout=120.0,
-                    )
-                except Exception:
-                    logger.warning(
-                        "Root memory proxy unavailable: anima=%s method=%s", anima_name, method, exc_info=True
-                    )
-                    return JSONResponse(
-                        status_code=503,
-                        content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
-                        headers={"Retry-After": "1"},
-                    )
-                if not isinstance(result, dict) or result.get("ok") is False:
-                    return JSONResponse(
-                        status_code=503,
-                        content={"detail": t("rag.root_operation_failed"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
-                        headers={"Retry-After": "1"},
-                    )
-                return result
-        manager = getattr(request.app.state, "vector_worker", None)
-        if manager is None or not getattr(manager, "enabled", False):
-            logger.warning("Vector worker unavailable for %s: manager disabled or missing", path)
-            return JSONResponse(status_code=503, content={"detail": "Vector worker unavailable"})
         try:
-            response = await manager.post(path, _body_payload(body))
-        except Exception as exc:
-            from core.memory.rag.vector_worker_client import VectorWorkerUnavailable
+            method, params = to_owner_interaction(path, _body_payload(body))
+        except UnsupportedVectorPath:
+            return JSONResponse(status_code=409, content={"detail": t("rag.unsupported_vector_path")})
 
-            if not isinstance(exc, VectorWorkerUnavailable):
-                logger.exception("Vector worker request failed unexpectedly: %s", path)
-            else:
-                logger.warning("Vector worker unavailable for %s: %s", path, exc)
-            return JSONResponse(status_code=503, content={"detail": "Vector worker unavailable"})
-        if response.status_code >= 400:
-            source_headers = dict(getattr(response, "headers", None) or {})
-            headers = {}
-            retry_after = source_headers.get("Retry-After") or source_headers.get("retry-after")
-            if retry_after:
-                headers["Retry-After"] = retry_after
-            return JSONResponse(status_code=response.status_code, content=response.data, headers=headers)
-        return response.data
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is None:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
+                headers={"Retry-After": "1"},
+            )
+        try:
+            result = await supervisor.send_request(
+                anima_name,
+                "memory",
+                {"method": method, "params": params},
+                timeout=120.0,
+            )
+        except Exception:
+            logger.warning("Root memory proxy unavailable: anima=%s method=%s", anima_name, method, exc_info=True)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
+                headers={"Retry-After": "1"},
+            )
+        if not isinstance(result, dict) or result.get("ok") is False:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": t("rag.root_operation_failed"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
+                headers={"Retry-After": "1"},
+            )
+        return result
 
     @internal.post("/internal/vector/query")
     async def vector_query(body: VectorQueryRequest, request: Request):
-        return await _require_vector_worker(request, "/query", body)
+        return await _forward_to_root(request, "/query", body)
 
     @internal.post("/internal/vector/upsert")
     async def vector_upsert(body: VectorUpsertRequest, request: Request):
-        return await _require_vector_worker(request, "/upsert", body)
+        return await _forward_to_root(request, "/upsert", body)
 
     @internal.post("/internal/vector/update-metadata")
     async def vector_update_metadata(body: VectorUpdateMetadataRequest, request: Request):
-        return await _require_vector_worker(request, "/update-metadata", body)
+        return await _forward_to_root(request, "/update-metadata", body)
 
     @internal.post("/internal/vector/delete-documents")
     async def vector_delete_documents(body: VectorDeleteDocumentsRequest, request: Request):
-        return await _require_vector_worker(request, "/delete-documents", body)
+        return await _forward_to_root(request, "/delete-documents", body)
 
     @internal.post("/internal/vector/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest, request: Request):
-        return await _require_vector_worker(request, "/get-by-metadata", body)
+        return await _forward_to_root(request, "/get-by-metadata", body)
 
     @internal.post("/internal/vector/get-by-ids")
     async def vector_get_by_ids(body: VectorGetByIdsRequest, request: Request):
-        return await _require_vector_worker(request, "/get-by-ids", body)
+        return await _forward_to_root(request, "/get-by-ids", body)
 
     @internal.post("/internal/vector/create-collection")
     async def vector_create_collection(body: VectorCollectionRequest, request: Request):
-        return await _require_vector_worker(request, "/create-collection", body)
+        return await _forward_to_root(request, "/create-collection", body)
 
     @internal.post("/internal/vector/delete-collection")
     async def vector_delete_collection(body: VectorCollectionRequest, request: Request):
-        return await _require_vector_worker(request, "/delete-collection", body)
+        return await _forward_to_root(request, "/delete-collection", body)
 
     @internal.post("/internal/vector/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest, request: Request):
-        return await _require_vector_worker(request, "/list-collections", body)
-
-    @internal.post("/internal/vector/quick-check")
-    async def vector_quick_check(body: VectorQuickCheckRequest, request: Request):
-        return await _require_vector_worker(request, "/quick-check", body)
+        return await _forward_to_root(request, "/list-collections", body)
 
     # ── Notification / interaction persistence for sandboxed CLIs ──
     #
@@ -949,14 +902,6 @@ def create_internal_router() -> APIRouter:
         if entry is None:
             return JSONResponse(status_code=404, content={"detail": f"Task not found: {body.task_id}"})
         return {"ok": True, "task": entry.model_dump(mode="json")}
-
-    @internal.post("/internal/vector/reset-store")
-    async def vector_reset_store(body: VectorListCollectionsRequest, request: Request):
-        # Forwarded to the worker so repair/quarantine can drop the worker's
-        # cached (and possibly stale or corrupt) ChromaVectorStore. Without this
-        # route the proxy returned 405 and the reset never reached the worker,
-        # leaving stale handles and latched init-failures in place.
-        return await _require_vector_worker(request, "/reset-store", body)
 
     router.include_router(internal)
     return router

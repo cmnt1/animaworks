@@ -11,7 +11,6 @@ internal consistency errors, the safest recovery is to quarantine the
 broken vectordb and rebuild it from source memory files.
 """
 
-import asyncio
 import logging
 import os
 import re
@@ -21,19 +20,16 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.rag import repair_state
-from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
 from core.memory.rag.repair_types import RepairResult
 from core.memory.rag.repair_utils import (
     SINGLE_SHOT_REASONS,
     classify_corruption_error,
     collection_owner,
-    get_repair_lock_path,
     is_repair_locked,
     iso,
     parse_dt,
     utc_now,
 )
-from core.platform.locks import acquire_file_lock, release_file_lock
 
 logger = logging.getLogger("animaworks.rag.repair")
 
@@ -54,7 +50,6 @@ _KNOWN_CORRUPTION_REASONS = {
     "hnsw_corruption",
     "native_segfault",
     "startup_chroma_crash_preflight",
-    "vector_worker_crash",
     "store_init_failed",
 }
 
@@ -92,7 +87,6 @@ class RAGRepairService:
             max_consecutive_failures if max_consecutive_failures is not None else cfg["max_consecutive_failures"],
         )
         self._signals: dict[str, list[dict[str, Any]]] = {}
-        self._active_repairs: set[str] = set()
         self._lock = threading.Lock()
 
     @staticmethod
@@ -215,7 +209,6 @@ class RAGRepairService:
             collection=collection,
             source=source,
             include_shared=True,
-            background=True,
         )
 
     @staticmethod
@@ -234,36 +227,6 @@ class RAGRepairService:
             logger.debug("quick_check gate failed for owner=%s", owner, exc_info=True)
             return False
         return result.status == "ok"
-
-    @staticmethod
-    def _chroma_store_opens(owner: str) -> bool:
-        """Verify that Chroma itself can open a SQLite-healthy store."""
-        from core.memory.rag.store import create_chroma_vector_store
-        from core.paths import get_anima_vectordb_dir
-
-        previous_direct_access = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
-        os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
-        store = None
-        try:
-            store = create_chroma_vector_store(
-                persist_dir=get_anima_vectordb_dir(owner),
-                anima_name=owner,
-            )
-        except Exception:
-            logger.warning(
-                "Chroma PersistentClient open verification failed after stop: owner=%s",
-                owner,
-                exc_info=True,
-            )
-            return False
-        finally:
-            if store is not None:
-                store.close()
-            if previous_direct_access is None:
-                os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
-            else:
-                os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = previous_direct_access
-        return True
 
     def _record_signal(self, anima_name: str, signal: dict[str, Any]) -> None:
         cutoff = utc_now() - self.window
@@ -326,7 +289,7 @@ class RAGRepairService:
         )
 
     def list_repairable_animas(self, *, animas_dir: Path | None = None) -> list[str]:
-        """Return enabled anima names whose vector stores can be repaired."""
+        """Return all enabled Anima names available for repair discovery."""
         if animas_dir is None:
             from core.paths import get_animas_dir
 
@@ -379,11 +342,11 @@ class RAGRepairService:
                 suspects.add(anima_name)
 
         if include_quick_check:
-            from core.memory.rag.sqlite_health import check_anima_vectordb_health_via_worker_or_direct
+            from core.memory.rag.sqlite_health import check_anima_vectordb_health
 
             for anima_name in repairable:
                 try:
-                    health = check_anima_vectordb_health_via_worker_or_direct(
+                    health = check_anima_vectordb_health(
                         anima_name,
                         timeout_seconds=quick_check_timeout_seconds,
                         source=quick_check_source,
@@ -422,58 +385,6 @@ class RAGRepairService:
 
         return [name for name in repairable if name in suspects]
 
-    def repair_animas_if_allowed(
-        self,
-        anima_names: list[str] | tuple[str, ...] | set[str],
-        *,
-        reason: str,
-        source: str,
-        include_shared: bool = False,
-    ) -> dict[str, RepairResult]:
-        """Synchronously repair multiple animas while preserving per-anima guards."""
-        results: dict[str, RepairResult] = {}
-        targets = sorted(dict.fromkeys(anima_names))
-        try:
-            from core.infra import startup_progress
-
-            track_startup = startup_progress.is_active()
-        except Exception:
-            startup_progress = None  # type: ignore[assignment]
-            track_startup = False
-
-        if track_startup and startup_progress is not None:
-            startup_progress.set_phase(
-                "repairing",
-                detail=", ".join(targets),
-                done_count=0,
-                total_count=len(targets),
-            )
-
-        for index, anima_name in enumerate(targets):
-            if startup_progress is not None:
-                startup_progress.raise_if_cancelled()
-                if track_startup:
-                    startup_progress.update_progress(
-                        detail=anima_name,
-                        done_count=index,
-                        total_count=len(targets),
-                    )
-            results[anima_name] = self.repair_anima_if_allowed(
-                anima_name,
-                reason=reason,
-                collection=None,
-                source=source,
-                include_shared=include_shared,
-            )
-            if track_startup and startup_progress is not None:
-                startup_progress.update_progress(
-                    detail=anima_name,
-                    done_count=index + 1,
-                    total_count=len(targets),
-                )
-        return results
-
-    @staticmethod
     def _after_last_success(at: datetime, last_success: datetime | None) -> bool:
         return last_success is None or at > last_success
 
@@ -621,89 +532,30 @@ class RAGRepairService:
         collection: str | None = None,
         source: str,
         include_shared: bool = False,
-        background: bool = True,
     ) -> bool:
-        """Request repair for an anima.
-
-        Background requests only mark the anima for supervisor-managed repair.
-        Synchronous calls are reserved for CLI/supervisor repair execution.
-        """
-        if background:
-            blocked = self._request_blocked(anima_name, reason=reason)
-            if blocked is not None:
-                repair_state.write_blocked_state(anima_name, blocked)
-                return False
-            if self._has_active_repair_state(anima_name):
-                logger.info("RAG supervised repair already requested or active: %s", anima_name)
-                return False
-            repair_state.write_repair_request_state(
-                anima_name,
-                reason=reason,
-                collection=collection,
-                source=source,
-                include_shared=include_shared,
-            )
-            logger.warning(
-                "RAG supervised repair requested: anima=%s reason=%s collection=%s source=%s",
-                anima_name,
-                reason,
-                collection,
-                source,
-            )
-            return True
-
-        blocked = self._reserve_repair(anima_name, reason=reason)
-        if blocked is not None:
-            return False
-
-        try:
-            self.repair_anima(
-                anima_name,
-                reason=reason,
-                collection=collection,
-                source=source,
-                include_shared=include_shared,
-            )
-            return True
-        finally:
-            with self._lock:
-                self._active_repairs.discard(anima_name)
-
-    def repair_anima_if_allowed(
-        self,
-        anima_name: str,
-        *,
-        reason: str,
-        collection: str | None = None,
-        source: str,
-        include_shared: bool = False,
-    ) -> RepairResult:
-        """Synchronously repair an anima while respecting loop-prevention guards."""
-        blocked = self._reserve_repair(anima_name, reason=reason)
-        if blocked is not None:
-            return blocked
-        try:
-            return self.repair_anima(
-                anima_name,
-                reason=reason,
-                collection=collection,
-                source=source,
-                include_shared=include_shared,
-            )
-        finally:
-            with self._lock:
-                self._active_repairs.discard(anima_name)
-
-    def _reserve_repair(self, anima_name: str, *, reason: str) -> RepairResult | None:
+        """Write a request for supervisor-managed repair of an anima."""
         blocked = self._request_blocked(anima_name, reason=reason)
         if blocked is not None:
-            return blocked
-        with self._lock:
-            if anima_name in self._active_repairs:
-                logger.info("RAG repair already active: %s", anima_name)
-                return RepairResult(status="active", anima_name=anima_name, reason=reason)
-            self._active_repairs.add(anima_name)
-        return None
+            repair_state.write_blocked_state(anima_name, blocked)
+            return False
+        if self._has_active_repair_state(anima_name):
+            logger.info("RAG supervised repair already requested or active: %s", anima_name)
+            return False
+        repair_state.write_repair_request_state(
+            anima_name,
+            reason=reason,
+            collection=collection,
+            source=source,
+            include_shared=include_shared,
+        )
+        logger.warning(
+            "RAG supervised repair requested: anima=%s reason=%s collection=%s source=%s",
+            anima_name,
+            reason,
+            collection,
+            source,
+        )
+        return True
 
     def _request_blocked(self, anima_name: str, *, reason: str) -> RepairResult | None:
         if not self.enabled:
@@ -724,188 +576,6 @@ class RAGRepairService:
             "stopping",
             "repairing",
         }
-
-    def repair_anima(
-        self,
-        anima_name: str,
-        *,
-        reason: str,
-        collection: str | None = None,
-        source: str,
-        include_shared: bool = False,
-    ) -> RepairResult:
-        """Synchronously quarantine and rebuild one anima's RAG index."""
-        from core.infra import startup_progress
-        from core.paths import get_animas_dir
-
-        startup_progress.raise_if_cancelled()
-        anima_dir = get_animas_dir() / anima_name
-        if not anima_dir.is_dir():
-            return RepairResult(
-                status="failed",
-                anima_name=anima_name,
-                reason=reason,
-                error="anima not found",
-                stage="validate_anima",
-                state_path=str(repair_state.state_path(anima_name)),
-            )
-
-        lock_path = get_repair_lock_path(anima_name)
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+", encoding="utf-8") as lock_file:
-            try:
-                acquire_file_lock(lock_file, exclusive=True, blocking=False)
-            except OSError:
-                result = RepairResult(
-                    status="locked",
-                    anima_name=anima_name,
-                    reason=reason,
-                    stage="locked",
-                    state_path=str(repair_state.state_path(anima_name)),
-                )
-                repair_state.write_blocked_state(anima_name, result)
-                return result
-
-            quarantine_path: Path | None = None
-            try:
-                # Post-stop re-verification: the signal-time gate in
-                # record_chroma_error runs inside the process whose stale WAL
-                # view / poisoned chroma cache raised the error, so a healthy
-                # on-disk DB can still arrive here flagged sqlite_malformed.
-                # Supervised repair runs this in a fresh CLI subprocess after
-                # the anima was stopped, so a passing quick_check now
-                # definitively refutes the corruption claim: skip the
-                # destructive quarantine/rebuild and only drop the cached
-                # worker store that held the poisoned handle.
-                sqlite_refutes_signal = reason in _SQLITE_REFUTABLE_REASONS and self._sqlite_quick_check_ok(anima_name)
-                init_failure_cleared = (
-                    reason == _STORE_INIT_FAILED_REASON
-                    and self._sqlite_quick_check_ok(anima_name)
-                    and self._chroma_store_opens(anima_name)
-                )
-                if sqlite_refutes_signal or init_failure_cleared:
-                    from core.memory.rag.repair_rebuild import reset_worker_vector_store
-                    from core.memory.rag.singleton import reset_vector_store
-
-                    if not reset_worker_vector_store(anima_name):
-                        raise RuntimeError(f"vector worker reset failed for healthy repair skip: {anima_name}")
-                    reset_vector_store(anima_name)
-                    from core.memory.rag.shared_check_registry import invalidate_shared_checks
-
-                    invalidate_shared_checks(anima_name)
-                    repair_state.update_repair_state(
-                        anima_name,
-                        status="success",
-                        stage="skipped_healthy",
-                        pid=None,
-                        last_attempt_at=iso(),
-                        reason=reason,
-                        collection=collection,
-                        source=source,
-                        include_shared=include_shared,
-                        repair_nonce=None,
-                        last_success_at=iso(),
-                        last_error=None,
-                        consecutive_failures=0,
-                    )
-                    logger.warning(
-                        "RAG repair skipped; SQLite passed quick_check after stop "
-                        "(false-positive signal, worker store reset instead): anima=%s reason=%s",
-                        anima_name,
-                        reason,
-                    )
-                    return RepairResult(
-                        status="success",
-                        anima_name=anima_name,
-                        reason=reason,
-                        stage="skipped_healthy",
-                        state_path=str(repair_state.state_path(anima_name)),
-                    )
-
-                repair_state.update_repair_state(
-                    anima_name,
-                    status="repairing",
-                    stage="quarantine",
-                    pid=os.getpid(),
-                    started_at=iso(),
-                    last_attempt_at=iso(),
-                    reason=reason,
-                    collection=collection,
-                    source=source,
-                    include_shared=include_shared,
-                    repair_nonce=os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE"),
-                    last_reason=reason,
-                    last_collection=collection,
-                    last_source=source,
-                    last_error=None,
-                )
-                if startup_progress.is_active():
-                    startup_progress.set_phase("indexing", detail=anima_name, reset_counts=True)
-                startup_progress.raise_if_cancelled()
-                # Build the new DB in a staging dir and atomically swap it in.
-                # The live DB stays intact during the (slow) reindex, so a failed
-                # build never destroys the existing data, readers never see a
-                # half-built DB, and the worker is only reset at the swap.
-                chunks, quarantine_path = atomic_rebuild_vectordb(anima_name, include_shared=include_shared)
-                repair_state.update_repair_state(
-                    anima_name,
-                    status="success",
-                    stage="complete",
-                    pid=None,
-                    last_success_at=iso(),
-                    last_error=None,
-                    repair_nonce=None,
-                    consecutive_failures=0,
-                    last_quarantine_path=str(quarantine_path) if quarantine_path else None,
-                    last_chunks_indexed=chunks,
-                )
-                logger.warning(
-                    "RAG repair succeeded: anima=%s reason=%s chunks=%d quarantine=%s",
-                    anima_name,
-                    reason,
-                    chunks,
-                    quarantine_path,
-                )
-                return RepairResult(
-                    status="success",
-                    anima_name=anima_name,
-                    reason=reason,
-                    quarantine_path=str(quarantine_path) if quarantine_path else None,
-                    chunks_indexed=chunks,
-                    stage="complete",
-                    state_path=str(repair_state.state_path(anima_name)),
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                from core.memory.rag.singleton import reset_vector_store
-
-                reset_vector_store(anima_name)
-                state = repair_state.read_state(anima_name)
-                failures = int(state.get("consecutive_failures") or 0) + 1
-                repair_state.update_repair_state(
-                    anima_name,
-                    status="failed",
-                    stage="failed",
-                    pid=None,
-                    last_failure_at=iso(),
-                    last_error=str(exc),
-                    repair_nonce=None,
-                    consecutive_failures=failures,
-                    last_quarantine_path=str(quarantine_path) if quarantine_path else None,
-                )
-                logger.exception("RAG repair failed: anima=%s reason=%s", anima_name, reason)
-                return RepairResult(
-                    status="failed",
-                    anima_name=anima_name,
-                    reason=reason,
-                    quarantine_path=str(quarantine_path) if quarantine_path else None,
-                    error=str(exc),
-                    stage="failed",
-                    state_path=str(repair_state.state_path(anima_name)),
-                )
-            finally:
-                release_file_lock(lock_file)
 
     def _cooling_down(self, anima_name: str) -> bool:
         state = repair_state.read_state(anima_name)

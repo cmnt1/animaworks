@@ -9,7 +9,7 @@ import pytest
 
 from core.memory.rag.sqlite_health import (
     SQLiteHealthResult,
-    check_anima_vectordb_health_via_worker_or_direct,
+    check_anima_vectordb_health,
     chroma_sqlite_path,
     configure_chroma_sqlite_pragmas,
     prepare_chroma_sqlite_for_startup,
@@ -340,85 +340,21 @@ def test_request_repair_for_sqlite_health_swallows_record_failure(tmp_path: Path
         )
 
 
-def test_check_anima_vectordb_health_uses_vector_worker(monkeypatch) -> None:
-    requests: list[dict] = []
-
-    class FakeResponse:
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict:
-            return {
-                "db_path": "/tmp/animas/sora/vectordb/chroma.sqlite3",
-                "ok": False,
-                "status": "timeout",
-                "details": ["quick_check interrupted"],
-                "error": None,
-            }
-
-    class FakeClient:
-        def __init__(self, *, base_url: str, timeout: float) -> None:
-            assert base_url == "http://worker"
-            assert timeout == 6.0
-
-        def __enter__(self) -> FakeClient:
-            return self
-
-        def __exit__(self, *_args) -> None:
-            return None
-
-        def post(self, path: str, json: dict) -> FakeResponse:
-            assert path == "/quick-check"
-            requests.append(json)
-            return FakeResponse()
-
-    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
-    monkeypatch.setattr("httpx.Client", FakeClient)
-
-    result = check_anima_vectordb_health_via_worker_or_direct(
-        "sora",
-        timeout_seconds=4.0,
-        source="daily_indexing_quick_check",
-        record_repair=False,
-    )
-
-    assert result.corrupt is False
-    assert result.status == "timeout"
-    assert requests == [
-        {
-            "anima_name": "sora",
-            "timeout_seconds": 4.0,
-            "source": "daily_indexing_quick_check",
-            "record_repair": False,
-        }
-    ]
-
-
-def test_check_anima_vectordb_health_falls_back_when_worker_fails(monkeypatch, tmp_path: Path) -> None:
+def test_check_anima_vectordb_health_uses_direct_sqlite_check(monkeypatch, tmp_path: Path) -> None:
     expected = SQLiteHealthResult(db_path=tmp_path / "chroma.sqlite3", ok=True, status="ok")
+    monkeypatch.setattr("core.paths.get_anima_vectordb_dir", lambda _name: tmp_path)
 
-    class FailingClient:
-        def __init__(self, **_kwargs) -> None:
-            raise RuntimeError("worker unavailable")
-
-    def fake_direct_check(anima_name: str, **kwargs) -> SQLiteHealthResult:
-        assert anima_name == "sora"
-        assert kwargs == {
-            "timeout_seconds": 4.0,
-            "source": "daily_indexing_quick_check",
-            "record_repair": False,
-        }
-        return expected
-
-    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
-    monkeypatch.setattr("httpx.Client", FailingClient)
-    monkeypatch.setattr("core.memory.rag.sqlite_health.check_anima_vectordb_health", fake_direct_check)
-
-    result = check_anima_vectordb_health_via_worker_or_direct(
-        "sora",
-        timeout_seconds=4.0,
-        source="daily_indexing_quick_check",
-        record_repair=False,
-    )
+    with (
+        patch("core.memory.rag.sqlite_health.quick_check_chroma_sqlite", return_value=expected) as quick_check,
+        patch("core.memory.rag.sqlite_health.request_repair_for_sqlite_health") as request_repair,
+    ):
+        result = check_anima_vectordb_health(
+            "sora",
+            timeout_seconds=4.0,
+            source="daily_indexing_quick_check",
+            record_repair=False,
+        )
 
     assert result is expected
+    quick_check.assert_called_once_with(tmp_path, timeout_seconds=4.0)
+    request_repair.assert_not_called()

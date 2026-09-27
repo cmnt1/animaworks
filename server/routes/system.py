@@ -214,26 +214,6 @@ def _collect_running_background_tasks(
     return result
 
 
-async def _vector_worker_status(request: Request) -> dict:
-    manager = getattr(request.app.state, "vector_worker", None)
-    if manager is None:
-        return {"enabled": False, "status": "missing", "write_circuit_breakers": []}
-    if not getattr(manager, "enabled", False):
-        return {"enabled": False, "status": "disabled", "write_circuit_breakers": []}
-    try:
-        status_method = getattr(manager, "status", None)
-        if status_method is None:
-            return {"enabled": True, "status": "unknown", "write_circuit_breakers": []}
-        data = await status_method()
-        if isinstance(data, dict):
-            data.setdefault("enabled", True)
-            data.setdefault("write_circuit_breakers", [])
-            return data
-    except Exception:
-        logger.warning("Failed to fetch vector worker status", exc_info=True)
-    return {"enabled": True, "status": "unavailable", "write_circuit_breakers": []}
-
-
 async def _zoom_gateway_status(request: Request) -> dict:
     manager = getattr(request.app.state, "zoom_gateway_manager", None)
     if manager is None:
@@ -318,7 +298,6 @@ def create_system_router() -> APIRouter:
             "scheduler_running": supervisor.is_scheduler_running(),
             "slack_socket_mode": "running" if slack_socket_ok else ("failed" if slack_enabled else "disabled"),
             "zoom_gateway": await _zoom_gateway_status(request),
-            "vector_worker": await _vector_worker_status(request),
             "gpu": _gpu_status(),
         }
 

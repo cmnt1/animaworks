@@ -100,10 +100,10 @@ class TestIsProtected:
         meta = {"memory_type": "skills", "importance": "normal"}
         assert forgetting_engine._is_protected(meta) is True
 
-    def test_is_protected_shared_users(self, forgetting_engine):
-        """Verify that memory_type='shared_users' is protected from forgetting."""
+    def test_is_protected_shared_users_is_not_a_protected_vector_type(self, forgetting_engine):
+        """Legacy shared-user index entries are no longer blanket-protected."""
         meta = {"memory_type": "shared_users", "importance": "normal"}
-        assert forgetting_engine._is_protected(meta) is True
+        assert forgetting_engine._is_protected(meta) is False
 
     def test_is_protected_important(self, forgetting_engine):
         """Verify that importance='important' is protected regardless of type."""
@@ -134,8 +134,8 @@ class TestIsProtected:
         }
         assert forgetting_engine._is_protected(meta) is False
 
-    def test_is_protected_expired_important_skills_and_users_stay_protected(self, forgetting_engine):
-        """Permanent memory types stay protected even when [IMPORTANT] expires."""
+    def test_is_protected_expired_important_skills_stay_protected(self, forgetting_engine):
+        """Skills stay protected even when [IMPORTANT] expires."""
         old_date = (now_jst() - timedelta(days=370)).isoformat()
         base = {
             "importance": "important",
@@ -143,7 +143,7 @@ class TestIsProtected:
             "updated_at": old_date,
         }
         assert forgetting_engine._is_protected({**base, "memory_type": "skills"}) is True
-        assert forgetting_engine._is_protected({**base, "memory_type": "shared_users"}) is True
+        assert forgetting_engine._is_protected({**base, "memory_type": "shared_users"}) is False
 
     def test_is_protected_normal_knowledge(self, forgetting_engine):
         """Verify that memory_type='knowledge', importance='normal' is NOT protected."""

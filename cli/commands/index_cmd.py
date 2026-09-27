@@ -22,7 +22,7 @@ def _setup_server_delegation() -> bool:
 
     When the server is running, sets ``ANIMAWORKS_VECTOR_URL``,
     ``ANIMAWORKS_EMBED_URL``, and ``ANIMAWORKS_RERANK_URL`` so that
-    ``get_vector_store()`` returns ``HttpVectorStore`` and embeddings /
+    ``get_vector_store(anima_name)`` returns ``HttpVectorStore`` and embeddings /
     rerank are generated server-side.  This prevents unsafe concurrent
     ChromaDB access and per-process model loads.
 
@@ -363,7 +363,6 @@ def index_command(args: argparse.Namespace) -> None:
     """Execute the index command."""
     try:
         from core.memory.rag import MemoryIndexer
-        from core.memory.rag.singleton import get_vector_store
         from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
     except ImportError:
         logger.error("RAG dependencies not installed. Run: pip install 'animaworks[rag]'")
@@ -418,31 +417,6 @@ def index_command(args: argparse.Namespace) -> None:
             else:
                 logger.error("Cannot access vector store for %s: %s", anima_name, exc)
             errors.append(anima_name)
-
-    shared_users_dir = base_dir / "shared" / "users"
-    if shared_users_dir.is_dir() and not args.anima:
-        logger.info("=" * 60)
-        logger.info("Indexing shared user memories")
-        logger.info("=" * 60)
-
-        # Shared user memories still use the legacy global vector store; keep its
-        # server delegation until that path is migrated separately.
-        _setup_server_delegation()
-        shared_store = get_vector_store(None)
-        if shared_store is None:
-            logger.warning("Shared vector store unavailable, skipping user memories")
-        elif args.dry_run:
-            user_dirs = [d for d in shared_users_dir.iterdir() if d.is_dir()]
-            logger.info("  Would index %d user profiles", len(user_dirs))
-        else:
-            indexer = MemoryIndexer(shared_store, "shared", shared_users_dir.parent)
-            result = indexer.index_directory(
-                shared_users_dir,
-                "shared_users",
-                force=args.full,
-            )
-            total_chunks += result.chunks_indexed
-            logger.info("  Indexed %d user profile chunks", result.chunks_indexed)
 
     logger.info("=" * 60)
     if args.dry_run:

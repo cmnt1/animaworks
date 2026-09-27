@@ -81,19 +81,6 @@ async def run_housekeeping(
         logger.exception("Housekeeping: daemon_log rotation failed")
         results["daemon_log"] = {"error": True}
 
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _rotate_daemon_log,
-            data_dir / "logs" / "vector-worker.log",
-            housekeeping.daemon_log_max_size_mb,
-            housekeeping.daemon_log_keep_generations,
-        )
-        results["vector_worker_log"] = r
-    except Exception:
-        logger.exception("Housekeeping: vector worker log rotation failed")
-        results["vector_worker_log"] = {"error": True}
-
     # 2b. Per-Anima runtime logs
     try:
         r = await loop.run_in_executor(

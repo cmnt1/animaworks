@@ -384,7 +384,7 @@ def test_index_command_opens_each_anima_once_for_personal_and_shared_indexing(tm
     assert indexer.index_directory.call_count == 2
 
 
-def test_index_command_keeps_server_delegation_for_shared_user_store(tmp_path: Path) -> None:
+def test_index_command_does_not_index_shared_user_store(tmp_path: Path) -> None:
     (tmp_path / "animas" / "alice").mkdir(parents=True)
     (tmp_path / "shared" / "users" / "user-1").mkdir(parents=True)
     args = argparse.Namespace(anima=None, full=False, shared=False, dry_run=True)
@@ -399,8 +399,8 @@ def test_index_command_keeps_server_delegation_for_shared_user_store(tmp_path: P
     ):
         index_command(args)
 
-    delegation.assert_called_once_with()
-    get_store.assert_called_once_with(None)
+    delegation.assert_not_called()
+    get_store.assert_not_called()
 
 
 def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path) -> None:

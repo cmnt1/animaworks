@@ -46,6 +46,7 @@ _embedding_model_name: str | None = None
 _embedding_model_device: str | None = None
 _init_failed: bool = False
 _direct_disabled_warned: bool = False
+_shared_store_disabled_warned: bool = False
 
 EmbeddingPurpose = Literal["document", "query"]
 EmbeddingPriority = Literal["interactive", "bulk"]
@@ -291,19 +292,25 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
 
     A phase3 root uses its own in-process owner transport when one is
     installed; otherwise ``ANIMAWORKS_VECTOR_URL`` (when set) delegates to
-    the server's vector API via ``HttpVectorStore``, and only processes
-    that are allowed direct Chroma access (the vector worker and
-    ``MemoryService``) open a local store.
+    the server's vector API via ``HttpVectorStore``, and authorized processes
+    open a local store.
 
     Args:
-        anima_name: Anima name for per-anima DB isolation.
-            When ``None``, uses the legacy shared directory.
+        anima_name: Anima name for per-anima DB isolation. ``None`` is
+            unsupported because shared user memories are no longer indexed.
 
     Returns:
         VectorStore instance (HttpVectorStore or ChromaVectorStore),
         or ``None`` if no vector backend is available.
     """
-    global _direct_disabled_warned, _init_failed
+    global _direct_disabled_warned, _init_failed, _shared_store_disabled_warned
+
+    if anima_name is None:
+        with _lock:
+            if not _shared_store_disabled_warned:
+                logger.warning("Shared vector store access is disabled; use an Anima-owned vector store")
+                _shared_store_disabled_warned = True
+        return None
 
     vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
     if _owner_transport is not None:
@@ -366,12 +373,9 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
                 # other anima too. Return None for this anima only; a subsequent
                 # repair/reset lets it retry without poisoning the worker.
                 try:
-                    if anima_name:
-                        from core.paths import get_anima_vectordb_dir
+                    from core.paths import get_anima_vectordb_dir
 
-                        persist_dir = get_anima_vectordb_dir(anima_name)
-                    else:
-                        persist_dir = None  # ChromaVectorStore defaults to ~/.animaworks/vectordb
+                    persist_dir = get_anima_vectordb_dir(anima_name)
                     store = create_chroma_vector_store(persist_dir=persist_dir, anima_name=anima_name)
                     _vector_stores[anima_name] = store
                 except Exception as exc:
@@ -777,8 +781,8 @@ def reset_vector_store_after_error(anima_name: str | None = None, *, source: str
     transient 522/"Failed to get segments" errors, which trigger further
     resets — the self-sustaining churn that has repeatedly escalated into real
     on-disk corruption and fleet-wide quarantines. A process-wide cooldown
-    caps that feedback loop. Deliberate resets (rebuild swaps, explicit
-    ``/reset-store``) must keep calling ``reset_vector_store`` directly and
+    caps that feedback loop. Deliberate rebuild resets must call
+    ``reset_vector_store`` directly and
     are never throttled.
 
     Returns True when the reset ran, False when suppressed by the cooldown.
@@ -978,7 +982,8 @@ def get_embedding_e5_prefix_enabled() -> bool:
 
 def _reset_for_testing():
     """Reset singletons for test isolation."""
-    global _bulk_yield_count, _direct_disabled_warned, _embedding_model, _embedding_model_device, _embedding_model_name
+    global _bulk_yield_count, _direct_disabled_warned, _shared_store_disabled_warned
+    global _embedding_model, _embedding_model_device, _embedding_model_name
     global _init_failed, _interactive_waiters, _owner_transport, _owner_anima, _last_error_reset_monotonic
     global _vector_store_lifecycle_gate
     from core.infra.gpu import reset_gpu_status_for_testing
@@ -998,6 +1003,7 @@ def _reset_for_testing():
         _embedding_model_device = None
         _init_failed = False
         _direct_disabled_warned = False
+        _shared_store_disabled_warned = False
         with _priority_condition:
             _interactive_waiters = 0
             _bulk_yield_count = 0

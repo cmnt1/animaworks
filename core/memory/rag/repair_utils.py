@@ -44,7 +44,6 @@ KNOWN_MEMORY_SUFFIXES = (
     "_procedures",
     "_skills",
     "_conversation_summary",
-    "_shared_users",
     "_entities",
 )
 

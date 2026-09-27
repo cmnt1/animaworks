@@ -354,10 +354,10 @@ class AnimaWorksLoCoMoAdapter:
 
     def _init_isolated_rag(self) -> None:
         """Create temp data dir, env override, and RAG components."""
+        from core.memory.rag.cli_access import open_vector_access  # noqa: PLC0415
         from core.memory.rag.indexer import MemoryIndexer  # noqa: PLC0415
         from core.memory.rag.retriever import MemoryRetriever  # noqa: PLC0415
-        from core.memory.rag.singleton import get_embedding_model, get_vector_store  # noqa: PLC0415
-        from core.memory.rag.vector_worker_client import start_temporary_vector_worker  # noqa: PLC0415
+        from core.memory.rag.singleton import get_embedding_model  # noqa: PLC0415
 
         self._previous_animaworks_data = os.environ.get("ANIMAWORKS_DATA_DIR")
         real_data_dir = Path(os.environ.get("ANIMAWORKS_DATA_DIR", "~/.animaworks")).expanduser().resolve()
@@ -384,12 +384,12 @@ class AnimaWorksLoCoMoAdapter:
 
         (self._anima_dir / "vectordb").mkdir(parents=True, exist_ok=True)
         try:
-            self._temp_worker = start_temporary_vector_worker(log_dir=Path(self._temp_dir) / "logs")
-            self._vector_store = get_vector_store(ANIMA_NAME)
+            self._temp_worker = open_vector_access(ANIMA_NAME, self._anima_dir, purpose="locomo")
+            self._vector_store = self._temp_worker.__enter__().store
             if self._vector_store is None:
-                raise RuntimeError("vector worker unavailable")
+                raise RuntimeError("vector store unavailable")
         except Exception as e:
-            logger.error("Vector worker store init failed: %s", e)
+            logger.error("Vector store init failed: %s", e)
             raise
         try:
             emb = get_embedding_model()
@@ -1065,9 +1065,9 @@ class AnimaWorksLoCoMoAdapter:
         temp_worker = getattr(self, "_temp_worker", None)
         if temp_worker is not None:
             try:
-                temp_worker.stop()
+                temp_worker.__exit__(None, None, None)
             except Exception as e:
-                logger.warning("Failed to stop temporary vector worker: %s", e)
+                logger.warning("Failed to close temporary vector store: %s", e)
             self._temp_worker = None
         if self._temp_dir and Path(self._temp_dir).exists():
             try:

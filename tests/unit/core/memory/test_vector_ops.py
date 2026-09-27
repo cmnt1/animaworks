@@ -34,7 +34,7 @@ def test_request_payload_removes_anima_name_only() -> None:
     assert request_payload({"collection": "k"}) == {"collection": "k"}
 
 
-def test_worker_only_endpoints_have_no_memory_equivalent() -> None:
+def test_reset_and_health_endpoints_have_no_memory_equivalent() -> None:
     for path in ("/reset-store", "/verify-repair", "/quick-check"):
         with pytest.raises(UnsupportedVectorPath):
             to_owner_interaction(path, {})

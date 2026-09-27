@@ -1708,6 +1708,64 @@ def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: b
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_rag_vector_worker_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired RAG vector-worker settings without deleting stored data."""
+    del verbose
+    config_path = data_dir / "config.json"
+    retired_keys = (
+        "vector_worker_enabled",
+        "vector_worker_host",
+        "vector_worker_port",
+        "vector_worker_startup_timeout_seconds",
+        "vector_worker_request_timeout_seconds",
+        "vector_worker_restart_backoff_seconds",
+        "vector_worker_shutdown_timeout_seconds",
+        "vector_worker_fallback_direct",
+        "startup_repair_preflight_enabled",
+        "startup_repair_window_minutes",
+        "repair_stop_anima",
+    )
+    details: list[str] = []
+    changed = 0
+
+    if not config_path.is_file():
+        details.append("config.json not found; skip settings cleanup")
+    else:
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(config, dict):
+                details.append("config.json root is not an object; settings cleanup skipped")
+            else:
+                rag = config.get("rag")
+                if rag is not None and not isinstance(rag, dict):
+                    details.append("config.json rag section is not an object; settings cleanup skipped")
+                else:
+                    removed = [key for key in retired_keys if isinstance(rag, dict) and key in rag]
+                    details.extend(
+                        f"{'Would remove' if dry_run else 'Removed'} rag.{key} from config.json" for key in removed
+                    )
+                    if removed:
+                        changed = 1
+                        if not dry_run:
+                            for key in removed:
+                                del rag[key]
+                            config_path.write_text(
+                                json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+                                encoding="utf-8",
+                            )
+                    else:
+                        details.append("No retired RAG vector-worker settings found")
+        except Exception as exc:
+            logger.exception("step_rag_vector_worker_config_cleanup failed")
+            return StepResult(changed=0, skipped=0, details=details, error=str(exc))
+
+    if any((data_dir / "logs").glob("vector-worker.log*")):
+        details.append("Left logs/vector-worker.log* untouched; these logs are no longer rotated")
+    if (data_dir / "vectordb").is_dir():
+        details.append("data_dir/vectordb is unused; it was left in place and may be removed manually")
+    return StepResult(changed=changed, skipped=0 if changed else 1, details=details)
+
+
 def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove retired max_chains and llm_timeout settings from runtime config."""
     del verbose
@@ -2321,6 +2379,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove retired max_chains / llm_timeout settings",
             "structural",
             step_retire_chain_timeout_keys,
+        ),
+        MigrationStep(
+            "rag_vector_worker_config_cleanup",
+            "Remove retired RAG vector-worker config without deleting data",
+            "structural",
+            step_rag_vector_worker_config_cleanup,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

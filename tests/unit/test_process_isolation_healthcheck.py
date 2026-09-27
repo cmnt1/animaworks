@@ -126,6 +126,7 @@ class TestProcessGroupIsolation:
         # IPC shutdown "fails" so we reach the SIGTERM step
         async def fail_send(*args, **kwargs):
             raise ConnectionError("IPC lost")
+
         handle.send_request = fail_send
 
         def terminate_side_effect(proc, *, force, include_children=True):
@@ -141,7 +142,8 @@ class TestProcessGroupIsolation:
 
     @pytest.mark.asyncio
     async def test_stop_escalates_to_force_kill_via_adapter(
-        self, handle: ProcessHandle,
+        self,
+        handle: ProcessHandle,
     ):
         """Verify stop() escalates from graceful terminate to force kill via the adapter."""
         call_forces: list[bool] = []
@@ -155,6 +157,7 @@ class TestProcessGroupIsolation:
         # IPC shutdown fails so we reach SIGTERM step
         async def fail_send(*args, **kwargs):
             raise ConnectionError("IPC lost")
+
         handle.send_request = fail_send
 
         def terminate_side_effect(proc, *, force, include_children=True):
@@ -183,7 +186,8 @@ class TestProcessGroupIsolation:
 
     @pytest.mark.asyncio
     async def test_kill_calls_adapter_even_with_mocked_process(
-        self, handle: ProcessHandle,
+        self,
+        handle: ProcessHandle,
     ):
         """Verify kill() delegates to the adapter for mocked processes."""
         mock_process = handle.process
@@ -227,7 +231,9 @@ class TestFailedLogSpamSuppression:
 
     @pytest.mark.asyncio
     async def test_max_retries_adds_to_permanently_failed(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
     ):
         """Verify _handle_process_failure adds to _permanently_failed on max retries."""
         supervisor.processes["test-anima"] = handle
@@ -242,7 +248,9 @@ class TestFailedLogSpamSuppression:
 
     @pytest.mark.asyncio
     async def test_hang_kill_is_followed_by_respawn_transaction(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
     ):
         """Hung process recovery should kill first, then run respawn transaction."""
         supervisor.processes["test-anima"] = handle
@@ -251,7 +259,6 @@ class TestFailedLogSpamSuppression:
 
         handle.kill = AsyncMock()
         supervisor._respawn_anima_transaction = AsyncMock(return_value=new_handle)  # type: ignore[method-assign]
-        supervisor._maybe_repair_rag_before_restart = AsyncMock(return_value=False)  # type: ignore[method-assign]
 
         await supervisor._handle_process_hang("test-anima", handle)
 
@@ -260,7 +267,8 @@ class TestFailedLogSpamSuppression:
 
     @pytest.mark.asyncio
     async def test_respawn_failure_retries_three_times_then_visible_error(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ):
         """Spawn failure should retry to the policy limit and expose error status."""
         from core.exceptions import ProcessError
@@ -280,7 +288,10 @@ class TestFailedLogSpamSuppression:
 
     @pytest.mark.asyncio
     async def test_permanently_failed_skips_health_check(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle, caplog,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
+        caplog,
     ):
         """Verify health check skips permanently failed processes."""
         supervisor.processes["test-anima"] = handle
@@ -290,7 +301,9 @@ class TestFailedLogSpamSuppression:
         supervisor._failed_log_times["test-anima"] = asyncio.get_running_loop().time()
 
         with patch.object(
-            supervisor, "_handle_process_failure", new_callable=AsyncMock,
+            supervisor,
+            "_handle_process_failure",
+            new_callable=AsyncMock,
         ) as mock_failure:
             await supervisor._check_process_health("test-anima", handle)
 
@@ -299,7 +312,10 @@ class TestFailedLogSpamSuppression:
 
     @pytest.mark.asyncio
     async def test_permanently_failed_logs_warning_every_5_minutes(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle, caplog,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
+        caplog,
     ):
         """Verify WARNING log is emitted when 5-minute interval has passed."""
         import logging
@@ -308,21 +324,19 @@ class TestFailedLogSpamSuppression:
         handle.state = ProcessState.FAILED
         supervisor._permanently_failed.add("test-anima")
         # Set last log time to 301 seconds ago
-        supervisor._failed_log_times["test-anima"] = (
-            asyncio.get_running_loop().time() - 301
-        )
+        supervisor._failed_log_times["test-anima"] = asyncio.get_running_loop().time() - 301
 
         with caplog.at_level(logging.WARNING):
             await supervisor._check_process_health("test-anima", handle)
 
-        assert any(
-            "Process still in FAILED state: test-anima" in record.message
-            for record in caplog.records
-        )
+        assert any("Process still in FAILED state: test-anima" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_permanently_failed_no_log_within_5_minutes(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle, caplog,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
+        caplog,
     ):
         """Verify no log is emitted within the 5-minute interval."""
         import logging
@@ -331,21 +345,18 @@ class TestFailedLogSpamSuppression:
         handle.state = ProcessState.FAILED
         supervisor._permanently_failed.add("test-anima")
         # Set last log time to just 10 seconds ago
-        supervisor._failed_log_times["test-anima"] = (
-            asyncio.get_running_loop().time() - 10
-        )
+        supervisor._failed_log_times["test-anima"] = asyncio.get_running_loop().time() - 10
 
         with caplog.at_level(logging.WARNING):
             await supervisor._check_process_health("test-anima", handle)
 
-        assert not any(
-            "Process still in FAILED state" in record.message
-            for record in caplog.records
-        )
+        assert not any("Process still in FAILED state" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_non_permanently_failed_still_triggers_restart(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
     ):
         """Verify FAILED processes NOT in _permanently_failed still trigger restart."""
         supervisor.processes["test-anima"] = handle
@@ -370,7 +381,9 @@ class TestReconciliationAutoRecovery:
 
     @pytest.mark.asyncio
     async def test_reconcile_recovers_permanently_failed_after_cooldown(
-        self, supervisor: ProcessSupervisor, tmp_path: Path,
+        self,
+        supervisor: ProcessSupervisor,
+        tmp_path: Path,
     ):
         """Verify reconciliation recovers permanently failed processes after 1 min."""
         # Set up animas_dir with an enabled anima
@@ -380,7 +393,8 @@ class TestReconciliationAutoRecovery:
         alice_dir.mkdir()
         (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
         (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8",
+            json.dumps({"enabled": True}),
+            encoding="utf-8",
         )
         supervisor.animas_dir = animas_dir
 
@@ -411,7 +425,9 @@ class TestReconciliationAutoRecovery:
 
     @pytest.mark.asyncio
     async def test_reconcile_does_not_recover_within_cooldown(
-        self, supervisor: ProcessSupervisor, tmp_path: Path,
+        self,
+        supervisor: ProcessSupervisor,
+        tmp_path: Path,
     ):
         """Verify reconciliation does NOT recover within the 1-minute cooldown."""
         animas_dir = tmp_path / "animas"
@@ -420,7 +436,8 @@ class TestReconciliationAutoRecovery:
         alice_dir.mkdir()
         (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
         (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8",
+            json.dumps({"enabled": True}),
+            encoding="utf-8",
         )
         supervisor.animas_dir = animas_dir
 
@@ -447,7 +464,9 @@ class TestReconciliationAutoRecovery:
 
     @pytest.mark.asyncio
     async def test_reconcile_skips_disabled_permanently_failed(
-        self, supervisor: ProcessSupervisor, tmp_path: Path,
+        self,
+        supervisor: ProcessSupervisor,
+        tmp_path: Path,
     ):
         """Verify reconciliation does not recover disabled permanently failed processes."""
         animas_dir = tmp_path / "animas"
@@ -456,7 +475,8 @@ class TestReconciliationAutoRecovery:
         alice_dir.mkdir()
         (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
         (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": False}), encoding="utf-8",
+            json.dumps({"enabled": False}),
+            encoding="utf-8",
         )
         supervisor.animas_dir = animas_dir
 
@@ -479,7 +499,9 @@ class TestReconciliationAutoRecovery:
 
     @pytest.mark.asyncio
     async def test_reconcile_cleans_up_orphaned_permanently_failed(
-        self, supervisor: ProcessSupervisor, tmp_path: Path,
+        self,
+        supervisor: ProcessSupervisor,
+        tmp_path: Path,
     ):
         """Verify reconciliation cleans up _permanently_failed entries with no handle."""
         animas_dir = tmp_path / "animas"
@@ -502,7 +524,8 @@ class TestRestartCounterReset:
 
     @pytest.mark.asyncio
     async def test_restart_resets_restart_counts(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ):
         """Verify restart_anima() resets _restart_counts."""
         supervisor._restart_counts["alice"] = 5
@@ -524,7 +547,8 @@ class TestRestartCounterReset:
 
     @pytest.mark.asyncio
     async def test_restart_calls_stop_then_start(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ):
         """Verify restart_anima() calls stop then start in order."""
         handle = MagicMock(spec=ProcessHandle)
@@ -548,7 +572,8 @@ class TestRestartCounterReset:
 
     @pytest.mark.asyncio
     async def test_restart_works_when_no_existing_process(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ):
         """Verify restart_anima() works when process doesn't exist yet."""
         supervisor.start_anima = AsyncMock()
@@ -561,7 +586,8 @@ class TestRestartCounterReset:
 
     @pytest.mark.asyncio
     async def test_restart_preserves_counters_when_reset_disabled(
-        self, supervisor: ProcessSupervisor,
+        self,
+        supervisor: ProcessSupervisor,
     ):
         """Verify restart_anima(_reset_counters=False) preserves failure tracking."""
         supervisor._restart_counts["alice"] = 3
@@ -584,7 +610,9 @@ class TestRestartCounterReset:
 
     @pytest.mark.asyncio
     async def test_handle_process_failure_preserves_counter_through_restart(
-        self, supervisor: ProcessSupervisor, handle: ProcessHandle,
+        self,
+        supervisor: ProcessSupervisor,
+        handle: ProcessHandle,
     ):
         """Verify _handle_process_failure increments counter and restart doesn't erase it."""
         supervisor.processes["test-anima"] = handle
@@ -593,11 +621,13 @@ class TestRestartCounterReset:
         # Mock stop/start so restart_anima succeeds
         async def mock_stop(name):
             del supervisor.processes[name]
+
         async def mock_start(name):
             new_h = MagicMock(spec=ProcessHandle)
             new_h.anima_name = name
             new_h.get_pid.return_value = 99999
             supervisor.processes[name] = new_h
+
         supervisor.stop_anima = mock_stop
         supervisor.start_anima = mock_start
 
@@ -615,7 +645,9 @@ class TestFailureRecoveryCycle:
 
     @pytest.mark.asyncio
     async def test_full_cycle_failure_to_recovery(
-        self, supervisor: ProcessSupervisor, tmp_path: Path,
+        self,
+        supervisor: ProcessSupervisor,
+        tmp_path: Path,
     ):
         """Test complete cycle: FAILED → max_retries → permanently_failed → reconciliation recovery."""
         # Set up animas_dir
@@ -625,7 +657,8 @@ class TestFailureRecoveryCycle:
         alice_dir.mkdir()
         (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
         (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8",
+            json.dumps({"enabled": True}),
+            encoding="utf-8",
         )
         supervisor.animas_dir = animas_dir
 
@@ -647,15 +680,15 @@ class TestFailureRecoveryCycle:
         supervisor._failed_log_times["alice"] = asyncio.get_running_loop().time()
 
         with patch.object(
-            supervisor, "_handle_process_failure", new_callable=AsyncMock,
+            supervisor,
+            "_handle_process_failure",
+            new_callable=AsyncMock,
         ) as mock_failure:
             await supervisor._check_process_health("alice", handle)
             mock_failure.assert_not_called()
 
         # Step 4: Simulate cooldown elapsed
-        supervisor._failed_log_times["alice"] = (
-            asyncio.get_running_loop().time() - 61
-        )
+        supervisor._failed_log_times["alice"] = asyncio.get_running_loop().time() - 61
 
         supervisor.start_anima = AsyncMock()
         supervisor.stop_anima = AsyncMock()

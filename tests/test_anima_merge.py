@@ -586,7 +586,7 @@ def test_anima_merge_attachments_in_different_subdirectories_do_not_collide(
     }
 
 
-def test_anima_merge_cli_does_not_start_a_vector_worker(
+def test_anima_merge_cli_does_not_set_server_vector_url(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -594,10 +594,6 @@ def test_anima_merge_cli_does_not_start_a_vector_worker(
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
     _stub_rebuild_substeps(monkeypatch)
-    monkeypatch.setattr(
-        "core.memory.rag.vector_worker_client.start_temporary_vector_worker",
-        Mock(side_effect=AssertionError("CLI must not start a vector worker")),
-    )
     args = argparse.Namespace(
         source="source",
         target="target",

@@ -156,8 +156,7 @@ async def test_source_change_after_build_aborts_before_owner_closes_live_db(sour
         await service.close()
 
 
-@pytest.mark.parametrize("owner", ["phase3", "legacy"])
-async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(sources, monkeypatch, owner):
+async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(sources, monkeypatch):
     from core.memory.retrieval.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
 
     for path in (
@@ -176,25 +175,17 @@ async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(so
         raise OSError("injected metadata publication failure")
 
     monkeypatch.setattr(repair_snapshot, "publish_rebuild_metadata", fail_after_publish)
-    if owner == "legacy":
-        monkeypatch.setattr(repair_rebuild, "_has_active_repair_fence", lambda *args, **kwargs: True)
-        monkeypatch.setattr(repair_rebuild, "reset_worker_vector_store", lambda *args: True)
-        monkeypatch.setattr(repair_rebuild, "verify_worker_vector_store", lambda *args, **kwargs: True)
-        monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda *args: None)
+    staging, chunks, hashes = _build(sources)
+    reopened = MagicMock()
+    reopened.verify_rebuilt_data.return_value = {"chunks": chunks}
+    service = MemoryService("alice", sources, opener=MagicMock(side_effect=[MagicMock(), reopened, MagicMock()]))
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
+    await service.start()
+    try:
         with pytest.raises(OSError, match="publication failure"):
-            repair_rebuild.atomic_rebuild_vectordb("alice", include_shared=True, anima_dir=sources)
-    else:
-        staging, chunks, hashes = _build(sources)
-        reopened = MagicMock()
-        reopened.verify_rebuilt_data.return_value = {"chunks": chunks}
-        service = MemoryService("alice", sources, opener=MagicMock(side_effect=[MagicMock(), reopened, MagicMock()]))
-        service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
-        await service.start()
-        try:
-            with pytest.raises(OSError, match="publication failure"):
-                await service.repair(include_shared=True)
-        finally:
-            await service.close()
+            await service.repair(include_shared=True)
+    finally:
+        await service.close()
     assert _source_bytes(sources) == before
     assert (sources / "vectordb" / "old.marker").exists()
     assert list((sources / "archive").glob("vectordb-rebuild-failed-*/.rebuild/index_meta.json"))
@@ -284,9 +275,8 @@ async def test_incomplete_rollback_retains_metadata_backup_for_recovery(sources,
         await service.close()
 
 
-@pytest.mark.parametrize("owner", ["legacy", "phase3"])
 @pytest.mark.parametrize("failed_move", ["retire_original", "install_staging"])
-async def test_rename_failure_keeps_original_db_and_metadata(sources, monkeypatch, owner, failed_move):
+async def test_rename_failure_keeps_original_db_and_metadata(sources, monkeypatch, failed_move):
     import shutil
 
     before = _source_bytes(sources)
@@ -307,29 +297,19 @@ async def test_rename_failure_keeps_original_db_and_metadata(sources, monkeypatc
         return move(source, destination, *args, **kwargs)
 
     monkeypatch.setattr(shutil, "move", fail_selected_move)
-    if owner == "legacy":
-        monkeypatch.setattr(repair_rebuild, "_has_active_repair_fence", lambda *args, **kwargs: True)
-        monkeypatch.setattr(repair_rebuild, "reset_worker_vector_store", lambda *args: True)
-        monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda *args: None)
-        verify = MagicMock(return_value=True)
-        monkeypatch.setattr(repair_rebuild, "verify_worker_vector_store", verify)
+    staging, chunks, hashes = _build(sources)
+    original, reopened = MagicMock(), MagicMock()
+    service = MemoryService("alice", sources, opener=MagicMock(side_effect=[original, reopened]))
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
+    await service.start()
+    try:
         with pytest.raises(PermissionError, match="rename denied"):
-            repair_rebuild.atomic_rebuild_vectordb("alice", include_shared=True, anima_dir=sources)
-        verify.assert_not_called()
-    else:
-        staging, chunks, hashes = _build(sources)
-        original, reopened = MagicMock(), MagicMock()
-        service = MemoryService("alice", sources, opener=MagicMock(side_effect=[original, reopened]))
-        service._build_staging_subprocess = AsyncMock(return_value=(staging, chunks, hashes))
-        await service.start()
-        try:
-            with pytest.raises(PermissionError, match="rename denied"):
-                await service.repair(include_shared=True)
-            original.close.assert_called_once()
-            assert service._store is reopened
-            reopened.verify_rebuilt_data.assert_not_called()
-        finally:
-            await service.close()
+            await service.repair(include_shared=True)
+        original.close.assert_called_once()
+        assert service._store is reopened
+        reopened.verify_rebuilt_data.assert_not_called()
+    finally:
+        await service.close()
     assert len(rejected) == 1
     assert (live / "old.marker").read_text() == "old database"
     assert _source_bytes(sources) == before

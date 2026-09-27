@@ -220,7 +220,7 @@ async def test_catchup_indexing_cannot_close_ready_worker_services(data_dir: Pat
     indexer = MemoryIndexer.__new__(MemoryIndexer)
     indexer.collection_prefix = "shared"
 
-    def preflight(**_kwargs):
+    def preflight():
         assert app.state.worker_services_ready is False
 
     app.state.startup_preflight_runner = preflight
@@ -239,7 +239,6 @@ async def test_catchup_indexing_cannot_close_ready_worker_services(data_dir: Pat
         assert public.status_code == 503
 
     with (
-        patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
         patch("server.app._startup_animas_background", side_effect=spawn_and_catchup) as spawn,
         patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
         patch("server.app.load_auth", return_value=_LOCAL_TRUST_AUTH),
@@ -259,7 +258,7 @@ async def test_post_preflight_failure_revokes_worker_service_readiness(data_dir:
 
     app = _make_app(data_dir)
     startup_progress.begin_startup("booting")
-    app.state.startup_preflight_runner = lambda **_kwargs: None
+    app.state.startup_preflight_runner = lambda: None
 
     async def fail_after_preflight(_app, **_kwargs):
         assert app.state.worker_services_ready is True
@@ -268,7 +267,6 @@ async def test_post_preflight_failure_revokes_worker_service_readiness(data_dir:
         raise RuntimeError("worker startup failed")
 
     with (
-        patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
         patch("server.app._startup_animas_background", side_effect=fail_after_preflight),
     ):
         if cancel:
@@ -304,13 +302,11 @@ async def test_startup_initialization_failure_sets_failed_and_server_survives(da
     from server.app import _run_startup_initialization
 
     app = _make_app(data_dir)
-    app.state.vector_worker = None
 
-    def fail_preflight(*, force_all_vectordb: bool = False) -> None:
+    def fail_preflight() -> None:
         raise RuntimeError("preflight exploded")
 
     app.state.startup_preflight_runner = fail_preflight
-    app.state.force_startup_repair_all_vectordb = False
 
     startup_progress.begin_startup("booting")
     await _run_startup_initialization(app)
