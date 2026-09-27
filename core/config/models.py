@@ -97,8 +97,6 @@ from core.config.schemas import (
     LoggingConfig,
     MediaProxyConfig,
     MemoryConfig,
-    Neo4jConfig,
-    Neo4jEdgeTypeConfig,
     NotificationChannelConfig,
     PermissionsConfig,
     PrimingConfig,

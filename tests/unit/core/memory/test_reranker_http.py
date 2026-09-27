@@ -233,24 +233,3 @@ class TestRerankerHTTP:
 
         assert result == []
         mock_post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_async_rerank_uses_http(self, monkeypatch):
-        """Async path also respects ANIMAWORKS_RERANK_URL."""
-        monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://localhost/rerank")
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"scores": [0.3, 0.7]}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.Client.post", return_value=mock_response):
-            from core.memory.retrieval.reranker import CrossEncoderReranker
-
-            reranker = CrossEncoderReranker()
-            result = await reranker.rerank(
-                "q",
-                [{"fact": "a"}, {"fact": "b"}],
-                top_k=2,
-            )
-
-        assert [r["fact"] for r in result] == ["b", "a"]

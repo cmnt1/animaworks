@@ -2268,6 +2268,112 @@ def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool)
         return StepResult(changed=0, skipped=0, details=details, error=str(exc))
 
 
+def step_neo4j_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired Neo4j settings and preserve configured fact edge types."""
+    del verbose
+    from core.memory._io import atomic_write_text
+
+    details: list[str] = []
+    errors: list[str] = []
+    changed = 0
+    skipped = 0
+
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        skipped += 1
+        details.append("config.json not found; skip")
+    else:
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(config, dict):
+                skipped += 1
+                details.append("config.json root is not an object")
+            else:
+                memory = config.get("memory")
+                if not isinstance(memory, dict):
+                    skipped += 1
+                    details.append("config.json memory section is not an object; skip")
+                else:
+                    config_changed = False
+                    old_edge_types = memory.get("neo4j_edge_types")
+                    if old_edge_types and "fact_edge_types" not in memory:
+                        memory["fact_edge_types"] = old_edge_types
+                        config_changed = True
+                        action = "Would move" if dry_run else "Moved"
+                        details.append(f"{action} memory.neo4j_edge_types to memory.fact_edge_types")
+                    for key in ("backend", "neo4j", "neo4j_realtime_ingest", "neo4j_edge_types"):
+                        if key in memory:
+                            del memory[key]
+                            config_changed = True
+                            action = "Would remove" if dry_run else "Removed"
+                            details.append(f"{action} memory.{key}")
+                    if config_changed:
+                        changed += 1
+                        if not dry_run:
+                            atomic_write_text(
+                                config_path,
+                                json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+                            )
+                    else:
+                        skipped += 1
+                        details.append("No retired memory settings found in config.json")
+        except Exception as exc:
+            errors.append(f"config.json: {exc}")
+            details.append(f"config.json: failed to update: {exc}")
+            logger.exception("step_neo4j_config_cleanup failed for %s", config_path)
+
+    animas_dir = data_dir / "animas"
+    anima_dirs = sorted(path for path in animas_dir.iterdir() if path.is_dir()) if animas_dir.is_dir() else []
+    for anima_dir in anima_dirs:
+        status_path = anima_dir / "status.json"
+        if not status_path.is_file():
+            continue
+        try:
+            status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(status, dict):
+                skipped += 1
+                details.append(f"{anima_dir.name}: status.json root is not an object")
+                continue
+
+            legacy_backend = status.get("memory_backend")
+            status_changed = False
+            old_edge_types = status.get("neo4j_edge_types")
+            if old_edge_types and "fact_edge_types" not in status:
+                status["fact_edge_types"] = old_edge_types
+                status_changed = True
+                action = "would move" if dry_run else "moved"
+                details.append(f"{anima_dir.name}: {action} neo4j_edge_types to fact_edge_types")
+            if "memory_backend" in status:
+                del status["memory_backend"]
+                status_changed = True
+                action = "would remove" if dry_run else "removed"
+                details.append(f"{anima_dir.name}: {action} memory_backend")
+            if "neo4j_edge_types" in status:
+                del status["neo4j_edge_types"]
+                status_changed = True
+                action = "would remove" if dry_run else "removed"
+                details.append(f"{anima_dir.name}: {action} neo4j_edge_types")
+            if legacy_backend == "neo4j":
+                details.append(f"{anima_dir.name}: Neo4j データは参照されなくなった（legacy RAG で継続）")
+
+            if status_changed:
+                changed += 1
+                if not dry_run:
+                    atomic_write_text(
+                        status_path,
+                        json.dumps(status, ensure_ascii=False, indent=2) + "\n",
+                    )
+            else:
+                skipped += 1
+        except Exception as exc:
+            error = f"{anima_dir.name}: failed to update status.json: {exc}"
+            errors.append(error)
+            details.append(error)
+            logger.exception("step_neo4j_config_cleanup failed for %s", status_path)
+
+    return StepResult(changed=changed, skipped=skipped, details=details, error="; ".join(errors) if errors else None)
+
+
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
     steps = [
@@ -2541,6 +2647,12 @@ def register_all_steps(runner: Any) -> None:
             "Resync shared runtime files after localized template regeneration",
             "template_sync",
             step_i18n_regenerated_templates_resync,
+        ),
+        MigrationStep(
+            "neo4j_config_cleanup",
+            "Remove retired Neo4j configuration keys",
+            "structural",
+            step_neo4j_config_cleanup,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

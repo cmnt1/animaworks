@@ -498,15 +498,6 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         for name in _names_to_start:
             require_task_store_ready(app.state.animas_dir / name)
 
-        # ── Ensure infrastructure services (Neo4j, etc.) ──────────
-        try:
-            from core.infra.services import ensure_infra_services
-            from core.paths import PROJECT_DIR
-
-            await ensure_infra_services(app.state.animas_dir, _names_to_start, PROJECT_DIR)
-        except Exception:
-            logger.warning("Infrastructure service check failed", exc_info=True)
-
         # Start anima processes (parallel internally)
         await app.state.supervisor.start_all(_names_to_start)
 

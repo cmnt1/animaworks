@@ -139,13 +139,7 @@ def _load_configured_edge_type_entries() -> object:
 
         cfg = load_config()
         memory_cfg = getattr(cfg, "memory", None)
-        fact_edge_types = getattr(memory_cfg, "fact_edge_types", None)
-        fields_set = getattr(memory_cfg, "model_fields_set", None)
-        if isinstance(fields_set, set) and "fact_edge_types" in fields_set:
-            return fact_edge_types or []
-        if isinstance(fact_edge_types, (list, tuple)) and fact_edge_types:
-            return fact_edge_types
-        return getattr(memory_cfg, "neo4j_edge_types", [])
+        return getattr(memory_cfg, "fact_edge_types", []) or []
     except Exception:
         logger.debug("Failed to load global fact edge ontology config", exc_info=True)
         return []
@@ -164,9 +158,7 @@ def _load_status_edge_type_entries(anima_dir: Path | None) -> object:
         return []
     if not isinstance(data, Mapping):
         return []
-    if "fact_edge_types" in data:
-        return data.get("fact_edge_types", [])
-    return data.get("neo4j_edge_types", [])
+    return data.get("fact_edge_types", [])
 
 
 def resolve_edge_type_descriptions(anima_dir: Path | None = None) -> dict[str, str]:

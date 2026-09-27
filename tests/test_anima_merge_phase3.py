@@ -168,7 +168,7 @@ def test_anima_merge_rewrite_refs_stops_on_organization_self_reference(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data_dir, _source, target = _setup_data_dir(tmp_path)
-    _write(target / "status.json", '{"enabled":true,"memory_backend":"legacy","supervisor":"source"}\n')
+    _write(target / "status.json", '{"enabled":true,"supervisor":"source"}\n')
     _stub_rebuild_substeps(monkeypatch)
     status_before = (target / "status.json").read_bytes()
 

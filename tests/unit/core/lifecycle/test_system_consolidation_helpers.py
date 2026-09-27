@@ -47,24 +47,13 @@ async def test_consolidation_post_processing_does_not_rebuild_rag_index(monkeypa
         run_weekly_integration_post_processing,
     )
 
-    ingest_calls: list[int] = []
-    engines = []
-
-    class FakeEngine:
-        def __init__(self, *_args) -> None:
-            self.rebuild_calls = 0
-            engines.append(self)
-
-        def _rebuild_rag_index(self) -> None:
-            self.rebuild_calls += 1
-
-        async def ingest_recent_to_backend(self, *, hours: int) -> None:
-            ingest_calls.append(hours)
-
-    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", FakeEngine)
-    monkeypatch.setattr("core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled", AsyncMock())
-    detect = AsyncMock()
-    monkeypatch.setattr("core.lifecycle.system_consolidation.detect_communities_if_neo4j", detect)
+    knowledge_correction = AsyncMock()
+    weekly_distillation = AsyncMock()
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled",
+        knowledge_correction,
+    )
+    monkeypatch.setattr("core.lifecycle.system_consolidation.run_weekly_pattern_distillation", weekly_distillation)
 
     await run_daily_consolidation_post_processing(
         "alice",
@@ -75,10 +64,9 @@ async def test_consolidation_post_processing_does_not_rebuild_rag_index(monkeypa
     await run_weekly_integration_post_processing(
         "alice",
         tmp_path / "alice",
-        consolidation_cfg=SimpleNamespace(weekly_distillation_enabled=False),
+        consolidation_cfg=SimpleNamespace(weekly_distillation_enabled=True),
         model="test-model",
     )
 
-    assert [engine.rebuild_calls for engine in engines] == [0, 0]
-    assert ingest_calls == [48, 168]
-    assert detect.await_count == 2
+    knowledge_correction.assert_awaited_once()
+    weekly_distillation.assert_awaited_once_with(tmp_path / "alice", "alice", model="test-model")

@@ -341,15 +341,6 @@ class GPUConfig(BaseModel):
     )
 
 
-class Neo4jConfig(BaseModel):
-    """Neo4j connection settings."""
-
-    uri: str = "bolt://localhost:7687"
-    user: str = "neo4j"
-    password: str = "animaworks"
-    database: str = "neo4j"
-
-
 class FactEdgeTypeConfig(BaseModel):
     """Configurable semantic edge type for extracted facts."""
 
@@ -375,17 +366,10 @@ class FactEdgeTypeConfig(BaseModel):
         return description
 
 
-Neo4jEdgeTypeConfig = FactEdgeTypeConfig
-
-
 class MemoryConfig(BaseModel):
-    """Configuration for memory backend selection."""
+    """Configuration for fact extraction."""
 
-    backend: Literal["legacy", "neo4j"] = "legacy"
-    neo4j: Neo4jConfig = Neo4jConfig()
-    neo4j_realtime_ingest: bool = False
     fact_edge_types: list[FactEdgeTypeConfig] = Field(default_factory=list)
-    neo4j_edge_types: list[FactEdgeTypeConfig] = Field(default_factory=list)
 
 
 class PromptConfig(BaseModel):
@@ -1443,9 +1427,7 @@ __all__ = [
     "MCPConfig",
     "MediaProxyConfig",
     "MemoryConfig",
-    "Neo4jConfig",
     "FactEdgeTypeConfig",
-    "Neo4jEdgeTypeConfig",
     "NotificationChannelConfig",
     "PrimingConfig",
     "PromptConfig",

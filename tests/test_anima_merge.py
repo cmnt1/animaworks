@@ -8,7 +8,7 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -73,7 +73,7 @@ def _setup_data_dir(tmp_path: Path) -> tuple[Path, Path, Path]:
         _write(anima_dir / "cron.md", f"cron-{name}\n")
         _write(
             anima_dir / "status.json",
-            json.dumps({"enabled": True, "memory_backend": "legacy", "role": "general"}) + "\n",
+            json.dumps({"enabled": True, "role": "general"}) + "\n",
         )
         (anima_dir / "state").mkdir()
     (data_dir / "shared" / "inbox" / "source").mkdir(parents=True)
@@ -481,7 +481,7 @@ def test_anima_merge_dry_run_manifest_reports_collisions_and_references(tmp_path
     assert result.dry_run is True
     assert result.journal_path is None
     manifest = json.loads(result.manifest_json.read_text(encoding="utf-8"))
-    assert manifest["memory_backend"] == {"source": "legacy", "target": "legacy"}
+    assert "memory_backend" not in manifest
     assert len(manifest["collisions"]["episodes"]) == 1
     assert {item["path"] for item in manifest["collisions"]["knowledge"]} == {
         "knowledge/same.md",
@@ -724,7 +724,7 @@ def test_anima_merge_dry_run_only_writes_manifest_and_estimates_rebuild(tmp_path
     estimate = manifest["rebuild_indexes"]
     assert estimate["target"] == "target"
     assert estimate["estimated_inputs"]["facts"] == 2
-    assert estimate["neo4j_action"] == "skip_not_configured"
+    assert estimate["substeps"] == ["vectordb", "entities", "bm25", "graph_cache"]
     verify = manifest["verify"]
     assert verify["probe_categories"]["facts"] == 2
     assert verify["probe_categories"]["knowledge"] == 2
@@ -768,7 +768,7 @@ def test_anima_merge_rebuilds_entities_and_bm25_from_merged_source_memory(
     substeps = journal["phases"][MergePhase.REBUILD_INDEXES.value]["substeps"]
     assert substeps["entities"]["artifacts"]["entities"] >= 2
     assert substeps["bm25"]["artifacts"]["documents"] >= 1
-    assert substeps["neo4j"]["status"] == "skipped"
+    assert "neo4j" not in substeps
 
 
 def test_anima_merge_resume_skips_completed_rebuild_substeps(
@@ -817,63 +817,39 @@ def test_anima_merge_resume_skips_completed_rebuild_substeps(
     assert calls == ["vectordb", "entities", "entities", "bm25", "graph_cache"]
 
 
-def test_anima_merge_neo4j_rebuild_resets_and_ingests_target_group_only(
+def test_anima_merge_resume_ignores_retired_neo4j_substep_from_json_journal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    data_dir, source, target = _setup_data_dir(tmp_path)
-    for anima_dir in (source, target):
-        _write(anima_dir / "status.json", '{"enabled":true,"memory_backend":"neo4j"}\n')
-    _write(source / "knowledge" / "source.md", "# Source knowledge\n")
-    _write(target / "procedures" / "target.md", "# Target procedure\n")
-    _write(target / "skills" / "helper" / "SKILL.md", "# Helper\n")
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    _stub_rebuild_substeps(monkeypatch)
+    service = AnimaMergeService(data_dir, "source", "target")
     _write(
-        target / "state" / "conversation.json",
-        '{"compressed_summary":"Target conversation summary long enough to ingest"}\n',
+        service.journal_path,
+        json.dumps(
+            {
+                "version": 1,
+                "source": "source",
+                "target": "target",
+                "status": "running",
+                "phases": {
+                    MergePhase.REBUILD_INDEXES.value: {
+                        "status": "started",
+                        "substeps": {"neo4j": {"status": "started"}},
+                    }
+                },
+                "artifacts": {},
+            }
+        )
+        + "\n",
     )
-    append_fact_records(
-        source,
-        [
-            FactRecord(
-                text="Source Neo4j fact",
-                source_entity="Source",
-                target_entity="Graph",
-                valid_at="2026-07-15T00:00:00+00:00",
-                recorded_at="2026-07-15T01:00:00+00:00",
-            )
-        ],
-    )
-    _stub_verify_probes(monkeypatch)
-    monkeypatch.setattr(
-        AnimaMergeService,
-        "_rebuild_vectordb",
-        lambda self: {"chunks_indexed": 1, "archived_vectordb": None},
-    )
-    monkeypatch.setattr(AnimaMergeService, "_rebuild_entities", lambda self: {"entities": 2})
-    monkeypatch.setattr(AnimaMergeService, "_rebuild_bm25", lambda self: {"documents": 2})
-    monkeypatch.setattr(AnimaMergeService, "_rebuild_graph_cache", lambda self: {"rebuilt": True})
-    backend = Mock()
-    backend.reset = AsyncMock()
-    backend.ingest_file = AsyncMock(return_value=1)
-    backend.ingest_text = AsyncMock(return_value=1)
-    backend.close = AsyncMock()
-    get_backend = Mock(return_value=backend)
-    monkeypatch.setattr("core.memory.backend.registry.get_backend", get_backend)
 
-    result = AnimaMergeService(data_dir, "source", "target").run(execute=True)
+    result = service.run(execute=True, resume=True)
 
-    get_backend.assert_called_once_with("neo4j", target)
-    backend.reset.assert_awaited_once_with()
-    assert backend.ingest_file.await_count >= 3
-    assert all(call.args[0].is_relative_to(target) for call in backend.ingest_file.await_args_list)
-    fact_calls = [call for call in backend.ingest_text.await_args_list if call.kwargs["source"].startswith("fact:")]
-    assert len(fact_calls) == 1
-    assert fact_calls[0].args[0] == "Source Neo4j fact"
-    backend.close.assert_awaited_once_with()
     journal = json.loads(result.journal_path.read_text(encoding="utf-8"))
-    neo4j = journal["phases"][MergePhase.REBUILD_INDEXES.value]["substeps"]["neo4j"]
-    assert neo4j["status"] == "completed"
-    assert neo4j["artifacts"]["facts_ingested"] == 1
+    assert journal["status"] == "done"
+    assert journal["phases"][MergePhase.REBUILD_INDEXES.value]["status"] == "completed"
+    assert journal["phases"][MergePhase.REBUILD_INDEXES.value]["substeps"]["neo4j"]["status"] == "started"
 
 
 def test_anima_merge_preflight_requires_force_for_dangerous_state(tmp_path: Path) -> None:
@@ -893,12 +869,12 @@ def test_anima_merge_preflight_requires_force_for_dangerous_state(tmp_path: Path
     assert len(manifest["preflight_warnings"]) == 3
 
 
-def test_anima_merge_rejects_backend_mismatch_and_resume_without_execute(tmp_path: Path) -> None:
+def test_anima_merge_ignores_retired_backend_status_and_requires_execute_for_resume(tmp_path: Path) -> None:
     data_dir, _source, target = _setup_data_dir(tmp_path)
-    _write(target / "status.json", '{"enabled":true,"memory_backend":"neo4j"}\n')
+    _write(target / "status.json", '{"enabled":true,"memory_backend":"legacy"}\n')
 
-    with pytest.raises(AnimaMergeError, match="backend mismatch"):
-        AnimaMergeService(data_dir, "source", "target").run()
+    manifest = AnimaMergeService(data_dir, "source", "target").run()
+    assert manifest.dry_run is True
 
     with pytest.raises(AnimaMergeError, match="--resume requires --execute"):
         AnimaMergeService(data_dir, "source", "target").run(resume=True)
@@ -1174,7 +1150,7 @@ def test_anima_merge_target_smoke_check_enables_and_confirms_process(
 def test_anima_merge_finalize_rejects_merge_that_is_not_done(tmp_path: Path) -> None:
     data_dir, source, _target = _setup_data_dir(tmp_path)
     _register_source_and_target(data_dir)
-    _write(source / "status.json", '{"enabled":false,"memory_backend":"legacy"}\n')
+    _write(source / "status.json", '{"enabled":false}\n')
     _write(
         data_dir / "state" / "merge_journal_source_target.json",
         json.dumps(
@@ -1234,7 +1210,44 @@ def test_anima_merge_finalize_rejects_active_rollback_window(
     assert failed["phases"][FinalizePhase.PREFLIGHT.value]["status"] == "failed"
 
 
-def test_anima_merge_finalize_purges_source_neo4j_group_and_chroma_collections(
+def test_anima_merge_finalize_resumes_legacy_purge_neo4j_phase(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_dir, _source, _target = _setup_data_dir(tmp_path)
+    _register_source_and_target(data_dir)
+    _stub_rebuild_substeps(monkeypatch)
+    merge = AnimaMergeService(data_dir, "source", "target").run(execute=True)
+    merge_journal = json.loads(merge.journal_path.read_text(encoding="utf-8"))
+    merge_journal["phases"][MergePhase.TOMBSTONE.value]["artifacts"]["rollback_deadline"] = (
+        now_local() - timedelta(seconds=1)
+    ).isoformat()
+    merge.journal_path.write_text(json.dumps(merge_journal) + "\n", encoding="utf-8")
+
+    finalize = AnimaMergeFinalizeService(data_dir, "source", "target")
+    original_purge = finalize._purge_residuals
+
+    def interrupt(_archive_path: Path) -> dict[str, object]:
+        raise RuntimeError("interrupted before residual cleanup")
+
+    monkeypatch.setattr(finalize, "_purge_residuals", interrupt)
+    with pytest.raises(RuntimeError, match="interrupted before residual cleanup"):
+        finalize.run(execute=True)
+
+    legacy_journal = json.loads(finalize.journal_path.read_text(encoding="utf-8"))
+    legacy_journal["phases"][FinalizePhase.PURGE_NEO4J.value] = {"status": "failed"}
+    finalize.journal_path.write_text(json.dumps(legacy_journal) + "\n", encoding="utf-8")
+    monkeypatch.setattr(finalize, "_purge_residuals", original_purge)
+
+    result = finalize.run(execute=True, resume=True)
+
+    resumed = json.loads(result.journal_path.read_text(encoding="utf-8"))
+    assert resumed["status"] == "done"
+    assert resumed["phases"][FinalizePhase.PURGE_NEO4J.value]["status"] == "failed"
+    assert resumed["phases"][FinalizePhase.PURGE_RESIDUALS.value]["status"] == "completed"
+
+
+def test_anima_merge_finalize_purges_source_chroma_collections(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1242,12 +1255,6 @@ def test_anima_merge_finalize_purges_source_neo4j_group_and_chroma_collections(
     archive = data_dir / "archive" / "merged" / "source_stamp"
     (archive / "vectordb").mkdir(parents=True)
     service = AnimaMergeFinalizeService(data_dir, "source", "target")
-    monkeypatch.setattr(service, "_source_backend", lambda: "neo4j")
-    backend = Mock()
-    backend.reset = AsyncMock()
-    backend.close = AsyncMock()
-    get_backend = Mock(return_value=backend)
-    monkeypatch.setattr("core.memory.backend.registry.get_backend", get_backend)
     store = Mock()
     store.list_collections.return_value = [
         "source_knowledge",
@@ -1257,13 +1264,8 @@ def test_anima_merge_finalize_purges_source_neo4j_group_and_chroma_collections(
     store.delete_collection.return_value = True
     monkeypatch.setattr("core.memory.rag.store.create_chroma_vector_store", Mock(return_value=store))
 
-    neo4j = service._purge_neo4j(archive)
     chroma = service._purge_chroma(archive)
 
-    assert neo4j == {"status": "purged", "group_id": "source"}
-    get_backend.assert_called_once_with("neo4j", archive, group_id="source")
-    backend.reset.assert_awaited_once_with()
-    backend.close.assert_awaited_once_with()
     assert chroma == ["source_facts", "source_knowledge"]
     assert [call.args[0] for call in store.delete_collection.call_args_list] == [
         "source_knowledge",
@@ -1305,6 +1307,7 @@ def test_anima_merge_to_finalize_e2e_is_dry_run_safe_and_resume_idempotent(
     assert dry_run.dry_run is True
     assert dry_run.plan is not None
     assert dry_run.plan["rollback_ready"] is False
+    assert FinalizePhase.PURGE_NEO4J.value not in dry_run.plan["steps"]
     assert source_before == {
         path.relative_to(source).as_posix(): path.read_bytes() for path in source.rglob("*") if path.is_file()
     }

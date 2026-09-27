@@ -736,7 +736,6 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     anima._notify_lock_released = lambda: None
     anima._log_human_conversation = lambda *args, **kwargs: None
     anima._resolve_chat_external_recipient = lambda *args, **kwargs: None
-    anima._maybe_neo4j_realtime_ingest = lambda *args, **kwargs: None
     anima.drain_chat_background_notifications = lambda: []
 
     chunks = [

@@ -18,8 +18,6 @@ from core.config.models import (
     GatewaySystemConfig,
     GPUConfig,
     MemoryConfig,
-    Neo4jConfig,
-    Neo4jEdgeTypeConfig,
     SystemConfig,
     WorkerSystemConfig,
     fallback_event_meta,

@@ -50,7 +50,7 @@ def test_explicit_import_marker_allows_canonical_reads_without_replay(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_server_preflight_blocks_worker_and_infrastructure_start(tmp_path: Path):
+async def test_server_preflight_blocks_worker_start(tmp_path: Path):
     from server.app import _startup_animas_background
 
     anima = _anima(tmp_path)
@@ -65,10 +65,8 @@ async def test_server_preflight_blocks_worker_and_infrastructure_start(tmp_path:
     )
     with (
         patch("core.memory.frontmatter.FrontmatterService"),
-        patch("core.infra.services.ensure_infra_services", new=AsyncMock()) as start_infra,
         pytest.raises(RuntimeError, match="task-store migrate"),
     ):
         await _startup_animas_background(app, suppress_errors=False)
     supervisor.start_all.assert_not_called()
-    start_infra.assert_not_called()
     assert not task_database_path(anima).exists()
