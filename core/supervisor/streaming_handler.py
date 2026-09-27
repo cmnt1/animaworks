@@ -46,7 +46,14 @@ _SENTINEL = _Sentinel()
 
 
 class StreamingIPCHandler:
-    """Streaming message processing with keep-alive merge."""
+    """Streaming message processing with keep-alive merge.
+
+    ``task_runner_supervisor`` is optional.  When provided, streaming is
+    delegated to the task runner child via ``run_chat_stream``.  When omitted
+    (``None``) the non-isolated path streams directly from ``anima``; this is
+    used by the task runner child's own chat lane (see core/supervisor/
+    task_runner.py), so it must be preserved.
+    """
 
     def __init__(
         self,
@@ -54,13 +61,11 @@ class StreamingIPCHandler:
         anima_name: str,
         anima_dir: Any,
         task_runner_supervisor: TaskRunnerSupervisor | None = None,
-        chat_isolated: bool = False,
     ) -> None:
         self._anima = anima
         self._anima_name = anima_name
         self._anima_dir = anima_dir
         self._task_runner_supervisor = task_runner_supervisor
-        self._chat_isolated = chat_isolated
 
     def _clear_stream_abort_state(self, reason: str, thread_id: str = "default") -> None:
         """Clear checkpoint after abnormal stream termination.
@@ -92,13 +97,7 @@ class StreamingIPCHandler:
             yield IPCResponse(id=request.id, error={"code": "NOT_INITIALIZED", "message": "Anima not initialized"})
             return
 
-        if self._chat_isolated:
-            if self._task_runner_supervisor is None:
-                yield IPCResponse(
-                    id=request.id,
-                    error={"code": "CHAT_RUNNER_UNAVAILABLE", "message": "Chat task runner is unavailable"},
-                )
-                return
+        if self._task_runner_supervisor is not None:
             try:
                 async with aclosing(self._task_runner_supervisor.run_chat_stream(request.params)) as stream:
                     async for item in stream:

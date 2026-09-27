@@ -6,6 +6,7 @@ so the Anima knows not to attempt send_message via other channels (Issue #38).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult
@@ -28,7 +29,7 @@ def _setup_anima(make_anima, data_dir):
     shared_dir = data_dir / "shared"
 
     with (
-        patch("core.anima.digital_anima.AgentCore") as MockAgent,
+        patch("core.anima.digital_anima.AgentCore"),
         patch("core.anima.digital_anima.MemoryManager") as MockMM,
         patch("core.anima.digital_anima.Messenger"),
         patch("core.anima.messaging.ConversationMemory") as MockConv,
@@ -186,14 +187,16 @@ class TestSupervisorSourcePassthrough:
     """Verify that runner/streaming_handler pass source from params."""
 
     async def test_runner_passes_source(self):
-        """_handle_process_message extracts source from params."""
+        """_handle_process_message forwards source in the payload to the child."""
         from core.supervisor.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
-        runner._scheduler_mgr = None
         mock_anima = MagicMock()
         mock_anima.process_message = AsyncMock(return_value={"summary": "ok", "images": []})
         runner.anima = mock_anima
+        supervisor = MagicMock()
+        supervisor.run_chat = AsyncMock(return_value={"summary": "ok", "images": []})
+        runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
         params = {
             "message": "Hello",
@@ -202,22 +205,23 @@ class TestSupervisorSourcePassthrough:
         }
         await runner._handle_process_message(params)
 
-        mock_anima.process_message.assert_called_once()
-        call_kwargs = mock_anima.process_message.call_args
-        assert call_kwargs.kwargs.get("source") == "googlechat"
+        supervisor.run_chat.assert_awaited_once_with(kind="message", payload=params)
+        mock_anima.process_message.assert_not_awaited()
 
     async def test_runner_default_source_empty(self):
-        """When source is not in params, it defaults to empty string."""
+        """When source is not in params, payload is forwarded as-is."""
         from core.supervisor.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
-        runner._scheduler_mgr = None
         mock_anima = MagicMock()
         mock_anima.process_message = AsyncMock(return_value={"summary": "ok", "images": []})
         runner.anima = mock_anima
+        supervisor = MagicMock()
+        supervisor.run_chat = AsyncMock(return_value={"summary": "ok", "images": []})
+        runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
         params = {"message": "Hello", "from_person": "human"}
         await runner._handle_process_message(params)
 
-        call_kwargs = mock_anima.process_message.call_args
-        assert call_kwargs.kwargs.get("source") == ""
+        supervisor.run_chat.assert_awaited_once_with(kind="message", payload=params)
+        mock_anima.process_message.assert_not_awaited()

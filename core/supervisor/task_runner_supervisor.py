@@ -93,7 +93,7 @@ class TaskRunnerSupervisor:
         max_concurrent: int | None = None,
         runner_liveness_timeout_sec: float = 900.0,
         busy_status_owner: Any | None = None,
-        memory_via_root: bool = False,
+        memory_service: MemoryService | None = None,
     ) -> None:
         self.anima_name = anima_name
         self.anima_dir = anima_dir
@@ -101,7 +101,7 @@ class TaskRunnerSupervisor:
         self.root_epoch = str(uuid.uuid4())
         self.socket_path = shared_dir.parent / "run" / "sockets" / f"{anima_name}.task-v2.sock"
         self._server: asyncio.Server | None = None
-        self._memory_service = MemoryService(anima_name, anima_dir) if memory_via_root else None
+        self._memory_service = memory_service
         self._start_lock = asyncio.Lock()
         self._jobs: dict[str, TaskRunnerJob] = {}
         self._journal_recovery_lock = asyncio.Lock()

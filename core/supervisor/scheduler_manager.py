@@ -23,9 +23,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from core.config.models import ActivityScheduleEntry, load_config, save_config
-from core.config.resolver import resolve_process_model_config
 from core.i18n import t
 from core.schemas import CronTask
+from core.supervisor.memory_service import MemoryService
 from core.supervisor.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 from core.time_utils import get_app_timezone, now_local
@@ -96,36 +96,21 @@ class SchedulerManager:
         self._cron_md_mtime: float = 0.0
         self._heartbeat_md_mtime: float = 0.0
         self._last_schedule_level: int | None = None
-        process_config = resolve_process_model_config(anima_dir)
-        if not process_config.valid:
-            raise ValueError(process_config.error or "invalid process model configuration")
-        self._cron_isolated = bool(process_config.task_process_isolation.cron)
-        self._heartbeat_isolated = bool(process_config.task_process_isolation.heartbeat)
-        self._task_isolated = bool(process_config.task_process_isolation.task)
-        self._background_isolated = bool(process_config.task_process_isolation.background)
-        self._chat_isolated = process_config.process_model == "phase3"
-        self._task_runner_supervisor: TaskRunnerSupervisor | None = None
-        if (
-            self._chat_isolated
-            or self._cron_isolated
-            or self._heartbeat_isolated
-            or self._task_isolated
-            or self._background_isolated
-        ):
-            pool_size: int | None = None
-            try:
-                pool_size = int(getattr(anima, "_background_worker_pool_size", 1) or 1)
-            except (TypeError, ValueError):
-                pool_size = 1
-            self._task_runner_supervisor = TaskRunnerSupervisor(
-                anima_name=anima_name,
-                anima_dir=anima_dir,
-                shared_dir=Path(anima.shared_dir),
-                max_concurrent=pool_size,
-                runner_liveness_timeout_sec=float(load_config().server.runner_liveness_timeout),
-                busy_status_owner=anima,
-                memory_via_root=process_config.process_model == "phase3",
-            )
+        self._task_runner_supervisor: TaskRunnerSupervisor
+        pool_size: int | None = None
+        try:
+            pool_size = int(getattr(anima, "_background_worker_pool_size", 1) or 1)
+        except (TypeError, ValueError):
+            pool_size = 1
+        self._task_runner_supervisor = TaskRunnerSupervisor(
+            anima_name=anima_name,
+            anima_dir=anima_dir,
+            shared_dir=Path(anima.shared_dir),
+            max_concurrent=pool_size,
+            runner_liveness_timeout_sec=float(load_config().server.runner_liveness_timeout),
+            busy_status_owner=anima,
+            memory_service=MemoryService(anima_name, anima_dir),
+        )
 
         # Polling-based heartbeat state (used when effective_interval > 60)
         self._hb_effective_interval: int = 0
@@ -531,24 +516,6 @@ class SchedulerManager:
             parsed = parsed.replace(tzinfo=now.tzinfo)
         return parsed
 
-    @staticmethod
-    def _cron_usage(result: object) -> dict[str, int] | None:
-        """Return serializable token usage from a cron result when available."""
-        raw_usage = getattr(result, "usage", None)
-        if not isinstance(raw_usage, dict):
-            return None
-        usage = {
-            str(key): int(value)
-            for key, value in raw_usage.items()
-            if isinstance(value, int) and not isinstance(value, bool)
-        }
-        return usage or None
-
-    @staticmethod
-    def _cron_result_succeeded(result: object) -> bool:
-        action = getattr(result, "action", "")
-        return not isinstance(action, str) or action.lower() not in {"cancelled", "error", "failed"}
-
     def _record_cron_result(
         self,
         task_name: str,
@@ -932,26 +899,15 @@ class SchedulerManager:
         self._heartbeat_running = True
         try:
             logger.info("Scheduled heartbeat: %s", self._anima_name)
-            if self._heartbeat_isolated and self._task_runner_supervisor is not None:
-                isolated = await self._task_runner_supervisor.run_heartbeat()
-                result = isolated.get("result")
-                if not isinstance(result, dict):
-                    raise ValueError("isolated heartbeat result must be an object")
-                self._emit_event(
-                    "anima.heartbeat",
-                    {
-                        "name": self._anima_name,
-                        "result": result,
-                    },
-                )
-                return
-            result = await self._anima.run_heartbeat()
-            # Notify parent for WebSocket broadcast
+            isolated = await self._task_runner_supervisor.run_heartbeat()
+            result = isolated.get("result")
+            if not isinstance(result, dict):
+                raise ValueError("isolated heartbeat result must be an object")
             self._emit_event(
                 "anima.heartbeat",
                 {
                     "name": self._anima_name,
-                    "result": result.model_dump(),
+                    "result": result,
                 },
             )
         except asyncio.CancelledError:
@@ -1012,69 +968,22 @@ class SchedulerManager:
         success = False
         usage: dict[str, int] | None = None
         try:
-            if self._cron_isolated and self._task_runner_supervisor is not None:
-                isolated = await self._task_runner_supervisor.run_cron(task)
-                success = bool(isolated.get("success"))
-                isolated_usage = isolated.get("usage")
-                usage = isolated_usage if isinstance(isolated_usage, dict) else None
-                result = isolated.get("result")
-                if not isinstance(result, dict):
-                    raise ValueError("isolated cron result must be an object")
-                self._emit_event(
-                    "anima.cron",
-                    {
-                        "name": self._anima_name,
-                        "task": task.name,
-                        "task_type": task.type,
-                        "result": result,
-                    },
-                )
-                return
-            if task.type == "llm":
-                skill_kwargs = {"skills": task.skills} if task.skills else {}
-                result = await self._anima.run_cron_task(task.name, task.description, **skill_kwargs)
-                success = self._cron_result_succeeded(result)
-                usage = self._cron_usage(result)
-                self._emit_event(
-                    "anima.cron",
-                    {
-                        "name": self._anima_name,
-                        "task": task.name,
-                        "task_type": "llm",
-                        "result": result.model_dump(),
-                    },
-                )
-            elif task.type == "command":
-                result = await self._anima.run_cron_command(
-                    task.name,
-                    command=task.command,
-                    tool=task.tool,
-                    args=task.args,
-                )
-                success = result.get("exit_code", 1) == 0
-                self._emit_event(
-                    "anima.cron",
-                    {
-                        "name": self._anima_name,
-                        "task": task.name,
-                        "task_type": "command",
-                        "result": result,
-                    },
-                )
-                from core.supervisor.cron_followup import command_followup_output
-
-                command_output = command_followup_output(task, result)
-                if command_output is not None:
-                    followup_result = await self._anima.run_cron_task(
-                        task.name,
-                        task.description or t("scheduler.cron_fallback_description", task_name=task.name),
-                        command_output=command_output,
-                        **({"skills": task.skills} if task.skills else {}),
-                    )
-                    success = success and self._cron_result_succeeded(followup_result)
-                    usage = self._cron_usage(followup_result)
-            else:
-                logger.warning("Unknown cron type '%s' for task '%s'", task.type, task.name)
+            isolated = await self._task_runner_supervisor.run_cron(task)
+            success = bool(isolated.get("success"))
+            isolated_usage = isolated.get("usage")
+            usage = isolated_usage if isinstance(isolated_usage, dict) else None
+            result = isolated.get("result")
+            if not isinstance(result, dict):
+                raise ValueError("isolated cron result must be an object")
+            self._emit_event(
+                "anima.cron",
+                {
+                    "name": self._anima_name,
+                    "task": task.name,
+                    "task_type": task.type,
+                    "result": result,
+                },
+            )
         except asyncio.CancelledError:
             current = asyncio.current_task()
             if current is not None and current.cancelling():

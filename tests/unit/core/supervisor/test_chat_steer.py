@@ -193,7 +193,6 @@ async def test_phase3_stream_relays_child_chunks_without_root_llm(tmp_path: Path
         "sakura",
         tmp_path,
         task_runner_supervisor=_StreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -214,7 +213,7 @@ async def test_phase3_nonstream_chat_uses_child(tmp_path: Path) -> None:
     runner.anima = MagicMock()
     supervisor = MagicMock()
     supervisor.run_chat = AsyncMock(return_value={"response": "child"})
-    runner._scheduler_mgr = SimpleNamespace(_chat_isolated=True, _task_runner_supervisor=supervisor)
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
     result = await runner._handle_process_message({"message": "hello"})
 

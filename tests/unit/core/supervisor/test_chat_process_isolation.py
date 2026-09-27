@@ -45,7 +45,6 @@ async def test_phase3_stream_relays_child_chunks_without_root_llm(tmp_path: Path
         "sakura",
         tmp_path,
         task_runner_supervisor=_StreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -79,7 +78,6 @@ async def test_closing_isolated_stream_cancels_producer_and_releases_lock(tmp_pa
         "sakura",
         tmp_path,
         task_runner_supervisor=supervisor,
-        chat_isolated=True,
     )
     stream = handler.handle_stream(
         IPCRequest(id="req-close", method="process_message", params={"message": "hello", "stream": True})
@@ -102,7 +100,6 @@ async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp
         "sakura",
         tmp_path,
         task_runner_supervisor=_CrashedStreamSupervisor(),
-        chat_isolated=True,
     )
 
     responses = [
@@ -117,39 +114,6 @@ async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp
         "code": "CHAT_RUNNER_ERROR",
         "message": "task runner exited before returning a result (exit=-9)",
     }
-    assert handler._anima is anima
-
-
-@pytest.mark.asyncio
-async def test_legacy_stream_does_not_spawn_chat_runner(tmp_path: Path) -> None:
-    anima = MagicMock(needs_bootstrap=False)
-
-    async def _stream(*args, **kwargs):
-        yield {"type": "cycle_done", "cycle_result": {"summary": "legacy"}}
-
-    anima.process_message_stream = _stream
-    isolated = MagicMock()
-    handler = StreamingIPCHandler(
-        anima,
-        "sakura",
-        tmp_path,
-        task_runner_supervisor=isolated,
-        chat_isolated=False,
-    )
-
-    responses = [
-        response
-        async for response in handler.handle_stream(
-            IPCRequest(id="req-1", method="process_message", params={"message": "hello", "stream": True})
-        )
-    ]
-
-    assert responses[-1].result == {
-        "response": "legacy",
-        "replied_to": [],
-        "cycle_result": {"summary": "legacy"},
-    }
-    isolated.run_chat_stream.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -166,7 +130,7 @@ async def test_phase3_nonstream_chat_contracts_use_child(
     runner.anima = MagicMock()
     supervisor = MagicMock()
     supervisor.run_chat = AsyncMock(return_value={"response": "child"})
-    runner._scheduler_mgr = SimpleNamespace(_chat_isolated=True, _task_runner_supervisor=supervisor)
+    runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
     result = await getattr(runner, method)({"message": "hello"})
 

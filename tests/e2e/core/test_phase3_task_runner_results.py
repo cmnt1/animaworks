@@ -13,6 +13,7 @@ import pytest
 
 from core.schemas import CronTask
 from core.supervisor import ipc_v2
+from core.supervisor.memory_service import MemoryService
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 
 
@@ -98,7 +99,7 @@ async def test_phase3_returns_cron_command_and_chat_results(
         "phase3-result",
         anima_dir,
         data_dir / "shared",
-        memory_via_root=True,
+        memory_service=MemoryService("phase3-result", anima_dir),
     )
     try:
         if lane == "cron":

@@ -7,6 +7,7 @@ Verifies that the heartbeat_running flag and _cron_running set properly
 prevent overlapping heartbeat and cron executions in SchedulerManager
 and InboxRateLimiter.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,27 +20,37 @@ from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.scheduler_manager import SchedulerManager
 
 
-def _legacy_anima_dir(tmp_path):
+def _anima_dir(tmp_path):
     d = tmp_path / "animas" / "guard-test"
     d.mkdir(parents=True, exist_ok=True)
-    (d / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     return d
 
 
 def _make_scheduler_mgr(tmp_path: Path) -> SchedulerManager:
     """Create a SchedulerManager with minimal dependencies."""
     mock_anima = MagicMock()
-    mock_anima.run_heartbeat = AsyncMock()
-    return SchedulerManager(
+    mgr = SchedulerManager(
         anima=mock_anima,
         anima_name="guard-test",
-        anima_dir=_legacy_anima_dir(tmp_path),
+        anima_dir=_anima_dir(tmp_path),
         emit_event=MagicMock(),
     )
+    # Always-isolated: route heartbeat/cron through the task runner supervisor.
+    mgr._task_runner_supervisor.run_heartbeat = AsyncMock(
+        return_value={"result": {"action": "completed", "summary": "ok"}, "success": True}
+    )
+    mgr._task_runner_supervisor.run_cron = AsyncMock(
+        return_value={
+            "result": {"action": "completed", "summary": "ok"},
+            "success": True,
+        }
+    )
+    return mgr
 
 
 def _make_inbox_limiter(
-    tmp_path: Path, scheduler_mgr: SchedulerManager | None = None,
+    tmp_path: Path,
+    scheduler_mgr: SchedulerManager | None = None,
 ) -> InboxRateLimiter:
     """Create an InboxRateLimiter with minimal dependencies."""
     mock_anima = MagicMock()
@@ -83,29 +94,23 @@ class TestHeartbeatGuard:
         await mgr.heartbeat_tick()
 
         # run_heartbeat should NOT have been called
-        mgr._anima.run_heartbeat.assert_not_called()
+        mgr._task_runner_supervisor.run_heartbeat.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_heartbeat_tick_runs_when_not_already_running(self, tmp_path):
         """heartbeat_tick should execute when heartbeat_running is False."""
         mgr = _make_scheduler_mgr(tmp_path)
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {"summary": "ok"}
-        mgr._anima.run_heartbeat = AsyncMock(return_value=mock_result)
 
         assert mgr.heartbeat_running is False
 
         await mgr.heartbeat_tick()
 
-        mgr._anima.run_heartbeat.assert_called_once()
+        mgr._task_runner_supervisor.run_heartbeat.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_heartbeat_tick_resets_flag_after_completion(self, tmp_path):
         """heartbeat_running flag resets to False after heartbeat completes."""
         mgr = _make_scheduler_mgr(tmp_path)
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {"summary": "ok"}
-        mgr._anima.run_heartbeat = AsyncMock(return_value=mock_result)
 
         await mgr.heartbeat_tick()
 
@@ -115,7 +120,7 @@ class TestHeartbeatGuard:
     async def test_heartbeat_tick_resets_flag_on_exception(self, tmp_path):
         """heartbeat_running flag resets even when heartbeat raises an exception."""
         mgr = _make_scheduler_mgr(tmp_path)
-        mgr._anima.run_heartbeat = AsyncMock(side_effect=RuntimeError("boom"))
+        mgr._task_runner_supervisor.run_heartbeat = AsyncMock(side_effect=RuntimeError("boom"))
 
         await mgr.heartbeat_tick()
 
@@ -141,15 +146,14 @@ class TestCronGuard:
         from core.schemas import CronTask
 
         mgr = _make_scheduler_mgr(tmp_path)
-        mgr._anima.run_cron_task = AsyncMock()
 
         task = CronTask(name="daily_report", schedule="0 9 * * *", description="test", type="llm")
         mgr._cron_running.add("daily_report")
 
         await mgr.cron_tick(task)
 
-        # The task's LLM call should NOT be started
-        mgr._anima.run_cron_task.assert_not_called()
+        # The task's cron execution should NOT be started
+        mgr._task_runner_supervisor.run_cron.assert_not_awaited()
         mgr._anima.memory.append_cron_event.assert_called_once_with(
             "daily_report",
             "skipped",
@@ -163,7 +167,6 @@ class TestCronGuard:
         from core.schemas import CronTask
 
         mgr = _make_scheduler_mgr(tmp_path)
-        mgr._anima.run_cron_task = AsyncMock()
 
         task = CronTask(name="weekly_review", schedule="0 9 * * 1", description="test", type="llm")
         assert "weekly_review" not in mgr._cron_running
@@ -185,9 +188,6 @@ class TestCronGuard:
         from core.schemas import CronTask
 
         mgr = _make_scheduler_mgr(tmp_path)
-        result = MagicMock(action="completed", usage={})
-        result.model_dump.return_value = {}
-        mgr._anima.run_cron_task = AsyncMock(return_value=result)
         task = CronTask(name="daily", schedule="0 9 * * *", description="test", type="llm")
 
         await mgr.cron_tick(task)
@@ -216,9 +216,6 @@ class TestCronGuard:
         from core.schemas import CronTask
 
         mgr = _make_scheduler_mgr(tmp_path)
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {"summary": "done"}
-        mgr._anima.run_cron_task = AsyncMock(return_value=mock_result)
 
         task = CronTask(name="daily_report", schedule="0 9 * * *", description="test", type="llm")
 
@@ -232,7 +229,7 @@ class TestCronGuard:
         from core.schemas import CronTask
 
         mgr = _make_scheduler_mgr(tmp_path)
-        mgr._anima.run_cron_task = AsyncMock(side_effect=RuntimeError("cron failed"))
+        mgr._task_runner_supervisor.run_cron = AsyncMock(side_effect=RuntimeError("cron failed"))
 
         task = CronTask(name="daily_report", schedule="0 9 * * *", description="test", type="llm")
 
@@ -277,7 +274,7 @@ class TestRunnerHeartbeat24hDefault:
         mgr = SchedulerManager(
             anima=mock_anima,
             anima_name="guard-test",
-            anima_dir=_legacy_anima_dir(tmp_path),
+            anima_dir=_anima_dir(tmp_path),
             emit_event=MagicMock(),
         )
         mock_scheduler = MagicMock()
@@ -299,7 +296,7 @@ class TestRunnerHeartbeat24hDefault:
         mgr = SchedulerManager(
             anima=mock_anima,
             anima_name="guard-test",
-            anima_dir=_legacy_anima_dir(tmp_path),
+            anima_dir=_anima_dir(tmp_path),
             emit_event=MagicMock(),
         )
         mock_scheduler = MagicMock()

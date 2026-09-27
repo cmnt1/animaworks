@@ -1,4 +1,4 @@
-"""Phase 2 process-isolation fault-injection acceptance tests."""
+"""Task runner process-isolation fault-injection acceptance tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import psutil
 import pytest
 
 from core.anima.digital_anima import DigitalAnima
@@ -21,7 +20,6 @@ from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.platform.processing_lease import read_processing_lease, write_processing_lease
 from core.schemas import CronTask
 from core.supervisor import task_runner_supervisor
-from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerJob, TaskRunnerSupervisor
 from core.tasks.pending_executor import PendingTaskExecutor
 from core.tasks.queue import TaskQueueManager
@@ -35,7 +33,7 @@ _ANIMA = "fault-e2e"
 
 
 @pytest.fixture
-def phase2_anima(
+def fault_anima(
     data_dir: Path,
     make_anima: Callable[..., Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -148,8 +146,8 @@ def _db_snapshot(persist_dir: Path, *, expected_mode: str = "wal") -> tuple[froz
 
 
 @pytest.mark.asyncio
-async def test_cron_sigkill_preserves_root_next_cycle_and_db(phase2_anima: tuple[Path, Path]) -> None:
-    anima_dir, shared_dir = phase2_anima
+async def test_cron_sigkill_preserves_root_next_cycle_and_db(fault_anima: tuple[Path, Path]) -> None:
+    anima_dir, shared_dir = fault_anima
     supervisor = TaskRunnerSupervisor(_ANIMA, anima_dir, shared_dir)
     persist_dir, db_before = _seed_health_db(anima_dir)
     root_pid = os.getpid()
@@ -181,10 +179,10 @@ async def test_cron_sigkill_preserves_root_next_cycle_and_db(phase2_anima: tuple
 
 @pytest.mark.asyncio
 async def test_root_restart_recovers_background_lease_once(
-    phase2_anima: tuple[Path, Path],
+    fault_anima: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    anima_dir, shared_dir = phase2_anima
+    anima_dir, shared_dir = fault_anima
     monkeypatch.setattr(task_runner_supervisor, "_TASK_RUNNER_GRACE_TIMEOUT", 0.2)
     old_root = TaskRunnerSupervisor(_ANIMA, anima_dir, shared_dir)
     queue = TaskQueueManager(anima_dir)
@@ -259,10 +257,10 @@ async def test_root_restart_recovers_background_lease_once(
 
 @pytest.mark.asyncio
 async def test_hang_kills_only_stalled_group_while_other_lane_continues(
-    phase2_anima: tuple[Path, Path],
+    fault_anima: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    anima_dir, shared_dir = phase2_anima
+    anima_dir, shared_dir = fault_anima
     threshold = 6.0
     supervisor = TaskRunnerSupervisor(
         _ANIMA,
@@ -304,9 +302,9 @@ async def test_hang_kills_only_stalled_group_while_other_lane_continues(
 
 @pytest.mark.asyncio
 async def test_parallel_spawn_finishes_and_busy_sidecar_stays_root_owned(
-    phase2_anima: tuple[Path, Path],
+    fault_anima: tuple[Path, Path],
 ) -> None:
-    anima_dir, shared_dir = phase2_anima
+    anima_dir, shared_dir = fault_anima
     owner = DigitalAnima(anima_dir, shared_dir)
     supervisor = TaskRunnerSupervisor(_ANIMA, anima_dir, shared_dir, busy_status_owner=owner)
     root_pid = os.getpid()
@@ -345,9 +343,9 @@ async def test_parallel_spawn_finishes_and_busy_sidecar_stays_root_owned(
 
 @pytest.mark.asyncio
 async def test_root_grace_ack_precedes_exit_and_recovers_journal(
-    phase2_anima: tuple[Path, Path],
+    fault_anima: tuple[Path, Path],
 ) -> None:
-    anima_dir, _ = phase2_anima
+    anima_dir, _ = fault_anima
     event_path = anima_dir.parents[1] / "grace-events.jsonl"
     env = {
         **os.environ,
@@ -382,46 +380,6 @@ async def test_root_grace_ack_precedes_exit_and_recovers_journal(
     assert [event["event"] for event in _events(event_path)] == ["ready", "grace_ack", "root_exit"]
     assert not _group_exists(ready["child_pgid"])
     assert not StreamingJournal.has_orphan(anima_dir, session_type="cron")
-
-
-@pytest.mark.asyncio
-async def test_disabled_flag_runs_legacy_without_task_runner(
-    phase2_anima: tuple[Path, Path],
-) -> None:
-    anima_dir, shared_dir = phase2_anima
-    status_path = anima_dir / "status.json"
-    status = json.loads(status_path.read_text(encoding="utf-8"))
-    status.update(
-        {
-            "process_model": "phase2",
-            "task_process_isolation": {
-                "cron": False,
-                "heartbeat": False,
-                "task": False,
-                "background": False,
-            },
-        }
-    )
-    status_path.write_text(json.dumps(status), encoding="utf-8")
-    anima = DigitalAnima(anima_dir, shared_dir)
-    events: list[tuple[str, dict[str, Any]]] = []
-    manager = SchedulerManager(anima, _ANIMA, anima_dir, lambda event, data: events.append((event, data)))
-
-    running = asyncio.create_task(manager._run_cron_task(_cron("legacy", "sleep 0.3; printf legacy-ok")))
-    await asyncio.sleep(0.1)
-    descendants = psutil.Process(os.getpid()).children(recursive=True)
-    task_runners = []
-    for process in descendants:
-        try:
-            if "core.supervisor.task_runner" in " ".join(process.cmdline()):
-                task_runners.append(process.pid)
-        except psutil.Error:
-            pass
-    await asyncio.wait_for(running, timeout=10)
-
-    assert manager._task_runner_supervisor is None
-    assert task_runners == []
-    assert events[0][1]["result"]["stdout"] == "legacy-ok"
 
 
 if __name__ == "__main__" and os.environ.get("ANIMAWORKS_FAULT_ROOT_HARNESS"):

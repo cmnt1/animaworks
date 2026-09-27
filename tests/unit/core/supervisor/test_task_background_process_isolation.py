@@ -46,29 +46,14 @@ def _anima_double(tmp_path: Path, *, pool_size: int = 1) -> MagicMock:
 def _executor(
     tmp_path: Path,
     *,
-    task_isolated: bool = False,
-    background_isolated: bool = False,
+    with_supervisor: bool = False,
     pool_size: int = 1,
 ) -> tuple[PendingTaskExecutor, MagicMock, Path]:
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
-    flags: dict[str, bool] = {}
-    if task_isolated:
-        flags["task"] = True
-    if background_isolated:
-        flags["background"] = True
-    (anima_dir / "status.json").write_text(
-        json.dumps(
-            {
-                "process_model": "phase2",
-                "task_process_isolation": flags,
-            }
-        ),
-        encoding="utf-8",
-    )
     anima = _anima_double(tmp_path, pool_size=pool_size)
     supervisor = None
-    if task_isolated or background_isolated:
+    if with_supervisor:
         supervisor = TaskRunnerSupervisor(
             "sakura",
             anima_dir,
@@ -160,26 +145,8 @@ async def test_journal_recovery_keeps_registration_locked_until_disk_work_finish
 
 
 @pytest.mark.asyncio
-async def test_task_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
-    executor, anima, _ = _executor(tmp_path, task_isolated=False)
-    assert executor._task_isolated is False
-    assert executor._task_runner_supervisor is None
-
-    task_desc = {"task_id": "t-legacy", "title": "legacy", "description": "work", "task_type": "llm"}
-    with (
-        patch.object(executor, "_run_llm_task", new=AsyncMock(return_value="done")) as run_llm,
-        patch.object(executor, "_sync_task_queue"),
-    ):
-        await executor._execute_llm_task(task_desc)
-
-    run_llm.assert_awaited_once()
-    # No supervisor means no isolated spawn path.
-    assert executor._task_runner_supervisor is None
-
-
-@pytest.mark.asyncio
 async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_isolated is True
     assert executor._task_runner_supervisor is not None
 
@@ -216,7 +183,7 @@ async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_runner_supervisor is not None
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
 
@@ -252,7 +219,7 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
     from core.tasks.dispatch import publish_tasks
     from core.tasks.queue import TaskQueueManager
 
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_runner_supervisor is not None
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
 
@@ -302,7 +269,7 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_same_attempt_not_reclaimed_while_lease_live(tmp_path: Path) -> None:
-    executor, _, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, _, anima_dir = _executor(tmp_path, with_supervisor=True)
     processing = anima_dir / "state" / "pending" / "processing"
     processing.mkdir(parents=True)
     path = processing / "t-attempt.json"
@@ -333,7 +300,7 @@ async def test_same_attempt_not_reclaimed_while_lease_live(tmp_path: Path) -> No
 
 @pytest.mark.asyncio
 async def test_lease_v2_written_on_spawn_callback(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
     processing = anima_dir / "state" / "pending" / "processing"
     processing.mkdir(parents=True)
@@ -376,37 +343,10 @@ async def test_lease_v2_written_on_spawn_callback(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_background_flag_false_uses_legacy_command_path(tmp_path: Path) -> None:
-    executor, anima, _ = _executor(tmp_path, background_isolated=False)
-    assert executor._background_isolated is False
-
-    # Without isolation, command path needs BackgroundTaskManager.
-    bg_mgr = MagicMock()
-    bg_mgr.submit = MagicMock(return_value="bg-1")
-    bg_mgr._async_tasks = {}
-    agent = MagicMock()
-    agent.background_manager = bg_mgr
-    anima.agent = agent
-    type(anima)._agent_for_lane = None  # type: ignore[attr-defined]
-
-    result = await executor.execute_pending_task(
-        {
-            "task_id": "cmd-1",
-            "task_type": "command",
-            "tool_name": "echo",
-            "subcommand": "",
-            "raw_args": [],
-        }
-    )
-    assert result is None
-    bg_mgr.submit.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
     from core.tasks.background import BackgroundTaskManager, TaskStatus
 
-    executor, anima, anima_dir = _executor(tmp_path, background_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     manager = BackgroundTaskManager(anima_dir)
     manager.on_complete = AsyncMock()
     anima.agent.background_manager = manager
@@ -446,7 +386,7 @@ async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
 async def test_isolated_command_failure_is_saved_and_notified(tmp_path: Path) -> None:
     from core.tasks.background import BackgroundTaskManager, TaskStatus
 
-    executor, anima, anima_dir = _executor(tmp_path, background_isolated=True)
+    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
     manager = BackgroundTaskManager(anima_dir)
     manager.on_complete = AsyncMock()
     anima.agent.background_manager = manager

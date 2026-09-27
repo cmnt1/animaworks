@@ -22,7 +22,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.config.resolver import resolve_process_model_config
 from core.exceptions import ToolExecutionError
 from core.i18n import t
 from core.platform.processing_lease import (
@@ -207,13 +206,8 @@ class PendingTaskExecutor:
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
         self._active_task_ids: set[str] = set()
         self._task_runner_supervisor = task_runner_supervisor
-        process_config = resolve_process_model_config(anima_dir)
-        if process_config.valid:
-            self._task_isolated = bool(process_config.task_process_isolation.task)
-            self._background_isolated = bool(process_config.task_process_isolation.background)
-        else:
-            self._task_isolated = False
-            self._background_isolated = False
+        self._task_isolated = task_runner_supervisor is not None
+        self._background_isolated = task_runner_supervisor is not None
         # attempt tracking: task_id -> last attempt written to a lease (same attempt re-claim ban)
         self._attempt_by_task_id: dict[str, int] = {}
 
@@ -345,6 +339,8 @@ class PendingTaskExecutor:
     def set_task_runner_supervisor(self, supervisor: TaskRunnerSupervisor | None) -> None:
         """Wire the shared root-side TaskRunnerSupervisor (process isolation)."""
         self._task_runner_supervisor = supervisor
+        self._task_isolated = supervisor is not None
+        self._background_isolated = supervisor is not None
 
     def _display_lane_for_task(self, task_id: str, slot_id: int | None) -> str:
         if slot_id is not None and self._worker_pool_size() > 1:
@@ -1723,8 +1719,8 @@ class PendingTaskExecutor:
 
         The task is executed as a minimal-context LLM session using
         the task_exec.md template.  Delegates to ``_run_llm_task``
-        for the actual execution logic.  When ``task_process_isolation.task``
-        is enabled, the LLM session runs in a disposable task-runner child.
+        for the actual execution logic.  In root (supervisor present), the
+        LLM session runs in a disposable task-runner child.
         """
         task_id = task_desc.get("task_id", "unknown")
 

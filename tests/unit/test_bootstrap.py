@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -252,19 +253,20 @@ class TestAnimaRunnerBootstrap:
         )
 
         mock_anima = MagicMock()
-        mock_anima.run_bootstrap = AsyncMock(
-            return_value=CycleResult(
-                trigger="bootstrap",
-                action="completed",
-                summary="Bootstrap finished",
-                duration_ms=200,
-            )
-        )
         runner.anima = mock_anima
+        supervisor = MagicMock()
+        supervisor.run_chat = AsyncMock(
+            return_value={
+                "status": "completed",
+                "summary": "Bootstrap finished",
+                "duration_ms": 200,
+            }
+        )
+        runner._scheduler_mgr = SimpleNamespace(_task_runner_supervisor=supervisor)
 
         result = await runner._handle_run_bootstrap({})
 
-        mock_anima.run_bootstrap.assert_awaited_once()
+        supervisor.run_chat.assert_awaited_once_with(kind="bootstrap", payload={})
         assert result["status"] == "completed"
         assert result["summary"] == "Bootstrap finished"
         assert result["duration_ms"] == 200
