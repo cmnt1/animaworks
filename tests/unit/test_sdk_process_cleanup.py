@@ -200,10 +200,13 @@ class TestCleanupOrphanedClaudeProcesses:
         current = MagicMock()
         current.children.return_value = [old_claude]
 
-        with patch("core.supervisor.runner.psutil.Process", return_value=current):
+        with (
+            patch("core.supervisor.runner.psutil.Process", return_value=current),
+            patch("core.supervisor.runner.kill_tree") as kill_tree,
+        ):
             runner._cleanup_orphaned_claude_processes()
 
-        old_claude.kill.assert_called_once()
+        kill_tree.assert_called_once_with(500, deepest_first=True)
 
     def test_does_not_kill_young_claude_processes(self) -> None:
         runner = self._make_runner()
@@ -217,10 +220,13 @@ class TestCleanupOrphanedClaudeProcesses:
         current = MagicMock()
         current.children.return_value = [young_claude]
 
-        with patch("core.supervisor.runner.psutil.Process", return_value=current):
+        with (
+            patch("core.supervisor.runner.psutil.Process", return_value=current),
+            patch("core.supervisor.runner.kill_tree") as kill_tree,
+        ):
             runner._cleanup_orphaned_claude_processes()
 
-        young_claude.kill.assert_not_called()
+        kill_tree.assert_not_called()
 
     def test_ignores_non_claude_processes(self) -> None:
         runner = self._make_runner()
@@ -233,39 +239,32 @@ class TestCleanupOrphanedClaudeProcesses:
         current = MagicMock()
         current.children.return_value = [python_proc]
 
-        with patch("core.supervisor.runner.psutil.Process", return_value=current):
+        with (
+            patch("core.supervisor.runner.psutil.Process", return_value=current),
+            patch("core.supervisor.runner.kill_tree") as kill_tree,
+        ):
             runner._cleanup_orphaned_claude_processes()
 
-        python_proc.kill.assert_not_called()
+        kill_tree.assert_not_called()
 
-    def test_kills_descendants_before_parent(self) -> None:
+    def test_delegates_tree_cleanup_to_platform_helper(self) -> None:
         runner = self._make_runner()
-
-        grandchild = MagicMock()
-        grandchild.pid = 601
-        grandchild.name.return_value = "node"
-
-        def _parent_depth(p: MagicMock) -> int:
-            if p is grandchild:
-                return 3
-            return 2
-
-        grandchild.parents.return_value = [MagicMock(), MagicMock(), MagicMock()]
 
         old_claude = MagicMock()
         old_claude.name.return_value = "claude"
         old_claude.create_time.return_value = time.time() - 8000
         old_claude.pid = 600
-        old_claude.children.return_value = [grandchild]
 
         current = MagicMock()
         current.children.return_value = [old_claude]
 
-        with patch("core.supervisor.runner.psutil.Process", return_value=current):
+        with (
+            patch("core.supervisor.runner.psutil.Process", return_value=current),
+            patch("core.supervisor.runner.kill_tree") as kill_tree,
+        ):
             runner._cleanup_orphaned_claude_processes()
 
-        grandchild.kill.assert_called_once()
-        old_claude.kill.assert_called_once()
+        kill_tree.assert_called_once_with(600, deepest_first=True)
 
     def test_handles_nosuchprocess_gracefully(self) -> None:
         runner = self._make_runner()
@@ -325,11 +324,13 @@ class TestCleanupOrphanedClaudeProcesses:
                 return subtree
             return current
 
-        with patch("core.supervisor.runner.psutil.Process", side_effect=proc_for):
+        with (
+            patch("core.supervisor.runner.psutil.Process", side_effect=proc_for),
+            patch("core.supervisor.runner.kill_tree") as kill_tree,
+        ):
             runner._cleanup_orphaned_claude_processes()
 
-        old_claude_under_runner.kill.assert_not_called()
-        root_claude.kill.assert_called_once()
+        kill_tree.assert_called_once_with(800, deepest_first=True)
 
     def test_does_not_kill_claude_under_cmdline_task_runner(self) -> None:
         """Task-runner roots found by cmdline (spawned but not yet registered) are excluded too."""
@@ -364,11 +365,13 @@ class TestCleanupOrphanedClaudeProcesses:
                 return subtree
             return current
 
-        with patch("core.supervisor.runner.psutil.Process", side_effect=proc_for):
+        with (
+            patch("core.supervisor.runner.psutil.Process", side_effect=proc_for),
+            patch("core.supervisor.runner.kill_tree") as kill_tree,
+        ):
             runner._cleanup_orphaned_claude_processes()
 
-        old_claude_under_runner.kill.assert_not_called()
-        root_claude.kill.assert_called_once()
+        kill_tree.assert_called_once_with(810, deepest_first=True)
 
 
 # ── Layer 2: _orphan_cleanup_loop ────────────────────────────

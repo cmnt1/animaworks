@@ -315,7 +315,8 @@ def _kill_orphan_runners() -> int:
     """Kill orphaned Anima runner processes from previous server instances.
 
     Uses psutil to find processes whose command line contains the runner module
-    marker and references the ~/.animaworks/ data directory.
+    marker and references the ~/.animaworks/ data directory. ``include_children=False``
+    is intentional: each runner's own shutdown handler is responsible for its children.
 
     Returns the number of processes targeted.
     """

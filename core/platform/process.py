@@ -40,28 +40,202 @@ def _terminate_psutil_process(proc: psutil.Process, *, force: bool) -> None:
             proc.kill()
         else:
             proc.terminate()
-    except psutil.NoSuchProcess:
+    except psutil.Error:
         return
+
+
+def snapshot_descendants(pid: int) -> list[psutil.Process]:
+    """Capture all descendants while their parent tree is still intact."""
+    try:
+        return psutil.Process(pid).children(recursive=True)
+    except psutil.Error:
+        return []
+
+
+def order_deepest_first(procs: Iterable[psutil.Process]) -> list[psutil.Process]:
+    """Return processes ordered from deepest descendant to shallowest."""
+
+    def _depth(proc: psutil.Process) -> int:
+        try:
+            return len(proc.parents())
+        except psutil.Error:
+            return 0
+
+    return sorted(procs, key=_depth, reverse=True)
+
+
+def _send_signal(proc: psutil.Process, sig: int) -> None:
+    """Send a signal, mapping the portable termination signals on Windows."""
+    try:
+        if os.name == "nt" and sig == signal.SIGTERM:
+            proc.terminate()
+        elif os.name == "nt" and sig == signal.SIGKILL:
+            proc.kill()
+        else:
+            proc.send_signal(sig)
+    except psutil.Error:
+        return
+
+
+def signal_tree(
+    pid: int | None,
+    sig: int,
+    *,
+    pgid: int | None = None,
+    descendants: list[psutil.Process] | None = None,
+    include_root: bool = True,
+) -> None:
+    """Signal a process group/root and every snapshotted descendant."""
+    captured = snapshot_descendants(pid) if descendants is None and pid is not None else (descendants or [])
+    used_group = os.name != "nt" and pgid is not None and pgid > 0
+    if used_group:
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            pass
+    elif include_root and pid is not None:
+        try:
+            _send_signal(psutil.Process(pid), sig)
+        except psutil.Error:
+            pass
+
+    for child in captured:
+        _send_signal(child, sig)
+
+
+def kill_tree(
+    pid: int,
+    *,
+    descendants: list[psutil.Process] | None = None,
+    include_root: bool = True,
+    deepest_first: bool = True,
+) -> int:
+    """Kill descendants and optionally the root, returning successful sends."""
+    captured = snapshot_descendants(pid) if descendants is None else descendants
+    ordered = order_deepest_first(captured) if deepest_first else list(captured)
+    killed = 0
+    for proc in ordered:
+        try:
+            proc.kill()
+            killed += 1
+        except psutil.Error:
+            continue
+
+    if include_root:
+        try:
+            psutil.Process(pid).kill()
+            killed += 1
+        except psutil.Error:
+            pass
+    return killed
+
+
+def terminate_tree(
+    pid: int | None,
+    *,
+    descendants: list[psutil.Process] | None = None,
+    grace_sec: float,
+    include_root: bool = True,
+) -> list[psutil.Process]:
+    """Terminate a tree gracefully, then kill survivors after the grace period."""
+    captured = snapshot_descendants(pid) if descendants is None and pid is not None else (descendants or [])
+    targets = list(captured)
+    if include_root and pid is not None:
+        try:
+            targets.append(psutil.Process(pid))
+        except psutil.Error:
+            pass
+
+    for proc in targets:
+        try:
+            proc.terminate()
+        except psutil.Error:
+            continue
+
+    if not targets:
+        return []
+    try:
+        _, alive = psutil.wait_procs(targets, timeout=grace_sec)
+    except psutil.Error:
+        alive = targets
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.Error:
+            continue
+    return alive
+
+
+def process_group_exists(pgid: int | None, fallback_alive: bool) -> bool:
+    """Check whether a POSIX process group exists, using a caller fallback."""
+    if os.name != "posix" or pgid is None or pgid <= 0:
+        return fallback_alive
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return fallback_alive
+    return True
+
+
+def task_runner_subtree_pids(
+    root: psutil.Process,
+    job_pids: set[int],
+    cmd_marker: str = "core.supervisor.task_runner",
+) -> set[int]:
+    """Return task-runner roots and all descendants for orphan-cleanup exclusion."""
+    excluded: set[int] = set()
+
+    def _add_subtree(pid: int) -> None:
+        if pid in excluded:
+            return
+        excluded.add(pid)
+        try:
+            excluded.update(proc.pid for proc in psutil.Process(pid).children(recursive=True))
+        except (psutil.Error, AttributeError):
+            pass
+
+    for pid in job_pids:
+        _add_subtree(pid)
+    try:
+        descendants = root.children(recursive=True)
+    except (psutil.Error, AttributeError):
+        return excluded
+    for proc in descendants:
+        try:
+            if any(cmd_marker in token for token in proc.cmdline()):
+                _add_subtree(proc.pid)
+        except (psutil.Error, TypeError, AttributeError):
+            continue
+    return excluded
 
 
 def terminate_pid(pid: int, *, force: bool = False, include_children: bool = False) -> None:
     """Terminate ``pid`` and optionally its descendant processes."""
     try:
         proc = psutil.Process(pid)
-    except psutil.NoSuchProcess:
+    except psutil.Error:
         return
 
-    if include_children:
-        for child in proc.children(recursive=True):
-            _terminate_psutil_process(child, force=force)
-
+    # Snapshot before killing the group: members in a separate session survive
+    # killpg and become untraceable once their parent exits.
+    descendants = snapshot_descendants(pid) if include_children else []
+    sig = signal.SIGKILL if force else signal.SIGTERM
     if os.name != "nt":
         try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL if force else signal.SIGTERM)
-            return
+            os.killpg(os.getpgid(pid), sig)
         except OSError:
-            pass
+            _terminate_psutil_process(proc, force=force)
+        for child in descendants:
+            _terminate_psutil_process(child, force=force)
+        return
 
+    # Preserve Windows' previous child-before-root shutdown ordering.
+    for child in descendants:
+        _terminate_psutil_process(child, force=force)
     _terminate_psutil_process(proc, force=force)
 
 

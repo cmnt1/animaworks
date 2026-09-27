@@ -837,7 +837,7 @@ class TestSpawnRestartHelper:
         assert "terminate_pid" in helper_code
         assert "Lingering server process still detected" in helper_code
         assert "include_children=True" in helper_code
-        assert "/proc" not in helper_code
+        assert "/proc/" not in helper_code
         assert "os.killpg" not in helper_code
 
     @patch("cli.commands.server._get_daemon_log_path")
