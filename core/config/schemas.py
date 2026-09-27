@@ -468,7 +468,6 @@ class ConsolidationConfig(BaseModel):
     """Configuration for memory consolidation processes."""
 
     daily_enabled: bool = True
-    knowledge_mutation_enabled: bool = False
     weekly_distillation_enabled: bool = True
     synaptic_downscaling_enabled: bool = True
     skill_autolearn_enabled: bool = True
@@ -480,7 +479,6 @@ class ConsolidationConfig(BaseModel):
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)
-    ipc_timeout_per_carryover_item_seconds: float = Field(default=600.0, ge=0.0)
     ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
     weekly_enabled: bool = False

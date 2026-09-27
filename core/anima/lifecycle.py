@@ -198,7 +198,7 @@ def _consolidation_model_config(base_model_config: Any, consolidation_model: str
     return base_model_config.model_copy(update=updates)
 
 
-def _phase_b_was_interrupted(result: CycleResult) -> bool:
+def _project_consolidation_was_interrupted(result: CycleResult) -> bool:
     return bool(result.truncated)
 
 
@@ -408,21 +408,18 @@ class LifecycleMixin:
         consolidation_type: str = "daily",
         project: str | None = None,
     ) -> CycleResult:
-        """Run memory consolidation as a 2-phase Anima-driven task.
+        """Run daily episode extraction or project/weekly knowledge consolidation.
 
-        Daily consolidation uses a 2-phase approach:
-          **Phase A** — Episode extraction: activity_log → structured timeline
-            episodes via ``one_shot_completion`` (no tool loop).
-          **Phase B** — Knowledge extraction: the Anima uses tools to read
-            the newly created episodes and manage knowledge/.
+        Daily consolidation for the Anima extracts structured timeline episodes
+        from activity_log via ``one_shot_completion`` and does not run a tool
+        loop. When ``project`` is specified, the project archive is instead
+        consolidated through the Anima's tool loop without Phase A. Weekly
+        consolidation retains its existing single-phase flow.
 
-        Weekly consolidation retains the existing single-phase flow.
-
-        Daily Phase A uses ``config.consolidation.llm_model`` as an isolated
-        helper model for episode extraction. Phase B and weekly consolidation
-        also use the configured consolidation helper model/credential for the
-        LLM call, while preserving the Anima-specific prompt, memory, tools,
-        and org metadata.
+        Daily episode extraction uses ``config.consolidation.llm_model`` as an
+        isolated helper model. Project archive and weekly consolidation use
+        the configured consolidation helper model/credential while preserving
+        the Anima-specific prompt, memory, tools, and org metadata.
 
         Args:
             consolidation_type: "daily" or "weekly"
@@ -519,10 +516,11 @@ class LifecycleMixin:
         self,
         engine: Any,
     ) -> CycleResult:
-        """Execute 2-phase daily consolidation.
+        """Run daily episode extraction or project archive consolidation.
 
-        Phase A: Extract structured timeline episodes from activity_log.
-        Phase B: Run knowledge extraction with the Anima's tool loop.
+        Daily consolidation extracts structured timeline episodes from
+        activity_log. When an engine has a project, consolidate its recent
+        project episodes into project knowledge with the Anima's tool loop.
         """
         import time as _time
 
@@ -629,11 +627,6 @@ class LifecycleMixin:
         if episode_parts:
             merged_episodes = engine.merge_timeline_parts(episode_parts)
             episode_path = engine.write_consolidated_episode(target_date, merged_episodes)
-            if cfg.consolidation.knowledge_mutation_enabled:
-                # Publish resumable Phase B input before acknowledging Phase A.
-                engine.record_phase_b_carryover(
-                    merged_episodes, target_date=target_date, reason="phase_b_pending", incremental=True
-                )
             engine.record_consolidated_chunks(target_date, completed_chunks)
             facts_extracted = 0
             facts_failed = 0
@@ -665,41 +658,23 @@ class LifecycleMixin:
                 facts_failed,
             )
 
-        # ── Phase B: Knowledge extraction ───────────────────────
-        if project is None and not cfg.consolidation.knowledge_mutation_enabled:
+        if project is None:
             return CycleResult(
                 trigger="consolidation:daily",
                 action="completed" if episode_parts else "skipped",
                 summary=t("anima.no_episodes_today") if not episode_parts else merged_episodes,
                 duration_ms=int((_time.monotonic() - start_mono) * 1000),
             )
-        if project is None and not episode_parts and not engine.load_phase_b_carryover():
+
+        episodes = engine._collect_recent_episodes(hours=24)
+        if not episodes:
             return CycleResult(
                 trigger="consolidation:daily",
                 action="skipped",
                 summary=t("anima.no_episodes_today"),
                 duration_ms=int((_time.monotonic() - start_mono) * 1000),
             )
-        # Automatic extraction consumes only the newly processed input. An
-        # explicit project consolidation may still review its scoped history.
-        current_episodes_summary = merged_episodes if episode_parts else ""
-        if project is not None:
-            episodes = engine._collect_recent_episodes(hours=24)
-            current_episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
-        if current_episodes_summary and project is not None:
-            engine.record_phase_b_carryover(
-                current_episodes_summary,
-                target_date=target_date,
-                reason="phase_b_pending",
-            )
-        carryover_items = engine.load_phase_b_carryover()
-        carryover_summary = engine.format_phase_b_carryover(carryover_items)
-        if carryover_summary:
-            episodes_summary = carryover_summary
-        elif current_episodes_summary:
-            episodes_summary = current_episodes_summary
-        else:
-            episodes_summary = t("anima.no_episodes_today")
+        episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
 
         prompt = load_prompt(
             "memory/consolidation_instruction",
@@ -727,7 +702,7 @@ class LifecycleMixin:
             cfg,
         )
         logger.info(
-            "[%s] Phase B: knowledge extraction with consolidation model=%s",
+            "[%s] Project consolidation: knowledge update with consolidation model=%s",
             self.name,
             consolidation_model_config.model,
         )
@@ -748,22 +723,16 @@ class LifecycleMixin:
                 )
             except TimeoutError:
                 logger.warning(
-                    "consolidation_timeout anima=%s phase=phase_b type=daily carryover_items=%d",
+                    "consolidation_timeout anima=%s phase=project type=daily",
                     self.name,
-                    len(carryover_items),
                 )
                 raise
 
         autolearn = self._run_autonomous_skill_learning()
         summary = result.summary or ""
-        truncated = _phase_b_was_interrupted(result)
+        truncated = _project_consolidation_was_interrupted(result)
         if truncated:
-            summary = (
-                summary + "\n\n[TRUNCATED] Daily consolidation was interrupted; partial outputs were kept "
-                "and Phase B carryover will resume on the next trigger."
-            )
-        else:
-            engine.clear_phase_b_carryover()
+            summary += "\n\n[TRUNCATED] Project consolidation was interrupted; partial outputs were kept."
         if autolearn is not None and autolearn.report_lines:
             summary = (summary + "\n\n" if summary else "") + "\n".join(autolearn.report_lines)
 

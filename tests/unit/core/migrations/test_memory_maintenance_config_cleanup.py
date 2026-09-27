@@ -53,10 +53,10 @@ def test_cleanup_dry_run_does_not_write_config(tmp_path: Path) -> None:
     assert config_path.read_text(encoding="utf-8") == original
 
 
-def test_cleanup_is_registered_after_engine_timeout_cleanup_and_before_version(tmp_path: Path) -> None:
+def test_cleanup_is_registered_before_phase_b_removal_and_version(tmp_path: Path) -> None:
     runner = MigrationRunner(tmp_path)
     register_all_steps(runner)
     ids = [step["id"] for step in runner.list_steps()]
 
     assert ids.index("engine_timeout_config_cleanup") + 1 == ids.index("memory_maintenance_config_cleanup_20260927")
-    assert ids.index("memory_maintenance_config_cleanup_20260927") + 1 == ids.index("update_version")
+    assert ids.index("memory_maintenance_config_cleanup_20260927") + 1 == ids.index("phase_b_removal_20260927")

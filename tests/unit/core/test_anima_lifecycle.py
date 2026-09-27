@@ -33,9 +33,9 @@ async def test_project_daily_consolidation_skips_phase_a_and_scopes_prompt() -> 
     engine = MagicMock()
     engine.project = "foo"
     engine.previous_local_day_window.return_value = (date(2026, 8, 12), MagicMock(), MagicMock())
-    engine._collect_recent_episodes.return_value = []
-    engine.load_phase_b_carryover.return_value = []
-    engine.format_phase_b_carryover.return_value = ""
+    engine._collect_recent_episodes.return_value = [
+        {"date": "2026-08-12", "time": "13:00", "content": "Project update"}
+    ]
     engine._extract_reflections_from_episodes.return_value = ""
     engine._list_knowledge_files_with_meta.return_value = []
     engine._find_merge_candidates.return_value = []
@@ -56,6 +56,7 @@ async def test_project_daily_consolidation_skips_phase_a_and_scopes_prompt() -> 
     engine.collect_activity_chunks.assert_not_called()
     engine._collect_resolved_events.assert_not_called()
     engine._collect_error_entries.assert_not_called()
+    engine._collect_recent_episodes.assert_called_once_with(hours=24)
     prompt = agent.run_cycle.await_args.args[0]
     assert "episodes/projects/foo/" in prompt
     assert "knowledge/projects/foo/" in prompt

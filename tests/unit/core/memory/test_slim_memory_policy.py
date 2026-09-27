@@ -98,7 +98,7 @@ def test_per_anima_profile_overrides_global_without_model_assumptions(tmp_path: 
 def test_defaults_keep_storage_but_reenable_automatic_mutation():
     config = ConsolidationConfig()
     assert config.daily_enabled and config.indexing_enabled
-    assert not config.knowledge_mutation_enabled
+    assert not hasattr(config, "knowledge_mutation_enabled")
     assert not config.weekly_enabled
     assert config.knowledge_self_correction_enabled
     assert config.weekly_distillation_enabled and config.skill_autolearn_enabled
@@ -119,14 +119,6 @@ def test_episode_checkpoint_processes_only_new_inputs_and_preserves_source(tmp_p
     assert restarted.unprocessed_activity_chunks(day, ["a", "b"]) == ["b"]
     assert restarted.unprocessed_activity_chunks(date(2026, 9, 8), ["a"]) == ["a"]
     assert raw.read_text() == "original evidence"
-
-
-def test_incremental_phase_b_carryover_keeps_earlier_unfinished_input(tmp_path: Path):
-    engine = ConsolidationEngine(tmp_path, "fixture")
-    day = date(2026, 9, 7)
-    for summary in ("first episode", "late episode", "late episode"):
-        engine.record_phase_b_carryover(summary, target_date=day, reason="pending", incremental=True)
-    assert engine.load_phase_b_carryover()[0]["episodes_summary"] == "first episode\n\nlate episode"
 
 
 @pytest.mark.asyncio

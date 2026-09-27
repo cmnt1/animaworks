@@ -1740,6 +1740,76 @@ def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: boo
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_phase_b_removal_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired daily knowledge-mutation settings and state files."""
+    del verbose
+    details: list[str] = []
+    changed = 0
+    skipped = 0
+    config_path = data_dir / "config.json"
+
+    if config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            if not isinstance(config, dict):
+                skipped += 1
+                details.append("config.json root is not an object")
+            else:
+                consolidation = config.get("consolidation")
+                if consolidation is None:
+                    skipped += 1
+                elif not isinstance(consolidation, dict):
+                    skipped += 1
+                    details.append("config.json consolidation section is not an object")
+                else:
+                    retired_settings = (
+                        "knowledge_mutation_enabled",
+                        "ipc_timeout_per_carryover_item_seconds",
+                    )
+                    removed_settings = [key for key in retired_settings if key in consolidation]
+                    if removed_settings:
+                        for key in removed_settings:
+                            del consolidation[key]
+                        changed += 1
+                        if dry_run:
+                            details.append(f"Would remove {len(removed_settings)} retired consolidation setting(s)")
+                        else:
+                            config_path.write_text(
+                                json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                            )
+                            details.append(f"Removed {len(removed_settings)} retired consolidation setting(s)")
+                    else:
+                        skipped += 1
+        except Exception as exc:
+            logger.exception("step_phase_b_removal_20260927 failed while updating config.json")
+            return StepResult(changed=0, skipped=skipped, details=details, error=str(exc))
+    else:
+        skipped += 1
+        details.append("config.json not found; skip settings cleanup")
+
+    animas_dir = data_dir / "animas"
+    state_files = sorted(
+        {
+            *animas_dir.glob("*/state/consolidation_phase_b_carryover.json"),
+            *animas_dir.glob("*/state/consolidation_phase_b_carryover_*.json"),
+        }
+    )
+    state_files = [path for path in state_files if path.is_file()]
+    if state_files:
+        changed += len(state_files)
+        if dry_run:
+            details.append(f"Would remove {len(state_files)} carryover state file(s)")
+        else:
+            for path in state_files:
+                path.unlink()
+            details.append(f"Removed {len(state_files)} carryover state file(s)")
+    else:
+        skipped += 1
+        details.append("No carryover state files found")
+
+    return StepResult(changed=changed, skipped=skipped, details=details)
+
+
 def step_update_version(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """No-op step for display; version update is handled by runner."""
     return StepResult(changed=1, skipped=0, details=["migration_state.json"])
@@ -1967,6 +2037,12 @@ def register_all_steps(runner: Any) -> None:
             "Drop housekeeping.hygiene_grace_days and hygiene first_seen state",
             "structural",
             step_memory_maintenance_config_cleanup_20260927,
+        ),
+        MigrationStep(
+            "phase_b_removal_20260927",
+            "Drop Phase B knowledge mutation settings and carryover state",
+            "structural",
+            step_phase_b_removal_20260927,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

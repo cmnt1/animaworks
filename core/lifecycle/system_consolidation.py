@@ -98,7 +98,6 @@ class DailyConsolidationGate:
     should_run: bool
     activity_count: int
     episode_count: int
-    carryover_count: int
     threshold: int
 
 
@@ -128,12 +127,10 @@ def evaluate_daily_consolidation_gate(
         )
     except Exception:
         logger.debug("Failed to count recent activity entries for %s", anima_name, exc_info=True)
-    carryover_count = engine.count_pending_phase_b_carryover()
     return DailyConsolidationGate(
-        should_run=activity_count >= threshold or episode_count >= threshold or carryover_count > 0,
+        should_run=activity_count >= threshold or episode_count >= threshold,
         activity_count=activity_count,
         episode_count=episode_count,
-        carryover_count=carryover_count,
         threshold=threshold,
     )
 
@@ -356,11 +353,10 @@ class SystemConsolidationMixin:
             )
             if not gate.should_run:
                 logger.info(
-                    "Daily consolidation skipped for %s: activity=%d episodes=%d carryover=%d threshold=%d",
+                    "Daily consolidation skipped for %s: activity=%d episodes=%d threshold=%d",
                     anima_name,
                     gate.activity_count,
                     gate.episode_count,
-                    gate.carryover_count,
                     gate.threshold,
                 )
                 continue
@@ -386,7 +382,7 @@ class SystemConsolidationMixin:
             except TimeoutError:
                 should_retry = True
                 logger.warning(
-                    "consolidation_timeout anima=%s phase=phase_b type=daily",
+                    "consolidation_timeout anima=%s phase=phase_a type=daily",
                     anima_name,
                 )
             except Exception:

@@ -153,7 +153,7 @@ Search when past instructions, customer facts or unfinished work are needed; no 
 
 Before side effects, applicable `[ACTION-RULE]` checks, permission boundaries, approval and duplicate-action prevention still apply. Read indicated rules if an action is stopped. Untrusted search results remain separate from trusted context.
 
-Daily consolidation extracts episodes from unprocessed activity chunks and checkpoints successful inputs. Raw activity and memory originals are retained. Knowledge rewriting is a separate, default-off phase (`consolidation.knowledge_mutation_enabled`). Weekly/monthly mutation, distillation, downscaling, self-correction, automatic skill learning and fact extraction are default off; indexing, repair and reading existing facts remain available. Optional maintenance must preserve entity detail, provenance and safety rules. A skipped/no-change run is normal, not a reason to retry.
+Daily consolidation only generates episodes and does not rewrite knowledge (except for project archive consolidation). Raw activity and memory originals are retained. Weekly/monthly mutation, distillation, downscaling, self-correction, automatic skill learning and fact extraction are default off; indexing, repair and reading existing facts remain available. Optional maintenance must preserve entity detail, provenance and safety rules. A skipped/no-change run is normal, not a reason to retry.
 
 Curator promotions/retirements are proposals by default; security blocking can still quarantine a skill immediately. Operator-controlled explicit changes remain possible. Outcome counts are diagnostic evidence, not proof of task quality.
 

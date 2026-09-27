@@ -193,9 +193,6 @@ class _RecentEpisodesEngine:
     def count_recent_activity_entries(self, hours: int = 24, **_kwargs) -> int:
         return 0
 
-    def count_pending_phase_b_carryover(self) -> int:
-        return 0
-
     async def ingest_recent_to_backend(self, hours: int) -> dict[str, int]:
         self.ingest_calls.append((self.anima_name, hours))
         return {"episodes": 0, "knowledge": 0, "errors": 0}
@@ -207,14 +204,47 @@ def test_consolidation_ipc_timeout_scales_with_daily_workload(tmp_path: Path) ->
         ipc_timeout_base_seconds=1800,
         ipc_timeout_per_activity_entry_seconds=4.0,
         ipc_timeout_per_episode_seconds=120.0,
-        ipc_timeout_per_carryover_item_seconds=600.0,
         ipc_timeout_max_seconds=7200,
     )
-    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+    gate = SimpleNamespace(activity_count=300, episode_count=2)
 
     timeout = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
 
-    assert timeout == 3840.0
+    assert timeout == 3240.0
+
+
+@pytest.mark.parametrize(
+    ("activity_count", "episode_count", "should_run"),
+    [(2, 0, True), (0, 2, True), (1, 1, False)],
+)
+def test_daily_gate_uses_only_activity_and_episode_thresholds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    activity_count: int,
+    episode_count: int,
+    should_run: bool,
+) -> None:
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
+
+    class _GateEngine:
+        def __init__(self, *_args) -> None:
+            pass
+
+        def _collect_recent_episodes(self, hours: int) -> list[dict]:
+            return [{} for _ in range(episode_count)]
+
+        @staticmethod
+        def previous_local_day_window():
+            return None, None, None
+
+        def count_recent_activity_entries(self, **_kwargs) -> int:
+            return activity_count
+
+    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", _GateEngine)
+    gate = evaluate_daily_consolidation_gate(tmp_path, "fixture", threshold=2)
+
+    assert gate.should_run is should_run
+    assert not hasattr(gate, "carryover_count")
 
 
 def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Path) -> None:
@@ -223,11 +253,10 @@ def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Pa
         ipc_timeout_base_seconds=1800,
         ipc_timeout_per_activity_entry_seconds=10.0,
         ipc_timeout_per_episode_seconds=100.0,
-        ipc_timeout_per_carryover_item_seconds=1000.0,
         ipc_timeout_max_seconds=2000,
         weekly_ipc_timeout_seconds=4800,
     )
-    gate = SimpleNamespace(activity_count=300, episode_count=2, carryover_count=1)
+    gate = SimpleNamespace(activity_count=300, episode_count=2)
 
     daily = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
     weekly = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="weekly")
@@ -266,7 +295,7 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
         await sup._run_daily_consolidation()
 
     assert handle.calls == ["run_consolidation", "interrupt"]
-    assert "consolidation_timeout anima=mio phase=phase_b type=daily" in caplog.text
+    assert "consolidation_timeout anima=mio phase=phase_a type=daily" in caplog.text
     assert "Daily consolidation failed for mio" not in caplog.text
     # synaptic_downscaling_enabled defaults to True (harness diet PR-6),
     # so framework-side post-processing still runs downscaling on timeout.
