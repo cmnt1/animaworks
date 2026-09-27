@@ -147,6 +147,7 @@ class TestIndexerOriginMetadata:
         documents = indexer.vector_store.upsert.call_args[0][1]
         assert documents
         assert all(document.metadata["origin"] == "external_web" for document in documents)
+        assert all(resolve_trust(document.metadata["origin"]) == "untrusted" for document in documents)
 
     def test_index_file_non_knowledge_without_origin_remains_originless(self, indexer, anima_dir: Path) -> None:
         test_file = anima_dir / "episodes" / "2026-02-28.md"
@@ -387,38 +388,6 @@ class TestFormatPrimingSectionTrustSeparation:
         assert output == ""
 
 
-# ── Consolidation origin propagation ──────────────────────────
-
-
-class TestConsolidationOrigin:
-    """ConsolidationEngine passes origin=consolidation to RAG index."""
-
-    @pytest.fixture
-    def engine(self, tmp_path: Path):
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        anima_dir = tmp_path / "animas" / "test-anima"
-        (anima_dir / "episodes").mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir(parents=True)
-        return ConsolidationEngine(anima_dir, "test-anima")
-
-    def test_update_rag_index_default_origin(self, engine, tmp_path: Path) -> None:
-        """_update_rag_index defaults to origin='consolidation'."""
-        test_file = engine.knowledge_dir / "test.md"
-        test_file.write_text("# Test\n\nContent.", encoding="utf-8")
-
-        mock_indexer = MagicMock()
-        with (
-            patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
-            patch("core.memory.rag.vector_registry.get_vector_store"),
-        ):
-            engine._update_rag_index(["test.md"])
-
-        mock_indexer.index_file.assert_called_once()
-        call_kwargs = mock_indexer.index_file.call_args
-        assert call_kwargs[1]["origin"] == "consolidation"
-
-
 # ── resolve_trust integration with origin values ──────────────
 
 
@@ -434,6 +403,7 @@ class TestResolveTrustOrigins:
             (ORIGIN_EXTERNAL_PLATFORM, "untrusted"),
             (ORIGIN_EXTERNAL_WEB, "untrusted"),
             (ORIGIN_CONSOLIDATION, "medium"),
+            ("consolidation_external", "untrusted"),
             (ORIGIN_UNKNOWN, "untrusted"),
             ("", "untrusted"),
             (None, "untrusted"),

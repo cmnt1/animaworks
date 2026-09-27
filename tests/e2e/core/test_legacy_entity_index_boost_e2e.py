@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.facts.entity_index import load_entity_registry, match_query_entities
-from core.memory.facts.extraction import extract_and_store_facts
+from core.memory.facts.extraction import extract_and_store_facts_with_outcome
 from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
 from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
@@ -52,7 +52,7 @@ async def test_fact_ingest_updates_entity_registry_and_boosts_metadata_candidate
     monkeypatch.setattr("core.memory.facts.extraction.reconcile_new_fact", add_without_reconciliation)
     monkeypatch.setattr("core.memory.facts.extraction._index_fact_records", lambda *args, **kwargs: None)
 
-    stored = await extract_and_store_facts(
+    outcome = await extract_and_store_facts_with_outcome(
         anima_dir,
         "Caroline recommended the book Becoming Nicole.",
         source_episode="episodes/2026-06-03.md",
@@ -63,17 +63,17 @@ async def test_fact_ingest_updates_entity_registry_and_boosts_metadata_candidate
     )
 
     registry = load_entity_registry(anima_dir)
-    assert len(stored) == 1
+    assert len(outcome.records) == 1
     assert (anima_dir / "facts" / "2026-06-03.jsonl").is_file()
     assert registry["entities"]["caroline"]["mention_count"] == 1
-    assert registry["entities"]["becoming nicole"]["source_fact_ids"] == [stored[0].fact_id]
+    assert registry["entities"]["becoming nicole"]["source_fact_ids"] == [outcome.records[0].fact_id]
     assert match_query_entities(anima_dir, "What did Caroline recommend?") == {"caroline"}
 
     boosted = apply_entity_boost(
         "What did Caroline recommend?",
         [
             {"content": "generic answer", "score": 0.5, "entities": ["Unrelated"]},
-            {"content": stored[0].text, "score": 0.4, "entities": stored[0].entities},
+            {"content": outcome.records[0].text, "score": 0.4, "entities": outcome.records[0].entities},
         ],
         EntityBoostConfig(enabled=True, category=None, query_entities=("caroline",), boost=0.2, max_boost=0.2),
     )

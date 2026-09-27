@@ -37,22 +37,6 @@ class TestCollectRecentEpisodes:
         assert len(episodes) > 0
 
 
-class TestListKnowledgeFiles:
-    def test_empty_knowledge(self, engine):
-        """Return empty list when no knowledge files."""
-        files = engine._list_knowledge_files()
-        assert files == []
-
-    def test_lists_knowledge_files(self, engine, anima_dir):
-        """List markdown files in knowledge directory."""
-        (anima_dir / "knowledge" / "topic-a.md").write_text("content a")
-        (anima_dir / "knowledge" / "topic-b.md").write_text("content b")
-        (anima_dir / "knowledge" / "not-md.txt").write_text("ignored")
-
-        files = engine._list_knowledge_files()
-        assert len(files) == 2
-
-
 class TestRemovedMethods:
     """Verify that removed methods are actually gone."""
 

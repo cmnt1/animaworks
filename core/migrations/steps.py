@@ -1661,6 +1661,28 @@ def step_v0146_prompt_diet4_stale_cleanup(data_dir: Path, dry_run: bool, verbose
     return StepResult(changed=changed, skipped=skipped, details=details)
 
 
+_MEMORY_DEAD_STALE_PROMPTS = ("memory/classification.md",)
+
+
+def step_memory_dead_prompt_cleanup_20260927(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove runtime prompts retired with classify_and_distill."""
+    details: list[str] = []
+    changed = 0
+    skipped = 0
+    for name in _MEMORY_DEAD_STALE_PROMPTS:
+        stale = data_dir / "prompts" / name
+        if not stale.is_file():
+            skipped += 1
+            continue
+        if dry_run:
+            details.append(f"Would remove stale prompts/{name}")
+        else:
+            stale.unlink()
+            details.append(f"Removed stale prompts/{name}")
+        changed += 1
+    return StepResult(changed=changed, skipped=skipped, details=details)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -2653,6 +2675,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove retired Neo4j configuration keys",
             "structural",
             step_neo4j_config_cleanup,
+        ),
+        MigrationStep(
+            "memory_dead_prompt_cleanup_20260927",
+            "Remove runtime prompts retired with classify_and_distill",
+            "template_sync",
+            step_memory_dead_prompt_cleanup_20260927,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

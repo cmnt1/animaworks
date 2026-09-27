@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -101,27 +100,6 @@ class TestEpisodeCollection:
 
         # Should be empty since episode is from yesterday
         assert len(entries) == 0
-
-
-class TestKnowledgeManagement:
-    """Test knowledge file management."""
-
-    def test_list_knowledge_files_empty(self, consolidation_engine):
-        """Test listing knowledge files when none exist."""
-        files = consolidation_engine._list_knowledge_files()
-        assert files == []
-
-    def test_list_knowledge_files_with_data(self, consolidation_engine):
-        """Test listing existing knowledge files."""
-        # Create some knowledge files
-        (consolidation_engine.knowledge_dir / "test-knowledge.md").write_text("# Test Knowledge", encoding="utf-8")
-        (consolidation_engine.knowledge_dir / "another-topic.md").write_text("# Another Topic", encoding="utf-8")
-
-        files = consolidation_engine._list_knowledge_files()
-
-        assert len(files) == 2
-        assert "another-topic.md" in files
-        assert "test-knowledge.md" in files
 
 
 class TestEpisodeCollectionGlobAndFallback:
@@ -294,106 +272,6 @@ class TestEpisodeCollectionGlobAndFallback:
         assert len(entries) == 3
         times = sorted(e["time"] for e in entries)
         assert times == ["08:00", "09:00", "10:00"]
-
-
-# ── Resolved Events Collection Tests ─────────────────────────
-
-
-class TestCollectResolvedEventsMeta:
-    """Test that _collect_resolved_events includes meta field."""
-
-    def test_resolved_events_include_meta(self, temp_anima_dir: Path) -> None:
-        """_collect_resolved_events should return dicts with 'meta' key."""
-        from dataclasses import dataclass, field
-        from typing import Any
-
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(
-            anima_dir=temp_anima_dir,
-            anima_name="test_anima",
-        )
-
-        @dataclass
-        class FakeEntry:
-            ts: str = "2026-02-22T10:00:00"
-            type: str = "issue_resolved"
-            content: str = "問題を解決した"
-            summary: str = "解決完了"
-            meta: dict[str, Any] = field(
-                default_factory=lambda: {
-                    "issue_type": "server_down",
-                    "severity": "high",
-                }
-            )
-
-        fake_entries = [FakeEntry()]
-
-        with patch(
-            "core.memory.activity.logger.ActivityLogger.recent",
-            return_value=fake_entries,
-        ):
-            result = engine._collect_resolved_events(hours=24)
-
-        # Result should contain at least one entry
-        assert len(result) == 1
-        # The 'meta' field should be included in the result dict
-        assert "meta" in result[0]
-        assert result[0]["meta"]["issue_type"] == "server_down"
-        assert result[0]["meta"]["severity"] == "high"
-
-    def test_resolved_events_empty_meta(self, temp_anima_dir: Path) -> None:
-        """_collect_resolved_events should handle entries with None meta."""
-        from dataclasses import dataclass
-        from typing import Any
-
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(
-            anima_dir=temp_anima_dir,
-            anima_name="test_anima",
-        )
-
-        @dataclass
-        class FakeEntry:
-            ts: str = "2026-02-22T10:00:00"
-            type: str = "issue_resolved"
-            content: str = "修正完了"
-            summary: str = "バグ修正"
-            meta: dict[str, Any] | None = None
-
-        fake_entries = [FakeEntry()]
-
-        with patch(
-            "core.memory.activity.logger.ActivityLogger.recent",
-            return_value=fake_entries,
-        ):
-            result = engine._collect_resolved_events(hours=24)
-
-        assert len(result) == 1
-        # meta should default to empty dict when None (via `e.meta or {}`)
-        assert result[0]["meta"] == {}
-
-    def test_resolved_events_returns_empty_on_error(
-        self,
-        temp_anima_dir: Path,
-    ) -> None:
-        """_collect_resolved_events should return [] on exception."""
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(
-            anima_dir=temp_anima_dir,
-            anima_name="test_anima",
-        )
-
-        with patch(
-            "core.memory.activity.logger.ActivityLogger.recent",
-            side_effect=RuntimeError("Activity log unavailable"),
-        ):
-            result = engine._collect_resolved_events(hours=24)
-
-        # Errors should be caught and return empty list
-        assert result == []
 
 
 if __name__ == "__main__":

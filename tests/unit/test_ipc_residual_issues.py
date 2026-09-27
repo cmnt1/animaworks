@@ -180,23 +180,26 @@ class TestCallersSendAnimaName:
             engine._get_vector_store()
             mock_gvs.assert_called_once_with("yuki")
 
-    def test_consolidation_passes_anima_name(self, tmp_path: Path):
-        """ConsolidationEngine uses get_vector_store(self.anima_name) when no rag_store."""
+    def test_consolidation_merge_search_passes_anima_name(self, tmp_path: Path):
+        """Merge-candidate discovery scopes its vector store to the anima."""
         anima_dir = tmp_path / "animas" / "sakura"
-        (anima_dir / "knowledge").mkdir(parents=True)
-        (anima_dir / "knowledge" / "test.md").write_text("test", encoding="utf-8")
+        knowledge_dir = anima_dir / "knowledge"
+        knowledge_dir.mkdir(parents=True)
+        (knowledge_dir / "first.md").write_text("First knowledge", encoding="utf-8")
+        (knowledge_dir / "second.md").write_text("Second knowledge", encoding="utf-8")
 
         from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, "sakura")
 
         with (
-            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
+            patch("core.memory.rag.MemoryIndexer"),
+            patch("core.memory.rag.retriever.MemoryRetriever") as mock_retriever,
             patch("core.memory.rag.vector_registry.get_vector_store") as mock_gvs,
         ):
             mock_gvs.return_value = MagicMock()
-            MockIndexer.return_value = MagicMock()
-            engine._update_rag_index(["test.md"])
+            mock_retriever.return_value.search.return_value = []
+            engine._find_merge_candidates()
             mock_gvs.assert_called_once_with("sakura")
 
     def test_priming_passes_anima_name(self):

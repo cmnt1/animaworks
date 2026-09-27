@@ -8,15 +8,10 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Procedural memory auto-distillation engine.
+"""Distill recurring activity patterns into reusable procedure files.
 
-Classifies episodic memories into knowledge / procedures / skip categories
-using an LLM, and distills procedural episodes into reusable procedure files
-with YAML frontmatter.
-
-Pipeline:
-  - Daily: LLM classifies episode sections -> writes knowledge & procedures
-  - Weekly: activity_log-based pattern detection -> distill repeated patterns
+Weekly activity-log pattern detection identifies repeated workflows and
+uses an LLM to save procedure files with YAML frontmatter.
 """
 
 import json
@@ -26,12 +21,10 @@ from pathlib import Path
 
 from core.i18n import t
 from core.memory._llm_parse import (
-    KNOWLEDGE_FIELDS,
     PROCEDURE_FIELDS,
     _section_pattern,
     is_none_marker,
     load_json,
-    strip_code_fence,
 )
 from core.paths import load_prompt
 from core.time_utils import now_iso, now_local
@@ -45,12 +38,10 @@ RAG_DUPLICATE_THRESHOLD = 0.85
 
 
 class ProceduralDistiller:
-    """Engine that distills procedural knowledge from episodic memories.
+    """Engine that distills recurring activity patterns into procedures.
 
-    Uses LLM-based classification to detect procedural content, then
-    extracts structured, reusable procedure documents.  Saved procedures
-    include YAML frontmatter with tracking metadata (confidence,
-    success/failure counts, etc.).
+    Saved procedures include YAML frontmatter with tracking metadata
+    (confidence, success/failure counts, etc.).
     """
 
     def __init__(self, anima_dir: Path, anima_name: str) -> None:
@@ -64,97 +55,7 @@ class ProceduralDistiller:
         self.anima_name = anima_name
         self.procedures_dir = anima_dir / "procedures"
         self.knowledge_dir = anima_dir / "knowledge"
-        self.episodes_dir = anima_dir / "episodes"
         self.procedures_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── LLM-based Classification & Distillation ──────────────
-
-    async def classify_and_distill(
-        self,
-        episodes_text: str,
-        model: str = "",
-    ) -> dict:
-        """Classify episodes and extract both knowledge and procedures via LLM.
-
-        Sends all episodes to an LLM which classifies content into
-        knowledge/procedures/skip categories and returns structured output
-        for both.
-
-        Args:
-            episodes_text: Concatenated episode text (Markdown).
-            model: LiteLLM model identifier.
-
-        Returns:
-            Dict with:
-              - ``knowledge_items``: list of dicts with ``filename``, ``content``
-              - ``procedure_items``: list of dicts with ``filename``,
-                ``description``, ``tags``, ``content``
-              - ``raw_response``: raw LLM output string
-        """
-        if not model:
-            from core.memory._llm_utils import get_consolidation_llm_kwargs
-
-            model = get_consolidation_llm_kwargs()["model"]
-
-        result = {
-            "knowledge_items": [],
-            "procedure_items": [],
-            "raw_response": "",
-        }
-
-        if not episodes_text.strip():
-            return result
-
-        existing = self._load_existing_procedures()
-
-        prompt = load_prompt(
-            "memory/classification",
-            episodes_text=episodes_text[:6000],
-            existing_procedures=existing[:2000],
-        )
-
-        try:
-            from core.memory._llm_utils import one_shot_completion
-
-            text = await one_shot_completion(prompt, model=model, max_tokens=3072) or ""
-            text = self._strip_code_fence(text)
-            result["raw_response"] = text
-
-            # Parse LLM output
-            knowledge_items = self._parse_knowledge_items(text)
-            procedure_items = self._parse_procedure_items(text)
-
-            result["knowledge_items"] = knowledge_items
-            result["procedure_items"] = procedure_items
-
-            logger.info(
-                "LLM classification for anima=%s: knowledge=%d procedures=%d",
-                self.anima_name,
-                len(knowledge_items),
-                len(procedure_items),
-            )
-
-        except Exception:
-            logger.exception(
-                "LLM classification failed for anima=%s",
-                self.anima_name,
-            )
-
-        return result
-
-    def get_knowledge_items(self, classification_result: dict) -> list[dict]:
-        """Extract knowledge items from a classification result.
-
-        Used by consolidation to merge LLM-classified knowledge into the
-        existing knowledge consolidation pipeline.
-
-        Args:
-            classification_result: Return value from ``classify_and_distill()``.
-
-        Returns:
-            List of knowledge item dicts with ``filename`` and ``content``.
-        """
-        return classification_result.get("knowledge_items", [])
 
     # ── Weekly Pattern Distillation ────────────────────────────
 
@@ -418,49 +319,8 @@ class ProceduralDistiller:
 
     # ── Parsing Helpers ────────────────────────────────────────
 
-    def _parse_knowledge_items(self, text: str) -> list[dict]:
-        """Parse knowledge items from LLM classification output.
-
-        Looks for the ``## knowledge抽出`` / ``## knowledge extraction``
-        (locale-aware) section and extracts items with ``ファイル名:`` /
-        ``Filename:`` and ``内容:`` / ``Content:`` fields.
-
-        Args:
-            text: Raw LLM output (sanitized).
-
-        Returns:
-            List of dicts with ``filename`` and ``content``.
-        """
-        section_re = re.compile(
-            rf"##\s*{_section_pattern('knowledge')}(.+?)(?=##\s*{_section_pattern('procedure')}|\Z)",
-            re.DOTALL | re.IGNORECASE,
-        )
-        section = section_re.search(text)
-        if not section:
-            return []
-
-        section_text = section.group(1)
-        if t("distillation.none") in section_text or is_none_marker(section_text):
-            return []
-
-        filename_field = KNOWLEDGE_FIELDS["filename"]
-        content_field = KNOWLEDGE_FIELDS["content"]
-        item_re = re.compile(
-            rf"-\s*{filename_field}:\s*(.+?)\s+{content_field}:\s*(.+?)(?=-\s*{filename_field}:|\Z)",
-            re.DOTALL,
-        )
-
-        items: list[dict] = []
-        for match in item_re.finditer(section_text):
-            filename = match.group(1).strip()
-            content = match.group(2).strip()
-            if filename and content:
-                items.append({"filename": filename, "content": content})
-
-        return items
-
     def _parse_procedure_items(self, text: str) -> list[dict]:
-        """Parse procedure items from LLM classification output.
+        """Parse procedure items from structured LLM output.
 
         Looks for the ``## procedure抽出`` / ``## procedure extraction``
         (locale-aware) section and extracts items with ``ファイル名:`` /
@@ -537,24 +397,6 @@ class ProceduralDistiller:
         if isinstance(items, list):
             return [i for i in items if isinstance(i, dict) and "title" in i and "content" in i]
         return []
-
-    @staticmethod
-    def _strip_code_fence(text: str) -> str:
-        """Remove Markdown code fences wrapping the entire text.
-
-        Delegates to the shared language-agnostic strip (handles ``json``,
-        ``markdown``, any tag, or a bare fence) and preserves interior
-        content.
-
-        Args:
-            text: Raw text potentially wrapped in code fences.
-
-        Returns:
-            Text with outer code fences removed.
-        """
-        return strip_code_fence(text)
-
-    # ── Procedure I/O ──────────────────────────────────────────
 
     def _load_existing_procedures(self) -> str:
         """Build a summary of existing procedures for duplicate avoidance.
@@ -698,18 +540,3 @@ class ProceduralDistiller:
 
         logger.info("Saved distilled procedure: %s", path.name)
         return path
-
-    # ── Section Splitting (utility) ────────────────────────────
-
-    @staticmethod
-    def _split_into_sections(text: str) -> list[str]:
-        """Split *text* on ``## `` Markdown headers.
-
-        Args:
-            text: Raw Markdown text.
-
-        Returns:
-            List of non-empty section strings.
-        """
-        sections = re.split(r"\n(?=##\s)", text)
-        return [s.strip() for s in sections if s.strip()]

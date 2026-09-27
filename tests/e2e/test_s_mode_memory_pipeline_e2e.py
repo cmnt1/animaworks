@@ -250,7 +250,7 @@ class TestCompressedSummaryToRAGSearchPipeline:
         2. Use MemoryIndexer.index_conversation_summary
         3. Verify chunks are created in {prefix}_conversation_summary collection
         """
-        chromadb = pytest.importorskip(
+        pytest.importorskip(
             "chromadb",
             reason="ChromaDB not installed",
         )
@@ -337,50 +337,6 @@ class TestActivityLogToConsolidationPromptPipeline:
     prompt template includes them.
     """
 
-    def test_activity_log_to_consolidation_collection(self, tmp_path):
-        """Activity log entries are collected by ConsolidationEngine.
-
-        Pipeline:
-        1. Create activity_log entries (response_sent, tool_use, message_received)
-        2. Use ConsolidationEngine._collect_activity_entries(hours=24)
-        3. Verify output contains the test entries
-        """
-        anima_dir = tmp_path / "animas" / "test-activity-consol"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "episodes").mkdir()
-        (anima_dir / "knowledge").mkdir()
-
-        # Write activity log entries
-        activity = ActivityLogger(anima_dir)
-        activity.log(
-            "message_received",
-            content="Slack連携について教えてください",
-            from_person="admin",
-            summary="Slack連携の質問",
-        )
-        activity.log(
-            "response_sent",
-            content="config.jsonのslackセクションを編集してください。Bot tokenが必要です。",
-            to_person="admin",
-            summary="Slack設定手順を回答",
-        )
-        activity.log(
-            "tool_use",
-            tool="search_memory",
-            summary="query=slack連携 設定",
-        )
-
-        # Collect via ConsolidationEngine
-        engine = ConsolidationEngine(anima_dir, "test-activity-consol")
-        result = engine._collect_activity_entries(hours=24)
-
-        assert result, "Activity log collection should return non-empty string"
-        assert "message_received" in result, "Collected output should contain message_received entries"
-        assert "response_sent" in result, "Collected output should contain response_sent entries"
-        # tool_use is excluded by smart filtering (only tool_result is kept)
-        assert "tool_use" not in result, "tool_use should be excluded by smart filtering"
-        assert "Slack" in result or "slack" in result, "Collected output should contain content from the entries"
-
     def test_consolidation_prompt_renders_episodes_summary(self):
         """Phase B consolidation_instruction template renders episodes_summary."""
         from core.paths import load_prompt
@@ -443,18 +399,6 @@ class TestActivityLogToConsolidationPromptPipeline:
         assert "EC2" in combined, "Chunks should contain activity content about EC2"
         assert "aws_collector" in combined, "Chunks should include tool name from tool_result"
         assert "i-12345" in combined, "Chunks should include full tool_result content"
-
-    def test_empty_activity_log_produces_empty_string(self, tmp_path):
-        """When no activity log exists, _collect_activity_entries returns ''."""
-        anima_dir = tmp_path / "animas" / "test-empty-activity"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "episodes").mkdir()
-        (anima_dir / "knowledge").mkdir()
-
-        engine = ConsolidationEngine(anima_dir, "test-empty-activity")
-        result = engine._collect_activity_entries(hours=24)
-
-        assert result == "", "Empty activity log should produce empty string"
 
 
 # ── Test 4: B mode regression ──────────────────────────────────────

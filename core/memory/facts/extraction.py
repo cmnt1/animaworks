@@ -208,37 +208,6 @@ async def extract_fact_records_with_outcome(
         return FactExtractionOutcome([], True, "extract", f"{type(exc).__name__}: {exc}")
 
 
-async def extract_and_store_facts(
-    anima_dir: Path,
-    text: str,
-    *,
-    source_episode: str,
-    source_session_id: str = "",
-    reference_time: str | None = None,
-    origin: str = "conversation",
-    extractor: Any | None = None,
-    enabled: bool | None = None,
-) -> list[FactRecord]:
-    """Extract facts, append new records, and update the facts RAG index."""
-    records = await extract_fact_records(
-        anima_dir,
-        text,
-        source_episode=source_episode,
-        source_session_id=source_session_id,
-        reference_time=reference_time,
-        extractor=extractor,
-        enabled=enabled,
-    )
-    return (
-        await _store_fact_records(
-            anima_dir,
-            records,
-            reference_time=reference_time,
-            origin=origin,
-        )
-    ).records
-
-
 async def extract_and_store_facts_with_outcome(
     anima_dir: Path,
     text: str,

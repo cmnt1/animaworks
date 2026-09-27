@@ -101,10 +101,8 @@ async def test_post_consolidation_timeout_returns_partial_summary(
 
 @pytest.mark.asyncio
 async def test_system_consolidation_helper_uses_configured_limits(tmp_path: Path) -> None:
-    from core.lifecycle.system_consolidation import SystemConsolidationMixin
+    from core.lifecycle.system_consolidation import run_knowledge_self_correction_if_enabled
 
-    anima = MagicMock()
-    anima.memory.anima_dir = tmp_path
     cfg = MagicMock(
         knowledge_self_correction_enabled=True,
         knowledge_self_correction_max_reconsolidation_files=3,
@@ -116,8 +114,8 @@ async def test_system_consolidation_helper_uses_configured_limits(tmp_path: Path
         new_callable=AsyncMock,
         return_value={"ok": True},
     ) as mock_run:
-        await SystemConsolidationMixin._run_knowledge_self_correction_if_enabled(
-            anima,
+        await run_knowledge_self_correction_if_enabled(
+            tmp_path,
             "test_anima",
             cfg,
             model="test-model",

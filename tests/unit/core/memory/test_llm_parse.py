@@ -88,9 +88,6 @@ class TestStripCodeFence:
     def test_no_fence_returns_unchanged(self) -> None:
         assert strip_code_fence("plain text") == "plain text"
 
-    def test_distiller_delegates(self, distiller) -> None:
-        assert distiller._strip_code_fence("```json\n[1]\n```") == "[1]"
-
     def test_consolidation_sanitizer_json_fence(self) -> None:
         from core.memory.maintenance.consolidation import ConsolidationEngine
 
@@ -127,7 +124,7 @@ class TestLoadJson:
         assert "Failed to parse test as JSON" in caplog.text
 
 
-# ── en template support (procedure_from_resolved / classification) ────
+# ── en template support (procedure_from_resolved) ────
 
 
 class TestEnglishProcedureParsing:
@@ -146,18 +143,6 @@ class TestEnglishProcedureParsing:
         assert items[0]["description"] == "Deploy to production"
         assert items[0]["tags"] == ["deploy", "ops"]
         assert "Deploy" in items[0]["content"]
-
-    def test_parse_knowledge_items_accepts_en_headings(self, distiller) -> None:
-        text = (
-            "## knowledge extraction\n"
-            "- Filename: knowledge/api.md\n"
-            "  Content: # API\n\nAlways be idempotent.\n\n"
-            "## procedure extraction\n(none)"
-        )
-        items = distiller._parse_knowledge_items(text)
-        assert len(items) == 1
-        assert items[0]["filename"] == "knowledge/api.md"
-        assert "idempotent" in items[0]["content"]
 
     def test_json_repair_in_weekly_pattern(self, distiller) -> None:
         broken = '```json\n[{"title": "t", "content": "# T",}]\n```'
