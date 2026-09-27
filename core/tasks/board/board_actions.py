@@ -125,9 +125,14 @@ def run_board_action(
     task_id: str,
     ttl_seconds: int | None = None,
     text: str | None = None,
+    owner: str | None = None,
+    override_lease: bool = False,
     store=None,
 ) -> dict[str, Any]:
     """Apply one lease-guarded action and return a JSON-safe result.
+
+    ``owner`` restricts task resolution to that anima. ``override_lease`` skips
+    the lease checks for an explicit human operation.
 
     Raises ``BoardActionError`` for refusals. Storage errors propagate so the
     CLI can decide whether to retry through the host.
@@ -138,7 +143,16 @@ def run_board_action(
     if action not in LEASE_ACTIONS:
         raise BoardActionError(f"unknown board action: {action}", 2)
     store = store or get_task_store()
-    match = resolve_task(store, task_id)
+    if owner is not None:
+        matches = find_task_matches(store, task_id, owner=owner)
+        if not matches:
+            raise BoardActionError(f"task not found: {task_id}", 1)
+        if len(matches) > 1:
+            owners = ", ".join(f"{item['anima']}/{item['task_id']}" for item in matches)
+            raise BoardActionError(f"task ID is ambiguous ({owners}); use task show ID --anima OWNER", 2)
+        match = matches[0]
+    else:
+        match = resolve_task(store, task_id)
     owner, canonical_id = match["anima"], match["task_id"]
     entry = match["entry"]
 
@@ -183,11 +197,12 @@ def run_board_action(
             "message": f"Task is already {entry['status']}; unchanged",
         }
 
-    lease = store.get_lease(owner, canonical_id)
-    if lease and lease["holder"] != actor:
-        raise BoardActionError(f"task is leased by {lease['holder']} until {lease['expires_at']}", 2)
-    if actor != owner and lease is None:
-        raise BoardActionError("claim a lease before changing another anima's task", 2)
+    if not override_lease:
+        lease = store.get_lease(owner, canonical_id)
+        if lease and lease["holder"] != actor:
+            raise BoardActionError(f"task is leased by {lease['holder']} until {lease['expires_at']}", 2)
+        if actor != owner and lease is None:
+            raise BoardActionError("claim a lease before changing another anima's task", 2)
     if not (text or "").strip():
         raise BoardActionError("note/reason must not be empty", 2)
 

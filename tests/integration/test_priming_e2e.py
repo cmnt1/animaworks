@@ -214,7 +214,6 @@ async def test_priming_with_real_anima_directory(anima_dir: Path):
             message="プライミングレイヤーのテストを実装しています。200msの目標を達成できるか確認中です。",
             sender_name="yamada",
             channel="chat",
-            enable_dynamic_budget=True,
         )
 
         # Channel A: Sender profile should be loaded
@@ -411,7 +410,6 @@ async def test_priming_dynamic_budget_adjustment(anima_dir: Path):
             message="こんにちは",
             sender_name="yamada",
             channel="chat",
-            enable_dynamic_budget=True,
             profile="compact",
             max_tokens=2000,
         )
@@ -423,7 +421,6 @@ async def test_priming_dynamic_budget_adjustment(anima_dir: Path):
             "RAG統合による検索精度向上の見込みについて詳しく説明してください。",
             sender_name="yamada",
             channel="chat",
-            enable_dynamic_budget=True,
             profile="compact",
             max_tokens=2000,
         )
@@ -442,7 +439,6 @@ async def test_priming_dynamic_budget_adjustment(anima_dir: Path):
             message="定期チェック",
             sender_name="system",
             channel="heartbeat",
-            enable_dynamic_budget=True,
             profile="compact",
             max_tokens=2000,
         )

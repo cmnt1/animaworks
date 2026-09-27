@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.tasks.board.store import TaskBoardStore
 from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
 
 
 def _create_app(tmp_path: Path, anima_names: list[str]):
+    os.environ["ANIMAWORKS_DATA_DIR"] = str(tmp_path)
     animas_dir = tmp_path / "animas"
     shared_dir = tmp_path / "shared"
     for name in anima_names:
@@ -58,7 +59,7 @@ def _create_app(tmp_path: Path, anima_names: list[str]):
     return app
 
 
-async def test_taskboard_api_lists_patches_and_summarizes_through_full_app(tmp_path: Path) -> None:
+async def test_taskboard_api_lists_summarizes_and_cancels_through_full_app(tmp_path: Path) -> None:
     app = _create_app(tmp_path, ["alice", "bob"])
     alice_queue = TaskQueueManager(app.state.animas_dir / "alice")
     bob_queue = TaskQueueManager(app.state.animas_dir / "bob")
@@ -80,31 +81,21 @@ async def test_taskboard_api_lists_patches_and_summarizes_through_full_app(tmp_p
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         list_resp = await client.get("/api/task-board", params={"assignee": "alice"})
-        patch_resp = await client.patch(
-            f"/api/task-board/bob/{bob_task.task_id}",
-            json={
-                "visibility": "snoozed",
-                "snoozed_until": "2026-05-15T10:00:00+09:00",
-                "actor": "planner",
-            },
+        cancel_resp = await client.post(
+            f"/api/task-board/bob/{bob_task.task_id}/cancel",
+            json={"reason": "obsolete"},
         )
         summary_resp = await client.get("/api/task-board/summary")
-        legacy_resp = await client.get("/api/tasks/summary")
 
     assert list_resp.status_code == 200
     assert [task["task_id"] for task in list_resp.json()["tasks"]] == [alice_task.task_id]
 
-    assert patch_resp.status_code == 200
-    assert patch_resp.json()["task"]["visibility"] == "snoozed"
-    assert bob_queue.get_task_by_id(bob_task.task_id).status == "pending"
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["result"]["status"] == "cancelled"
+    assert bob_queue.get_task_by_id(bob_task.task_id).status == "cancelled"
 
     summary = summary_resp.json()
     assert summary["pending"] == 1
-    assert summary["blocked"] == 0
-    assert summary["snoozed"] == 1
+    assert summary["in_progress"] == 0
+    assert summary["delegated"] == 0
     assert summary["total_active"] == 1
-    assert legacy_resp.json() == {"pending": 1, "in_progress": 0, "total_active": 1}
-
-    metadata = TaskBoardStore(app.state.shared_dir / "taskboard.sqlite3").get_metadata("bob", bob_task.task_id)
-    assert metadata is not None
-    assert metadata.snoozed_until == "2026-05-15T10:00:00+09:00"

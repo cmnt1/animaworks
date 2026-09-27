@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
 from core.memory.priming import PrimingEngine
 from core.notification import notification_key_for
-from core.tasks.board.store import TaskBoardStore
-from core.time_utils import now_iso, now_local
+from core.time_utils import now_iso
 
 
 def _write_activity(anima_dir: Path, entries: list[dict]) -> None:
@@ -22,21 +20,17 @@ def _write_activity(anima_dir: Path, entries: list[dict]) -> None:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-@pytest.mark.asyncio
-async def test_human_notify_surfaces_even_after_same_key_notified(tmp_path: Path) -> None:
-    """Human notifications are shown regardless of prior notification_key metadata."""
-    data_dir = tmp_path / "data"
-    anima_dir = data_dir / "animas" / "rin"
+def _anima_dir(tmp_path: Path) -> Path:
+    anima_dir = tmp_path / "data" / "animas" / "rin"
     (anima_dir / "activity_log").mkdir(parents=True)
+    return anima_dir
+
+
+@pytest.mark.asyncio
+async def test_human_notify_is_surfaced(tmp_path: Path) -> None:
+    """Human notifications are shown regardless of any (now-removed) notification_key."""
+    anima_dir = _anima_dir(tmp_path)
     body = "Please check deployment."
-    key = notification_key_for("", body)
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="rin",
-        task_id="task123456",
-        notification_key=key,
-        last_notified_at=(now_local() - timedelta(hours=1)).isoformat(),
-    )
     _write_activity(
         anima_dir,
         [
@@ -56,20 +50,11 @@ async def test_human_notify_surfaces_even_after_same_key_notified(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_human_notify_surfaces_with_subject_body_key_meta(tmp_path: Path) -> None:
-    """Human notifications are shown even when notification_key metadata is present."""
-    data_dir = tmp_path / "data"
-    anima_dir = data_dir / "animas" / "rin"
-    (anima_dir / "activity_log").mkdir(parents=True)
+    """Human notifications render subject when present."""
+    anima_dir = _anima_dir(tmp_path)
     subject = "Deploy check"
     body = "Please check deployment."
-    key = notification_key_for(subject, body)
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="rin",
-        task_id="task123456",
-        notification_key=key,
-        last_notified_at=(now_local() - timedelta(hours=1)).isoformat(),
-    )
+    notification_key_for(subject, body)
     _write_activity(
         anima_dir,
         [
@@ -78,7 +63,7 @@ async def test_human_notify_surfaces_with_subject_body_key_meta(tmp_path: Path) 
                 "type": "human_notify",
                 "content": body,
                 "via": "configured_channels",
-                "meta": {"subject": subject, "notification_key": key},
+                "meta": {"subject": subject},
             }
         ],
     )
@@ -86,21 +71,11 @@ async def test_human_notify_surfaces_with_subject_body_key_meta(tmp_path: Path) 
     result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
 
     assert "Deploy check" in result
-    assert "Please check deployment" not in result
 
 
 @pytest.mark.asyncio
 async def test_human_notify_allows_new_body(tmp_path: Path) -> None:
-    data_dir = tmp_path / "data"
-    anima_dir = data_dir / "animas" / "rin"
-    (anima_dir / "activity_log").mkdir(parents=True)
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="rin",
-        task_id="task123456",
-        notification_key=notification_key_for("", "old body"),
-        last_notified_at=(now_local() - timedelta(hours=1)).isoformat(),
-    )
+    anima_dir = _anima_dir(tmp_path)
     _write_activity(
         anima_dir,
         [
@@ -119,20 +94,15 @@ async def test_human_notify_allows_new_body(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_human_notify_surfaces_when_taskboard_db_is_corrupt(tmp_path: Path) -> None:
-    data_dir = tmp_path / "data"
-    anima_dir = data_dir / "animas" / "rin"
-    (anima_dir / "activity_log").mkdir(parents=True)
-    shared_dir = data_dir / "shared"
-    shared_dir.mkdir()
-    (shared_dir / "taskboard.sqlite3").write_text("not sqlite", encoding="utf-8")
+async def test_human_notify_surfaces_without_taskboard_db(tmp_path: Path) -> None:
+    anima_dir = _anima_dir(tmp_path)
     _write_activity(
         anima_dir,
         [
             {
                 "ts": now_iso(),
                 "type": "human_notify",
-                "content": "surface despite corrupt db",
+                "content": "surface despite no taskboard db",
                 "via": "slack",
             }
         ],
@@ -140,4 +110,4 @@ async def test_human_notify_surfaces_when_taskboard_db_is_corrupt(tmp_path: Path
 
     result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
 
-    assert "surface despite corrupt db" in result
+    assert "surface despite no taskboard db" in result

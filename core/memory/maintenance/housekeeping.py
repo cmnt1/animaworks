@@ -268,8 +268,6 @@ async def run_housekeeping(
             housekeeping.pending_processing_stale_hours,
             housekeeping.background_running_stale_hours,
             housekeeping.current_state_stale_hours,
-            housekeeping.taskboard_suppressed_retention_days,
-            housekeeping.taskboard_orphan_metadata_stale_hours,
         )
         results["taskboard_stale"] = r
     except Exception:

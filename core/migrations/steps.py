@@ -2124,6 +2124,119 @@ def step_v0147_guide_permissions_note_resync(data_dir: Path, dry_run: bool, verb
     return step_common_skills_resync(data_dir, dry_run, verbose)
 
 
+def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Retire TaskBoard presentation metadata; tasks are the only board source.
+
+    Backs up the shared DB, transfers ``source_ref`` into canonical task meta,
+    reports active-but-archived / orphan WAITING cards, then drops the metadata
+    and event tables, and removes the retired housekeeping settings.
+    """
+    del verbose
+    import os
+    import sqlite3
+
+    db_path = data_dir / "shared" / "taskboard.sqlite3"
+    details: list[str] = []
+    if not db_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["shared/taskboard.sqlite3 not found; skip"])
+
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='taskboard_metadata'"
+            ).fetchone():
+                return StepResult(changed=0, skipped=1, details=["taskboard_metadata table not present; skip"])
+
+            rows = conn.execute(
+                "SELECT anima_name, task_id, visibility, column, source_ref FROM taskboard_metadata"
+            ).fetchall()
+            inconsistent: list[str] = []
+            orphans = 0
+            source_ref_candidates: list[tuple[str, str, str]] = []
+            for anima, tid, visibility, column, source_ref in rows:
+                canon = conn.execute(
+                    "SELECT entry_json FROM tasks WHERE anima=? AND task_id=?", (anima, tid)
+                ).fetchone()
+                if canon is None:
+                    if column == "waiting":
+                        alias_exists = conn.execute(
+                            "SELECT 1 FROM task_aliases WHERE viewer=? AND alias=?", (anima, tid)
+                        ).fetchone()
+                        if not alias_exists:
+                            orphans += 1
+                    continue
+                status = json.loads(canon[0]).get("status")
+                if visibility in ("expired", "archived", "tombstoned") and status in ("pending", "in_progress"):
+                    inconsistent.append(f"{anima}/{tid}")
+                existing_ref = json.loads(canon[0]).get("meta", {}).get("source_ref")
+                if source_ref and not source_ref.startswith("task_queue:") and not existing_ref:
+                    source_ref_candidates.append((anima, tid, source_ref))
+
+            details.append(f"visible-but-archived cards: {len(inconsistent)}")
+            details.extend(f"visible-but-archived: {ref}" for ref in inconsistent)
+            details.append(f"orphan WAITING cards: {orphans}")
+            details.append(f"source_ref transfers: {len(source_ref_candidates)}")
+
+            changed = bool(inconsistent or orphans or source_ref_candidates)
+            if dry_run:
+                return StepResult(changed=1 if changed else 0, skipped=0, details=details)
+
+            # Pre-backup (no overwrite)
+            backups_dir = data_dir / "shared" / "backups"
+            backups_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+            backup_path = backups_dir / f"taskboard-pre-metadata-retire-{stamp}.sqlite3"
+            fd = os.open(backup_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.close(fd)
+            dest = sqlite3.connect(backup_path)
+            try:
+                conn.backup(dest)
+            finally:
+                dest.close()
+            details.append(f"backup: {backup_path.name}")
+
+            for anima, tid, source_ref in source_ref_candidates:
+                conn.execute(
+                    "UPDATE tasks SET entry_json=json_set(entry_json,'$.meta.source_ref',?) "
+                    "WHERE anima=? AND task_id=?",
+                    (source_ref, anima, tid),
+                )
+
+            conn.execute("DROP TABLE taskboard_metadata")
+            conn.execute("DROP TABLE taskboard_events")
+            conn.commit()
+
+            config_path = data_dir / "config.json"
+            if config_path.is_file():
+                try:
+                    config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+                    hk = config.get("housekeeping") if isinstance(config, dict) else None
+                    removed = False
+                    if isinstance(hk, dict):
+                        for key in (
+                            "taskboard_suppressed_retention_days",
+                            "taskboard_orphan_metadata_stale_hours",
+                        ):
+                            if key in hk:
+                                del hk[key]
+                                removed = True
+                    if removed:
+                        config_path.write_text(
+                            json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                        )
+                        details.append("removed retired housekeeping settings")
+                except Exception:
+                    logger.warning("Failed to clean retired housekeeping settings", exc_info=True)
+
+            return StepResult(changed=1, skipped=0, details=details)
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.exception("step_taskboard_metadata_retire failed")
+        return StepResult(changed=0, skipped=0, details=details, error=str(exc))
+
+
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
     steps = [
@@ -2385,6 +2498,12 @@ def register_all_steps(runner: Any) -> None:
             "Remove retired RAG vector-worker config without deleting data",
             "structural",
             step_rag_vector_worker_config_cleanup,
+        ),
+        MigrationStep(
+            "taskboard_metadata_retire",
+            "Retire TaskBoard presentation metadata (tasks are the only board source)",
+            "db_sync",
+            step_taskboard_metadata_retire,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

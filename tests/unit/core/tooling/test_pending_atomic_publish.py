@@ -99,10 +99,6 @@ def test_delegate_task_atomically_publishes_pending_json(
     handler._check_subordinate = lambda _name: None
 
     monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
-    monkeypatch.setattr(
-        "core.tooling.handler_delegation._record_taskboard_delegation",
-        lambda **_kwargs: None,
-    )
 
     handler._handle_delegate_task(
         {

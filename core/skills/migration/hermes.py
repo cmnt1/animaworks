@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from core.skills.hub import SkillHub
-from core.tasks.board.store import TaskBoardStore
 from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
 
@@ -352,20 +351,19 @@ def _migrate_tasks(
                 report.add_item(MigrationItem("hermes_task", str(path), target_path, "taskboard_import", "skipped", fp))
                 continue
             if options.apply:
-                entry = TaskQueueManager(_anima_dir(options)).add_task(
+                TaskQueueManager(_anima_dir(options)).add_task(
                     source="anima",
                     original_instruction=str(task.get("description") or summary),
                     assignee=options.target_anima,
                     summary=summary,
                     task_id=task_id,
                     status=task_status(str(task.get("status") or "pending")),
-                    meta={"source_system": "hermes", "import_batch_id": report.batch_id, "source_fingerprint": fp},
-                )
-                TaskBoardStore(options.data_dir / "shared" / "taskboard.sqlite3").upsert_metadata(
-                    anima_name=options.target_anima,
-                    task_id=entry.task_id,
-                    actor="migration",
-                    source_ref=f"hermes://{path.name}#{index}",
+                    meta={
+                        "source_system": "hermes",
+                        "import_batch_id": report.batch_id,
+                        "source_fingerprint": fp,
+                        "source_ref": f"hermes://{path.name}#{index}",
+                    },
                 )
                 append_import_lock(
                     import_lock_path,

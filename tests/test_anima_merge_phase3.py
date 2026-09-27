@@ -8,10 +8,11 @@ from pathlib import Path
 import pytest
 
 from core.lifecycle.anima_merge import AnimaMergeService, MergePhase
-from core.tasks.board.store import TaskBoardStore
 from core.tasks.queue import TaskQueueManager
 from tests.test_anima_merge import (
     _add_rewrite_refs_fixture,
+    _read_taskboard_events,
+    _read_taskboard_metadata,
     _setup_data_dir,
     _stub_rebuild_substeps,
     _write,
@@ -116,17 +117,21 @@ def test_anima_merge_rewrite_refs_updates_all_external_surfaces(
     assert (target / "state" / "task_results" / "unique-task.md").read_text(encoding="utf-8") == "unique result\n"
     assert (target / "state" / "task_results" / "terminal-result.md").read_text(encoding="utf-8") == "terminal result\n"
 
-    board = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    assert {(item.anima_name, item.task_id) for item in board.list_metadata()} == {
+    metadata = _read_taskboard_metadata(data_dir / "shared" / "taskboard.sqlite3")
+    assert {(row["anima_name"], row["task_id"]) for row in metadata} == {
         ("target", "collision-task"),
         ("target", "collision-task__from_source"),
         ("target", "unique-task"),
     }
-    moved_board = board.get_metadata("target", "collision-task__from_source")
-    assert moved_board is not None
-    assert moved_board.source_ref == "task_queue:target:collision-task__from_source"
-    worker_event = next(event for event in board.list_events() if event["anima_name"] == "worker")
-    assert worker_event["payload"]["ref"] == {
+    moved = next(row for row in metadata if row["task_id"] == "collision-task__from_source")
+    assert moved is not None
+    assert moved["source_ref"] == "task_queue:target:collision-task__from_source"
+    worker_event = next(
+        event
+        for event in _read_taskboard_events(data_dir / "shared" / "taskboard.sqlite3")
+        if event["anima_name"] == "worker"
+    )
+    assert json.loads(worker_event["payload_json"])["ref"] == {
         "anima_name": "target",
         "task_id": "collision-task__from_source",
     }
@@ -208,8 +213,7 @@ def test_anima_merge_rewrite_refs_resume_reuses_mapping_without_duplicates(
         "task_id_mapping"
     ]
     queue_after_failure = (target / "state" / "task_queue.jsonl").read_bytes()
-    board = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    events_after_failure = board.list_events()
+    events_after_failure = _read_taskboard_events(data_dir / "shared" / "taskboard.sqlite3")
 
     AnimaMergeService(data_dir, "source", "target").run(execute=True, resume=True)
 
@@ -217,7 +221,7 @@ def test_anima_merge_rewrite_refs_resume_reuses_mapping_without_duplicates(
     assert completed["status"] == "done"
     assert completed["phases"][MergePhase.REWRITE_REFS.value]["artifacts"]["task_id_mapping"] == mapping
     assert (target / "state" / "task_queue.jsonl").read_bytes() == queue_after_failure
-    assert TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3").list_events() == events_after_failure
+    assert _read_taskboard_events(data_dir / "shared" / "taskboard.sqlite3") == events_after_failure
     assert len(list((data_dir / "shared" / "inbox" / "target").glob("message__from_source*.json"))) == 1
 
 

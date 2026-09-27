@@ -24,39 +24,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("animaworks.tool_handler")
 
 
-def _record_taskboard_delegation(
-    *,
-    delegated_to: str,
-    delegated_task_id: str,
-    delegator: str,
-    tracking_task_id: str | None = None,
-) -> None:
-    """Record optional TaskBoard presentation metadata after canonical publication."""
-    from core.tasks.board.models import AttentionVisibility, BoardColumn
-    from core.tasks.board.store import TaskBoardStore
-
-    store = TaskBoardStore()
-    store.upsert_metadata(
-        anima_name=delegated_to,
-        task_id=delegated_task_id,
-        actor=delegator,
-        event_type="metadata_upserted",
-        visibility=AttentionVisibility.ACTIVE,
-        column=BoardColumn.TODO,
-        source_ref=f"task_queue:{delegated_to}:{delegated_task_id}",
-    )
-    if tracking_task_id:
-        store.upsert_metadata(
-            anima_name=delegator,
-            task_id=tracking_task_id,
-            actor=delegator,
-            event_type="metadata_upserted",
-            visibility=AttentionVisibility.ACTIVE,
-            column=BoardColumn.WAITING,
-            source_ref=f"task_queue:{delegator}:{tracking_task_id}",
-        )
-
-
 class DelegationMixin(OrgHelpersMixin):
     """Mixin for delegate_task and task_tracker tools."""
 
@@ -158,9 +125,8 @@ class DelegationMixin(OrgHelpersMixin):
             "working_directory": resolved_wd,
             "model": model,
         }
-        used_server_fallback = False
         try:
-            used_server_fallback = publish_delegation(
+            publish_delegation(
                 target_dir,
                 task_desc,
                 delegator=self._anima_name,
@@ -171,20 +137,6 @@ class DelegationMixin(OrgHelpersMixin):
         except Exception as exc:
             logger.exception("delegate_task persistence failed")
             return _error_result("PersistenceFailed", str(exc))
-
-        if not used_server_fallback:
-            try:
-                _record_taskboard_delegation(
-                    delegated_to=target_name,
-                    delegated_task_id=sub_task_id,
-                    delegator=self._anima_name,
-                    tracking_task_id=tracking_task_id,
-                )
-            except Exception as e:
-                logger.warning(
-                    "TaskBoard write failed in delegate_task; queue entries remain authoritative: %s",
-                    e,
-                )
 
         # Build outgoing origin_chain (provenance Phase 3)
         outgoing_chain = build_outgoing_origin_chain(

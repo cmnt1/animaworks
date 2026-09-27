@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.tasks.board.store import TaskBoardStore
 from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
@@ -37,9 +36,6 @@ async def test_taskboard_surfaces_all_channel_e_tasks_end_to_end(tmp_path: Path)
     results_dir.mkdir(parents=True)
     (results_dir / "hidden1234.md").write_text("hidden completed result", encoding="utf-8")
     (results_dir / "visible-result.md").write_text("fresh completed result", encoding="utf-8")
-
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(anima_name="sakura", task_id="hidden1234", visibility="archived")
 
     output = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 

@@ -1,22 +1,11 @@
-"""TaskBoard storage and projection utilities."""
+"""TaskBoard: a single view read directly from the canonical TaskStore."""
 
-from core.tasks.board.models import (
-    AttentionVisibility,
-    BoardColumn,
-    BoardTask,
-    TaskBoardMetadata,
-    TaskQueueRef,
-)
-from core.tasks.board.projector import project_all, project_anima
-from core.tasks.board.store import TaskBoardStore
+from core.tasks.board.models import BoardColumn, BoardRow
+from core.tasks.board.view import list_board, summarize_board
 
 __all__ = [
-    "AttentionVisibility",
     "BoardColumn",
-    "BoardTask",
-    "TaskBoardMetadata",
-    "TaskBoardStore",
-    "TaskQueueRef",
-    "project_all",
-    "project_anima",
+    "BoardRow",
+    "list_board",
+    "summarize_board",
 ]

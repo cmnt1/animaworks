@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from core.schemas import TaskEntry
+from core.tasks.board.board_actions import BoardActionError, run_board_action
 from core.tasks.board.tasks import TaskStore, task_database_path
 from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
@@ -103,6 +106,32 @@ def test_board_rows_include_latest_attempt_details(tmp_path, monkeypatch):
     assert row["started_at"]
     assert row["ended_at"]
     assert row["stop_kind"] == "interrupted"
+
+
+def test_run_board_action_override_lease_skips_lease_checks(tmp_path, monkeypatch):
+    worker_dir, store = _runtime(tmp_path, monkeypatch)
+    store.apply("worker", _entry("shared", status="pending").model_dump())
+
+    def run(**kwargs):
+        kwargs.setdefault("store", store)
+        return run_board_action(**kwargs)
+
+    # Without a lease, a different actor cannot change another anima's task.
+    with pytest.raises(BoardActionError, match="claim a lease"):
+        run(actor="other", action="done", task_id="shared", text="done by other")
+
+    # override_lease (explicit human operation) skips the lease checks.
+    result = run(
+        actor="other",
+        action="done",
+        task_id="shared",
+        text="done by other",
+        override_lease=True,
+    )
+    assert result["ok"] is True
+    assert result["status"] == "done"
+    reloaded = TaskQueueManager(worker_dir).get_task_by_id("shared")
+    assert reloaded is not None and reloaded.status == "done"
 
 
 def test_old_database_gets_lease_table_even_when_claim_control_exists(tmp_path):

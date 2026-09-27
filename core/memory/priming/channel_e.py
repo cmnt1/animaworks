@@ -19,7 +19,6 @@ from pathlib import Path
 from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
-from core.paths import get_animas_dir
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.priming")
@@ -126,50 +125,23 @@ async def channel_e_pending_tasks(
     if denied_roots and unresolved_queue_path.is_symlink():
         queue_path = None
 
-    from core.tasks.board.store import taskboard_db_path_for_anima
     from core.tasks.board.tasks import task_database_path
 
-    taskboard_path = _resolved_readable_path(taskboard_db_path_for_anima(anima_dir), denied_roots)
     task_store_path = _resolved_readable_path(task_database_path(anima_dir), denied_roots)
 
-    try:
-        if queue_path is None or task_store_path is None or taskboard_path is None:
-            raise PermissionError("pending task source is explicitly denied")
-        from core.tasks.board.formatting import format_tasks_for_priming
-        from core.tasks.board.projector import project_anima
-        from core.tasks.board.store import TaskBoardStore
-
-        store = TaskBoardStore(taskboard_path)
-        board_tasks = await asyncio.to_thread(
-            project_anima,
-            anima_dir,
-            store,
-            anima_name=anima_dir.name,
-            include_missing=True,
-            include_archived=True,
-            archived_limit=0,
-        )
-        task_updates.update({task.task_id: task.queue_updated_at or "" for task in board_tasks})
-        animas_dir = anima_dir.parent if anima_dir.parent.name == "animas" else get_animas_dir()
-        queue_summary = format_tasks_for_priming(board_tasks, _ITEM_COLLECTION_BUDGET, animas_dir=animas_dir)
-        if queue_summary:
-            parts.append(queue_summary)
-    except Exception:
-        logger.debug("Channel E TaskBoard projection failed; falling back to task_queue formatter", exc_info=True)
+    if queue_path is not None and task_store_path is not None:
         from core.tasks.queue import TaskQueueManager
 
         try:
-            if queue_path is None or task_store_path is None:
-                raise PermissionError("task queue is explicitly denied")
             manager = TaskQueueManager(anima_dir)
 
-            def collect_fallback() -> tuple[str, dict[str, str]]:
-                fallback_tasks = [*manager.get_pending(), *manager.get_delegated_tasks()]
-                updates = {task.task_id: task.updated_at or task.ts for task in fallback_tasks}
+            def collect_pending() -> tuple[str, dict[str, str]]:
+                pending_tasks = [*manager.get_pending(), *manager.get_delegated_tasks()]
+                updates = {task.task_id: task.updated_at or task.ts for task in pending_tasks}
                 return manager.format_for_priming(_ITEM_COLLECTION_BUDGET), updates
 
-            queue_summary, fallback_updates = await asyncio.to_thread(collect_fallback)
-            task_updates.update(fallback_updates)
+            queue_summary, pending_updates = await asyncio.to_thread(collect_pending)
+            task_updates.update(pending_updates)
             if queue_summary:
                 parts.append(queue_summary)
         except Exception:

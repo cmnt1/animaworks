@@ -23,7 +23,6 @@ from core.lifecycle.anima_merge import (
 )
 from core.lifecycle.anima_merge.verification import source_reference_report
 from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records
-from core.tasks.board.store import TaskBoardStore
 from core.time_utils import now_local
 
 
@@ -192,6 +191,103 @@ def _task_entry(
     }
 
 
+def _seed_taskboard_db(
+    db_path: Path,
+    metadata_rows: list[dict],
+    events: list[dict] | None = None,
+) -> None:
+    """Seed a legacy taskboard DB (metadata + events) without TaskBoardStore.
+
+    The merged taskboard tables are kept for the anima-merge surface scan until
+    R19; the canonical TaskStore does not create them, so raw-SQLite seeding
+    lets the merge fixture exercise that scan.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS taskboard_metadata (
+            anima_name TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            visibility TEXT NOT NULL DEFAULT 'active',
+            column TEXT,
+            position REAL,
+            expires_at TEXT,
+            snoozed_until TEXT,
+            last_notified_at TEXT,
+            notification_key TEXT,
+            surface_count INTEGER NOT NULL DEFAULT 0,
+            source_ref TEXT,
+            replaced_by TEXT,
+            tombstone_reason TEXT,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL DEFAULT 'system',
+            PRIMARY KEY (anima_name, task_id)
+        );
+        CREATE TABLE IF NOT EXISTS taskboard_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            anima_name TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}'
+        );
+        """
+    )
+    for row in metadata_rows:
+        conn.execute(
+            "INSERT INTO taskboard_metadata "
+            "(anima_name, task_id, visibility, column, surface_count, source_ref, updated_at, updated_by) "
+            "VALUES (?,?,?,?,0,?,?,?)",
+            (
+                row["anima_name"],
+                row["task_id"],
+                row.get("visibility", "active"),
+                row.get("column"),
+                row.get("source_ref"),
+                row.get("updated_at", "2026-01-01T09:00:00+09:00"),
+                "system",
+            ),
+        )
+    for event in events or []:
+        conn.execute(
+            "INSERT INTO taskboard_events (ts, actor, event_type, anima_name, task_id, payload_json) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                event.get("ts", "2026-01-01T09:00:00+09:00"),
+                event["actor"],
+                event["event_type"],
+                event["anima_name"],
+                event["task_id"],
+                json.dumps(event.get("payload", {}), ensure_ascii=False),
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _read_taskboard_metadata(db_path: Path) -> list[dict]:
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM taskboard_metadata ORDER BY anima_name, task_id").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def _read_taskboard_events(db_path: Path) -> list[dict]:
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM taskboard_events ORDER BY id").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def _add_rewrite_refs_fixture(data_dir: Path, source: Path, target: Path) -> None:
     _write(
         source / "episodes" / "2026-07-15.md",
@@ -340,31 +436,22 @@ def _add_rewrite_refs_fixture(data_dir: Path, source: Path, target: Path) -> Non
     _write(source / "state" / "task_results" / "unique-task.md", "unique result\n")
     _write(source / "state" / "task_results" / "terminal-result.md", "terminal result\n")
 
-    board = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    board.upsert_metadata(
-        anima_name="target",
-        task_id="collision-task",
-        actor="target",
-        source_ref="task_queue:target:collision-task",
-    )
-    board.upsert_metadata(
-        anima_name="source",
-        task_id="collision-task",
-        actor="source",
-        source_ref="task_queue:source:collision-task",
-    )
-    board.upsert_metadata(
-        anima_name="source",
-        task_id="unique-task",
-        actor="source",
-        source_ref="task_queue:source:unique-task",
-    )
-    board.append_event(
-        event_type="metadata_upserted",
-        anima_name="worker",
-        task_id="tracking-task",
-        actor="worker",
-        payload={"ref": {"anima_name": "source", "task_id": "collision-task"}},
+    _seed_taskboard_db(
+        data_dir / "shared" / "taskboard.sqlite3",
+        [
+            {"anima_name": "target", "task_id": "collision-task", "source_ref": "task_queue:target:collision-task"},
+            {"anima_name": "source", "task_id": "collision-task", "source_ref": "task_queue:source:collision-task"},
+            {"anima_name": "source", "task_id": "unique-task", "source_ref": "task_queue:source:unique-task"},
+        ],
+        events=[
+            {
+                "event_type": "metadata_upserted",
+                "anima_name": "worker",
+                "task_id": "tracking-task",
+                "actor": "worker",
+                "payload": {"ref": {"anima_name": "source", "task_id": "collision-task"}},
+            }
+        ],
     )
 
     _write(
@@ -1021,27 +1108,30 @@ def test_anima_merge_verify_residual_reference_then_resume_and_tombstone(
 
 def test_anima_merge_verify_scans_nonempty_taskboard_rows(tmp_path: Path) -> None:
     data_dir, _source, _target = _setup_data_dir(tmp_path)
-    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
-    store.upsert_metadata(
-        anima_name="target",
-        task_id="task-1",
-        actor="target",
-        source_ref="animas/source/task-1",
-    )
-    store.append_event(
-        event_type="surface_recorded",
-        anima_name="target",
-        task_id="task-1",
-        actor="target",
-        payload={"created_by": "source"},
+    _seed_taskboard_db(
+        data_dir / "shared" / "taskboard.sqlite3",
+        [{"anima_name": "target", "task_id": "task-1", "source_ref": "animas/source/task-1"}],
+        events=[
+            {
+                "event_type": "surface_recorded",
+                "anima_name": "target",
+                "task_id": "task-1",
+                "actor": "target",
+                "payload": {"created_by": "source"},
+            }
+        ],
     )
 
     report = source_reference_report(data_dir, "source")
 
     assert "shared/taskboard.sqlite3" in report["surfaces_checked"]
-    assert any(location.endswith("taskboard_metadata[1].source_ref") for location in report["residual_references"])
-    assert any(":taskboard_events[1].payload_json" in location for location in report["residual_references"])
-    assert any(":taskboard_events[2].payload_json.created_by" in location for location in report["references_allowed"])
+    assert any(
+        loc.startswith("shared/taskboard.sqlite3:taskboard_metadata") and loc.endswith(".source_ref")
+        for loc in report["residual_references"]
+    )
+    assert any(
+        "taskboard_events" in loc and loc.endswith("payload_json.created_by") for loc in report["references_allowed"]
+    )
 
 
 def test_anima_merge_verify_rejects_empty_probe_content(
