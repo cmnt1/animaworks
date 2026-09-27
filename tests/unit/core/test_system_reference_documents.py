@@ -190,6 +190,30 @@ class TestCopyInfrastructure:
         content = (data_dir / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
         assert content == "# Japanese Fallback"
 
+    def test_ko_runtime_prompts_include_only_direct_read_files_with_fallback(self, tmp_path: Path):
+        from core.infra.runtime_init import _copy_infrastructure
+
+        templates = tmp_path / "templates"
+        ko_prompts = templates / "ko/prompts"
+        en_prompts = templates / "en/prompts"
+        ko_prompts.mkdir(parents=True)
+        en_prompts.mkdir(parents=True)
+        (ko_prompts / "character_design_guide.md").write_text("ko guide", encoding="utf-8")
+        (ko_prompts / "environment.md").write_text("do not copy", encoding="utf-8")
+        (en_prompts / "face_types.md").write_text("en face types", encoding="utf-8")
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ko"),
+        ):
+            _copy_infrastructure(data_dir)
+
+        assert (data_dir / "prompts/character_design_guide.md").read_text(encoding="utf-8") == "ko guide"
+        assert (data_dir / "prompts/face_types.md").read_text(encoding="utf-8") == "en face types"
+        assert not (data_dir / "prompts/environment.md").exists()
+
 
 class TestMergeTemplates:
     """Verify merge_templates copies missing common_knowledge files."""
@@ -220,6 +244,32 @@ class TestMergeTemplates:
         assert "common_knowledge/00_index.md" in added
         assert "common_knowledge/organization/roles.md" in added
         assert (data_dir / "common_knowledge" / "00_index.md").exists()
+
+    def test_ko_prompts_fall_back_per_file_and_only_copy_runtime_read_files(self, tmp_path: Path):
+        from core.infra.runtime_init import merge_templates
+
+        templates = tmp_path / "templates"
+        (templates / "ko/prompts").mkdir(parents=True)
+        (templates / "en/prompts").mkdir(parents=True)
+        (templates / "ko/prompts/character_design_guide.md").write_text("ko guide", encoding="utf-8")
+        (templates / "en/prompts/face_types.md").write_text("en face types", encoding="utf-8")
+        (templates / "ko/prompts/environment.md").write_text("not used", encoding="utf-8")
+        data_dir = tmp_path / "data"
+        (data_dir / "prompts").mkdir(parents=True)
+        (data_dir / "prompts/character_design_guide.md").write_text("stale ko guide", encoding="utf-8")
+        (data_dir / "prompts/environment.md").write_text("keep existing runtime prompt", encoding="utf-8")
+
+        with (
+            patch("core.infra.runtime_init.TEMPLATES_DIR", templates),
+            patch("core.paths._get_locale", return_value="ko"),
+        ):
+            added = merge_templates(data_dir)
+
+        assert "prompts/character_design_guide.md" in added
+        assert "prompts/face_types.md" in added
+        assert (data_dir / "prompts/character_design_guide.md").read_text(encoding="utf-8") == "ko guide"
+        assert (data_dir / "prompts/face_types.md").read_text(encoding="utf-8") == "en face types"
+        assert (data_dir / "prompts/environment.md").read_text(encoding="utf-8") == "keep existing runtime prompt"
 
     def test_does_not_overwrite_existing_files(self, tmp_path: Path):
         from core.infra.runtime_init import merge_templates

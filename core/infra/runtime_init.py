@@ -148,13 +148,45 @@ def _copy_infrastructure(data_dir: Path) -> None:
             continue
         target = data_dir / item.name
         if item.is_dir():
-            if item.name in _INFRASTRUCTURE_DIRS:
+            if item.name in _INFRASTRUCTURE_DIRS and item.name != "prompts":
                 shutil.copytree(item, target, dirs_exist_ok=True)
         else:
             # bootstrap.md is only placed per-anima, not at data root
             if item.name == "bootstrap.md":
                 continue
             shutil.copy2(item, target)
+
+    # Prompt files used through direct Anima Read calls are the only runtime prompts.
+    from core.migrations.template_sync import RUNTIME_PROMPT_FILES
+
+    locale_fallbacks = tuple(dict.fromkeys((locale, "en", "ja")))
+    prompt_sources: dict[str, Path] = {}
+    for loc in locale_fallbacks:
+        for filename in RUNTIME_PROMPT_FILES:
+            source = TEMPLATES_DIR / loc / "prompts" / filename
+            if source.is_file() and not source.is_symlink():
+                prompt_sources.setdefault(filename, source)
+    for filename, source in prompt_sources.items():
+        target = data_dir / "prompts" / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+    # Fill locale-specific infrastructure gaps file-by-file without overwriting
+    # files copied from the selected locale above.
+    for loc in locale_fallbacks:
+        locale_root = TEMPLATES_DIR / loc
+        for directory in _INFRASTRUCTURE_DIRS - {"prompts"}:
+            source_root = locale_root / directory
+            if not source_root.is_dir() or source_root.is_symlink():
+                continue
+            for source in source_root.rglob("*"):
+                if source.is_symlink() or not source.is_file():
+                    continue
+                target = data_dir / directory / source.relative_to(source_root)
+                if target.exists():
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
 
     # Copy models.json from _shared/config_defaults/ to data_dir root
     models_json_src = TEMPLATES_DIR / "_shared" / "config_defaults" / "models.json"
@@ -190,49 +222,58 @@ def _legacy_copy_default_anima(data_dir: Path) -> None:
 def merge_templates(data_dir: Path) -> list[str]:
     """Copy infrastructure template files that don't exist in the runtime directory.
 
-    Walks the locale-specific templates tree and copies any file that is missing
-    from the runtime data directory.  prompts/ files are always overwritten to
-    keep in sync. anima_templates/ is skipped (animas are managed separately).
+    Walks locale templates in fallback order and selects each file from the
+    first locale that provides it. Only the two prompts read directly by Anima
+    are copied and overwritten; other runtime files are copied only when absent.
+    anima_templates/ is skipped (animas are managed separately).
 
     Returns a list of newly added file paths (relative to data_dir).
     """
     if not TEMPLATES_DIR.exists():
         raise FileNotFoundError(f"Templates directory not found: {TEMPLATES_DIR}. Is the project installed correctly?")
 
+    from core.migrations.template_sync import RUNTIME_PROMPT_FILES
     from core.paths import _get_locale
 
     locale = _get_locale()
-    locale_dir: Path | None = None
-    for loc in (locale, "en", "ja"):
-        candidate = TEMPLATES_DIR / loc
-        if candidate.exists():
-            locale_dir = candidate
-            break
-    if locale_dir is None:
+    locale_fallbacks = tuple(dict.fromkeys((locale, "en", "ja")))
+    sources: dict[Path, Path] = {}
+    found_locale_root = False
+    for loc in locale_fallbacks:
+        locale_dir = TEMPLATES_DIR / loc
+        if not locale_dir.is_dir() or locale_dir.is_symlink():
+            continue
+        found_locale_root = True
+        for src in locale_dir.rglob("*"):
+            if src.is_symlink() or not src.is_file():
+                continue
+            rel = src.relative_to(locale_dir)
+            parts = rel.parts
+            if not parts or parts[0] in {"anima_templates", "roles"}:
+                continue
+            if rel.name == "bootstrap.md" and len(parts) == 1:
+                continue
+            if parts[0] == "prompts" and (len(parts) != 2 or rel.name not in RUNTIME_PROMPT_FILES):
+                continue
+            if any(parent.is_symlink() for parent in src.parents if parent != TEMPLATES_DIR):
+                continue
+            sources.setdefault(rel, src)
+
+    if not found_locale_root:
         logger.warning("No locale template directory found; skipping merge")
         return []
 
     added: list[str] = []
 
-    # Walk locale directory for infrastructure templates
-    for src in locale_dir.rglob("*"):
-        if src.is_symlink() or src.is_dir():
-            continue
-        rel = src.relative_to(locale_dir)
-        parts = rel.parts
-        if parts[0] == "anima_templates":
-            continue
-        if rel.name == "bootstrap.md" and len(parts) == 1:
-            continue
-        # Roles: only copy .md files, not defaults.json (those are in _shared)
-        if parts[0] == "roles":
-            continue
+    for rel, src in sorted(sources.items()):
         dest = data_dir / rel
-        is_prompt = parts[0] == "prompts"
+        is_prompt = rel.parts[0] == "prompts"
         if is_prompt or not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.is_symlink():
+                dest.unlink()
             shutil.copy2(src, dest)
-            added.append(str(rel))
+            added.append(rel.as_posix())
             logger.info("Merged template file: %s", rel)
 
     # Copy models.json from _shared/config_defaults/ if missing

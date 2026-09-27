@@ -14,7 +14,6 @@ import logging
 import re
 import shutil
 from datetime import UTC, datetime
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -31,22 +30,6 @@ _RAGIGNORE_ARCHIVE_PATTERNS = tuple(
     for archive_dir in ("archive", "archived")
 )
 
-
-def _prime_tooling_imports() -> None:
-    """Load execution sanitizers before tooling schemas to avoid import cycles."""
-    import_module("core.execution._sanitize")
-
-
-# ── Section mapping for system_sections resync ─────────────────────
-
-_SECTION_FILES: dict[str, str] = {
-    "behavior_rules": "behavior_rules.md",
-    "environment": "environment.md",
-    "messaging_s": "messaging_s.md",
-    "messaging": "messaging.md",
-    "communication_rules": "communication_rules.md",
-    "a_reflection": "a_reflection.md",
-}
 
 # ── Category 1: Structural migrations ────────────────────────────
 
@@ -1014,145 +997,78 @@ def step_current_task_references(data_dir: Path, dry_run: bool, verbose: bool) -
 # ── Category 3: Framework template sync ──────────────────────────
 
 
-def step_prompt_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync prompts/ from templates via merge_templates."""
-    details: list[str] = []
+def step_template_sync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Sync bundled shared templates into runtime data."""
+    del verbose
+    from core.migrations.template_sync import sync_runtime_templates
+    from core.paths import _get_locale
+
+    result = sync_runtime_templates(data_dir, locale=_get_locale(), dry_run=dry_run)
+    if not dry_run and result.error is None and result.changed == 0:
+        return StepResult(
+            changed=1,
+            skipped=result.skipped,
+            details=[*result.details, "No runtime template changes required; migration marked applied"],
+        )
+    return result
+
+
+def step_models_json_add_cursor_gemini(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Add the legacy cursor and Gemini model entries to runtime models.json."""
+    del verbose
+    models_path = data_dir / "models.json"
+    if not models_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["models.json not found"])
+
     try:
+        raw = json.loads(models_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return StepResult(changed=0, skipped=1, details=["models.json is not an object"])
+        new_entries = {
+            "cursor/*": {"mode": "D", "context_window": 1000000},
+            "gemini/*": {"mode": "G", "context_window": 1000000},
+        }
+        added = [key for key in new_entries if key not in raw]
+        if not added:
+            return StepResult(changed=0, skipped=1, details=["models.json already has cursor/*/gemini/* entries"])
+        if not dry_run:
+            for key in added:
+                raw[key] = new_entries[key]
+            models_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        action = "Would add" if dry_run else "Added"
+        return StepResult(changed=len(added), skipped=0, details=[f"{action} models.json entries: {', '.join(added)}"])
+    except (json.JSONDecodeError, OSError) as exc:
+        return StepResult(changed=0, skipped=1, details=[f"models.json update skipped: {exc}"])
+
+
+def step_models_json_mode_b_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Map retired Mode B models.json entries to Mode A."""
+    del verbose
+    models_path = data_dir / "models.json"
+    if not models_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["models.json not found"])
+
+    try:
+        models = json.loads(models_path.read_text(encoding="utf-8"))
+        if not isinstance(models, dict):
+            return StepResult(changed=0, skipped=1, details=["models.json is not an object"])
+        patched = [
+            pattern
+            for pattern, entry in models.items()
+            if isinstance(entry, dict) and str(entry.get("mode", "")).upper() == "B"
+        ]
+        if not patched:
+            return StepResult(changed=0, skipped=1, details=["No Mode B entries found in models.json"])
         if dry_run:
-            details.append("Would run merge_templates (prompts/ overwritten)")
-            return StepResult(changed=1, skipped=0, details=details)
-        _prime_tooling_imports()
-        from core.infra.runtime_init import merge_templates
-
-        added = merge_templates(data_dir)
-        details.append(f"Merged {len(added)} template file(s)")
-        return StepResult(changed=len(added), skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_prompt_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def _count_copytree_files(src: Path, dst: Path) -> int:
-    """Count files that would be copied/overwritten."""
-    if not src.exists():
-        return 0
-    count = 0
-    for p in src.rglob("*"):
-        if p.is_file():
-            count += 1
-    return count
-
-
-def step_common_knowledge_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Overwrite common_knowledge/ from templates."""
-    details: list[str] = []
-    try:
-        from core.paths import TEMPLATES_DIR, _get_locale
-
-        locale = _get_locale()
-        for loc in (locale, "en", "ja"):
-            candidate = TEMPLATES_DIR / loc / "common_knowledge"
-            if candidate.exists():
-                src = candidate
-                break
+            details = [f"Would map Mode B to A in models.json: {', '.join(patched)}"]
         else:
-            return StepResult(changed=0, skipped=1, details=["No common_knowledge template found"])
-        dst = data_dir / "common_knowledge"
-        count = _count_copytree_files(src, dst)
-        if dry_run:
-            details.append(f"Would copy {count} file(s) to common_knowledge/")
-            return StepResult(changed=count, skipped=0, details=details)
-        dst.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        details.append(f"Copied {count} file(s) to common_knowledge/")
-        return StepResult(changed=count, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_common_knowledge_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def step_common_skills_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Overwrite common_skills/ from templates."""
-    details: list[str] = []
-    try:
-        from core.paths import TEMPLATES_DIR, _get_locale
-
-        locale = _get_locale()
-        for loc in (locale, "en", "ja"):
-            candidate = TEMPLATES_DIR / loc / "common_skills"
-            if candidate.exists():
-                src = candidate
-                break
-        else:
-            return StepResult(changed=0, skipped=1, details=["No common_skills template found"])
-        dst = data_dir / "common_skills"
-        count = _count_copytree_files(src, dst)
-        if dry_run:
-            details.append(f"Would copy {count} file(s) to common_skills/")
-            return StepResult(changed=count, skipped=0, details=details)
-        dst.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        details.append(f"Copied {count} file(s) to common_skills/")
-        return StepResult(changed=count, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_common_skills_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def step_skill_description_use_when_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync common_skills/ to migrate descriptions to Use-when pattern."""
-    details: list[str] = []
-    try:
-        from core.paths import TEMPLATES_DIR, _get_locale
-
-        locale = _get_locale()
-        for loc in (locale, "en", "ja"):
-            candidate = TEMPLATES_DIR / loc / "common_skills"
-            if candidate.exists():
-                src = candidate
-                break
-        else:
-            return StepResult(changed=0, skipped=1, details=["No common_skills template found"])
-        dst = data_dir / "common_skills"
-        count = _count_copytree_files(src, dst)
-        if dry_run:
-            details.append(f"Would copy {count} file(s) to common_skills/ (Use-when migration)")
-            return StepResult(changed=count, skipped=0, details=details)
-        dst.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        details.append(f"Copied {count} file(s) to common_skills/ (Use-when migration)")
-        return StepResult(changed=count, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_skill_description_use_when_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def step_reference_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Overwrite reference/ from templates."""
-    details: list[str] = []
-    try:
-        from core.paths import TEMPLATES_DIR, _get_locale
-
-        locale = _get_locale()
-        for loc in (locale, "en", "ja"):
-            candidate = TEMPLATES_DIR / loc / "reference"
-            if candidate.exists():
-                src = candidate
-                break
-        else:
-            return StepResult(changed=0, skipped=1, details=["No reference template found"])
-        dst = data_dir / "reference"
-        count = _count_copytree_files(src, dst)
-        if dry_run:
-            details.append(f"Would copy {count} file(s) to reference/")
-            return StepResult(changed=count, skipped=0, details=details)
-        dst.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        details.append(f"Copied {count} file(s) to reference/")
-        return StepResult(changed=count, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_reference_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+            for pattern in patched:
+                models[pattern]["mode"] = "A"
+            models_path.write_text(json.dumps(models, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            details = [f"Mapped Mode B to A in models.json: {', '.join(patched)}"]
+        return StepResult(changed=len(patched), skipped=0, details=details)
+    except (OSError, ValueError, AttributeError) as exc:
+        return StepResult(changed=0, skipped=0, details=[], error=f"models.json: {exc}")
 
 
 def step_models_json_create(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
@@ -1201,115 +1117,6 @@ def step_global_permissions_create(data_dir: Path, dry_run: bool, verbose: bool)
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
-# ── Category 4: SQLite DB sync ──────────────────────────────────
-
-
-def step_v056_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.5.6: Resync common_knowledge + prompts for message-quality-protocol."""
-    details: list[str] = []
-    total = 0
-    r1 = step_common_knowledge_resync(data_dir, dry_run, verbose)
-    total += r1.changed
-    details.extend(r1.details)
-    r2 = step_prompt_resync(data_dir, dry_run, verbose)
-    total += r2.changed
-    details.extend(r2.details)
-    return StepResult(changed=total, skipped=0, details=details)
-
-
-def step_v056_heartbeat_quality_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.5.6: Resync prompts for heartbeat quality improvement (Issue #138)."""
-    details: list[str] = []
-    total = 0
-    r1 = step_prompt_resync(data_dir, dry_run, verbose)
-    total += r1.changed
-    details.extend(r1.details)
-    return StepResult(changed=total, skipped=0, details=details)
-
-
-def step_task_delegation_to_common_knowledge(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Move task_delegation_rules from prompts/ to common_knowledge/operations/.
-
-    Resyncs common_knowledge (deploys task-delegation-guide.md), prompts
-    (deploys updated heartbeat.md/inbox_message.md without the old
-    placeholder), and removes the stale prompts/task_delegation_rules.md
-    from the runtime directory.
-    """
-    details: list[str] = []
-    total = 0
-
-    r1 = step_common_knowledge_resync(data_dir, dry_run, verbose)
-    total += r1.changed
-    details.extend(r1.details)
-
-    r2 = step_prompt_resync(data_dir, dry_run, verbose)
-    total += r2.changed
-    details.extend(r2.details)
-
-    stale = data_dir / "prompts" / "task_delegation_rules.md"
-    if stale.is_file():
-        if dry_run:
-            details.append("Would remove stale prompts/task_delegation_rules.md")
-        else:
-            stale.unlink()
-            details.append("Removed stale prompts/task_delegation_rules.md")
-        total += 1
-
-    return StepResult(changed=total, skipped=0, details=details)
-
-
-def step_v060_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.6.0: Full template resync + models.json update for Mode D/G.
-
-    Deploys Korean locale templates, meeting-room assets, and adds
-    cursor/* / gemini/* entries to existing models.json.
-    """
-    details: list[str] = []
-    total = 0
-
-    # Template resync
-    for resync_fn in (
-        step_common_knowledge_resync,
-        step_common_skills_resync,
-        step_reference_resync,
-        step_prompt_resync,
-    ):
-        r = resync_fn(data_dir, dry_run, verbose)
-        total += r.changed
-        details.extend(r.details)
-
-    # models.json: inject cursor/* and gemini/* entries if absent
-    models_path = data_dir / "models.json"
-    if models_path.exists():
-        try:
-            raw: dict[str, Any] = json.loads(models_path.read_text(encoding="utf-8"))
-            new_entries = {
-                "cursor/*": {"mode": "D", "context_window": 1000000},
-                "gemini/*": {"mode": "G", "context_window": 1000000},
-            }
-            added: list[str] = []
-            for key, val in new_entries.items():
-                if key not in raw:
-                    if not dry_run:
-                        raw[key] = val
-                    added.append(key)
-
-            if added:
-                if not dry_run:
-                    models_path.write_text(
-                        json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
-                        encoding="utf-8",
-                    )
-                details.append(f"Added models.json entries: {', '.join(added)}")
-                total += len(added)
-            else:
-                details.append("models.json already has cursor/*/gemini/* entries")
-        except Exception as exc:
-            details.append(f"models.json update skipped: {exc}")
-
-    return StepResult(changed=total, skipped=0, details=details)
-
-
 def step_grok_models_json(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Add Mode X Grok Build entries to an existing runtime models.json."""
     models_path = data_dir / "models.json"
@@ -1345,320 +1152,6 @@ def step_grok_models_json(data_dir: Path, dry_run: bool, verbose: bool) -> StepR
         )
     except (json.JSONDecodeError, OSError) as exc:
         return StepResult(changed=0, skipped=1, details=[f"models.json update skipped: {exc}"])
-
-
-def step_cross_anima_write_guidance(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync common_knowledge + prompts to deploy cross-Anima write boundary guidance.
-
-    Templates now include guidance that subordinates cannot write to another
-    Anima's knowledge/ directory, and that common_knowledge/ should be used
-    for shared output.  Affected: memory_guide.md, task-delegation-guide.md,
-    hierarchy-rules.md.
-    """
-    details: list[str] = []
-    total = 0
-
-    r1 = step_common_knowledge_resync(data_dir, dry_run, verbose)
-    total += r1.changed
-    details.extend(r1.details)
-
-    r2 = step_prompt_resync(data_dir, dry_run, verbose)
-    total += r2.changed
-    details.extend(r2.details)
-
-    return StepResult(changed=total, skipped=0, details=details)
-
-
-# Pre-rename paths under common_knowledge/operations/ (en/ja templates moved
-# these files into operations/machine/ in 2026-03).
-_STALE_MACHINE_DOC_PATHS: tuple[str, ...] = (
-    "operations/machine-tool-usage.md",
-    "operations/machine-workflow-engineer.md",
-    "operations/machine-workflow-pdm.md",
-    "operations/machine-workflow-reviewer.md",
-    "operations/machine-workflow-tester.md",
-)
-
-
-def step_common_knowledge_team_design_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync common_knowledge and drop the obsolete flat machine-*.md docs.
-
-    Re-runs the common_knowledge template sync, then removes the obsolete flat
-    machine-*.md files under operations/ left from older template layouts.
-    (The step name is kept for migration-state compatibility; the team-design
-    templates it originally deployed were retired.)
-    """
-    details: list[str] = []
-    total = 0
-
-    r_ck = step_common_knowledge_resync(data_dir, dry_run, verbose)
-    total += r_ck.changed
-    details.extend(r_ck.details)
-
-    ck_root = data_dir / "common_knowledge"
-    removed = 0
-    for rel in _STALE_MACHINE_DOC_PATHS:
-        path = ck_root / rel
-        if not path.is_file():
-            continue
-        if dry_run:
-            details.append(f"Would remove stale {rel}")
-        else:
-            path.unlink()
-            details.append(f"Removed stale {rel}")
-        removed += 1
-    total += removed
-
-    return StepResult(changed=total, skipped=0, details=details)
-
-
-def step_v062_skill_removal_and_activity_log(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.6.2: Resync templates for skill tool removal, activity_log scope, pre-completion guide.
-
-    Covers:
-    - common_knowledge/ resync (Channel D removal, skill→read_memory_file, activity_log scope)
-    - prompts/ resync (2-phase consolidation, episode_extraction.md, memory_guide)
-    - reference/ resync (Channel D removal, priming-channels)
-    """
-    details: list[str] = []
-    total = 0
-
-    for resync_fn in (
-        step_common_knowledge_resync,
-        step_common_skills_resync,
-        step_prompt_resync,
-        step_reference_resync,
-    ):
-        r = resync_fn(data_dir, dry_run, verbose)
-        total += r.changed
-        details.extend(r.details)
-
-    return StepResult(changed=total, skipped=0, details=details)
-
-
-def step_v063_behavior_rules_action_rules_skill_sync(
-    data_dir: Path,
-    dry_run: bool,
-    verbose: bool,
-) -> StepResult:
-    """v0.6.3: Force-sync behavior/action rules, skills docs, references, and DB guides.
-
-    This aggregate step deliberately re-runs the current sync helpers under a
-    new migration ID so runtimes that already applied historical resync steps
-    still receive the latest behavior_rules, common_knowledge, common_skills,
-    and reference files.
-    """
-    details: list[str] = ["v063 aggregate resync: behavior rules, action rules, skill docs, prompts"]
-    total = 0
-    skipped = 0
-    errors: list[str] = []
-
-    for resync_fn in (
-        step_common_knowledge_resync,
-        step_common_skills_resync,
-        step_reference_resync,
-        step_prompt_resync,
-    ):
-        result = resync_fn(data_dir, dry_run, verbose)
-        total += result.changed
-        skipped += result.skipped
-        details.extend(result.details)
-        if result.error:
-            errors.append(f"{resync_fn.__name__}: {result.error}")
-
-    error = "; ".join(errors) if errors else None
-    return StepResult(changed=total, skipped=skipped, details=details, error=error)
-
-
-def step_v0120_prompt_deadline_engine_neutral_resync(
-    data_dir: Path,
-    dry_run: bool,
-    verbose: bool,
-) -> StepResult:
-    """v0.12.0: Resync prompts/ (deadline rule + engine-neutral tool wording) and drop stale files."""
-    details: list[str] = []
-    total = 0
-    skipped = 0
-    errors: list[str] = []
-
-    r1 = step_prompt_resync(data_dir, dry_run, verbose)
-    total += r1.changed
-    skipped += r1.skipped
-    details.extend(r1.details)
-    if r1.error:
-        errors.append(f"step_prompt_resync: {r1.error}")
-
-    stale = data_dir / "prompts" / "task_delegation_rules.md"
-    if stale.is_file():
-        if dry_run:
-            details.append("Would remove stale prompts/task_delegation_rules.md")
-        else:
-            stale.unlink()
-            details.append("Removed stale prompts/task_delegation_rules.md")
-        total += 1
-    else:
-        skipped += 1
-
-    error = "; ".join(errors) if errors else None
-    return StepResult(changed=total, skipped=skipped, details=details, error=error)
-
-
-def step_i18n_regenerated_templates_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync shared runtime files after regenerating localized templates.
-
-    Anima-specific templates are consumed when new animas are created and are
-    not copied over existing anima directories by migrations.
-    """
-    details: list[str] = []
-    total = 0
-    skipped = 0
-    errors: list[str] = []
-
-    for resync_fn in (step_common_knowledge_resync, step_common_skills_resync, step_reference_resync):
-        result = resync_fn(data_dir, dry_run, verbose)
-        total += result.changed
-        skipped += result.skipped
-        details.extend(result.details)
-        if result.error:
-            errors.append(f"{resync_fn.__name__}: {result.error}")
-
-    return StepResult(
-        changed=total,
-        skipped=skipped,
-        details=details,
-        error="; ".join(errors) or None,
-    )
-
-
-_V0140_STALE_PROMPTS = (
-    "communication_rules_s.md",
-    "hiring_context.md",
-    "meeting_chair.md",
-    "tool_data_interpretation.md",
-)
-
-
-def step_v0140_harness_diet_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.0: Resync prompts/common_knowledge, drop retired prompts, map Mode B to A in models.json."""
-    details: list[str] = []
-    total = 0
-    skipped = 0
-    errors: list[str] = []
-
-    for resync_fn in (step_prompt_resync, step_common_knowledge_resync):
-        r = resync_fn(data_dir, dry_run, verbose)
-        total += r.changed
-        skipped += r.skipped
-        details.extend(r.details)
-        if r.error:
-            errors.append(f"{resync_fn.__name__}: {r.error}")
-
-    for name in _V0140_STALE_PROMPTS:
-        stale = data_dir / "prompts" / name
-        if not stale.is_file():
-            skipped += 1
-            continue
-        if dry_run:
-            details.append(f"Would remove stale prompts/{name}")
-        else:
-            stale.unlink()
-            details.append(f"Removed stale prompts/{name}")
-        total += 1
-
-    # Mode B was removed; runtime models.json copies still map ollama/* to "B".
-    models_path = data_dir / "models.json"
-    if models_path.is_file():
-        try:
-            models = json.loads(models_path.read_text(encoding="utf-8"))
-            patched = [
-                pattern
-                for pattern, entry in models.items()
-                if isinstance(entry, dict) and str(entry.get("mode", "")).upper() == "B"
-            ]
-            if patched:
-                if dry_run:
-                    details.append(f"Would map Mode B to A in models.json: {', '.join(patched)}")
-                else:
-                    for pattern in patched:
-                        models[pattern]["mode"] = "A"
-                    models_path.write_text(json.dumps(models, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                    details.append(f"Mapped Mode B to A in models.json: {', '.join(patched)}")
-                total += len(patched)
-            else:
-                skipped += 1
-        except (OSError, ValueError, AttributeError) as exc:
-            errors.append(f"models.json: {exc}")
-    else:
-        skipped += 1
-
-    error = "; ".join(errors) if errors else None
-    return StepResult(changed=total, skipped=skipped, details=details, error=error)
-
-
-def step_v0141_harness_diet_r2_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.1: Resync prompts (task_exec submission line, tool guide wording)."""
-    r = step_prompt_resync(data_dir, dry_run, verbose)
-    error = f"step_prompt_resync: {r.error}" if r.error else None
-    return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
-
-
-def step_v0143_task_board_self_triage_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.3: Resync heartbeat prompt and task-board guide (owner-led task triage)."""
-    return step_v0142_task_board_cli_resync(data_dir, dry_run, verbose)
-
-
-def step_v0142_task_board_cli_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI triage)."""
-    results = {
-        "step_prompt_resync": step_prompt_resync(data_dir, dry_run, verbose),
-        "step_common_knowledge_resync": step_common_knowledge_resync(data_dir, dry_run, verbose),
-    }
-    errors = [f"{name}: {r.error}" for name, r in results.items() if r.error]
-    return StepResult(
-        changed=sum(r.changed for r in results.values()),
-        skipped=sum(r.skipped for r in results.values()),
-        details=[d for r in results.values() for d in r.details],
-        error="; ".join(errors) or None,
-    )
-
-
-def step_v0144_tool_guide_dedup_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.4: Resync prompts (drop the Background Command Output block duplicated in s_mcp)."""
-    r = step_prompt_resync(data_dir, dry_run, verbose)
-    error = f"step_prompt_resync: {r.error}" if r.error else None
-    return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
-
-
-def step_v0145_prompt_diet4_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.5: Resync prompts and common_knowledge (prompt-diet4 trimmed static/per-turn text)."""
-    return step_v0142_task_board_cli_resync(data_dir, dry_run, verbose)
-
-
-_V0146_STALE_PROMPTS = (
-    "builder/common_knowledge_hint.md",
-    "builder/reference_hint.md",
-    "builder/human_notification_howto_s.md",
-    "builder/human_notification_howto_other.md",
-)
-
-
-def step_v0146_prompt_diet4_stale_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.6: Drop runtime copies of prompts retired by prompt-diet4 (folded into memory_guide/human_notification)."""
-    details: list[str] = []
-    changed = 0
-    skipped = 0
-    for name in _V0146_STALE_PROMPTS:
-        stale = data_dir / "prompts" / name
-        if not stale.is_file():
-            skipped += 1
-            continue
-        if dry_run:
-            details.append(f"Would remove stale prompts/{name}")
-        else:
-            stale.unlink()
-            details.append(f"Removed stale prompts/{name}")
-        changed += 1
-    return StepResult(changed=changed, skipped=skipped, details=details)
 
 
 # ── Category 4: Database sync ────────────────────────────────────
@@ -2150,11 +1643,6 @@ def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> Step
         return StepResult(changed=changed_files, skipped=0, details=details, error=str(exc))
 
 
-def step_v0147_guide_permissions_note_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.7: Resync common_skills (animaworks-guide check-permissions note reads permissions.json)."""
-    return step_common_skills_resync(data_dir, dry_run, verbose)
-
-
 def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Retire TaskBoard presentation metadata; tasks are the only board source.
 
@@ -2579,6 +2067,15 @@ def step_memory_config_dead_keys_20260927(data_dir: Path, dry_run: bool, verbose
 
 def register_all_steps(runner: Any) -> None:
     """Register all migration steps in execution order."""
+    from core.migrations.template_sync import template_fingerprint
+    from core.paths import _get_locale
+
+    try:
+        template_sync_id = f"template_sync_{template_fingerprint(_get_locale())}"
+    except Exception:
+        logger.exception("Could not fingerprint bundled templates; using fallback migration ID")
+        template_sync_id = "template_sync_unknown"
+
     steps = [
         MigrationStep("person_to_anima", "Person → Anima rename", "structural", step_person_to_anima),
         MigrationStep("config_md_to_json", "config.md → config.json", "structural", step_config_md_to_json),
@@ -2616,18 +2113,6 @@ def register_all_steps(runner: Any) -> None:
         MigrationStep(
             "current_task_references", "Replace current_task refs in config", "per_anima", step_current_task_references
         ),
-        MigrationStep("prompt_resync", "Resync prompts/ from templates", "template_sync", step_prompt_resync),
-        MigrationStep(
-            "memory_hygiene_prompt_resync_20260718",
-            "Resync prompts for memory hygiene section",
-            "template_sync",
-            step_prompt_resync,
-        ),
-        MigrationStep(
-            "common_knowledge_resync", "Resync common_knowledge/", "template_sync", step_common_knowledge_resync
-        ),
-        MigrationStep("common_skills_resync", "Resync common_skills/", "template_sync", step_common_skills_resync),
-        MigrationStep("reference_resync", "Resync reference/", "template_sync", step_reference_resync),
         MigrationStep("models_json_create", "Create models.json if missing", "template_sync", step_models_json_create),
         MigrationStep(
             "global_permissions_create",
@@ -2636,64 +2121,22 @@ def register_all_steps(runner: Any) -> None:
             step_global_permissions_create,
         ),
         MigrationStep(
-            "v056_resync",
-            "v0.5.6: Resync common_knowledge + prompts (message-quality-protocol)",
+            template_sync_id,
+            "Sync common_knowledge/common_skills/reference and Anima-read prompts from bundled templates",
             "template_sync",
-            step_v056_resync,
-        ),
-        MigrationStep(
-            "v056_heartbeat_quality_resync",
-            "v0.5.6: Resync prompts (heartbeat quality)",
-            "template_sync",
-            step_v056_heartbeat_quality_resync,
-        ),
-        MigrationStep(
-            "task_delegation_to_common_knowledge",
-            "Move task_delegation_rules to common_knowledge",
-            "template_sync",
-            step_task_delegation_to_common_knowledge,
+            step_template_sync,
         ),
         MigrationStep(
             "v060_resync",
-            "v0.6.0: Full template resync + Mode D/G models.json",
+            "Add cursor/* and gemini/* entries to models.json",
             "template_sync",
-            step_v060_resync,
+            step_models_json_add_cursor_gemini,
         ),
         MigrationStep(
             "grok_models_json",
             "Add Mode X Grok Build models.json entries",
             "template_sync",
             step_grok_models_json,
-        ),
-        MigrationStep(
-            "cross_anima_write_guidance",
-            "Deploy cross-Anima write boundary guidance to prompts + common_knowledge",
-            "template_sync",
-            step_cross_anima_write_guidance,
-        ),
-        MigrationStep(
-            "common_knowledge_team_design_resync",
-            "Resync common_knowledge (team-design + operations/machine layout)",
-            "template_sync",
-            step_common_knowledge_team_design_resync,
-        ),
-        MigrationStep(
-            "skill_description_use_when_resync",
-            "Resync common_skills/ with Use-when descriptions",
-            "template_sync",
-            step_skill_description_use_when_resync,
-        ),
-        MigrationStep(
-            "v062_skill_removal_and_activity_log",
-            "v0.6.2: Skill tool removal + activity_log scope + pre-completion guide",
-            "template_sync",
-            step_v062_skill_removal_and_activity_log,
-        ),
-        MigrationStep(
-            "v063_behavior_rules_action_rules_skill_sync",
-            "v0.6.3: Behavior/action rules + skill docs runtime sync",
-            "template_sync",
-            step_v063_behavior_rules_action_rules_skill_sync,
         ),
         MigrationStep(
             "legacy_flat_skill_migration",
@@ -2732,58 +2175,10 @@ def register_all_steps(runner: Any) -> None:
             step_tool_prompts_db_to_md,
         ),
         MigrationStep(
-            "v0120_prompt_deadline_engine_neutral_resync",
-            "v0.12.0: Resync prompts (deadline rule + engine-neutral tool wording)",
-            "template_sync",
-            step_v0120_prompt_deadline_engine_neutral_resync,
-        ),
-        MigrationStep(
             "v0140_harness_diet_resync",
-            "v0.14.0: Resync prompts/common_knowledge, drop retired prompts, map Mode B to A",
+            "Map retired Mode B models.json entries to Mode A",
             "template_sync",
-            step_v0140_harness_diet_resync,
-        ),
-        MigrationStep(
-            "v0141_harness_diet_r2_resync",
-            "v0.14.1: Resync prompts (task submission time line, tool guide wording)",
-            "template_sync",
-            step_v0141_harness_diet_r2_resync,
-        ),
-        MigrationStep(
-            "v0142_task_board_cli_resync",
-            "v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI)",
-            "template_sync",
-            step_v0142_task_board_cli_resync,
-        ),
-        MigrationStep(
-            "v0143_task_board_self_triage_resync",
-            "v0.14.3: Resync heartbeat prompt and task-board guide (owner-led task triage)",
-            "template_sync",
-            step_v0143_task_board_self_triage_resync,
-        ),
-        MigrationStep(
-            "v0144_tool_guide_dedup_resync",
-            "v0.14.4: Resync prompts (dedupe tool guide background-command block)",
-            "template_sync",
-            step_v0144_tool_guide_dedup_resync,
-        ),
-        MigrationStep(
-            "v0145_prompt_diet4_resync",
-            "v0.14.5: Resync prompts and common_knowledge (prompt-diet4)",
-            "template_sync",
-            step_v0145_prompt_diet4_resync,
-        ),
-        MigrationStep(
-            "v0146_prompt_diet4_stale_cleanup",
-            "v0.14.6: Remove runtime prompts retired by prompt-diet4",
-            "template_sync",
-            step_v0146_prompt_diet4_stale_cleanup,
-        ),
-        MigrationStep(
-            "v0147_guide_permissions_note_resync",
-            "v0.14.7: Resync animaworks-guide (check-permissions reads permissions.json)",
-            "template_sync",
-            step_v0147_guide_permissions_note_resync,
+            step_models_json_mode_b_to_a,
         ),
         MigrationStep(
             "rename_core_tools_to_integrations",
@@ -2844,12 +2239,6 @@ def register_all_steps(runner: Any) -> None:
             "Retire TaskBoard presentation metadata (tasks are the only board source)",
             "db_sync",
             step_taskboard_metadata_retire,
-        ),
-        MigrationStep(
-            "20260927_i18n_regenerated_templates_resync",
-            "Resync shared runtime files after localized template regeneration",
-            "template_sync",
-            step_i18n_regenerated_templates_resync,
         ),
         MigrationStep(
             "neo4j_config_cleanup",
