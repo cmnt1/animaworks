@@ -41,40 +41,12 @@ from core.exceptions import MemoryWriteError
 from core.memory.activity.conversation import ConversationMixin
 from core.memory.activity.format import PrimingMixin
 
-# ── Re-export with legacy private names for test compat ──────
-from core.memory.activity.models import (
-    CHARS_PER_TOKEN as _CHARS_PER_TOKEN,  # noqa: F401
-)
-from core.memory.activity.models import (
-    EVENT_TYPE_ALIASES as _EVENT_TYPE_ALIASES,  # noqa: F401
-)
-
 # ── Re-export data models & helpers (public API) ─────────────
 from core.memory.activity.models import (  # noqa: F401
     ActivityEntry,
     ActivityPage,
     EntryGroup,
-)
-from core.memory.activity.models import (
-    dm_label as _dm_label,  # noqa: F401
-)
-from core.memory.activity.models import (
-    find_tool_result_fallback as _find_tool_result_fallback,  # noqa: F401
-)
-from core.memory.activity.models import (
-    get_peer as _get_peer,  # noqa: F401
-)
-from core.memory.activity.models import (
-    get_task_name as _get_task_name,  # noqa: F401
-)
-from core.memory.activity.models import (
-    resolve_type_filter as _resolve_type_filter,  # noqa: F401
-)
-from core.memory.activity.models import (
-    set_source_lines as _set_source_lines,  # noqa: F401
-)
-from core.memory.activity.models import (
-    time_diff as _time_diff,  # noqa: F401
+    resolve_type_filter,
 )
 from core.memory.activity.replay import (  # noqa: F401
     build_semantic_replay_events,
@@ -430,7 +402,7 @@ class ActivityLogger(
         entries: list[ActivityEntry] = []
         now = now_local()
         today = now.date()
-        type_set = _resolve_type_filter(types)
+        type_set = resolve_type_filter(types)
 
         scan_days = days
         cutoff: datetime | None = None

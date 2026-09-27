@@ -85,13 +85,6 @@ When `state/current_task.md` is specified in `read_memory_file` / `write_memory_
 3. If `state/pending.md` exists and has content → append to `current_state.md` under `## Migrated from pending.md`, then delete
 4. If `state/pending.md` is empty → delete
 
-### API
-
-| Method | Behavior |
-|---------|------|
-| `read_pending()` | Always returns empty string `""`. Logs deprecation warning |
-| `update_pending()` | No-op. Logs deprecation warning |
-
 ---
 
 ## Legacy task files

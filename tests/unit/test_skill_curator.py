@@ -232,7 +232,7 @@ def test_rag_indexer_skips_archived_skill(tmp_path: Path) -> None:
     skill_md = _write_skill(anima_dir, "old-skill")
     SkillCurator(anima_dir).archive_skill("old-skill", reason="unused")
     vector_store = MagicMock()
-    indexer = MemoryIndexer(vector_store, "alice", anima_dir, embedding_model=MagicMock())
+    indexer = MemoryIndexer(vector_store, "alice", anima_dir)
 
     chunks = indexer.index_file(skill_md, memory_type="skills", force=True)
 
@@ -247,7 +247,7 @@ def test_rag_indexer_skips_quarantined_skill(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     skill_md = _write_skill(anima_dir, "draft-skill", extra="trust_level: quarantine\n")
     vector_store = MagicMock()
-    indexer = MemoryIndexer(vector_store, "alice", anima_dir, embedding_model=MagicMock())
+    indexer = MemoryIndexer(vector_store, "alice", anima_dir)
 
     chunks = indexer.index_file(skill_md, memory_type="skills", force=True)
 
@@ -269,7 +269,7 @@ def test_rag_indexer_deletes_existing_archived_skill_chunks(tmp_path: Path) -> N
             score=1.0,
         )
     ]
-    indexer = MemoryIndexer(vector_store, "alice", anima_dir, embedding_model=MagicMock())
+    indexer = MemoryIndexer(vector_store, "alice", anima_dir)
 
     chunks = indexer.index_file(skill_md, memory_type="skills", force=True)
 
@@ -370,7 +370,7 @@ def test_rag_indexer_refreshes_curator_replay_when_state_file_changes(tmp_path: 
     anima_dir = tmp_path / "alice"
     skill_md = _write_skill(anima_dir, "old-skill")
     vector_store = MagicMock()
-    indexer = MemoryIndexer(vector_store, "alice", anima_dir, embedding_model=MagicMock())
+    indexer = MemoryIndexer(vector_store, "alice", anima_dir)
     indexer._generate_embeddings = MagicMock(return_value=[[0.1, 0.2]])
 
     first = indexer.index_file(skill_md, memory_type="skills", force=True)

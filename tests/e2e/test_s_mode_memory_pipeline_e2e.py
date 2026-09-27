@@ -311,10 +311,13 @@ class TestCompressedSummaryToRAGSearchPipeline:
 
         # Verify the collection exists and contains documents
         collection_name = "test-rag-vec_conversation_summary"
-        query_embedding = indexer.embedding_model.encode(
-            "プロジェクト管理 Jira スプリント",
-            convert_to_numpy=True,
-        ).tolist()
+        from core.memory.rag.embedding import generate_embeddings
+
+        query_embedding = generate_embeddings(
+            ["プロジェクト管理 Jira スプリント"],
+            purpose="query",
+            priority="interactive",
+        )[0]
         results = vector_store.query(
             collection_name,
             query_embedding,

@@ -85,13 +85,6 @@ Anima のワーキングメモリ。「今まさに何をしているか」「�
 3. `state/pending.md` が存在し内容がある → `current_state.md` に `## Migrated from pending.md` として追記後、削除
 4. `state/pending.md` が空 → 削除
 
-### API
-
-| メソッド | 挙動 |
-|---------|------|
-| `read_pending()` | 常に空文字 `""` を返す。非推奨警告をログ出力 |
-| `update_pending()` | 何もしない（no-op）。非推奨警告をログ出力 |
-
 ---
 
 ## 旧タスクファイル

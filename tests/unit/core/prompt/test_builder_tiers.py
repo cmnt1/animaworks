@@ -80,14 +80,11 @@ def _make_mock_memory(
     memory.read_bootstrap.return_value = bootstrap
     memory.read_company_vision.return_value = vision
     memory.read_current_state.return_value = "status: idle"
-    memory.read_pending.return_value = ""
     memory.list_knowledge_files.return_value = []
     memory.list_episode_files.return_value = []
     memory.list_procedure_files.return_value = []
     memory.list_skill_metas.return_value = []
     memory.list_common_skill_metas.return_value = []
-    memory.list_procedure_metas.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 

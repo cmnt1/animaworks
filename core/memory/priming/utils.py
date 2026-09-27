@@ -194,11 +194,6 @@ def build_queries(
     return queries
 
 
-def build_dual_queries(message: str, keywords: list[str]) -> list[str]:
-    """Backward-compatible alias for build_queries."""
-    return build_queries(message, keywords)
-
-
 def search_and_merge(
     retriever: MemoryRetriever,
     queries: list[str],

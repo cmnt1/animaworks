@@ -130,32 +130,3 @@ def test_cosine_ordering(temp_vectordb):
     results = store.query(collection="ordering_test", embedding=query, top_k=3)
     assert results[0].document.id == "close"
     assert results[0].score > results[1].score > results[2].score
-
-
-# ── needs_cosine_migration tests ───────────────────────────
-
-
-def test_needs_cosine_migration_empty(temp_vectordb):
-    """No collections → empty migration list."""
-    assert temp_vectordb.needs_cosine_migration() == []
-
-
-def test_needs_cosine_migration_all_cosine(temp_vectordb):
-    """Cosine collections → empty migration list."""
-    store = temp_vectordb
-    store.create_collection("coll_a")
-    store.create_collection("coll_b")
-
-    assert store.needs_cosine_migration() == []
-
-
-def test_needs_cosine_migration_detects_l2(temp_vectordb):
-    """Manually created L2 collection should be detected."""
-    store = temp_vectordb
-
-    store.client.create_collection(name="legacy_l2", metadata={"dimension": 3})
-    store.create_collection("new_cosine")
-
-    l2_list = store.needs_cosine_migration()
-    assert "legacy_l2" in l2_list
-    assert "new_cosine" not in l2_list

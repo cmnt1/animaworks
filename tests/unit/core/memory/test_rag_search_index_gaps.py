@@ -155,8 +155,7 @@ class TestColdCatchupIndexing:
         mock_store.upsert.side_effect = _upsert
 
         def _make_real_indexer(vector_store, anima_name, anima_dir_arg, **kwargs):
-            with patch.object(MemoryIndexer, "_init_embedding_model"):
-                idx = MemoryIndexer(vector_store, anima_name, anima_dir_arg)
+            idx = MemoryIndexer(vector_store, anima_name, anima_dir_arg)
             idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
             return idx
 

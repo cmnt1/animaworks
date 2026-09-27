@@ -17,12 +17,8 @@ from typing import Any
 
 import pytest
 
-from core.memory.activity.logger import (
-    _EVENT_TYPE_ALIASES,
-    ActivityEntry,
-    ActivityLogger,
-    _resolve_type_filter,
-)
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
+from core.memory.activity.models import EVENT_TYPE_ALIASES, resolve_type_filter
 
 # ── _resolve_type_filter ─────────────────────────────────
 
@@ -31,41 +27,41 @@ class TestResolveTypeFilter:
     """Verify alias expansion for type filters."""
 
     def test_none_returns_none(self) -> None:
-        assert _resolve_type_filter(None) is None
+        assert resolve_type_filter(None) is None
 
     def test_new_name_includes_old(self) -> None:
-        result = _resolve_type_filter(["message_sent"])
+        result = resolve_type_filter(["message_sent"])
         assert "message_sent" in result
         assert "dm_sent" in result
 
     def test_old_name_includes_new(self) -> None:
-        result = _resolve_type_filter(["dm_sent"])
+        result = resolve_type_filter(["dm_sent"])
         assert "dm_sent" in result
         assert "message_sent" in result
 
     def test_message_received_alias(self) -> None:
-        result = _resolve_type_filter(["message_received"])
+        result = resolve_type_filter(["message_received"])
         assert "message_received" in result
         assert "dm_received" in result
 
     def test_dm_received_alias(self) -> None:
-        result = _resolve_type_filter(["dm_received"])
+        result = resolve_type_filter(["dm_received"])
         assert "dm_received" in result
         assert "message_received" in result
 
     def test_unrelated_type_not_expanded(self) -> None:
-        result = _resolve_type_filter(["channel_post"])
+        result = resolve_type_filter(["channel_post"])
         assert result == {"channel_post"}
 
     def test_mixed_types(self) -> None:
-        result = _resolve_type_filter(["message_sent", "channel_post"])
+        result = resolve_type_filter(["message_sent", "channel_post"])
         assert "message_sent" in result
         assert "dm_sent" in result
         assert "channel_post" in result
 
     def test_all_aliases_present(self) -> None:
-        assert "dm_sent" in _EVENT_TYPE_ALIASES
-        assert "dm_received" in _EVENT_TYPE_ALIASES
+        assert "dm_sent" in EVENT_TYPE_ALIASES
+        assert "dm_received" in EVENT_TYPE_ALIASES
 
 
 # ── ActivityLogger with aliases ──────────────────────────

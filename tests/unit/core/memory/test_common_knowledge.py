@@ -34,14 +34,13 @@ class TestMemoryIndexerCollectionPrefix:
         """Create a MemoryIndexer with mocked embedding model."""
         from core.memory.rag.indexer import MemoryIndexer
 
-        with patch.object(MemoryIndexer, "_init_embedding_model"):
-            indexer = MemoryIndexer(
-                vector_store,
-                anima_name=anima_name,
-                anima_dir=anima_dir,
-                **kwargs,
-            )
-            return indexer
+        indexer = MemoryIndexer(
+            vector_store,
+            anima_name=anima_name,
+            anima_dir=anima_dir,
+            **kwargs,
+        )
+        return indexer
 
     @pytest.fixture
     def indexer_with_prefix(self, anima_dir: Path):

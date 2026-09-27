@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,12 +11,11 @@ from core.memory.facts.store import FactRecord, append_fact_records
 def _make_indexer(anima_dir: Path):
     from core.memory.rag.indexer import MemoryIndexer
 
-    with patch.object(MemoryIndexer, "_init_embedding_model"):
-        return MemoryIndexer(
-            MagicMock(),
-            anima_name=anima_dir.name,
-            anima_dir=anima_dir,
-        )
+    return MemoryIndexer(
+        MagicMock(),
+        anima_name=anima_dir.name,
+        anima_dir=anima_dir,
+    )
 
 
 @pytest.mark.unit

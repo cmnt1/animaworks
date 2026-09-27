@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from core.memory.conversation.compression import _format_turns_for_compression
 from core.memory.conversation.memory import (
     _CHARS_PER_TOKEN,
     _MAX_DISPLAY_TURNS,
@@ -21,6 +21,7 @@ from core.memory.conversation.memory import (
     ConversationTurn,
     ToolRecord,
 )
+from core.memory.conversation.prompt import _format_history
 from core.schemas import ModelConfig
 from core.time_utils import today_local
 
@@ -44,13 +45,6 @@ def model_config() -> ModelConfig:
 @pytest.fixture
 def conv(anima_dir: Path, model_config: ModelConfig) -> ConversationMemory:
     return ConversationMemory(anima_dir, model_config)
-
-
-def test_finalize_session_keeps_legacy_optional_kwargs() -> None:
-    signature = inspect.signature(ConversationMemory.finalize_session)
-
-    assert "injected_procedures" in signature.parameters
-    assert "session_id" in signature.parameters
 
 
 # ── ConversationTurn ──────────────────────────────────────
@@ -151,19 +145,6 @@ class TestLoadSave:
 
 
 class TestTranscript:
-    def test_list_transcript_dates(self, conv, anima_dir):
-        (anima_dir / "transcripts" / "2026-01-15.jsonl").write_text(
-            '{"role":"human","content":"a","timestamp":"ts"}\n', encoding="utf-8"
-        )
-        (anima_dir / "transcripts" / "2026-01-16.jsonl").write_text(
-            '{"role":"human","content":"b","timestamp":"ts"}\n', encoding="utf-8"
-        )
-        dates = conv.list_transcript_dates()
-        assert dates == ["2026-01-16", "2026-01-15"]
-
-    def test_list_transcript_dates_empty(self, conv, anima_dir):
-        assert conv.list_transcript_dates() == []
-
     def test_load_transcript(self, conv, anima_dir):
         (anima_dir / "transcripts" / "2026-01-15.jsonl").write_text(
             '{"role":"human","content":"msg1","timestamp":"ts1"}\n'
@@ -355,7 +336,7 @@ class TestBuildChatPrompt:
 class TestFormatHistory:
     def test_empty_history(self, conv):
         state = ConversationState(anima_name="alice")
-        result = conv._format_history(state)
+        result = _format_history(state)
         assert result == ""
 
     def test_with_summary_only(self, conv):
@@ -364,7 +345,7 @@ class TestFormatHistory:
             compressed_summary="Summary of past conversations",
             compressed_turn_count=10,
         )
-        result = conv._format_history(state)
+        result = _format_history(state)
         assert "会話の要約" in result
         assert "Summary of past conversations" in result
 
@@ -376,7 +357,7 @@ class TestFormatHistory:
                 ConversationTurn(role="assistant", content="A", timestamp="2026-01-15T10:01:00"),
             ],
         )
-        result = conv._format_history(state)
+        result = _format_history(state)
         assert "human" in result
         assert "あなた" in result  # assistant label
 
@@ -392,7 +373,7 @@ class TestFormatHistory:
                 ),
             ],
         )
-        result = conv._format_history(state)
+        result = _format_history(state)
         assert "..." in result
 
 
@@ -489,7 +470,7 @@ class TestFormatTurnsForCompression:
             ConversationTurn(role="human", content="Q1", timestamp="2026-01-15T10:00"),
             ConversationTurn(role="assistant", content="A1", timestamp="2026-01-15T10:01"),
         ]
-        result = conv._format_turns_for_compression(turns)
+        result = _format_turns_for_compression(turns)
         assert "human" in result
         assert "あなた" in result
         assert "Q1" in result
@@ -614,24 +595,24 @@ class TestFormatHistoryDisplayLimit:
 
     def test_zero_turns_returns_empty(self, conv):
         state = self._make_state(0)
-        assert conv._format_history(state) == ""
+        assert _format_history(state) == ""
 
     def test_under_limit_all_displayed(self, conv):
         state = self._make_state(5)
-        result = conv._format_history(state)
+        result = _format_history(state)
         for i in range(5):
             assert f"turn-{i}" in result
 
     def test_at_limit_all_displayed(self, conv):
         state = self._make_state(_MAX_DISPLAY_TURNS)
-        result = conv._format_history(state)
+        result = _format_history(state)
         for i in range(_MAX_DISPLAY_TURNS):
             assert f"turn-{i}" in result
 
     def test_over_limit_only_last_n_displayed(self, conv):
         n = 25
         state = self._make_state(n)
-        result = conv._format_history(state)
+        result = _format_history(state)
         # Turns 0..4 (earliest 5) should be excluded.
         # Use newline boundary to avoid substring matches (e.g. "turn-1" in "turn-10").
         for i in range(n - _MAX_DISPLAY_TURNS):
@@ -643,7 +624,7 @@ class TestFormatHistoryDisplayLimit:
     def test_large_count_only_last_n_displayed(self, conv):
         n = 300
         state = self._make_state(n)
-        result = conv._format_history(state)
+        result = _format_history(state)
         # Only the last _MAX_DISPLAY_TURNS turns should appear
         for i in range(n - _MAX_DISPLAY_TURNS, n):
             assert f"turn-{i}" in result

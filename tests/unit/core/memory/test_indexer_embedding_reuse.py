@@ -66,7 +66,6 @@ def make_indexer(tmp_path, monkeypatch, *, shared=False):
         "test",
         tmp_path,
         collection_prefix="shared" if shared else "test",
-        embedding_model=object(),
         upsert_quarantine_failure_threshold=3,
     )
     indexer._generate_embeddings = MagicMock(side_effect=lambda texts: [[float(len(text)), 1.0] for text in texts])
@@ -75,6 +74,21 @@ def make_indexer(tmp_path, monkeypatch, *, shared=False):
     path = tmp_path / memory_type / "2026-09-08.md"
     path.parent.mkdir()
     return indexer, store, path, memory_type
+
+
+def test_indexer_creation_does_not_load_embedding_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+    from core.memory.rag import embedding, singleton
+
+    get_embedding_model = MagicMock()
+    monkeypatch.setattr(embedding, "get_embedding_model", get_embedding_model)
+    monkeypatch.setattr(singleton, "get_embedding_model", get_embedding_model)
+
+    indexer = MemoryIndexer(Store(), "test", tmp_path)
+
+    get_embedding_model.assert_not_called()
+    assert not hasattr(indexer, "embedding_model")
 
 
 def body(count):

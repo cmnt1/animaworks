@@ -248,10 +248,6 @@ class RAGConfig(BaseModel):
     )
     use_gpu: bool = False
     enable_spreading_activation: bool = True
-    enable_file_watcher: bool = Field(
-        default=True,
-        description="Deprecated: no effect (file watcher removed 2026-07). Kept for config.json compatibility.",
-    )
     graph_cache_enabled: bool = True
     implicit_link_threshold: float = 0.75
     spreading_memory_types: list[str] = ["knowledge", "episodes"]
@@ -417,7 +413,6 @@ class ConsolidationConfig(BaseModel):
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
     weekly_enabled: bool = False
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
-    duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
     knowledge_self_correction_enabled: bool = True

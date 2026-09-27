@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from core.memory.conversation.compression import _format_turns_for_compression
 from core.memory.conversation.memory import (
     _MAX_RENDERED_TOOL_RECORDS,
     _MAX_TOOL_RECORDS_PER_TURN,
@@ -19,6 +20,7 @@ from core.memory.conversation.memory import (
     ConversationTurn,
     ToolRecord,
 )
+from core.memory.conversation.prompt import _format_history
 from core.schemas import ModelConfig
 
 
@@ -174,7 +176,7 @@ class TestFormatHistoryToolMarkers:
         conv.save()
 
         state = conv.load()
-        history = conv._format_history(state)
+        history = _format_history(state)
         assert "[実行ツール: mcp__aw__post_channel, call_human]" in history
 
     def test_no_marker_without_records(self, conv: ConversationMemory):
@@ -183,7 +185,7 @@ class TestFormatHistoryToolMarkers:
         conv.save()
 
         state = conv.load()
-        history = conv._format_history(state)
+        history = _format_history(state)
         assert "[実行ツール:" not in history
 
     def test_human_turn_no_marker(self, conv: ConversationMemory):
@@ -192,7 +194,7 @@ class TestFormatHistoryToolMarkers:
         conv.save()
 
         state = conv.load()
-        history = conv._format_history(state)
+        history = _format_history(state)
         assert "[実行ツール:" not in history
 
 
@@ -334,14 +336,14 @@ class TestCompressionFormat:
                 tool_records=records,
             ),
         ]
-        text = conv._format_turns_for_compression(turns)
+        text = _format_turns_for_compression(turns)
         assert "[使用ツール: search, post_channel]" in text
 
     def test_no_tool_info_without_records(self, conv: ConversationMemory):
         turns = [
             ConversationTurn(role="assistant", content="hello"),
         ]
-        text = conv._format_turns_for_compression(turns)
+        text = _format_turns_for_compression(turns)
         assert "[使用ツール:" not in text
 
 
@@ -582,6 +584,7 @@ class TestDeserializationSafety:
 
         # Re-read to confirm the file is unchanged
         reloaded = json.loads(state_path.read_text(encoding="utf-8"))
+        assert reloaded == original
         assert "tool_records" in reloaded["turns"][0], "tool_records should still exist in the saved file"
 
 

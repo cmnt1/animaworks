@@ -688,8 +688,8 @@ class TestSharedCheckRegistry:
         second = RAGMemorySearch(rag._anima_dir, common_knowledge_dir, rag._common_skills_dir)
         vector_store = MagicMock()
         vector_store._base_url = "http://vector.example/api"
-        rag._indexer = SimpleNamespace(embedding_model=None)
-        second._indexer = SimpleNamespace(embedding_model=None)
+        rag._indexer = SimpleNamespace()
+        second._indexer = SimpleNamespace()
         started = Event()
         release = Event()
 
@@ -734,7 +734,7 @@ class TestSharedCheckRegistry:
         vector_store._base_url = "http://vector.example/api"
         vector_store.collection_exists.return_value = CollectionExistence.EXISTS
         vector_store.delete_collection.return_value = True
-        rag._indexer = SimpleNamespace(embedding_model=None)
+        rag._indexer = SimpleNamespace()
 
         with (
             patch.object(rag, "_shared_check_timing", return_value=(30.0, 2.0, 8.0)),

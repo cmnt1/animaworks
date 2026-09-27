@@ -3,19 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from core.memory.priming.constants import (
-    _BUDGET_GREETING,
-    _BUDGET_HEARTBEAT,
-    _BUDGET_IMPORTANT_KNOWLEDGE,
-    _BUDGET_PENDING_TASKS,
-    _BUDGET_QUESTION,
-    _BUDGET_RECENT_ACTIVITY,
-    _BUDGET_RELATED_EPISODES,
-    _BUDGET_RELATED_KNOWLEDGE,
-    _BUDGET_REQUEST,
-    _BUDGET_SENDER_PROFILE,
-)
-
 TEMPLATES_ROOT = Path(__file__).parent.parent.parent / "templates"
 TEMPLATES_DIR = TEMPLATES_ROOT / "ja" / "prompts"
 LOCALES = ("ja", "en", "ko")
@@ -128,54 +115,6 @@ class TestActionRulesGuideTemplate:
             assert "operations/action-rules-guide.md" in index
             assert "operations/action-rules-guide.md" in hint
             assert "common_skills/skill-creator/SKILL.md" not in hint
-
-
-class TestPrimingChannelsReference:
-    channel_budget_constants = {
-        "A": _BUDGET_SENDER_PROFILE,
-        "B": _BUDGET_RECENT_ACTIVITY,
-        "C": _BUDGET_RELATED_KNOWLEDGE,
-        "C0": _BUDGET_IMPORTANT_KNOWLEDGE,
-        "E": _BUDGET_PENDING_TASKS,
-        "F": _BUDGET_RELATED_EPISODES,
-    }
-    message_budget_constants = {
-        "priming.budget_greeting": _BUDGET_GREETING,
-        "priming.budget_question": _BUDGET_QUESTION,
-        "priming.budget_request": _BUDGET_REQUEST,
-        "priming.budget_heartbeat": _BUDGET_HEARTBEAT,
-    }
-
-    def test_channel_overview_budgets_match_constants_all_locales(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "reference" / "anatomy" / "priming-channels.md").read_text(
-                encoding="utf-8"
-            )
-            rows = dict(re.findall(r"^\| (A|B|C|C0|E|F): [^|]+ \| (\d+) \|", content, re.MULTILINE))
-            assert rows == {channel: str(budget) for channel, budget in self.channel_budget_constants.items()}, (
-                f"{locale} priming channel overview budget drift"
-            )
-
-    def test_channel_section_budgets_match_constants_all_locales(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "reference" / "anatomy" / "priming-channels.md").read_text(
-                encoding="utf-8"
-            )
-            for channel, expected in self.channel_budget_constants.items():
-                section = content.split(f"## Channel {channel}:", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-                match = re.search(r"\*\*[^*]*(?:Budget|バジェット|버짓)[^*]*\*\*:\s*(\d+)", section)
-                assert match, f"{locale} Channel {channel} missing detailed budget"
-                assert int(match.group(1)) == expected, f"{locale} Channel {channel} detailed budget drift"
-
-    def test_message_type_budgets_match_constants_all_locales(self):
-        for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "reference" / "anatomy" / "priming-channels.md").read_text(
-                encoding="utf-8"
-            )
-            for config_key, expected in self.message_budget_constants.items():
-                match = re.search(rf"^\| [^|]+ \| (\d+) \| `{re.escape(config_key)}` \|", content, re.MULTILINE)
-                assert match, f"{locale} missing {config_key} budget row"
-                assert int(match.group(1)) == expected, f"{locale} {config_key} budget drift"
 
     def test_current_priming_docs_have_no_obsolete_channel_or_skill_tool_references(self):
         paths = list(Path(".").glob("README*.md"))

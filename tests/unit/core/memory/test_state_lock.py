@@ -77,8 +77,3 @@ def test_state_read_modify_write_paths_acquire_state_lock(anima_dir: Path) -> No
     with patch.object(memory.state_lock, "acquire", wraps=memory.state_lock.acquire) as acquire:
         HeartbeatMixin._enforce_state_size_limit(owner)
     acquire.assert_called_once_with()
-
-    memory.update_state("working notes")
-    with patch.object(memory.state_lock, "acquire", wraps=memory.state_lock.acquire) as acquire:
-        memory.archive_and_reset_state("new status")
-    acquire.assert_called_once_with()

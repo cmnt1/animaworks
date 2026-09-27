@@ -357,7 +357,6 @@ class AnimaWorksLoCoMoAdapter:
         from core.memory.rag.cli_access import open_vector_access  # noqa: PLC0415
         from core.memory.rag.indexer import MemoryIndexer  # noqa: PLC0415
         from core.memory.rag.retriever import MemoryRetriever  # noqa: PLC0415
-        from core.memory.rag.singleton import get_embedding_model  # noqa: PLC0415
 
         self._previous_animaworks_data = os.environ.get("ANIMAWORKS_DATA_DIR")
         real_data_dir = Path(os.environ.get("ANIMAWORKS_DATA_DIR", "~/.animaworks")).expanduser().resolve()
@@ -391,16 +390,10 @@ class AnimaWorksLoCoMoAdapter:
         except Exception as e:
             logger.error("Vector store init failed: %s", e)
             raise
-        try:
-            emb = get_embedding_model()
-        except Exception as e:
-            logger.error("Embedding model load failed: %s", e)
-            raise
         self._indexer = MemoryIndexer(
             self._vector_store,
             ANIMA_NAME,
             self._anima_dir,
-            embedding_model=emb,
         )
         self._retriever = MemoryRetriever(
             self._vector_store,

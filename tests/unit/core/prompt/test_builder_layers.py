@@ -25,7 +25,6 @@ def _memory(anima_dir: Path, *, vision: str = "") -> MagicMock:
     memory.read_resolutions.return_value = []
     memory.list_knowledge_files.return_value = []
     memory.list_procedure_files.return_value = []
-    memory.list_shared_users.return_value = []
     return memory
 
 

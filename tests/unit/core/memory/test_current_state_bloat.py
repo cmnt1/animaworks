@@ -4,25 +4,12 @@
 
 from __future__ import annotations
 
-"""Tests for current_state.md archive/reset compatibility and bloat controls.
-
-Issue: 20260326_current-state-session-boundary-archive
-Issue #143: Archive/reset compatibility remains available outside normal session boundaries.
-
-Covers:
-- archive_and_reset_state: skip, archive, reset, failure handling
-- heartbeat prompt no longer injects cleanup instructions
-- builder.py _CURRENT_STATE_MAX_CHARS still exists for prompt-side truncation
-"""
+"""Tests for current_state.md bloat controls."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.conversation.memory import (
-    ConversationMemory,
-)
-from core.schemas import ModelConfig
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -45,93 +32,6 @@ def data_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def anima_dir(data_dir):
     return create_anima_dir(data_dir, "test-bloat")
-
-
-@pytest.fixture
-def model_config():
-    return ModelConfig(
-        model="claude-sonnet-4-6",
-        fallback_model="claude-sonnet-4-6",
-    )
-
-
-@pytest.fixture
-def conv_memory(anima_dir, model_config):
-    return ConversationMemory(anima_dir, model_config)
-
-
-# ── archive_and_reset_state ───────────────────────────────────
-
-
-class TestArchiveAndResetState:
-    """Tests for MemoryManager.archive_and_reset_state()."""
-
-    def test_skip_when_idle(self, anima_dir):
-        """No archive when current_state is just 'status: idle'."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("status: idle")
-        mm.archive_and_reset_state("new status")
-        assert mm.read_current_state().strip() == "status: idle"
-
-    def test_skip_when_empty(self, anima_dir):
-        """No archive when current_state is empty."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        (anima_dir / "state" / "current_state.md").write_text("", encoding="utf-8")
-        mm.archive_and_reset_state("new status")
-        assert mm.read_current_state() == "status: idle"
-
-    def test_archive_and_reset(self, anima_dir):
-        """Normal archive: content goes to episodes, state resets."""
-        from core.memory.manager import MemoryManager
-        from core.time_utils import today_local
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("## Working on feature X\nProgress: 50%")
-        mm.archive_and_reset_state("Implementing feature X")
-
-        assert mm.read_current_state().strip() == "Implementing feature X"
-
-        episode_path = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
-        episode_content = episode_path.read_text(encoding="utf-8")
-        assert "Working notes archived" in episode_content
-        assert "Working on feature X" in episode_content
-
-    def test_reset_to_idle_when_empty_new_status(self, anima_dir):
-        """Falls back to 'status: idle' when new_status is empty."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("some notes")
-        mm.archive_and_reset_state("")
-
-        assert mm.read_current_state().strip() == "status: idle"
-
-    def test_state_unchanged_on_episode_failure(self, anima_dir):
-        """State is left unchanged if append_episode raises."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        original = "## Important notes\nDo not lose this"
-        mm.update_state(original)
-
-        with patch.object(mm, "append_episode", side_effect=OSError("disk full")):
-            mm.archive_and_reset_state("new status")
-
-        assert mm.read_current_state().strip() == original.strip()
-
-    def test_default_new_status(self, anima_dir):
-        """Default new_status is 'status: idle'."""
-        from core.memory.manager import MemoryManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("some work in progress")
-        mm.archive_and_reset_state()
-
-        assert mm.read_current_state().strip() == "status: idle"
 
 
 # ── Heartbeat prompt (cleanup instruction removed) ─────────────

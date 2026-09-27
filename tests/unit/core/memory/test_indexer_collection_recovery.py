@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -34,12 +34,11 @@ def _make_indexer(anima_dir: Path):
     """Create a MemoryIndexer with the embedding model patched out."""
     from core.memory.rag.indexer import MemoryIndexer
 
-    with patch.object(MemoryIndexer, "_init_embedding_model"):
-        idx = MemoryIndexer(
-            MagicMock(),
-            anima_name=anima_dir.name,
-            anima_dir=anima_dir,
-        )
+    idx = MemoryIndexer(
+        MagicMock(),
+        anima_name=anima_dir.name,
+        anima_dir=anima_dir,
+    )
     # Patch embedding generation to return deterministic vectors
     idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
     idx.vector_store.create_collection.return_value = True

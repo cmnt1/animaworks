@@ -36,7 +36,6 @@ def sources(data_dir: Path, monkeypatch):
     live = anima / "vectordb"
     live.mkdir()
     (live / "old.marker").write_text("old database")
-    monkeypatch.setattr(MemoryIndexer, "_init_embedding_model", lambda self: None)
     monkeypatch.setattr(
         "core.memory.rag.embedding.generate_embeddings", lambda texts, **kwargs: [[0.1, 0.2] for _ in texts]
     )

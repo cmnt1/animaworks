@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from core.memory.conversation.finalize import finalize_session
+
 """E2E tests for episode dedup, state auto-update, and resolution propagation.
 
 Verifies the complete flow: fire-and-forget removal, heartbeat integration,
@@ -152,7 +154,7 @@ class TestDifferentialFinalizationE2E:
         compress_resp = make_litellm_response(content="サーバー障害修正完了、デプロイ予定")
 
         with patch_litellm(summary_resp, compress_resp):
-            result = await conv.finalize_session(min_turns=3)
+            result = await finalize_session(conv.anima_dir, conv.load(), conv.model_config, conv.save, min_turns=3)
 
         assert result is True
 
@@ -211,11 +213,11 @@ class TestDifferentialFinalizationE2E:
 
         # First finalization
         with patch_litellm(summary_resp, compress_resp):
-            r1 = await conv.finalize_session(min_turns=3)
+            r1 = await finalize_session(conv.anima_dir, conv.load(), conv.model_config, conv.save, min_turns=3)
         assert r1 is True
 
         # Second finalization should be skipped (no new turns)
-        r2 = await conv.finalize_session(min_turns=3)
+        r2 = await finalize_session(conv.anima_dir, conv.load(), conv.model_config, conv.save, min_turns=3)
         assert r2 is False
 
 

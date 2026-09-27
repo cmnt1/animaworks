@@ -417,15 +417,13 @@ class TestIndexerMetadata:
         test_file = knowledge_dir / "test.md"
         test_file.write_text("# Test\n\nSome content here.", encoding="utf-8")
 
-        # Create indexer with a mock vector store and mock embedding model
+        # Create indexer with a mock vector store
         mock_store = MagicMock()
-        mock_embedding_model = MagicMock()
 
         indexer = MemoryIndexer(
             vector_store=mock_store,
             anima_name="test_anima",
             anima_dir=anima_dir,
-            embedding_model=mock_embedding_model,
         )
 
         metadata = indexer._extract_metadata(

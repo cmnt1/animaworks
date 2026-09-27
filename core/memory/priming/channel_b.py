@@ -322,25 +322,6 @@ def read_shared_channels(
     return result
 
 
-def prioritize_entries(
-    entries: list,
-    sender_name: str,
-    keywords: list[str],
-) -> list:
-    """Prioritize activity entries for priming.
-
-    Priority order:
-    1. Own actions (message_sent, response_sent, message_received)
-    2. Entries involving the current sender (most relevant)
-    3. Entries matching keywords (topically relevant)
-    4. Most recent entries (temporal relevance, timestamp-based)
-    """
-    ranked = prioritize_entries_with_ranks(entries, sender_name, keywords)
-    top_entries = [entry for _, entry in ranked]
-    top_entries.sort(key=lambda entry: entry.ts)
-    return top_entries
-
-
 def prioritize_entries_with_ranks(
     entries: list,
     sender_name: str,

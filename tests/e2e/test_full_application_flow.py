@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.memory.conversation.finalize import finalize_session
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -369,7 +371,7 @@ Senior Software Engineer
     conv_memory.save()
 
     # Step 5: Finalize session (triggers encoding; min_turns=3 by default)
-    await conv_memory.finalize_session()
+    await finalize_session(conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save)
 
     # Step 6: Verify encoding to episodes
     episode_file = anima_dir / "episodes" / f"{today}.md"
@@ -645,7 +647,7 @@ async def test_conversation_finalization_creates_episode(full_anima_environment,
     conv_memory.save()
 
     # Finalize session
-    await conv_memory.finalize_session()
+    await finalize_session(conv_memory.anima_dir, conv_memory.load(), conv_memory.model_config, conv_memory.save)
 
     # Verify episode was created
     today = now_jst().date()

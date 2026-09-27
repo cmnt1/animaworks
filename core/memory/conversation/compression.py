@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -42,28 +41,6 @@ class CompressionResult:
     compressed_turns: int = 0
     summary_chars: int = 0
     error: str = ""
-
-
-def _apply_provider_kwargs(model: str, model_config: Any, kwargs: dict[str, Any]) -> None:
-    """Populate *kwargs* with provider-specific credentials."""
-    extra = model_config.extra_keys if hasattr(model_config, "extra_keys") else {}
-
-    if model.startswith("azure/"):
-        api_version = extra.get("api_version") or os.environ.get("AZURE_API_VERSION")
-        if api_version:
-            kwargs["api_version"] = api_version
-
-    elif model.startswith("vertex_ai/"):
-        for key in ("vertex_project", "vertex_location", "vertex_credentials"):
-            val = extra.get(key) or os.environ.get(key.upper())
-            if val:
-                kwargs[key] = val
-
-    elif model.startswith("bedrock/"):
-        for key in ("aws_access_key_id", "aws_secret_access_key", "aws_region_name"):
-            val = extra.get(key) or os.environ.get(key.upper())
-            if val:
-                kwargs[key] = val
 
 
 async def _call_llm(

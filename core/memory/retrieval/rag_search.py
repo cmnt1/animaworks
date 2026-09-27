@@ -322,7 +322,6 @@ class RAGMemorySearch:
                 anima_name="shared",
                 anima_dir=shared_anima_dir,
                 collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
             )
             result = indexer.index_directory(directory, memory_type, force=force)
             if result.files_failed == 0:
@@ -1256,21 +1255,6 @@ class RAGMemorySearch:
                     results.append((f.name, line.strip()))
         logger.debug("search_knowledge query='%s' results=%d", query, len(results))
         return results
-
-    def search_procedures(
-        self,
-        query: str,
-        procedures_dir: Path,
-    ) -> list[tuple[str, str]]:
-        """Search procedures/ by keyword (delegates to search_memory_text)."""
-        return self.search_memory_text(
-            query,
-            scope="procedures",
-            knowledge_dir=procedures_dir.parent / "knowledge",
-            episodes_dir=procedures_dir.parent / "episodes",
-            procedures_dir=procedures_dir,
-            common_knowledge_dir=self._common_knowledge_dir,
-        )
 
     def index_file(self, path: Path, memory_type: str, *, force: bool = False, origin: str = "") -> None:
         """Index a single file if indexer is available."""

@@ -135,27 +135,6 @@ class TestReadProcedureMetadata:
         assert isinstance(meta, dict)
 
 
-# ── 1-1: list_procedure_metas ────────────────────────────
-
-
-class TestListProcedureMetas:
-    def test_returns_skill_metas(self, memory, anima_dir: Path) -> None:
-        for name, desc in [("deploy", "Deploy steps"), ("backup", "Backup procedure")]:
-            (anima_dir / "procedures" / f"{name}.md").write_text(
-                f"---\ndescription: {desc}\n---\n\n# {name}",
-                encoding="utf-8",
-            )
-
-        metas = memory.list_procedure_metas()
-        assert len(metas) == 2
-        names = {m.name for m in metas}
-        assert names == {"deploy", "backup"}
-        assert all(m.description for m in metas)
-
-    def test_empty_procedures(self, memory) -> None:
-        assert memory.list_procedure_metas() == []
-
-
 # ── 1-2: _validate_procedure_format ──────────────────────
 
 
