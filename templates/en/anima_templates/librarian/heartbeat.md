@@ -1,3 +1,3 @@
 # Heartbeat: Librarian
 
-Regular Heartbeat is disabled. It only operates when the memory archive is integrated.
+Periodic heartbeat is disabled. Run only when consolidating memory archives.

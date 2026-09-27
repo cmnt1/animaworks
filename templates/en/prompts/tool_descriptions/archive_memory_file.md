@@ -1,1 +1,1 @@
-Archive memory files (knowledge, procedures) that are no longer needed. Files are moved to the archive/ directory and are not completely deleted. Use when: organizing outdated knowledge, duplicate files, or obsolete procedures.
+Archive memory files (knowledge, procedures) that are no longer needed. Files are moved to archive/ directory, not permanently deleted. Use for cleaning up stale knowledge, duplicates, or outdated procedures.

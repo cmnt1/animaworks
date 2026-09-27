@@ -1,126 +1,126 @@
 # Use Case: Software Development Support
 
-This use case automates and supports software development workflows, including code review, PR management, test execution, and bug investigation.
+This use case covers automating and supporting software development workflows such as code review, PR management, test execution, and bug investigation.
 
 ---
 
-## Problems This Can Solve
+## Problems This Addresses
 
 - PRs pile up and reviews fall behind
-- CI failures are noticed too late
-- It takes too long from bug report to investigation start
+- CI failures go unnoticed for too long
+- Delays between bug reports and the start of investigation
 - Tests are often forgotten
-- Code quality standards are dependent on specific individuals
+- Code quality standards depend on individual knowledge
 
 ---
 
 ## Pattern 1: Automated Code Review
 
 ### What It Does
-When a PR is created, it automatically reads the code and comments with issues and improvement suggestions.
+When a PR is created, the system automatically reads the code and comments on issues and improvement suggestions.
 
-### How It Works
-1. Detect new PR creation (webhook or periodic check)
+### Flow
+1. Detect new PR creation (via Webhook or periodic check)
 2. Fetch and analyze the diff
-3. Review from the following perspectives:
+3. Review from these angles:
    - Security issues (SQL injection, hardcoded secrets, etc.)
    - Performance concerns
    - Consistency with existing code
-   - Presence and coverage of tests
-4. Post review results as a comment on the PR
+   - Test coverage and presence
+4. Post review results as comments on the PR
 
-### Example Uses
-- Automatically run basic quality checks on PRs from junior engineers
+### Example Use Cases
+- Run basic quality checks on PRs from junior engineers
 - Automatically apply security checklists
-- Check compliance with coding conventions
+- Verify code against coding standards
 
 ### Key Points
-- Position this as "supporting" human review, not "replacing" it
-- Automated review handles basic issues, letting humans focus on design decisions
-- Review criteria are customizable (strict/lenient)
+- The goal is to **assist** human reviewers, not replace them
+- Automated review catches obvious issues so humans can focus on design decisions
+- Review criteria can be customized (stricter or more lenient)
 
 ---
 
-## Pattern 2: Monitoring and Response to CI/CD Results
+## Pattern 2: CI/CD Result Monitoring and Response
 
 ### What It Does
-Monitors CI (continuous integration) execution results and provides root cause analysis and fix suggestions when failures occur.
+Monitors CI (continuous integration) execution results and, when failures occur, performs root cause analysis and suggests fixes.
 
-### How It Works
-1. Detect CI execution completion
-2. If the result is a failure:
+### Flow
+1. Detect CI run completion
+2. If the result is failure:
    - Fetch and analyze error logs
-   - Identify the failure cause (test failure, build error, environment issue, etc.)
-   - Create a fix proposal
-   - Notify the person in charge
-3. If the result is a success:
-   - Check merge conditions
+   - Identify the cause (test failure, build error, environment issue, etc.)
+   - Propose a fix
+   - Notify the assignee
+3. If the result is success:
+   - Confirm merge criteria
    - If all conditions are met, request human approval
 
-### Example Uses
-- On test failure, show "These 3 file changes are the cause. Here is the fix proposal."
-- Detect environment-dependent failures (flaky tests) and automatically retry
-- On CI success, report "Ready to merge. Here is the change summary."
+### Example Use Cases
+- On test failure: “These 3 files changed. Here’s the suggested fix.”
+- Detect environment-dependent failures (flaky tests) and trigger automatic retries
+- On CI success: “Ready to merge. Here’s the change summary.”
 
 ---
 
 ## Pattern 3: From Issue Creation to Implementation
 
 ### What It Does
-Automates the full flow from bug reports or feature requests through issue creation, branch creation, implementation, and PR creation.
+Automates the flow from bug reports and feature requests through issue creation, branch creation, implementation, and PR creation.
 
-### How It Works
-1. Create an issue based on human instruction (requirements definition)
-2. Automatically create a working branch
-3. Implement code based on the instruction
-4. Run tests to verify behavior
+### Flow
+1. Create an issue based on human instructions (requirements definition)
+2. Create a work branch automatically
+3. Implement code according to the instructions
+4. Run tests and verify behavior
 5. Create a PR and request review
 
-### Example Uses
-- "Add validation to the login screen" → Automates issue creation, implementation, and PR creation
-- "Investigate and fix this bug" → Root cause investigation, fix, testing, and PR creation
+### Example Use Cases
+- “Add validation to the login screen” → Issue creation → implementation → PR creation, all automated
+- “Investigate and fix this bug” → Root cause analysis → fix → tests → PR creation
 
-### Cautions
-- Fully automated merging is not recommended (human final confirmation is essential)
-- Consult a human before starting large design changes
-- Always validate implementation results with tests
+### Caveats
+- Automated merge is not recommended (human final review is required)
+- Consult humans before large design changes
+- Always verify implementation with tests
 
 ---
 
 ## Pattern 4: Bug Investigation and Root Cause Analysis
 
 ### What It Does
-Receives bug reports, analyzes logs and code, and proposes root causes and fix approaches.
+When a bug is reported, analyzes logs and code, identifies the cause, and proposes a fix strategy.
 
-### How It Works
-1. Analyze the bug report (reproduction conditions, impact scope)
-2. Search and analyze related code
+### Flow
+1. Analyze the bug report (reproduction steps, impact)
+2. Search and analyze relevant code
 3. Investigate logs and error traces
 4. Form hypotheses about the root cause
-5. Report the fix approach and impact scope
+5. Report the fix strategy and impact scope
 
-### Example Uses
-- "○○ doesn't work in production" → Analyze logs and report the cause and fix approach
-- "Performance has recently degraded" → Analyze recent commits to identify likely causes
-- "Tests are unstable" → Analyze flaky test patterns and propose stabilization measures
+### Example Use Cases
+- “Feature X doesn’t work in production” → Analyze logs and report cause and fix strategy
+- “Performance has degraded recently” → Analyze recent commits and identify likely causes
+- “Tests are unstable” → Analyze flaky test patterns and suggest stabilization approaches
 
 ---
 
-## Pattern 5: Automatic Documentation Generation
+## Pattern 5: Automated Documentation
 
 ### What It Does
-Automatically generates changelogs and release notes from code changes.
+Generates changelogs and release notes from code changes.
 
-### How It Works
+### Flow
 1. Fetch commit history for the specified period
 2. Categorize changes (new features, bug fixes, improvements, etc.)
 3. Generate user-facing descriptions
-4. Create documentation in the required format
+4. Produce documentation in the required format
 
-### Example Uses
-- Automatically generate a changelog before release
-- Automatically create monthly development progress reports
-- Generate documentation summarizing the impact scope of API changes
+### Example Use Cases
+- Generate changelog automatically before releases
+- Create monthly development progress reports automatically
+- Generate documentation summarizing API change impact
 
 ---
 
@@ -131,14 +131,13 @@ Automatically generates changelogs and release notes from code changes.
 - Sufficient for small projects (around 10 PRs per month)
 
 ### Recommended Setup (3–5 Anima)
-- **Development Lead**: Overall progress management, task assignment
+- **Development lead**: Overall progress management, task assignment
 - **Implementation**: Issue handling, code implementation
 - **Review**: Code review, quality checks
 - **Testing**: Test execution, CI monitoring
-- The lead receives tasks and assigns them to the appropriate role
+- The lead receives tasks and assigns them to the appropriate team members
 
-### Tips for Maintaining Quality
-- Always route automated implementation results through review (Anima review is acceptable)
-- Check test diffs (to prevent cases where tests were rewritten just to pass)
-- AI/GAS/If automation may touch personal information, refer to the official Personal Information Protection Commission (PPC) page (https://www.ppc.go.jp/personalinfo/legal/）を確認し、必要なら取り扱い方針（取得・保存・ログ・第三者提供等）をドキュメントに明記する
-- Direct commits to the main branch are prohibited; enforce merging via PRs
+### Quality Practices
+- Always run automated implementation through review (Anima review is acceptable)
+- Verify test changes (avoid “tests rewritten to pass” scenarios)
+- Disallow direct commits to main; require all merges via PR

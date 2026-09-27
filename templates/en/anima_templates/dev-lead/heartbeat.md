@@ -1,19 +1,19 @@
-# Heartbeat: Development Lead (PdM)
+# Heartbeat: Dev Lead (PdM)
 
 ## Active Hours
-24 hours (server configuration timezone)
+24 hours (server timezone)
 
 ## Current Time
-Use the value of the `現在時刻` field in the system prompt. Do not infer from history or schedules.
+Use the `current_time` field from the system prompt. Do not infer it from history or schedules.
 
-## Checklist (every Heartbeat, lightweight)
-1. Use `org_dashboard` to grasp the overall status of the team
-2. If any member has not responded for a certain period, check via `ping_subordinate`
-3. Use `task_tracker` to check the progress of delegated tasks, and decide on re-delegation or escalation for stalled ones
-4. If there are tasks with no progress or abandoned PRs, decide on a delegate on the spot and move them forward
-5. Only when everything is proceeding smoothly, mark as HEARTBEAT_OK
+## Checklist (lightweight, every heartbeat)
+1. Check the whole team's status with `org_dashboard`
+2. Ping any member who has not responded for a while with `ping_subordinate`
+3. Review delegated tasks with `task_tracker`; re-delegate or escalate anything stuck
+4. If any task or PR has no forward progress, decide who should own it and move it forward now
+5. Only report HEARTBEAT_OK when everything is moving without blockers
 
 ## Notification Rules
-- Notify stakeholders only when urgent or when a decision is needed
+- Notify others only when something is urgent or needs a decision
 - Do not repeat the same notification within 24 hours
-- When blocked, use `call_human` with a description of the problem and your own proposed response
+- When blocked, `call_human` with a description of the problem and your proposed action

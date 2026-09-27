@@ -1,110 +1,110 @@
-# common_knowledge reference paths
+# common_knowledge Access Paths
 
-The five paths by which Anima accesses common_knowledge, and the mechanism of background RAG index construction.
-
----
-
-## Overview of reference paths
-
-| # | Path | Type | Anima's awareness |
-|---|------|--------|------------|
-| 1 | System prompt hint | Automatic | Actively accesses after seeing the hint |
-| 2 | Priming Channel C | Automatic | Automatically displayed as related knowledge |
-| 3 | `search_memory` tool | Active | Explicit search with scope specification |
-| 4 | `read_memory_file` / `write_memory_file` | Active | Direct access with path specification |
-| 5 | Claude Code direct file I/O (Mode S) | Active | Direct access via Read/Write etc. |
+The 5 pathways through which Animas access common_knowledge, and the background RAG indexing mechanism.
 
 ---
 
-## Path 1: Hint injection into the system prompt
+## Overview of Access Paths
 
-When `builder.py` builds the system prompt, if a file exists at `~/.animaworks/common_knowledge/`, it injects **hint text** into Group 4 (memory and capabilities).
+| # | Path | Type | Anima Awareness |
+|---|------|------|----------------|
+| 1 | System Prompt Hint | Automatic | Anima sees hint and actively accesses |
+| 2 | Priming Channel C | Automatic | Relevant knowledge auto-displayed |
+| 3 | `search_memory` Tool | Active | Explicit search with scope parameter |
+| 4 | `read_memory_file` / `write_memory_file` | Active | Direct access by path |
+| 5 | Claude Code Direct File I/O (Mode S) | Active | Direct access via Read/Write tools |
 
-- **Injection timing**: At prompt construction (automatic)
-- **Content**: Hints about the existence and usage of common_knowledge (does not include file contents)
-- **Exclusion condition**: Omitted for `is_task=True` (TaskExec)
-- **Anima's behavior**: Actively accesses via `search_memory` or `read_memory_file` after seeing the hint
+---
 
-## Path 2: Priming Channel C / C0 — RAG vector search
+## Path 1: System Prompt Hint Injection
 
-`PrimingEngine` automatically performs a vector search based on message keywords, merges personal knowledge with shared common_knowledge, and injects the results into the system prompt.
+`builder.py` injects a **hint text** into Group 4 (Memory & Capabilities) during system prompt construction when `~/.animaworks/common_knowledge/` contains files.
+
+- **Trigger**: Automatic during prompt construction
+- **Content**: Hint about common_knowledge existence and usage (file contents not included)
+- **Exclusion**: Omitted when `is_task=True` (TaskExec)
+- **Anima behavior**: Sees hint, then actively accesses via `search_memory` or `read_memory_file`
+
+## Path 2: Priming Channel C / C0 — RAG Vector Search
+
+`PrimingEngine` automatically performs vector search using message keywords, merging personal knowledge with shared common_knowledge into the system prompt.
 
 - **Channel C budget**: 1200 tokens
-- **Channel C0 budget**: 300 tokens (dedicated to overview pointers of chunks tagged with `[IMPORTANT]`)
+- **Channel C0 budget**: 300 tokens (dedicated to overview pointers for chunks tagged with `[IMPORTANT]`)
 - **Search target**: `shared_common_knowledge` collection (ChromaDB)
-- **Merge method**: Merges and sorts with personal knowledge search results by score
-- **Trust separation**: Channel C results are separated by trust level (medium / untrusted). Chunks originating from external platforms are treated as untrusted
-- **Anima's behavior**: Relevant fragments of common_knowledge are automatically displayed in the Priming section
+- **Merge method**: Personal knowledge results merged with shared results by score
+- **Trust separation**: Channel C results are separated by trust level (medium / untrusted). Chunks from external platforms are treated as untrusted
+- **Anima behavior**: Relevant common_knowledge fragments auto-displayed in Priming section
 
-### Notes
-- Due to the 1200-token constraint, only relevant fragments are shown, not the full text
-- As the number of documents in common_knowledge grows, there is a risk that personal knowledge chunks get pushed out
-- `[IMPORTANT]` chunks are always injected via Channel C0, making them effective for reliably recalling important business rules
+### Note
+- The 1200-token constraint means only relevant fragments, not full documents
+- Risk of personal knowledge being displaced if common_knowledge document count grows too large
+- `[IMPORTANT]` chunks are always injected via Channel C0, making them effective for reliable recall of critical business rules
 
-## Path 3: `search_memory` tool
+## Path 3: `search_memory` Tool
 
-When Anima calls `search_memory(query="...", scope="common_knowledge")`, it searches common_knowledge using a hybrid of keyword search and vector search.
+When an Anima calls `search_memory(query="...", scope="common_knowledge")`, it performs hybrid keyword + vector search on common_knowledge.
 
-- **Keyword search**: Scans text in .md files within `~/.animaworks/common_knowledge/`
-- **Vector search**: Searches the `shared_common_knowledge` collection
-- **Scope specification**: `knowledge` / `episodes` / `procedures` / `common_knowledge` / `skills` / `activity_log` / `all`. Restricted search with `"common_knowledge"`, also included with `"all"` (default)
-- **`scope="all"`**: In addition to the various vector search collections, **integrates BM25 results from activity_log via RRF (Reciprocal Rank Fusion)**. Recent action logs also appear as candidates during broad searches
+- **Keyword search**: Text scan of .md files in `~/.animaworks/common_knowledge/`
+- **Vector search**: Searches `shared_common_knowledge` collection
+- **Scope**: `knowledge` / `episodes` / `procedures` / `common_knowledge` / `skills` / `activity_log` / `all`. Use `"common_knowledge"` for targeted search; `"all"` (default) also includes it
+- **`scope="all"`**: Merges vector results with **activity_log BM25** hits using **RRF** (reciprocal rank fusion), so broad searches also surface recent unified activity log entries alongside indexed memory chunks
 
-### Usage example
+### Examples
 ```
-search_memory(query="メッセージ 送信", scope="common_knowledge")
-search_memory(query="レート制限", scope="all")
+search_memory(query="message sending", scope="common_knowledge")
+search_memory(query="rate limit", scope="all")
 ```
 
 ## Path 4: `read_memory_file` / `write_memory_file`
 
-When Anima calls `read_memory_file(path="common_knowledge/...")`, it detects the path prefix and resolves it to `~/.animaworks/common_knowledge/`.
+When an Anima calls `read_memory_file(path="common_knowledge/...")`, the path prefix is detected and resolved to `~/.animaworks/common_knowledge/`.
 
-- **Read**: Accessible to all Anima instances
-- **Write**: Accessible to all Anima instances (for accumulating shared knowledge)
+- **Read**: All Animas can access
+- **Write**: All Animas can access (for accumulating shared knowledge)
 - **Path traversal defense**: `is_relative_to` check prevents access outside common_knowledge
 
-### Usage example
+### Examples
 ```
 read_memory_file(path="common_knowledge/00_index.md")
 write_memory_file(path="common_knowledge/operations/new-guide.md", content="...")
 ```
 
-## Path 5: Claude Code direct file I/O (Mode S only)
+## Path 5: Claude Code Direct File I/O (Mode S Only)
 
-In Mode S, Anima can directly access `~/.animaworks/common_knowledge/` using Claude Code's built-in tools (Read, Write, Grep, Glob, etc.).
+In Mode S, Claude Code's built-in tools (Read, Write, Grep, Glob, etc.) can directly access `~/.animaworks/common_knowledge/`.
 
-- **Permission**: Allowed as a shared read-only directory via `handler_perms.py`
-- **Target mode**: Mode S (Agent SDK) only
-
----
-
-## Background: RAG index construction
-
-For common_knowledge to be found via vector search (paths 2 and 3), it must be indexed in ChromaDB.
-
-### Index timing
-
-1. **At Anima startup**: When `MemoryManager` is initialized, `_ensure_shared_knowledge_indexed()` is called, detecting changes via SHA-256 hash. If changes exist, re-indexing is performed into the `shared_common_knowledge` collection
-2. **Daily at 04:00**: `_run_daily_indexing()` performs incremental index updates on all Anima vector DBs. common_knowledge is also re-indexed at this timing
-
-### Chunking strategy
-
-In the case of `memory_type="common_knowledge"`, chunking is performed using the same **Markdown heading delimiters** as for knowledge.
-
-### Collection name
-
-`shared_common_knowledge` (a single collection shared by all Anima instances)
+- **Permission**: Allowed as a shared read-only directory in `handler_perms.py`
+- **Applicable mode**: Mode S (Agent SDK) only
 
 ---
 
-## Differences from reference/
+## Background: RAG Index Construction
+
+For common_knowledge to appear in vector search (Paths 2 & 3), it must be indexed in ChromaDB.
+
+### Indexing Timing
+
+1. **Anima startup**: `_ensure_shared_knowledge_indexed()` is called during `MemoryManager` initialization, using SHA-256 hash to detect changes. Re-indexes into `shared_common_knowledge` collection when changed
+2. **Daily at 04:00**: `_run_daily_indexing()` incrementally updates all Anima vectorDBs. common_knowledge is also re-indexed at this time
+
+### Chunking Strategy
+
+For `memory_type="common_knowledge"`, uses the same **Markdown heading split** strategy as personal knowledge.
+
+### Collection Name
+
+`shared_common_knowledge` (single collection shared by all Animas)
+
+---
+
+## Difference from reference/
 
 | Item | common_knowledge | reference |
 |------|-----------------|-----------|
-| RAG index | Targeted (`shared_common_knowledge`) | **Not targeted** |
-| `search_memory` | Searchable via `knowledge` / `episodes` / `procedures` / `common_knowledge` / `skills` / `activity_log` / `all` (`reference/` is excluded) | Not searchable |
-| Priming Channel C | Fragments displayed automatically | Not displayed |
-| `read_memory_file` | Readable and writable | **Read-only** |
-| Use | Daily practical guides and decision criteria | Detailed technical reference |
-| System prompt | Hint injection present | Hint injection present (separate section) |
+| RAG Index | Indexed (`shared_common_knowledge`) | **Not indexed** |
+| `search_memory` | Searchable via `knowledge`, `episodes`, `procedures`, `common_knowledge`, `skills`, `activity_log`, `all` (`reference/` not indexed) | Not searchable |
+| Priming Channel C | Fragments auto-displayed | Not displayed |
+| `read_memory_file` | Read/write allowed | **Read-only** |
+| Purpose | Everyday practical guides & decision criteria | Detailed technical reference |
+| System prompt | Hint injected | Hint injected (separate section) |

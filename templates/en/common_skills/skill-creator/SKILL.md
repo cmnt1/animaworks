@@ -1,70 +1,26 @@
 ---
 name: skill-creator
 description: >-
-  A meta-skill for creating Markdown skills. It covers the frontmatter and body of SKILL.md, Progressive Disclosure, and the create_skill procedure.
-  Use when: Use when: adding new skills, checking description rules for read_memory_file, or generating skills with references or templates.
+  Meta-skill for authoring Markdown Skill files with YAML frontmatter and progressive disclosure via create_skill.
+  Use when: adding a new skill, generating SKILL.md with references or templates, or checking description rules.
 ---
-Understood. I’m ready to translate the Japanese content into natural English while preserving all Markdown structure, headings, tables, links, identifiers, section markers (⟦§number⟧), YAML frontmatter keys, and the literal prefix “Use when:”. Please provide the content to translate.# skill-creator## Correspondence with Implementation
 
-| Role | Module |
-|------|------------|
-| `read_memory_file` Tool (reads body text by specifying relative path of skill/procedure) | Via `ToolHandler` (file in memory tree) |
-| Skill catalog in system prompt (with path list and budget) | Prompt construction (e.g., `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`) |
-| `create_skill` Tool (directory creation) | `core/tooling/skill_creator.py` |
-| Schema (parameter definitions) | `core/tooling/schemas/skill.py` |
-| Frontmatter parsing (line-based, avoiding mis-splitting at `---` in body) | `parse_frontmatter()` of `core/memory/frontmatter.py` |
-| Metadata type and extraction (`SkillMeta`, procedure path estimation) | `core/schemas.py`, `SkillMetadataService.extract_skill_meta()` of `core/memory/skill_metadata.py` |
-| Description-based skill metadata extraction (for catalog and search assistance) | `SkillMetadataService` of `core/memory/skill_metadata.py`, etc. |
-| Gate line removal from `*-tool` body | `filter_gated_from_guide()` of `core/tooling/guide.py` |
-| Allowed tool set (permissions) | `core/config/models.load_permissions()` + `core/tooling/permissions.get_permitted_tools()` |## Skill Types and Paths
+# skill-creator
 
-Skills and procedures are managed in **separate layouts**.
+## Skill file structure
 
-| Type | Path | Notes |
-|------|------|-------|
-| Personal skill | `skills/{name}/SKILL.md` | Directory + `SKILL.md` |
-| Common skill | `common_skills/{name}/SKILL.md` | At runtime, `~/.animaworks/common_skills/` etc. |
-| Procedure | `procedures/{name}.md` | **Flat single file**. Not a directory |
-
-What `create_skill` generates is only the **skill** (personal or common) in the table above. Procedures are created separately as `procedures/*.md` via `write_memory_file` etc.### Do not place symlinks (rule established 2026-09-04)
-
-Under `common_skills/` or `skills/`, do not **repost** content via **symlinks** pointing to external locations (such as `~/.claude/skills`). Since `read_memory_file` checks boundaries at the actual file location, if the symlink target is outside, it will be unreadable due to "Path traversal detected." Additionally, the catalog registers that symlink as a native skill and hides the same-named external candidate, so Anima is only presented with paths it cannot read.
-
-- Host-side skills (`~/.claude/skills`, `~/.codex/skills`, etc.) are automatically injected from configuration `skills.external_roots` and can be read at `external/<engine>/<name>/SKILL.md`. There is no need to repost them as common skills.
-- If you must place them as common skills, copy the actual file and designate one of the two locations as the authoritative source.## Loading Skills with read_memory_file
-
-The body of skills and procedures is read by specifying a **`read_memory_file(path="...")`** memory tree relative path. The system prompt's skill catalog shows the available paths (e.g., `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`).
-
-- **Personal skills**: `skills/{name}/SKILL.md`
-- **Shared skills**: `common_skills/{name}/SKILL.md`
-- **Procedures**: `procedures/{name}.md`
-
-`path` is passed as a relative path based on the Anima directory (shared trees use prefixes like `common_skills/`).### Frontmatter and Body
-
-SKILL.md The leading YAML is removed and read at `core/memory/frontmatter.parse_frontmatter()`. **The delimiter line `---` is recognized only on a per-line basis**, so even if `---` is included in YAML values or in the body text, it is unlikely to cause incorrect splitting.### Body Placeholder (`*-tool` Guide)
-
-In the skill body, placeholders such as `{{now_local}}`, `{{anima_name}}`, and `{{anima_dir}}` may be used. Skills for external tools (those whose names end with `*-tool`) are gated by the `animaworks-tool` line depending on the permission configuration (e.g., `filter_gated_from_guide()` in `core/tooling/guide.py`).### Catalog and description
-
-In **Level 1** of the skill catalog, `name` + `description` are included within the budget. The more skills there are, the more likely they are to be omitted, so keep **`description` short and specific**. When the full text is needed, open the catalog path with `read_memory_file`.
-
-**Legacy compatibility**: When `description` is empty, `extract_skill_meta()` uses the **first non-empty line of the `## 概要` section** in the body as a fallback. For new skills, the frontmatter is authoritative.### Layout Notes
-
-Under the individual `skills/`, the **`*.md` (flat single file)** may be subject to cataloging or meta-extraction, but the **recommended path is `skills/{name}/SKILL.md`**. In practice, the directory format based on `create_skill` is considered the standard.## Skill File Structure
-
-SKILL.md consists of YAML frontmatter and Markdown body.
-The frontmatter **requires** `name` and `description`.
-
-`create_skill` can include not only `allowed_tools` but also metadata for trust, provenance, classification, and routing assistance. The required fields are `name` / `description` / `body`, and optional keys should only be used when their purpose is clear.
+A Skill file consists of YAML frontmatter and Markdown body.
+Required frontmatter fields are `name` and `description`.
+Optional metadata may include tool constraints, trust/provenance fields, category, prompt policy, and routing hints. Use optional fields only when they help selection, safety, or maintenance.
 
 ```yaml
 ---
 name: skill-name
 description: >-
-  スキルが行うことの簡潔な説明（三人称）。
-  Use when: このスキルを使う具体的な場面をカンマ区切りで列挙する。
+  Concise third-person summary of what the skill does.
+  Use when: comma-separated scenarios where this skill applies.
 allowed_tools:
   - read_memory_file
-  - web_search
 trust_level: trusted
 source:
   type: anima
@@ -83,146 +39,116 @@ routing_examples:
 ---
 ```
 
-Main optional fields: `allowed_tools`, `trust_level`, `source_type`, `source_origin`, `category`, `promotion_status`, `skill_policy`, `use_when`, `trigger_phrases`, `negative_phrases`, `domains`, `routing_examples`. In the argument names of `create_skill`, `source.type` is passed as `source_type`, and `source.origin` is passed as `source_origin`.### Role of `description`
+`description` is the primary field for discovery and selection: the model uses it to decide relevance.
+The body is read when you open the path from the system prompt skill catalog with `read_memory_file` (e.g. `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`).
 
-**Descriptions of new skills** follow the Agent Skills standard, and **`Use when:`** is used to describe use cases (see `references/description_guide.md` for details). After creation, the format can be validated with **`python scripts/lint_skill.py`**.
+Supported `create_skill` optional arguments include `references`, `templates`, `allowed_tools`, `trust_level`, `source_type`, `source_origin`, `category`, `promotion_status`, `skill_policy`, `use_when`, `trigger_phrases`, `negative_phrases`, `domains`, and `routing_examples`.
 
-- **When reading with a path specified via `read_memory_file`**: If the file exists, the body is obtained **regardless of description matching** (frontmatter processing and handling related to `*-tool` depend on the loading path).
-- **Skill catalog in the system prompt**: As Level 1, `name` + `description` are included with a budget. The full text is not included, so if procedures are needed, open them via **`read_memory_file(path="skills/.../SKILL.md")` or similar**.
+**Authoring format**: follow **`Use when:`** as described in `references/description_guide.md` (Agent Skills standard).
+After editing, validate with **`python scripts/lint_skill.py path/to/SKILL.md`**.
 
-**Legacy compatibility**: When `description` is empty, `extract_skill_meta()` uses the **first non-empty line of the `## 概要` section near the beginning of the body** as a fallback for the description. For new skills, treat frontmatter as authoritative and avoid relying on `## 概要`.
+## Writing `description`
 
-**How to write descriptions** (the **Use when:** pattern and lint) can be found in `references/description_guide.md`.## Progressive Disclosure
+Do not use legacy **`「」` keyword lists**. Use a short third-person capability line plus **`Use when:`** with concrete verbs and nouns.
 
-Skill information is generally disclosed in the following stages.
+See **`references/description_guide.md`** for rules (250 characters, no XML tags, examples, checklist).
 
-| Level | Content | Display timing |
-|-------|------|----------------|
-| Level 1 | `name` + `description` | Material for the skill catalog (within budget) in the system prompt |
-| Level 2 | body (main text) | When the agent loads it via `read_memory_file(path="skills/.../SKILL.md")`, etc. |
-| Level 3 | External resources | Following the instructions in the main text, read `references/` or `templates/` via `read_memory_file`, etc. as needed |
+### Domain-specific and concrete
 
-Level 1 tends to consume context in the catalog, so **keep the description concise**. Level 2 is the core of the procedure. Level 3 separates lengthy references.
+Generic wording causes false positives. Prefer tool names, operations, and targets specific to the skill.
 
-※ The Priming skill main-text injection path has been deprecated. If the main text is needed, open the skill path via **`read_memory_file`**.## Creation Procedure### Step 1: Hearing
+## Progressive disclosure
 
-Understand the user's requirements. Confirm the following:
+Skill information is disclosed in three levels.
 
-- What they want to automate or turn into a procedure
-- Whether the target is a personal skill or a common skill (if it is a procedure, design separately for `procedures/`)
-- The use case to write in **Use when:** (when to choose this skill)
+| Level | Content | When shown |
+|-------|---------|------------|
+| Level 1 | `name` + `description` | Skill catalog / tool descriptions (budgeted) |
+| Level 2 | body | Loaded with `read_memory_file(path="skills/.../SKILL.md")` or `common_skills/.../SKILL.md` |
+| Level 3 | External files | Loaded per body instructions (`references/`, `templates/`) |
 
-Use when:### Step 2: Design
+Keep Level 1 concise; put procedures in Level 2; offload long material to Level 3.
 
-Decide on the following:
+## Creation procedure
 
-- **name**: Skill name (kebab-case, e.g., `my-skill`). If it's an external tool guide, consider the `*-tool` convention
-- **description**: Third-person summary + **`Use when:`** line (see `references/description_guide.md`)
-- **body**: Structure of the procedure (sectioning). Use placeholders like `{{now_local}}` if needed
-- **references** / **templates**: Design external files if necessary
-- **allowed_tools**: Only if you want to narrow down recommended tools
-- **trust/source/category/policy/routing**: trust level, provenance, classification, prompt policy, `use_when` / `trigger_phrases` / `negative_phrases` / `domains` / `routing_examples` as needed
+### Step 1: Clarify
 
-Use when: designing a new skill or reviewing an existing one.### Step 3: Creation
+- What to automate or document
+- Personal vs common Skill (procedures use `procedures/*.md` separately)
+- **Use when:** scenarios (when to choose this skill)
 
-`create_skill` Create the skill as a directory structure using the tool.
+### Step 2: Design
 
-**Basic (personal skills)**:
+- **name**: kebab-case (e.g. `my-skill`); use `*-tool` naming for external tool guides when applicable
+- **description**: third-person summary + **`Use when:`** (see `references/description_guide.md`)
+- **body**: section structure; optional `{{now_local}}` and other builtins
+- **references** / **templates**: optional
+- **allowed_tools**: optional soft constraint
+- **trust/source/category/policy/routing**: optional trust level, provenance, category, prompt policy, and routing metadata (`use_when`, `trigger_phrases`, `negative_phrases`, `domains`, `routing_examples`)
+
+### Step 3: Create
 
 ```
 create_skill(skill_name="{name}", description="{description}", body="{body}")
 ```
 
-**Common skills**:
+Common skills:
 
 ```
 create_skill(skill_name="{name}", description="{description}", body="{body}", location="common")
 ```
 
-**When including references and templates**:
+You can also pass `references`, `templates`, `allowed_tools`, `trust_level`, `source_type`, `source_origin`, `category`, `promotion_status`, `skill_policy`, `use_when`, `trigger_phrases`, `negative_phrases`, `domains`, and `routing_examples` when those fields are useful.
 
-```
-create_skill(
-  skill_name="{name}",
-  description="{description}",
-  body="{body}",
-  location="personal",
-  references=[
-    {"filename": "description_guide.md", "content": "..."},
-  ],
-  templates=[
-    {"filename": "skill_template.md", "content": "..."},
-  ],
-  allowed_tools=["read_memory_file", "write_memory_file"]
-)
-```
+Prefer `create_skill` for new skills; flat `skills/foo.md` alone may not match `skills/foo/SKILL.md` for `read_memory_file`.
 
-| Parameter | Required | Description |
-|-----------|------|-------------|
-| skill_name | ✓ | Skill name (kebab-case). `/`, `\`, `..` not allowed |
-| description | ✓ | Frontmatter description (**Use when:** recommended. `references/description_guide.md`) |
-| body | ✓ | SKILL.md body (Markdown). Built-in replacement target |
-| location | | `personal` (default) or `common` |
-| references | | Files placed in `references/`. `[{filename, content}, ...]` |
-| templates | | Files placed in `templates/`. `[{filename, content}, ...]` |
-| allowed_tools | | `allowed_tools` in frontmatter (optional) |
-| trust_level | | Trust level such as `trusted` / `community` |
-| source_type / source_origin | | Origin (e.g., `anima`, `manual`, `auto_created`) |
-| category | | Classification tag |
-| promotion_status | | Promotion status such as `probation` / `trusted` |
-| skill_policy | | Prompt injection policy (`use_mode`, injection-related configuration) |
-| use_when / trigger_phrases / negative_phrases / domains / routing_examples | | Auxiliary metadata to help the skill router select candidates |
+### Step 4: Verify
 
-`references` / `templates` Do not include path components in `filename`. `_validate_filename()` Verify that resolution does not go outside the parent directory; if invalid, **silently skip** (the file is not created).
+- Re-read with `read_memory_file(path="skills/{name}/SKILL.md")` (or the `common_skills/...` path from the catalog)
+- Run **`python scripts/lint_skill.py`** on the file (recommended)
 
-※ For new skills, always use `create_skill`. `write_memory_file` Creating only a **single file directly under** something like `skills/foo.md` is **not recommended**. This format **cannot be opened in `read_memory_file(path="skills/foo/SKILL.md")`**, so the recommended approach is the directory format of `skills/foo/SKILL.md`.
+## Checklist
 
-※ The procedure is `procedures/{name}.md` (flat single file). For frontmatter, `name` / `description` (plus optional `allowed_tools`) is recommended, same as for skills.### Step 4: Confirmation
+- [ ] YAML frontmatter delimited by `---`
+- [ ] `name` and `description` present
+- [ ] **`Use when:`** present; no **`「」`** keyword enumeration
+- [ ] Domain-specific, concrete wording (avoid vague “manage” / “check” alone)
+- [ ] Body has actionable steps
+- [ ] Avoid relying only on `## Overview` for description; prefer frontmatter
+- [ ] Optional metadata (`trust_level`, `source`, `category`, `skill_policy`, `use_when`, `trigger_phrases`, `negative_phrases`, `domains`, `routing_examples`) matches the actual skill
+- [ ] Created via `create_skill` with `{name}/SKILL.md` layout where applicable
 
-- **Individual skills**: Confirm content at `read_memory_file(path="skills/{name}/SKILL.md")`
-- **Common skills**: Confirm via paths shown in the catalog, such as `read_memory_file(path="common_skills/{name}/SKILL.md")`
-- **Procedures**: Confirm that `read_memory_file(path="procedures/{name}.md")` can resolve the issue
-- Use `python scripts/lint_skill.py` to validate the frontmatter / description of `SKILL.md` (optional but recommended)## Checklist
-
-Before saving, verify the following:
-
-- [ ] YAML frontmatter starts with `---` and closes with `---`
-- [ ] `name` field is present
-- [ ] `description` field is present
-- [ ] description contains **`Use when:`** and includes domain-specific concrete terms (do not use the old `「」` enumeration)
-- [ ] **description is domain-specific and concrete** (avoid generic expressions like "perform management" or "check"; specify the tool name, operation name, and target)
-- [ ] body contains concrete procedures
-- [ ] For new items, place `description` in the frontmatter and **do not rely solely on `## 概要` for the description** (also avoid old template formats such as `## 発動条件`)
-- [ ] Optional metadata (`trust_level`, `source`, `category`, `skill_policy`, `use_when`, `trigger_phrases`, `negative_phrases`, `domains`, `routing_examples`) matches actual usage
-- [ ] Skills are created with `create_skill` using `{name}/SKILL.md` (verify the procedure works as intended with `procedures/*.md`)
 ## Template
 
-Refer to `templates/skill_template.md` included with this skill. Alternatively, copy and use the following:
+Use `templates/skill_template.md` bundled with this skill, or:
 
 ```markdown
 ---
-name: {スキル名}
+name: {{skill_name}}
 description: >-
-  {具体的な対象}の{具体的な操作}スキル（三人称の短い要約）。
-  Use when: {利用シーンをカンマ区切り}
+  {{Line 1: concise capability summary}}
+  Use when: {{comma-separated usage scenarios}}
 ---
 
-# {スキル名}
+# {{skill_name}}
 
-## 手順
+## Procedure
 
 1. ...
 2. ...
 
-## 注意事項
+## Do not place symlinks in skill trees
+
+Never "re-publish" a host-side skill (e.g. one under `~/.claude/skills`) into `common_skills/` or `skills/` via a symlink. `read_memory_file` checks the resolved real path, so a symlink that points outside the tree fails with "Path traversal detected", and the catalog lists the symlink as a native skill that shadows the readable `external/<engine>/<name>/SKILL.md` entry. Host-side skill roots are injected automatically via `skills.external_roots`; if a real copy is needed, copy the file and decide which side is canonical.
+
+## Notes
 
 - ...
 ```
 
 ## Notes
 
-- A skill is a Markdown procedure document, not Python code (a tool)
-- The required frontmatter fields are `name` and `description`
-- `create_skill` can also set auxiliary metadata for trust, provenance, classification, policy, and routing. Do not add unnecessary keys; keep it simple if the description alone is sufficient
-- If the body becomes too long, it will strain the context, so aim for 150 lines or fewer
-- For external resource references (Level 3), use `references/` to keep the body concise
+- Skills are Markdown playbooks, not Python tools
+- Required frontmatter: `name`, `description`
+- Optional: `allowed_tools`, trust/provenance fields, `category`, `skill_policy`, and routing metadata. Keep metadata minimal when the description is sufficient
+- Keep body around 150 lines when practical; use `references/` for long material

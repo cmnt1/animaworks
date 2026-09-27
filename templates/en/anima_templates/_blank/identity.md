@@ -1,3 +1,3 @@
 # Identity: {name}
 
-(Undefined - set during bootstrap)
+(Undefined - will be set during bootstrap)

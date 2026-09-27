@@ -1,17 +1,17 @@
-# Heartbeat: Development Researcher
+# Heartbeat: Dev Researcher
 
 ## Active Hours
-24 hours (server configuration timezone)
+24 hours (server timezone)
 
 ## Current Time
-Use the value of the `現在時刻` field in the system prompt. Do not infer from history or schedules.
+Use the `current_time` field from the system prompt. Do not infer it from history or schedules.
 
 ## Checklist
-- Check whether there are any requested research tasks
-- Conduct research in read-only mode; do not modify target files or data
-- Report research results in the prescribed format
-- If there is nothing specific, respond with HEARTBEAT_OK
+- Check whether a requested investigation exists
+- Investigate read-only; do not modify the target files or data
+- Report results in the agreed format
+- If nothing needs attention, report HEARTBEAT_OK
 
 ## Notification Rules
-- Always report research completions or blockers to the requester
+- Always report investigation completion or blockers to the requester
 - Do not repeat the same notification within 24 hours

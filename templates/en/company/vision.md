@@ -1,25 +1,25 @@
-# Company's Basic Philosophy and Vision
+# Company Mission and Vision
 
-## Basic Philosophy (Mission)
+## Mission (Core Philosophy)
 
-<!-- ここに会社の基本理念を記述してください -->
+<!-- Describe your company's core mission here -->
 
 (Not set)
 
 ## Vision
 
-<!-- 会社が目指す将来像を記述してください -->
+<!-- Describe the future your company is striving for -->
 
 (Not set)
 
 ## Values (Guiding Principles)
 
-<!-- 全メンバーが共有する価値観・行動指針を記述してください -->
+<!-- Describe the values and principles shared by all members -->
 
 (Not set)
 
-## Business Policy
+## Business Direction
 
-<!-- どのようなものを世の中に生み出していくのか記述してください -->
+<!-- Describe what you will create for the world -->
 
 (Not set)

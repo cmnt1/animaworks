@@ -1,12 +1,17 @@
 ---
 name: {{skill_name}}
 description: >-
-  {{1行目: 機能の簡潔な説明}}
-  Use when: {{利用シーンをカンマ区切り}}
+  {{1행: 기능 요약}}
+  Use when: {{쉼표로 구분한 이용 시나리오}}
 ---
-Understood. Please provide the Japanese content you would like me to translate into Korean.# {{스킬_이름}}## 절차
+
+# {{skill_name}}
+
+## 절차
 
 1. ...
-2. ...## 주의사항
+2. ...
+
+## 주의사항
 
 - ...

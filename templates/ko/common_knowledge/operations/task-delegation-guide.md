@@ -1,43 +1,42 @@
-# 작업 투입과 위임
+# 태스크 제출과 위임
 
-## 실행 경로
+## 실행 경로 선택
 
-Agent/Task의 네이티브 하위 에이전트 시작은 사용하지 않고, 공개된 작업 도구를 사용한다.
-일반 채팅으로 완료할 수 있는 작업은 직접 실행한다. 지속 추적만 필요하면 `backlog_task`,
-자신의 백그라운드 실행은 `submit_tasks`, 유효한 직속 부하에게 위임은
-`delegate_task(name="担当名", instruction="原指示と完了条件", summary="要約")`.
-도구의 제공 범위와 권한에 따라, 무효한 담당자에게 위임하거나 허가 없이 다른 경로로 전환하지 않는다.
-Heartbeat는 판단·투입에 사용하고, 장시간의 실제 작업은 TaskExec에 넘긴다.
+네이티브 Agent/Task 하위 에이전트 실행 대신 제공된 태스크 도구를 사용합니다.
+일반 채팅에서 끝낼 수 있는 일은 직접 수행합니다. 지속 추적만 필요하면 `backlog_task`,
+자신의 백그라운드 실행에는 `submit_tasks`, 활성화된 직속 부하에게는
+`delegate_task(name="worker", instruction="원래 지시와 완료 조건", summary="요약")`를 사용합니다.
+도구 제공 범위와 권한을 지키고 비활성 담당자나 다른 실행 경로로 임의 전환하지 않습니다.
+Heartbeat는 판단과 제출을 담당하고, 긴 실제 작업은 TaskExec에 넘깁니다.
 
-## 인계할 정보
+## 인계 정보 보존
 
-실행자는 대화 기록을 자동으로 공유하지 않는다. 원래 지침, 목적, 관련 파일과 알 수 있는 범위의 위치,
-현재 상태, 완료 조건, 승인 조건, 금지 사항을 전달한다. 존재하지 않는 경로나 줄 번호는 만들지 않는다.
-`description`과 `context`, `acceptance_criteria`, `constraints`, `file_paths`를 용도에 따라 사용한다.
-모델과 등록된 workspace 지정도 유지한다. 다른 Anima의 개인 디렉터리에 쓰기를 지시하지 않는다.
+실행자는 대화 기록을 자동 공유하지 않습니다. 원래 지시, 목적, 관련 파일과 확인된 위치,
+현재 상태, 완료 조건, 승인 조건, 금지 사항을 전달합니다. 없는 경로나 줄 번호를 만들지 않습니다.
+필요에 따라 `description`, `context`, `acceptance_criteria`, `constraints`, `file_paths`를 사용하고
+모델 및 등록된 workspace 지정을 보존합니다. 다른 Anima의 개인 디렉토리 쓰기를 지시하지 않습니다.
 
-`submit_tasks(batch_id="work", tasks=[{"task_id":"job","title":"仕事","description":"具体的な依頼"}])`
-는 작업과 실행 입력을 일괄 공개한다. 같은 ID의 재전송은 재실행이 아니다.
-`parallel:true`은 worker 수의 상한 내에서 병렬 가능, `depends_on`은 선행 작업의 완료와 시도 종료를 기다린다.
-의존 대상이 취소·미완료라면 확인이 필요하며, 성공했다고 추측하지 않는다.
+`submit_tasks(batch_id="work", tasks=[{"task_id":"job","title":"작업","description":"구체적인 요청"}])`는
+태스크와 실행 입력을 원자적으로 공개합니다. 같은 ID의 재전달은 재시도가 아닙니다.
+`parallel:true`는 워커 한도 내 병렬 실행을 허용하며, `depends_on`은 선행 작업 완료와 실행 시도
+종료를 기다립니다. 의존 작업이 취소되거나 미완료이면 확인해야 하며 성공을 추측하지 않습니다.
 
-## 상태·결과·재개
+## 상태·결과·명시적 재개
 
-상태는 `list_tasks(detail=true)`, 위임 추적은 `task_tracker()`로 확인한다.
-추적 ID는 부하가 소유하는 같은 작업의 별칭이며, 대장 동기화나 파일 구제는 필요 없다.
-`task_tracker(status="all")`는 전체 건, `status="completed"`은 done/cancelled。
-실행 권한과 `in_progress`는 호스트가 관리한다. 결과는 근거가 있는 `done`,
-구체적인 대기 이유가 있는 `pending`, 명시적인 중단의 `cancelled`로 선언한다.
+`list_tasks(detail=true)`와 `task_tracker()`로 확인합니다. 추적 ID는 부하가 소유한 같은 정본
+태스크의 별칭이므로 별도 원장 동기화나 descriptor 복구가 필요하지 않습니다.
+`task_tracker(status="all")`은 전체, `status="completed"`는 done/cancelled를 표시합니다.
+실행 권한과 `in_progress`는 호스트가 관리합니다. 근거가 있는 `done`, 구체적인 대기 이유를
+적은 `pending`, 명시적인 중단의 `cancelled`를 선언합니다.
 
-미완료 알림을 받으면 이미 처리된 외부 작업과 성과를 확인하고, 계속이 적절할 때만
-`submit_tasks(batch_id="resume-job", tasks=[{"task_id":"job","resume":true}])`로 저장된 입력을 재사용한다.
-실행 중·완료·취소된 작업은 이 방법으로 재개할 수 없다. 무한 재투입을 하지 않는다.
-결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`. 파일 존재만으로 완료 처리하지 않는다.
+미완료 알림을 받으면 이미 수행된 외부 작업과 결과를 확인한 뒤 계속할지 판단합니다.
+`submit_tasks(batch_id="resume-job", tasks=[{"task_id":"job","resume":true}])`로 저장된 입력을 재사용합니다.
+실행 중·완료·취소된 태스크는 이 방법으로 재개할 수 없으며 무한 재제출하지 않습니다.
+결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`에 저장되지만 파일 존재만으로 완료를 판단하지 않습니다.
 
 ## 중복과 보고
 
-같은 요청의 미완료 작업이 있다는 것을 알고 있다면, 그 ID에 추가 정보를 전달한다.
-중복 의심만으로 오래된 작업을 자동 취소·덮어쓰지 않고, 담당자와 실행 상태를 확인한다.
-필요한 승인·독립 리뷰는 유지한다. 결과는 판단이 필요한 요청자에게 보고하고, 전체 계층에
-같은 내용을 전송하거나 별도의 수기 대장에 이중 기록하는 것을 필수로 하지 않는다.
-저장 세부 사항은 `common_knowledge/anatomy/task-architecture.md`을 참조한다.
+동일 요청의 미완료 작업이 있으면 그 ID에 추가 정보를 전달합니다. 중복 의심만으로 오래된 작업을
+자동 취소하거나 덮어쓰지 말고 담당자와 실행 상태를 확인합니다. 필요한 승인과 독립 검토를 유지합니다.
+결과가 필요한 요청자에게 보고하되 모든 계층으로 같은 내용을 전달하거나 수기 원장을 이중 관리할
+의무는 없습니다. 자세한 내용은 `common_knowledge/anatomy/task-architecture.md`를 참고하세요.

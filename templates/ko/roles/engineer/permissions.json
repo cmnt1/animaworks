@@ -1,8 +1,6 @@
 {
   "version": 1,
-  "file_roots": [
-    "/"
-  ],
+  "file_roots": ["/"],
   "commands": {
     "allow_all": true,
     "allow": [],
@@ -10,15 +8,7 @@
   },
   "external_tools": {
     "allow_all": true,
-    "allow": [
-      "discord_channel_post",
-      "discord_send",
-      "discord_channel_history",
-      "discord_unreplied",
-      "notion",
-      "github_create-issue",
-      "github_create-pr"
-    ],
+    "allow": [],
     "deny": []
   },
   "tool_creation": {

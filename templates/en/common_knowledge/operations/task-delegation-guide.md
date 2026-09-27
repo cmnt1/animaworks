@@ -1,39 +1,47 @@
-# Task Submission and Delegation
-## Execution Path
+# Task submission and delegation
 
-Do not use the native sub-agent startup of Agent/Task; use the publicly available task tools instead.
-Work that can be completed in normal chat should be executed directly. For continuous tracking only, use `backlog_task`,
-for your own background execution use `submit_tasks`, and for delegation to an active direct subordinate use
-`delegate_task(name="担当名", instruction="原指示と完了条件", summary="要約")`.
-Follow the tools' provided scope and permissions; do not delegate to invalid assignees or switch to another path without authorization.
-Use Heartbeat for judgment and submission; pass long-running actual work to TaskExec.
-## Information to Hand Over
+## Choose an execution path
 
-The executor does not automatically share conversation history. Provide the original instruction, purpose, relevant files and their known locations,
-current status, completion conditions, approval conditions, and prohibitions. Do not fabricate paths or line numbers that do not exist.
-Use `description`, `context`, `acceptance_criteria`, `constraints`, and `file_paths` as appropriate for the purpose.
-Also preserve the model and registered workspace specifications. Do not instruct writing to another Anima's personal directory.
+Use the exposed task tools, not native Agent/Task subagent spawning.
+Finish ordinary chat work directly. Use `backlog_task` for durable tracking only,
+`submit_tasks` for your own background execution, and
+`delegate_task(name="worker", instruction="Original request and acceptance criteria", summary="Summary")`
+for an enabled direct subordinate. Respect tool availability and permissions; do not silently route
+work to an unavailable worker or another execution path. Heartbeat is for decisions and submission;
+long-running work belongs in TaskExec.
 
-`submit_tasks(batch_id="work", tasks=[{"task_id":"job","title":"仕事","description":"具体的な依頼"}])`
-publishes tasks and execution inputs in bulk. Resending the same ID is not re-execution.
-`parallel:true` can run in parallel within the worker count limit; `depends_on` waits for the completion and trial termination of preceding tasks.
-If a dependency is canceled or incomplete, confirmation is required; do not assume it succeeded.
-## Status, Results, and Resumption
+## Preserve the handoff
 
-Check status via `list_tasks(detail=true)` and delegation tracking via `task_tracker()`.
-The tracking ID is an alias for the same task owned by the subordinate; no ledger synchronization or file recovery is needed.
-`task_tracker(status="all")` covers all items, `status="completed"` covers done/cancelled。
-execution permission, and `in_progress` is managed by the host. Results are declared with evidence-based `done`,
-`pending` with specific waiting reasons, and explicit cancellation via `cancelled`.
+The executor does not automatically share the conversation history. Include the original request,
+purpose, relevant files and known locations, current state, acceptance criteria, approval conditions,
+and constraints. Do not invent paths or line numbers. Use `description`, `context`,
+`acceptance_criteria`, `constraints`, and `file_paths` as appropriate. Preserve model and registered
+workspace overrides. Do not direct a worker to write another Anima's personal directories.
 
-Upon receiving an incomplete notification, check already-completed external operations and outcomes, and only when continuation is appropriate,
-reuse saved inputs via `submit_tasks(batch_id="resume-job", tasks=[{"task_id":"job","resume":true}])`.
-Running, completed, or canceled work cannot be resumed this way. Do not resubmit indefinitely.
-Result summary is `state/task_results/{task_id}/{attempt_token}.md`. Do not treat file existence alone as completion.
-## Duplicates and Reporting
+`submit_tasks(batch_id="work", tasks=[{"task_id":"job","title":"Work","description":"Specific request"}])`
+publishes the task and execution input atomically. Re-delivery of the same ID is not a retry.
+`parallel:true` permits concurrency within the worker limit; `depends_on` waits for both predecessor
+completion and the end of its attempt. A cancelled or unfinished dependency needs review, not an
+invented success result.
 
-If you know there is incomplete work for the same request, pass additional information to that ID.
-Do not automatically cancel or overwrite old work based only on suspected duplication; verify the assignee and execution status.
-Preserve required approvals and independent reviews. Report results to the requester who needs to make decisions; do not require
-forwarding the same content to all levels or double-recording in a separate handwritten ledger.
-See `common_knowledge/anatomy/task-architecture.md` for storage details.
+## State, results, and explicit resume
+
+Inspect `list_tasks(detail=true)` and delegated work through `task_tracker()`. A tracking ID is an alias
+of the subordinate's canonical task; ledger synchronization and descriptor rescue are unnecessary.
+`task_tracker(status="all")` includes all tasks; `status="completed"` selects done/cancelled.
+The host owns claims and `in_progress`. Declare evidence-backed `done`, `pending` with a concrete
+waiting reason, or `cancelled` for an explicit cancellation.
+
+After an incomplete-attempt notification, check existing effects and results before deciding to
+continue. Use `submit_tasks(batch_id="resume-job", tasks=[{"task_id":"job","resume":true}])` to reuse
+the saved input. Active, done, and cancelled tasks cannot be resumed this way. Do not create endless
+resubmission loops. Result summaries live in `state/task_results/{task_id}/{attempt_token}.md`;
+the existence of a file is not proof of task completion.
+
+## Duplicates and reporting
+
+If unfinished work for the same request already exists, send additional context with its ID.
+Do not automatically cancel or replace older work based only on a suspected duplicate; check ownership
+and execution state. Keep required approvals and independent review. Report to the requester who
+needs the result; forwarding the same report through every hierarchy level or maintaining a second
+handwritten ledger is not mandatory. See `common_knowledge/anatomy/task-architecture.md`.

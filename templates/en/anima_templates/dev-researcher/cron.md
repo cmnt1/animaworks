@@ -1,7 +1,7 @@
-# Cron: Development Researcher
+# Cron: Dev Researcher
 
-## Quality Check of Research Records
+## Research record quality check
 schedule: 0 10 * * 0
 type: llm
-Review past research reports and verify the consistency of the records.
-Correct any claims without evidence (file:line or sources) and any confusion between speculation and fact.
+Review past research reports and check the consistency of the records.
+Fix any claims without evidence (file:line or source) and any conflation of speculation with fact.

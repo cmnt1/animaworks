@@ -1,122 +1,156 @@
-# Priming 채널 기술 참조
+# Priming 채널 기술 레퍼런스
 
-기본 `compact`는 발신자, 작업, 상주 지식을 획득하고, 조건을 충족하는 경우에만 관련 지식을 검색한다. 옵트인 `full`는 최근 활동과 에피소드도 획득한다. 채널 구성은 `priming.profile`에서 선택되며, 모든 트리거에서 모든 채널이 작동하는 것은 아니다.
+기본 `compact` 프로필은 발신자, 정본 태스크, 명시적인 `always_prime` 보호 조건과 필요한 경우에만 제한된 관련 검색을 수집합니다. 최근 활동, 에피소드, 그래프 채널은 검색 전에 제외합니다. 아래 채널 목록은 선택적인 `full` 프로필의 기능이며 모든 트리거에서 전부 실행된다는 뜻이 아닙니다. 회상은 프레임워크 본문 목표와 별도의 토큰 예산을 사용합니다.
 
-`PrimingEngine`가 획득하는 채널과 예산의 사양을 보여준다. C0(important_knowledge)는 Channel C의 지식 파이프라인 내 보조 블록이다.
+PrimingEngine이 실행하는 전체 채널의 상세 사양입니다.
+버짓, 검색 소스, 필터링, 동적 조정을 포함합니다.
 
-## 채널 목록
+병렬 검색은 **6개 채널**(A / B / C / E / F / G)을 사용합니다. C0(important_knowledge)는 Channel C와 같은 파이프라인 안의 보조 블록입니다. Distilled Knowledge는 더 이상 별도 프라이밍 채널이 아닙니다.
 
-| 채널 | 소스 | trust |
-|---------|--------|-------|
-| A: sender_profile | `shared/users/{sender}/index.md` | medium |
-| B: recent_activity | `activity_log/` + 공유 채널 | trusted |
-| C: related_knowledge | RAG 벡터 검색(knowledge + common_knowledge) | medium / untrusted |
-| C0: important_knowledge | `[IMPORTANT]` 태그가 붙은 청크 | medium |
-| E: pending_tasks | TaskStore + task results | trusted |
-| F: episodes | RAG 벡터 검색(episodes/） | medium |
+---
+
+## 채널 일람
+
+| 채널 | 버짓 (토큰) | 소스 | trust |
+|------|-------------|------|-------|
+| A: sender_profile | 500 | `shared/users/{sender}/index.md` | medium |
+| B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
+| C: related_knowledge | 1200 | RAG 벡터 검색 (knowledge + common_knowledge) | medium / untrusted |
+| C0: important_knowledge | 300 | `[IMPORTANT]` 태그가 지정된 청크 | medium |
+| E: pending_tasks | 500 | TaskStore + accepted task results | trusted |
+| F: episodes | 400 | RAG 벡터 검색 (episodes/) | medium |
+| G: graph_context | 500 | MemoryBackend의 community context + recent facts | medium |
 
 추가 주입:
 
-| 항목 | 소스 | trust |
-|------|--------|-------|
-| Recent outbound | activity_log(최대 3건, `channel_post` / `message_sent`) | trusted |
-| Pending human notifications | `human_notify` 이벤트 | trusted |
+| 항목 | 버짓 | 소스 | trust |
+|------|------|------|-------|
+| Recent outbound | 제한 없음 (최대 3건) | activity_log (최근 2시간, `channel_post` / `message_sent`) | trusted |
+| Pending human notifications | 500 | `human_notify` 이벤트 (최근 24시간) | trusted |
 
-스킬·절차의 본문은 Priming에서 주입되지 않는다. 시스템 프롬프트의 스킬 카탈로그에 표시된 경로(예: `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`)를 `read_memory_file`로 읽어들인다.
+스킬·절차 본문은 Priming으로 주입되지 않습니다. 시스템 프롬프트의 스킬 카탈로그에 표시된 경로(예: `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`)를 `read_memory_file`로 읽습니다.
 
 ---
 
 ## Channel A: sender_profile
 
-발신자의 사용자 프로필을 주입한다.
+발신자의 사용자 프로필을 주입합니다.
 
-- **소스**: `shared/users/{sender}/index.md`을 직접 읽기
-- **상한**: `min(400, max_tokens // 4)`
+- **소스**: `shared/users/{sender}/index.md` 직접 읽기
+- **버짓**: 500 토큰
 - **발신자 불명 시**: 건너뜀
 
 ---
 
 ## Channel B: recent_activity
 
-최근 활동 타임라인을 주입한다.
+최근 활동 타임라인을 주입합니다.
 
 - **소스**: `activity_log/{date}.jsonl` + 공유 채널의 최신 게시물
-
-**Priming 주입과 명시적 검색의 차이**: Channel B는 `full` 프로필로 획득한다. 과거 행동 로그를 키워드로 넓게 찾는 용도는 `search_memory(scope="activity_log")`를 사용한다. 주입과 도구 검색은 별도의 경로이다.
+- **버짓**: 1300 토큰
+- **Priming vs 명시 검색**: Channel B는 자동 주입이며 예산(1300 토큰)으로 요약된 타임라인만 제공합니다. 활동 로그 전체에서 키워드로 찾고 싶을 때는 `search_memory(query="...", scope="activity_log")`를 사용하세요 (`scope="all"`은 벡터+RAG와 activity_log BM25를 RRF로 통합).
 
 ### 트리거별 필터링
 
-| 트리거 | 제외되는 이벤트 유형 |
-|---------|----------------------|
-| `heartbeat` / `cron` / `inbox` / `task` | `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
-| 기타 | `tool_use`, `tool_result`, `memory_write`, `cron_executed`, `heartbeat_start`, `heartbeat_end`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
+| 트리거 | 제외되는 이벤트 타입 |
+|--------|----------------------|
+| `heartbeat` / `cron:*` | `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_end`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
+| `chat` | `cron_executed` |
 
 ---
 
 ## Channel C: related_knowledge
 
-RAG 벡터 검색으로 관련 지식을 주입한다.
+RAG 벡터 검색으로 관련 지식을 주입합니다.
 
-- **검색 방식**: Dual-query(메시지 컨텍스트 + 키워드만)
+- **버짓**: 1200 토큰
+- **검색 방식**: Dual-query (메시지 컨텍스트 + 키워드만)
 - **검색 대상**: 개인 `knowledge/` + `shared_common_knowledge` 컬렉션
-- **최소 점수**: `config.json`의 `rag.min_retrieval_score`(기본값 0.3)
+- **최소 스코어**: `config.json`의 `rag.min_retrieval_score` (기본값 0.3)
 
 ### trust 분리
 
-검색 결과는 청크의 `origin`에 기반하여 trust 수준으로 분리된다:
+검색 결과는 청크의 `origin`에 따라 trust 레벨로 분리됩니다:
 
 | trust | 대상 | 처리 |
 |-------|------|------|
-| `medium` | 개인 knowledge, common_knowledge | 우선적으로 예산을 소비 |
-| `untrusted` | 외부 플랫폼 유래(`origin_chain`에 `external_platform` 포함) | 남은 예산으로 주입. `origin=ORIGIN_EXTERNAL_PLATFORM` 태그가 붙음 |
+| `medium` | 개인 knowledge, common_knowledge | 우선적으로 버짓 소비 |
+| `untrusted` | 외부 플랫폼 유래 (`origin_chain`에 `external_platform` 포함) | 잔여 버짓으로 주입. `origin=ORIGIN_EXTERNAL_PLATFORM` 태그 부착 |
 
 ---
 
 ## Channel C0: important_knowledge
 
-`[IMPORTANT]` 태그가 붙은 청크의 개요 포인터를 주입한다.
+`[IMPORTANT]` 태그가 지정된 청크의 요약 포인터를 항상 주입합니다.
 
-- **대상**: `knowledge/` 내의 `[IMPORTANT]` 태그가 붙은 청크
-- **주입 형식**: 개요 포인터. 상세는 `read_memory_file`로 획득
-- **용도**: 중요한 업무 규칙·판단 기준의 회상
+- **버짓**: 300 토큰
+- **대상**: `knowledge/` 내 `[IMPORTANT]` 태그가 지정된 청크
+- **주입 형식**: 요약 포인터만 (전문 아님). 상세는 `read_memory_file`로 조회
+- **용도**: 중요한 비즈니스 규칙과 판단 기준의 확실한 회상
 
 ---
 
 ## Channel E: pending_tasks
 
-작업 큐의 요약을 주입한다.
+태스크 큐 요약을 주입합니다.
 
-- **상한**: `min(500, max_tokens // 3)`
+- **버짓**: 500 토큰
 - **소스**: `TaskQueueManager.format_for_priming()`
 - **내용**:
-  - `pending` / `in_progress` 작업의 목록과 요약
-  - 인간이 기재한 작업에 🔴 HIGH 마커
-  - 30분 이상 업데이트가 없는 작업에 ⚠️ STALE 마커
-  - 위임 작업의 상태
-  - `task_results/`에서의 완료 작업 결과
+  - `pending` / `in_progress` 태스크의 목록과 요약
+  - `source: human` 태스크에 🔴 HIGH 마커
+  - 30분 이상 업데이트 없는 태스크에 ⚠️ STALE 마커
+  - 기한 초과 태스크에 🔴 OVERDUE 마커
+  - 활성 병렬 태스크 (submit_tasks 배치)의 진행 상황
+  - `task_results/`의 완료 태스크 결과
+  - `status: failed` + `meta.executor == "taskexec"`인 실패 태스크
 
 ---
 
 ## Channel F: episodes
 
-RAG 벡터 검색으로 관련 에피소드를 주입한다.
+RAG 벡터 검색으로 관련 에피소드를 주입합니다.
 
-- **검색 대상**: `episodes/` 컬렉션
-- **최소 점수**: Channel C와 공통(`rag.min_retrieval_score`)
-
----
-
-## 예산과 프로필
-
-`config.json`의 `priming.profile`은 `compact` 또는 `full`을 지정한다(기본값: `compact`). Anima별 `status.json`에 `priming_profile`을 지정하면 해당 설정이 우선된다. `priming.max_tokens`은 회상의 토큰 예산(기본값: 2000), `priming.channel_timeout_seconds`은 채널별 획득 타임아웃(기본값: 60초).
-
-- `compact`는 A(발신자), E(작업), C0(상주 지식), 최근 전송, 보류 중인 인간 알림을 획득한다. C(관련 지식)는 chat/task 트리거, 또는 question/request/delegation 의도가 있고 메시지가 있는 경우에 획득한다. B(최근 활동)·F(에피소드)·G(병렬 작업 표시)는 획득하지 않는다.
-- `full`는 A / B / C0 / C / E / F와 최근 전송, 인간 알림을 획득한다.
-- A의 상한은 `min(400, max_tokens // 4)`, E의 상한은 `min(500, max_tokens // 3)`. 최근 전송은 최대 3건·250토큰. `full`의 채널 항목과 `compact`의 관련 지식은 `max_tokens`의 남은 범위에 맞춘다.
-- 보류 중인 인간 알림은 회상 예산과 별도로 취급된다.
+- **버짓**: 400 토큰
+- **검색 대상**: `episodes/` 컬렉션 (ChromaDB)
+- **최소 스코어**: Channel C와 동일 (`rag.min_retrieval_score`)
 
 ---
 
-## Hebbian LTP(장기 강화)
+## Channel G: graph_context
 
-Priming에서 검색·표시된 청크는 `record_access(kind="retrieved")`에 의해 가벼운 검색 기록이 업데이트된다. `read_memory_file`이나 outcome 보고에 의한 명시적 사용은 `used`로 기록되며, 망각 보호는 이 명시적 사용을 기준으로 한다.
+MemoryBackend에서 graph/community context와 recent facts를 주입합니다.
+
+- **버짓**: 500 토큰
+- **소스**: `MemoryBackend.get_priming_context()`
+- **백엔드 사용 불가 시**: 건너뜀
+
+---
+
+## 동적 버짓 조정
+
+`config.json`의 `priming.dynamic_budget: true` (기본값)로 활성화됩니다.
+
+### 메시지 타입별 버짓
+
+| 메시지 타입 | 버짓 | 설정 키 |
+|-------------|------|---------|
+| greeting | 500 | `priming.budget_greeting` |
+| question | 2000 | `priming.budget_question` |
+| request | 3000 | `priming.budget_request` |
+| heartbeat (폴백) | 200 | `priming.budget_heartbeat` |
+
+### Heartbeat 버짓 계산
+
+```
+heartbeat_budget = max(budget_heartbeat, context_window × heartbeat_context_pct)
+```
+
+- `heartbeat_context_pct`: 기본값 0.05 (컨텍스트 윈도우의 5%)
+- 예: context_window=200000 → `max(200, 200000 × 0.05)` = 10000
+
+---
+
+## Hebbian LTP (장기 강화)
+
+Priming에서 검색 및 표시된 청크는 `record_access(kind="retrieved")`로 가벼운 검색 기록이 업데이트됩니다. `read_memory_file` 및 outcome 보고를 통한 명시적 사용은 `used`로 기록되며, 망각 보호는 이 명시적 사용을 기준으로 합니다.

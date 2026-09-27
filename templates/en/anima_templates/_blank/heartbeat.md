@@ -1,17 +1,17 @@
 # Heartbeat: {name}
 
 ## Active Hours
-24 hours (server configuration timezone)
+24 hours (server timezone)
 
 ## Current Time
-Use the value of the `現在時刻` field in the system prompt. Do not infer from history or schedules.
+Use the value from the current time field in the system prompt. Do not infer from history or schedule.
 
 ## Checklist
-- Are there unread messages in the Inbox?
-- Are there any blockers on in-progress tasks?
-- Have new files been placed in my workspace?
-- If nothing is present, do nothing (HEARTBEAT_OK)
+- Are there unread messages in Inbox?
+- Are there blockers in ongoing tasks?
+- Have any new files been placed in my workspace?
+- If nothing, do nothing (HEARTBEAT_OK)
 
 ## Notification Rules
-- Notify relevant parties only when you judge it urgent
+- Only notify stakeholders when deemed urgent
 - Do not repeat the same notification within 24 hours

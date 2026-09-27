@@ -1,75 +1,82 @@
 ---
 name: worker-management
 description: >-
-  Skill for operational management of the AnimaWorks server process.
-  Performs hot reload after code updates (server reload), restart of the Anima process,
-  and server status checks (list of running Anima instances and memory usage).
-  Use when: "reload it," "apply the update," "refresh it," "system status," "restart the server," "check processes"
+  Skill for operating and managing AnimaWorks server processes.
+  Perform hot reload (server reload) after code updates, Anima process restart,
+  and server status checks (list of running Anima, memory usage).
+  "Reload", "Apply updates", "Refresh", "System status", "Server restart", "Process check"
 ---
-Understood. I’m ready to translate the Japanese content into natural English while preserving all Markdown structure, headings, tables, links, identifiers, sentinels (including ⟦§number⟧ markers), and YAML frontmatter keys. I’ll keep the literal prefix “Use when:” unchanged and return only the translation.
 
-Please provide the Japanese content you’d like me to translate.# Skill: System Administration## CLI Commands (Recommended)
+# Skill: System Management
 
-`animaworks` Individual Anima management is possible via the CLI. **Prefer the CLI over direct API calls.**
+## CLI Commands (Recommended)
+
+Use the `animaworks` CLI for individual Anima management. **Prefer CLI over direct API calls.**
 
 ```bash
-# 個別Animaのリスタート（設定変更の反映等）
+# Restart individual Anima (to apply config changes, etc.)
 animaworks anima restart <name>
 
-# ステータス確認（全体 or 個別）
+# Status check (all or individual)
 animaworks anima status
 animaworks anima status <name>
 
-# モデル変更（status.jsonを更新 + 自動リスタート）
+# Model change (updates status.json + auto restart)
 animaworks anima set-model <name> <model>
 
-# ロール変更
+# Role change
 animaworks anima set-role <name> <role>
 
-# Anima一覧
+# Anima list
 animaworks anima list
 
-# 無効化 / 有効化
+# Disable / Enable
 animaworks anima disable <name>
 animaworks anima enable <name>
 
-# 削除（--archive でバックアップ可）
+# Delete (--archive for backup)
 animaworks anima delete <name>
 ```
-### Common Use Cases
+
+### Common Usage
 
 ```bash
-# config.json変更後に特定Animaだけリスタート
+# Restart specific Anima after config.json change
 animaworks anima restart aoi
 
-# モデルを変更して自動リスタート
+# Change model and auto restart
 animaworks anima set-model aoi claude-sonnet-4-6
 ```
-## API Reference (When CLI is unavailable)
+
+## API Reference (When CLI Unavailable)
 
 Base URL: `http://localhost:18500`
 
 | Endpoint | Method | Purpose |
 |--------------|---------|------|
-| `/api/system/status` | GET | Check system status |
-| `/api/system/reload` | POST | **Hot reload all anima** |
-| `/api/animas` | GET | List anima |
+| `/api/system/status` | GET | System status check |
+| `/api/system/reload` | POST | **Hot reload all animas** |
+| `/api/animas` | GET | Anima list |
 | `/api/animas/{name}` | GET | Anima details |
-| `/api/animas/{name}/restart` | POST | Restart individual anima |
-| `/api/animas/{name}/stop` | POST | Stop individual anima |
+| `/api/animas/{name}/restart` | POST | Individual restart |
+| `/api/animas/{name}/stop` | POST | Individual stop |
 | `/api/animas/{name}/start` | POST | Start stopped anima |
 | `/api/animas/{name}/chat` | POST | Send message |
-| `/api/animas/{name}/trigger` | POST | Execute heartbeat immediately |## Reload Procedure (After Program Update)
+| `/api/animas/{name}/trigger` | POST | Trigger heartbeat immediately |
+
+## Reload Procedure (After Program Update)
 
 ```bash
 curl -s -X POST http://localhost:18500/api/system/reload | python3 -m json.tool
 ```
 
-- `added`: Newly detected anima
-- `refreshed`: Reloaded anima (file changes are reflected)
-- `removed`: Anima deleted from disk
-- **No server restart required. Configuration and prompt changes are reflected immediately via this endpoint**## Notes
+- `added`: Newly detected animas
+- `refreshed`: Reloaded animas (file changes applied)
+- `removed`: Animas removed from disk
+- **No server restart needed. Config and prompt changes take effect immediately via this endpoint**
 
-- Even if a worker is shut down, anima's data (memory and configuration) remains
-- **Do not perform operations that shut down yourself**
-- For individual operations, use CLI → API in order of priority
+## Notes
+
+- Stopping a worker does not delete anima data (memory, settings)
+- **Do not perform operations that stop yourself**
+- Use CLI → API priority for individual operations

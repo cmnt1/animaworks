@@ -1,22 +1,22 @@
 # Voice Chat Guide
 
-Reference for voice conversation features with Anima.
+Reference for voice conversations with Anima.
 Browser microphone input → STT (speech recognition) → chat pipeline → TTS (speech synthesis) → browser playback.
 
 ## Architecture Overview
 
 ```
-ブラウザ (AudioWorklet 16kHz mono PCM)
+Browser (AudioWorklet 16kHz mono PCM)
   → WebSocket /ws/voice/{name}
     → VoiceSTT (faster-whisper)
-      → ProcessSupervisor IPC → Animaチャット（既存パイプライン）
-    → StreamingSentenceSplitter (文分割)
+      → ProcessSupervisor IPC → Anima chat (existing pipeline)
+    → StreamingSentenceSplitter (sentence splitting)
       → TTS Provider (VOICEVOX / SBV2 / ElevenLabs)
-    ← audio binary + JSON制御メッセージ
+    ← audio binary + JSON control messages
   ← VoicePlayback (Web Audio API)
 ```
 
-Voice chat goes through the existing text chat pipeline. From Anima's perspective, it is processed the same as a normal chat message (the STT-converted text arrives).
+Voice chat goes through the existing text chat pipeline. From Anima's perspective, it is processed the same as a normal chat message (the text has already been converted by STT).
 
 ---
 
@@ -24,33 +24,33 @@ Voice chat goes through the existing text chat pipeline. From Anima's perspectiv
 
 ### STT (Speech Recognition)
 
-`faster-whisper` is required:
+Requires `faster-whisper`:
 
 ```bash
 pip install faster-whisper
-# または pip install animaworks[transcribe]
+# or pip install animaworks[transcribe]
 ```
 
-The Whisper model (default: `large-v3-turbo`) is automatically downloaded on the first STT execution.
-When using a GPU, CUDA-compatible `ctranslate2` is required.
+The Whisper model (default: `large-v3-turbo`) is downloaded automatically on first STT run.
+For GPU use, a CUDA-capable `ctranslate2` is required.
 
 ### TTS (Speech Synthesis)
 
-TTS must be started separately as an external service:
+TTS runs as an external service and must be started separately:
 
-| Provider | Features | Startup Method | Default URL |
-|-----------|------|---------|-------------|
+| Provider | Features | How to Start | Default URL |
+|----------|----------|--------------|-------------|
 | **VOICEVOX** | Free, Japanese-focused, many character voices | Docker: `docker run -p 50021:50021 voicevox/voicevox_engine` | `http://localhost:50021` |
-| **Style-BERT-VITS2** | High quality, custom voice model support | Start SBV2 or AivisSpeech Engine | `http://localhost:5000` |
-| **ElevenLabs** | Cloud API, multilingual, high quality | Set environment variable `ELEVENLABS_API_KEY` | Cloud (no local startup required) |
+| **Style-BERT-VITS2** | High quality, custom voice models | Start SBV2 or AivisSpeech Engine | `http://localhost:5000` |
+| **ElevenLabs** | Cloud API, multilingual, high quality | Set env var `ELEVENLABS_API_KEY` | Cloud (no local start) |
 
 ---
 
 ## Configuration
 
-### Global Configuration (config.json section of `voice`)
+### Global Config (config.json `voice` section)
 
-Default settings common to all Anima:
+Default settings for all Anima:
 
 ```json
 {
@@ -70,18 +70,18 @@ Default settings common to all Anima:
 ```
 
 | Field | Default | Description |
-|-----------|-----------|------|
+|-------|---------|-------------|
 | `stt_model` | `large-v3-turbo` | Whisper model name. Options: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo` |
 | `stt_device` | `auto` | `auto` (GPU preferred) / `cpu` / `cuda` |
 | `stt_compute_type` | `default` | CTranslate2 quantization type: `default`, `int8`, `float16` |
-| `stt_language` | `null` | Language code (`ja`, `en`, etc.). Auto-detection with `null` |
-| `stt_refine_enabled` | `false` | LLM post-processing of STT results (adds 1-3 seconds latency when enabled) |
+| `stt_language` | `null` | Language code (`ja`, `en`, etc.). `null` for auto-detect |
+| `stt_refine_enabled` | `false` | LLM post-processing of STT results (adds 1–3s latency when enabled) |
 | `default_tts_provider` | `voicevox` | Default TTS provider: `voicevox` / `style_bert_vits2` / `elevenlabs` |
 | `audio_format` | `wav` | TTS output audio format |
 
-### Per-Anima Voice Settings (status.json section of `voice`)
+### Per-Anima Voice Config (status.json `voice` section)
 
-Individual settings for each Anima under `status.json` with the `voice` key:
+Each Anima's `status.json` can have a `voice` key for per-Anima settings:
 
 ```json
 {
@@ -96,22 +96,22 @@ Individual settings for each Anima under `status.json` with the `voice` key:
 ```
 
 | Field | Description |
-|-----------|------|
-| `tts_provider` | TTS provider to use for this Anima. Falls back to the global default when unset |
-| `voice_id` | Provider-specific voice ID (described below) |
-| `speed` | Speech speed (1.0 = standard) |
-| `pitch` | Pitch (0.0 = standard) |
-| `extra` | Provider-specific additional parameters (optional). For ElevenLabs, the model can be overridden with `model_id` |
+|-------|-------------|
+| `tts_provider` | TTS provider for this Anima. Uses global default if unset |
+| `voice_id` | Provider-specific voice ID (see below) |
+| `speed` | Speech rate (1.0 = normal) |
+| `pitch` | Pitch (0.0 = normal) |
+| `extra` | Provider-specific additional parameters (optional). For ElevenLabs, `model_id` can override the model |
 
-#### How to Specify voice_id
+#### How to specify voice_id
 
 | Provider | voice_id format | How to check |
-|-----------|----------------|---------|
-| VOICEVOX | Speaker ID (numeric string), e.g., `"3"` = Zundamon | Get the list with `curl http://localhost:50021/speakers` |
-| Style-BERT-VITS2 | `model_id:speaker_id` or `model_id:speaker_id:style`, e.g., `0:0` | Get the list with `curl http://localhost:5000/models/info` |
-| ElevenLabs | voice_id string | Check in the ElevenLabs dashboard or via API |
+|----------|-----------------|--------------|
+| VOICEVOX | Speaker ID (numeric string), e.g. `"3"` = Zundamon | `curl http://localhost:50021/speakers` for list |
+| Style-BERT-VITS2 | `model_id:speaker_id` or `model_id:speaker_id:style`. e.g. `0:0` | `curl http://localhost:5000/models/info` for list |
+| ElevenLabs | voice_id string | ElevenLabs dashboard or API |
 
-If no setting exists or `voice_id` is empty, the provider's default voice is used.
+If unset or empty, the provider's default voice is used.
 
 ---
 
@@ -121,68 +121,68 @@ Endpoint: `ws://HOST/ws/voice/{anima_name}`
 
 ### Authentication
 
-On connection, authentication is performed by one of the following:
+On connect, authentication is performed by one of:
 
 - **local_trust mode**: No authentication required
-- **trust_localhost enabled and localhost connection**: Connections from loopback addresses require no authentication (with CSRF validation)
-- **Otherwise**: Validated with the `session_token` cookie. Closes with 4001 Unauthorized if invalid
+- **trust_localhost enabled and localhost connection**: Loopback connections require no auth (CSRF validation applied)
+- **Otherwise**: Validated via `session_token` cookie. Invalid sessions are closed with 4001 Unauthorized
 
-Since WebSocket sends cookies during the HTTP Upgrade, authentication happens automatically from a logged-in browser.
+WebSocket sends cookies on HTTP Upgrade, so a logged-in browser is authenticated automatically.
 
 ### Connection Limits
 
-- **1 Anima = 1 active session**: A new connection to the same Anima replaces the existing session (the existing side closes with 4000 "Replaced by new session")
-- **Invalid name**: Closes with 4000 "Invalid anima name" if `name` contains `/` or `..`, is empty, or starts with `.`
+- **1 Anima = 1 active session**: A new connection to the same Anima replaces the existing session (existing session is closed with 4000 "Replaced by new session")
+- **Invalid name**: If `name` contains `/` or `..`, is empty, or starts with `.`, connection is closed with 4000 "Invalid anima name"
 
 ### Client → Server
 
 | Type | Format | Description |
-|--------|------|------|
+|------|--------|-------------|
 | Audio data | binary | 16kHz mono 16-bit PCM binary |
-| `{"type": "speech_end"}` | JSON | Speech end notification → triggers STT execution |
-| `{"type": "interrupt"}` | JSON | TTS playback interruption (barge-in) |
-| `{"type": "config", "vad_mode": "ptt"}` or `{"type": "config", "vad_mode": "vad"}` | JSON | Optional. Mode switch notification (server currently does not process it) |
+| `{"type": "speech_end"}` | JSON | End-of-utterance notification → triggers STT |
+| `{"type": "interrupt"}` | JSON | Stop TTS playback (barge-in) |
+| `{"type": "config", "vad_mode": "ptt"}` or `{"type": "config", "vad_mode": "vad"}` | JSON | Optional. Mode switch notification (server does not process currently) |
 
 ### Server → Client
 
 | Type | Format | Description |
-|--------|------|------|
+|------|--------|-------------|
 | `{"type": "status", "state": "loading"}` | JSON | Session initializing (STT loading) |
 | `{"type": "status", "state": "ready"}` | JSON | Session ready |
 | `{"type": "transcript", "text": "..."}` | JSON | STT result text |
-| `{"type": "response_start"}` | JSON | Anima response stream start |
+| `{"type": "response_start"}` | JSON | Anima response stream started |
 | `{"type": "response_text", "text": "...", "done": false}` | JSON | Anima response text (chunk) |
-| `{"type": "response_done", "emotion": "..."}` | JSON | Anima response completion (with emotion metadata) |
+| `{"type": "response_done", "emotion": "..."}` | JSON | Anima response complete (with emotion metadata) |
 | `{"type": "thinking_status", "thinking": true/false}` | JSON | Extended thinking start/end |
 | `{"type": "thinking_delta", "text": "..."}` | JSON | Extended thinking text chunk |
 | TTS audio data | binary | TTS audio binary |
 | `{"type": "tts_start"}` | JSON | TTS audio send start |
-| `{"type": "tts_error", "message": "..."}` | JSON | TTS synthesis failure (sent just before tts_done) |
-| `{"type": "tts_done"}` | JSON | TTS audio send completion |
+| `{"type": "tts_error", "message": "..."}` | JSON | TTS synthesis failure (sent immediately before tts_done) |
+| `{"type": "tts_done"}` | JSON | TTS audio send complete |
 | `{"type": "error", "message": "..."}` | JSON | Error notification |
 
 ---
 
 ## Frontend UI
 
-A microphone button appears in both the dashboard and workspace chat screens.
+The mic button appears on both dashboard and workspace chat screens.
 
-After connecting, the server sends `status: loading` → `status: ready`, and voice input can begin once ready.
+After connecting, the server sends `status: loading` → `status: ready`; voice input can begin once ready.
 
 ### Voice Input Modes
 
-| Mode | Operation | Description |
-|--------|------|------|
-| **PTT (Push-to-Talk)** | Hold microphone button → release | Reliable control. Records only while pressed |
-| **VAD (Voice Activity Detection)** | Automatic | Automatically detects speech start to begin recording, auto-sends on silence |
+| Mode | Action | Description |
+|------|--------|-------------|
+| **PTT (Push-to-Talk)** | Hold mic button → release | Reliable control. Records only while pressed |
+| **VAD (Voice Activity Detection)** | Automatic | Auto-detects speech start, records, sends when silent |
 
-Can be switched via the UI toggle.
+Toggled in the UI.
 
 ### Features
 
-- **Volume control**: Slider to adjust TTS playback volume
-- **TTS indicator**: Visual feedback while Anima is speaking (separate from the recording indicator)
-- **Barge-in**: Starting to speak during TTS playback automatically interrupts Anima's audio
+- **Volume control**: TTS playback volume slider
+- **TTS indicator**: Visual feedback while Anima is speaking (separate from recording indicator)
+- **Barge-in**: Talking while TTS is playing automatically interrupts Anima's voice
 
 ---
 
@@ -190,92 +190,92 @@ Can be switched via the UI toggle.
 
 ### VOICEVOX
 
-- Free, open-source Japanese speech synthesis engine
-- More than 50 character voices
-- Runs locally (no internet required)
+- Free, open-source Japanese TTS engine
+- 50+ character voices
+- Runs locally (no internet needed)
 - Docker: `docker run -p 50021:50021 voicevox/voicevox_engine`
-- GPU version: `docker run --gpus all -p 50021:50021 voicevox/voicevox_engine`
+- GPU: `docker run --gpus all -p 50021:50021 voicevox/voicevox_engine`
 
 ### Style-BERT-VITS2 / AivisSpeech
 
-- High-quality Japanese speech synthesis
-- Custom voice model training and usage supported
-- AivisSpeech Engine is an easy-install version compatible with SBV2
+- High-quality Japanese TTS
+- Can train and use custom voice models
+- AivisSpeech Engine is a simpler SBV2-compatible option
 - Runs locally
 
 ### ElevenLabs
 
-- Cloud-based multilingual speech synthesis API
-- High quality, natural voice
-- API key required (`ELEVENLABS_API_KEY` environment variable)
-- Pay-as-you-go pricing
+- Cloud multilingual TTS API
+- High-quality, natural voice
+- Requires API key (env var `ELEVENLABS_API_KEY`)
+- Usage-based billing
 
 ---
 
 ## Troubleshooting
 
-### STT Does Not Work
+### STT not working
 
-- Check that `faster-whisper` is installed: `pip show faster-whisper`
-- When using a GPU, check that the CUDA version of `ctranslate2` matches
-- Switch to `stt_device: "cpu"` and try CPU mode
+- Confirm `faster-whisper` is installed: `pip show faster-whisper`
+- On GPU, verify CUDA version of `ctranslate2`
+- Try CPU mode: set `stt_device: "cpu"`
 
-### TTS Returns No Audio
+### TTS returns no audio
 
-- Check that the TTS provider is running
-  - VOICEVOX: check for a response at `curl http://localhost:50021/speakers`
-  - SBV2: check for a response at `curl http://localhost:5000/models/info`
-  - ElevenLabs: check that the `ELEVENLABS_API_KEY` environment variable is set
-- Check the server log for `TTS unavailable` errors
-- Check whether the client received the `tts_error` message (on TTS synthesis failure)
+- Confirm TTS provider is running
+  - VOICEVOX: `curl http://localhost:50021/speakers` returns response
+  - SBV2: `curl http://localhost:5000/models/info` returns response
+  - ElevenLabs: `ELEVENLABS_API_KEY` is set
+- Check server logs for `TTS unavailable` errors
+- Check if client receives `tts_error` messages (TTS synthesis failure)
 - If TTS is unavailable, only text responses are returned (no audio)
 
-### Audio Drops Out / High Latency
+### Audio cuts out / high latency
 
-- Check network bandwidth (audio streaming is real-time)
-- Change `stt_model` to a lighter model (`base`, `small`)
-- Check `stt_refine_enabled: false` (LLM post-processing increases latency)
-- Start VOICEVOX/SBV2 in GPU mode
+- Check network bandwidth (streaming is real-time)
+- Use a lighter `stt_model` (`base`, `small`)
+- Ensure `stt_refine_enabled: false` (LLM post-processing adds latency)
+- Run VOICEVOX/SBV2 in GPU mode
 
-### Invalid voice_id Produces No Audio
+### Invalid voice_id, no audio
 
-- Check that the specified `voice_id` exists in the provider
-- If invalid, falls back to the provider's default voice + warning log
-- VOICEVOX: check valid IDs with `curl http://localhost:50021/speakers | jq`
-- SBV2: check the model list with `curl http://localhost:5000/models/info` and specify in the `model_id:speaker_id` format
+- Verify the `voice_id` exists for the provider
+- Invalid IDs fall back to default voice and log a warning
+- VOICEVOX: `curl http://localhost:50021/speakers | jq` to see valid IDs
+- SBV2: `curl http://localhost:5000/models/info` for model list, specify as `model_id:speaker_id`
 
 ---
 
 ## Technical Notes
 
-### VoiceSession Internal Behavior
+### VoiceSession internals
 
-`core/voice/session.py` manages one voice conversation session:
+`core/voice/session.py` manages a single voice conversation session:
 
-1. **Audio buffer management**: Holds up to 60 seconds (16kHz × 16bit × 60 seconds ≈ 1.9MB). Cleared on overflow
-2. **Minimum utterance filter**: Audio shorter than 0.35 seconds or silence (below RMS threshold) is discarded
-3. **STT execution**: Transcribes the buffer in one batch when `speech_end` is received
-4. **Voice mode attachment**: Appends `[voice-mode: 音声会話です。話し言葉で200文字以内で簡潔に...]` to the end of the message before passing it to Anima
-5. **Chat integration**: Sends text to the existing chat pipeline via ProcessSupervisor IPC
-6. **Pre-TTS sanitization**: Removes Markdown formatting (headings, bold, lists, code blocks, etc.) before passing to TTS
-7. **Streaming response**: Splits Anima response text into sentence units (by punctuation: 。！？、line breaks)
-8. **Sentence-level TTS**: Runs TTS for each split sentence to minimize first-byte latency
-9. **TTS health check**: Checks provider availability on first call. Caches only on success; rechecks on failure. Invalidates the cache after 3 consecutive TTS synthesis failures
-10. **Concurrency guard**: Prevents multiple `speech_end` from being processed simultaneously
+1. **Audio buffer**: Up to 60 seconds (16kHz × 16bit × 60s ≈ 1.9MB). Cleared on overflow
+2. **Minimum utterance filter**: Audio under 0.35s or below RMS threshold (silence) is discarded
+3. **STT**: Transcribes buffered audio when `speech_end` is received
+4. **Voice mode suffix**: Appends `[voice-mode: Voice conversation. Respond concisely in spoken style, under 200 chars...]` to the message before sending to Anima
+5. **Chat integration**: Sends text to existing chat pipeline via ProcessSupervisor IPC
+6. **TTS pre-sanitization**: Strips Markdown (headings, bold, lists, code blocks, etc.) before TTS
+7. **Streaming response**: Splits Anima response into sentences (punctuation: 。！？!?; line breaks)
+8. **Sentence TTS**: TTS per sentence to minimize first-byte latency
+9. **TTS health check**: Checks provider availability on first call. Cached on success, retried on failure. Cache invalidated after 3 consecutive TTS synthesis failures
+10. **Concurrency guard**: Prevents multiple `speech_end` handlers from running in parallel
 
-The IPC stream timeout defaults to 60 seconds. Can be overridden with `server.ipc_stream_timeout` in `config.json`.
+IPC stream timeout is 60 seconds by default. Overridable via `server.ipc_stream_timeout` in `config.json`.
 
-### Sentence Splitting (StreamingSentenceSplitter)
+### StreamingSentenceSplitter
 
-Streaming sentence splitting for Japanese text (`core/voice/sentence_splitter.py`):
-- Splits immediately after punctuation (。！？!?)
-- Also splits on line breaks
-- Buffers to hold incomplete sentences
+Japanese sentence splitting for streaming (`core/voice/sentence_splitter.py`):
+- Splits immediately after sentence punctuation (。！？!?)
+- Splits on line breaks
+- Buffers incomplete sentences
 
-### Barge-in (Interruption)
+### Barge-in
 
-If the user starts speaking during TTS playback:
-1. The client sends `{"type": "interrupt"}`
-2. The server interrupts the ongoing TTS processing
-3. The client clears the playback queue
-4. Processing of the new user utterance begins
+When the user starts talking during TTS:
+1. Client sends `{"type": "interrupt"}`
+2. Server stops current TTS processing
+3. Client clears playback queue
+4. Processing of new user utterance starts

@@ -1,39 +1,52 @@
 ---
 name: github-tool
 description: >-
-  GitHub integration tool. Fetches and creates issues and PRs via the gh CLI.
-  Use when: Use when: you need to create or list issues and PRs, perform repository operations, or check tasks on GitHub.
+  GitHub integration tool for listing and creating issues and PRs via the gh CLI wrapper.
+  Use when: creating or listing issues or pull requests, or checking repository work on GitHub.
 tags: [development, github, external]
 ---
-Understood. I’m ready to translate the Japanese content into natural English while preserving all Markdown structure, headings, tables, links, identifiers, sentinels (including ⟦§number⟧ markers), and YAML frontmatter keys. I’ll keep the literal prefix “Use when:” unchanged and translate only exposed values in the frontmatter. Please provide the content to translate.# GitHub Tool
 
-An external tool for operating GitHub Issues and PRs via the gh CLI.## How to Call
+# GitHub Tool
 
-**Bash**: Run with `animaworks-tool github <サブコマンド> [引数]`## Action List### list_issues — Issue List
+External tool for GitHub issue and PR management via gh CLI.
+
+## Invocation via Bash
+
+Use **Bash** with `animaworks-tool github <subcommand> [args]`. See Actions below for syntax.
+
+## Actions
+
+### list_issues — List issues
+```json
+{"tool_name": "github", "action": "list_issues", "args": {"repo": "owner/repo", "state": "open", "limit": 20}}
+```
+
+### create_issue — Create issue
+```json
+{"tool_name": "github", "action": "create_issue", "args": {"title": "Title", "body": "Description", "labels": "bug,enhancement"}}
+```
+
+### list_prs — List pull requests
+```json
+{"tool_name": "github", "action": "list_prs", "args": {"repo": "owner/repo", "state": "open", "limit": 20}}
+```
+
+### create_pr — Create pull request
+```json
+{"tool_name": "github", "action": "create_pr", "args": {"title": "Title", "body": "Description", "head": "feature-branch", "base": "main", "draft": false}}
+```
+- `draft` (optional, default: false): Create as draft PR
+
+## CLI Usage (S/C/D/G-mode)
+
 ```bash
 animaworks-tool github issues [--repo OWNER/REPO] [--state open] [--limit 20]
-```
-### create_issue — Create Issue
-```bash
 animaworks-tool github create-issue --title TITLE --body BODY [--labels LABELS]
-```
-### list_prs — PR List
-```bash
 animaworks-tool github prs [--repo OWNER/REPO] [--state open] [--limit 20]
-```
-### create_pr — Create PR
-```bash
 animaworks-tool github create-pr --title TITLE --body BODY --head BRANCH [--base main]
 ```
-- `draft` (optional, default: false): Whether to create as a draft PR## CLI Usage
 
-```bash
-animaworks-tool github issues [--repo OWNER/REPO] [--state open] [--limit 20]
-animaworks-tool github create-issue --title TITLE --body BODY [--labels LABELS]
-animaworks-tool github prs [--repo OWNER/REPO] [--state open] [--limit 20]
-animaworks-tool github create-pr --title TITLE --body BODY --head BRANCH [--base main]
-```
 ## Notes
 
-- The gh CLI must be installed and authenticated
-- When --repo is omitted, the repository in the current directory is used
+- gh CLI must be installed and authenticated
+- Without --repo, uses the current directory's repository

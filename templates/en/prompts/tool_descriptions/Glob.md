@@ -1,1 +1,1 @@
-Search for files that match a glob pattern.
+Find files matching a glob pattern. Returns matching file paths.

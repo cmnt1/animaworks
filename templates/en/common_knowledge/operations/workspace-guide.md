@@ -1,82 +1,82 @@
 # Workspace Guide
 
-The concept and usage of the project directory (workspace) where Anima works.
+Concept and usage of project directories (workspaces) where Anima work.
 
 ## What is a Workspace
 
-### The Concept of Home and Workplace
+### Home vs Workplace
 
-Anima normally resides in its "home" (`~/.animaworks/animas/{name}/`).
-This is where Anima-specific data such as identity, memory, and configuration are stored.
+Anima normally "live at home" (`~/.animaworks/animas/{name}/`).
+This is where identity, memory, configuration, and other Anima-specific data are stored.
 
-When performing project work (code changes, research, builds, etc.),
-Anima goes out to the "workplace" (workspace) to work.
-A workspace is a directory containing the project's source code and deliverables.
+When doing project work (code changes, investigation, builds, etc.),
+they "go to the office" (workspace) to work.
+A workspace is the directory where project source code and artifacts reside.
 
-### Registry and Aliases
+### Registry and Alias
 
-Workspaces are registered in the organization-wide registry (the `workspaces` section of `config.json`).
-They can be uniquely referenced by a short human-readable name (alias) and the first 8 characters of the SHA-256 hash of the path.
+Workspaces are registered in the organization-shared registry (`workspaces` section in `config.json`).
+They can be uniquely referenced by a short name (alias) assigned by humans and the first 8 characters of the path's SHA-256 (hash).
 
-| Format | Example | Use |
-|------|-----|------|
-| Alias only | `myproject` | Normal reference (use with hash when conflicts occur) |
-| Full form | `myproject#3af4be6e` | Exact reference with zero conflicts |
-| Hash only | `3af4be6e` | When the alias is unknown |
-| Absolute path | `/home/user/dev/myproject` | Direct specification (works even if not registered) |
+| Form | Example | Use |
+|------|---------|-----|
+| Alias only | `myproject` | Normal reference (use hash form if collision) |
+| Full form | `myproject#3af4be6e` | Strict reference with zero collision |
+| Hash only | `3af4be6e` | When alias is unknown |
+| Absolute path | `/home/user/dev/myproject` | Direct specification (works even if unregistered) |
 
-## Usage in Tools
+## Using with Tools
 
 ### submit_tasks
 
-When an alias is specified in the `workspace` field of each task,
-TaskExec uses that workspace as the working directory.
+Specify the alias in each task's `workspace` field.
+TaskExec will use that workspace as the working directory.
 
 ```
 submit_tasks(batch_id="build", tasks=[
-  {"task_id": "t1", "title": "コンパイル", "description": "...", "workspace": "myproject", "parallel": true}
+  {"task_id": "t1", "title": "Compile", "description": "...", "workspace": "myproject", "parallel": true}
 ])
 ```
 
 ### delegate_task
 
-When an alias is specified in the `workspace` field,
-the delegated subordinate works in that workspace.
+Specify the alias in the `workspace` field.
+The delegated subordinate will work in that workspace.
 
 ```
-delegate_task(name="aoi", instruction="API テストを実施して", workspace="myproject")
+delegate_task(name="aoi", instruction="Run API test", deadline="2d", workspace="myproject")
 ```
 
 ## Registration and Assignment
 
 ### Registration Procedure
 
-Refer to the `common_skills/workspace-manager` skill for details.
-Key points:
+See the `common_skills/workspace-manager` skill for details.
+Summary:
 
-1. Add the alias and path to the `workspaces` section of `config.json`
+1. Add alias and path to the `workspaces` section in `config.json`
 2. Or call `core.org.workspace.register_workspace` from Python
-3. The directory is checked for existence at registration time (an error occurs if it does not exist)
+3. Directory existence is verified at registration (error if it does not exist)
 
-### Assignment to Subordinates
+### Assigning to Subordinates
 
-Supervisors update the `default_workspace` field of the subordinate's `status.json`
-to assign the primary working directory. Refer to the `workspace-manager` skill.
+Supervisors update the subordinate's `status.json` `default_workspace` field
+to assign the primary working directory. See the `workspace-manager` skill.
 
 ## Common Issues
 
 ### Directory Does Not Exist
 
-- **At registration**: An error occurs when trying to register a non-existent path
-- **At use**: If the directory is deleted after registration, an error occurs during resolution
-- **Resolution**: Verify the path and re-register with the correct absolute path
+- **At registration**: Error when trying to register a non-existent path
+- **At use**: Error at resolution if the directory was deleted after registration
+- **Fix**: Verify the path and re-register with the correct absolute path
 
 ### Alias Not Found
 
-- **Cause**: The alias is not registered in the registry, or there is a typo
-- **Resolution**: Check the `workspaces` section with `read_memory_file(path="config.json")` and use the correct alias
+- **Cause**: Alias not registered in the registry, or typo
+- **Fix**: Check the `workspaces` section with `read_memory_file(path="config.json")` and use the correct alias
 
-### Hash Has Changed
+### Hash Changed
 
-- **Cause**: If the alias is overwritten and the path is changed, the hash also changes
-- **Resolution**: If using the full form (`alias#hash`), update to the new hash. No impact if using only the alias
+- **Cause**: Overwriting an alias with a different path changes the hash
+- **Fix**: If using full form (`alias#hash`), update to the new hash. No impact if using alias only

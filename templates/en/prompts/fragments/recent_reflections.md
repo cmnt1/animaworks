@@ -1,3 +1,3 @@
-## Recent Reflections (Insights from Previous Sessions)
+## Recent reflections (insights from previous sessions)
 
-Below are insights gained from past heartbeats. Use them to inform your decisions this time if relevant.
+Below are insights from past heartbeats. Use them in this session's decisions if relevant.

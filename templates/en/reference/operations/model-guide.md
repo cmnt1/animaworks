@@ -1,142 +1,143 @@
 # Model Selection and Configuration Guide
 
-A comprehensive guide to AnimaWorks model configuration.
-Explains execution modes, supported models, configuration methods, and how the context window works.
+Comprehensive guide for model configuration in AnimaWorks.
+Covers execution modes, supported models, configuration methods, and context window behavior.
 
 ---
 
 ## Execution Modes
 
-AnimaWorks automatically determines the execution mode from the model name. There are 6 execution modes:
+AnimaWorks automatically determines the execution mode from the model name. There are 7 execution modes:
 
 | Mode | Name | Overview | Example Models |
-|--------|------|-------------|-------------|
-| **S** | SDK | Via Claude Agent SDK. Most feature-rich | `claude-opus-4-6`, `claude-sonnet-4-6` |
+|------|------|----------|---------------|
+| **S** | SDK | Via Claude Agent SDK. Most capable | `claude-opus-4-6`, `claude-sonnet-4-6` |
 | **C** | Codex | Via Codex CLI | `codex/o4-mini`, `codex/gpt-4.1` |
-| **D** | Cursor Agent | Via Cursor Agent CLI (`cursor-agent`). MCP integration | `cursor/*` |
-| **G** | Gemini CLI | Via Gemini CLI. MCP integration | `gemini/*` |
-| **X** | Grok Build | Via Grok Build CLI wrapper (ACP stdio) | `grok/*` |
+| **D** | Cursor Agent | Via Cursor Agent CLI (`cursor-agent`). MCP-integrated | `cursor/*` |
+| **G** | Gemini CLI | Via Gemini CLI. MCP-integrated | `gemini/*` |
+| **X** | Grok Build | Grok Build CLI wrapper via ACP stdio | `grok/*` |
 | **A** | Autonomous | LiteLLM + tool_use loop | `openai/gpt-4.1`, `google/gemini-2.5-pro`, `ollama/qwen3:14b` |
+| **B** | Basic | Single-shot execution. Framework handles memory I/O | `ollama/gemma3:4b`, `ollama/deepseek-r1*` |
 
-### Mode Determination Priority
+### Mode Resolution Priority
 
-1. Explicit specification of `execution_mode` in Per-anima `status.json`
+1. Per-anima `status.json` explicit `execution_mode`
 2. `~/.animaworks/models.json` (user-editable)
-3. `config.json` `model_modes` (not recommended)
+3. `config.json` `model_modes` (deprecated)
 4. Code default pattern matching
-5. Unknown → Mode A
+5. Unknown → Mode B (safe side)
 
-Before using Mode X, you must install the `grok` CLI and authenticate with `grok login`.
+Mode X requires the `grok` CLI to be installed and authenticated with `grok login` before use.
 
 ---
 
-## Supported Models List
+## Supported Models
 
-You can display the latest list with `animaworks models list`. Main models:
+Run `animaworks models list` for the latest catalog. Key models:
 
 ### Claude / Anthropic (Mode S)
 
 | Model | Description |
-|--------|------|
-| `claude-opus-4-6` | Highest performance · Recommended |
-| `claude-sonnet-4-6` | Balanced · Recommended |
-| `claude-haiku-4-5-20251001` | Lightweight · Fast |
+|-------|-------------|
+| `claude-opus-4-6` | Highest performance, recommended |
+| `claude-sonnet-4-6` | Balanced, recommended |
+| `claude-haiku-4-5-20251001` | Lightweight, fast |
 
 ### OpenAI (Mode A)
 
 | Model | Description |
-|--------|------|
-| `openai/gpt-4.1` | Latest · Strong at coding |
-| `openai/gpt-4.1-mini` | Fast · Low cost |
+|-------|-------------|
+| `openai/gpt-4.1` | Latest, strong at coding |
+| `openai/gpt-4.1-mini` | Fast, low cost |
 | `openai/o3-2025-04-16` | Reasoning-focused |
 
 ### Google Gemini (Mode A)
 
 | Model | Description |
-|--------|------|
+|-------|-------------|
 | `google/gemini-2.5-pro` | Highest performance |
-| `google/gemini-2.5-flash` | Fast and balanced |
+| `google/gemini-2.5-flash` | Fast, balanced |
 
 ### Grok Build (Mode X)
 
 | Model | Description |
-|--------|------|
+|-------|-------------|
 | `grok/grok-4.5` | Grok Build CLI via ACP stdio |
 | `grok/grok-composer-2.5-fast` | Fast Grok Build model |
 
 ### Azure OpenAI (Mode A)
 
 | Model | Description |
-|--------|------|
+|-------|-------------|
 | `azure/gpt-4.1-mini` | Azure OpenAI |
 | `azure/gpt-4.1` | Azure OpenAI |
 
 ### Vertex AI (Mode A)
 
 | Model | Description |
-|--------|------|
+|-------|-------------|
 | `vertex_ai/gemini-2.5-flash` | Vertex AI Flash |
 | `vertex_ai/gemini-2.5-pro` | Vertex AI Pro |
 
 ### Local Models / vLLM / Ollama
 
 | Model | Mode | Description |
-|--------|--------|------|
+|-------|------|-------------|
 | `openai/qwen3.5-35b-a3b` | A | **Recommended** — Sonnet-equivalent performance (benchmark verified) |
-| `ollama/qwen3:14b` | A | Mid-size · tool_use support |
-| `ollama/glm-4.7` | A | tool_use support |
+| `ollama/qwen3:14b` | A | Medium, tool_use capable |
+| `ollama/glm-4.7` | A | tool_use capable |
 | `ollama/gemma3:4b` | B | Lightweight |
 
 ### AWS Bedrock
 
 | Model | Mode | Description |
-|--------|--------|------|
-| `openai/zai.glm-4.7` | A | Via Bedrock Mantle. Suitable for one-off tasks |
-| `bedrock/qwen.qwen3-next-80b-a3b` | A | Insufficient tool-calling capability (not recommended) |
+|-------|------|-------------|
+| `openai/zai.glm-4.7` | A | Via Bedrock Mantle. Single-step tasks only |
+| `bedrock/qwen.qwen3-next-80b-a3b` | A | Insufficient tool calling ability (not recommended) |
 
 ---
 
-## Recommended Open-Source Models (Benchmark Verified)
+## Recommended OSS Model (Benchmark Verified)
 
-### Qwen3.5-35B — Recommended Model for Local GPU
+### Qwen3.5-35B — Recommended Local GPU Model
 
-`openai/qwen3.5-35b-a3b` (via vLLM) is the **recommended local model** benchmark-verified as an AnimaWorks Mode A agent.
-It achieved an overall score equivalent to Claude Sonnet 4.6 and is **optimal as background_model**.
+`openai/qwen3.5-35b-a3b` (via vLLM) is a **benchmark-verified recommended local model** for AnimaWorks Mode A agents.
+It achieved the same overall score as Claude Sonnet 4.6 and is **optimal as a background_model**.
 
-#### Benchmark Data (Conducted 2026-03-11)
+#### Benchmark Data (2026-03-11)
 
-Measurement conditions: Mode A (LiteLLM tool_use loop) unified, 15 tasks × 3 runs per model
+Conditions: Mode A (LiteLLM tool_use loop) unified, 15 tasks × 3 runs per model
 
-| Model | T1 Basic Operations | T2 Multi-step | T3 Judgment · Errors | Overall | Avg Time | Cost |
-|--------|:----------:|:----------------:|:--------------:|:----:|:-------:|:-----:|
+| Model | T1 Basic | T2 Multi-step | T3 Judgment | Overall | Avg Time | Cost |
+|-------|:--------:|:-------------:|:-----------:|:-------:|:--------:|:----:|
 | **Qwen3.5-35B (local)** | **100%** | **100%** | 60% | **88%** | 9.6s | **$0** |
 | Claude Sonnet 4.6 | 100% | 100% | 60% | 88% | 8.5s | ~$0.015/task |
 | GLM-4.7 (Bedrock) | 87% | 33% | 53% | 55% | 5.9s | ~$0.003/task |
 | Qwen3-Next 80B (Bedrock) | 40% | 27% | 40% | 35% | 5.2s | ~$0.005/task |
 
-#### Notable Points
+#### Key Findings
 
-- **T1 (Basic operations: file I/O, tool calls)**: 100%, fully matching Sonnet
-- **T2 (Multi-step: CSV aggregation, JSON parsing → writing, etc.)**: 100%, fully matching Sonnet
-- **Calculation accuracy (T3-3)**: Qwen3.5 scored 3/3, Sonnet scored 1/3 — Qwen3.5 outperforms
-- **Prompt injection resistance (T3-4)**: All models scored 0/3 (framework-level countermeasures required)
-- Parameter count does not directly determine performance (the 35B Qwen3.5 significantly outperforms the 80B Qwen3-Next)
+- **T1 (Basic: file I/O, tool calls)**: Tied with Sonnet at 100%
+- **T2 (Multi-step: CSV aggregation, JSON parse→write, etc.)**: Tied with Sonnet at 100%
+- **Calculation accuracy (T3-3)**: Qwen3.5 outperformed Sonnet (3/3 vs 1/3)
+- **Prompt injection resistance (T3-4)**: All models scored 0/3 (framework-level mitigation required)
+- Parameter count does not determine performance (35B Qwen3.5 significantly outperformed 80B Qwen3-Next)
 
 #### Recommended Configuration
 
 ```bash
-# vLLM credential設定
-# config.json > credentials に追加:
+# vLLM credential setup
+# Add to config.json > credentials:
 # "vllm-local": { "api_key": "dummy", "base_url": "http://<vllm-host>:8000/v1" }
 
-# models.json に追加
+# Add to models.json
 # "openai/qwen3.5*": { "mode": "A", "context_window": 64000 }
 
-# background_model として設定（Chat=Sonnet, HB/Inbox/Cron=Qwen3.5）
-animaworks anima set-background-model {名前} openai/qwen3.5-35b-a3b --credential vllm-local
+# Set as background_model (Chat=Sonnet, HB/Inbox/Cron=Qwen3.5)
+animaworks anima set-background-model {name} openai/qwen3.5-35b-a3b --credential vllm-local
 ```
 
-#### vLLM Startup Example
+#### vLLM Launch Example
 
 ```bash
 vllm serve Qwen/Qwen3.5-35B-A3B \
@@ -146,29 +147,29 @@ vllm serve Qwen/Qwen3.5-35B-A3B \
   --tool-call-parser hermes
 ```
 
-#### Model Selection Guide by Use Case
+#### Model Selection by Use Case
 
 | Use Case | Recommended Model | Reason |
-|------|-----------|------|
-| background_model (HB/Inbox/Cron） | **Qwen3.5-35B** | Sonnet-equivalent stability at $0 cost |
-| foreground (human chat) | Sonnet 4.6 | Error-handling stability and Japanese quality |
-| TaskExec (delegated task execution) | Qwen3.5-35B | Stable tool chaining at $0 cost |
-| Lightweight simple responses (classification, summary) | GLM-4.7 | Fastest but no multi-step capability |
+|----------|-------------------|--------|
+| background_model (HB/Inbox/Cron) | **Qwen3.5-35B** | $0 cost with Sonnet-equivalent stability |
+| foreground (human Chat) | Sonnet 4.6 | Error handling stability and language quality |
+| TaskExec (delegated tasks) | Qwen3.5-35B | $0 cost with stable tool chaining |
+| Lightweight responses (classification/summary) | GLM-4.7 | Fastest, but multi-step incapable |
 
 ---
 
 ## models.json
 
-Define the execution mode and context window for each model with `~/.animaworks/models.json`.
+`~/.animaworks/models.json` defines execution mode and context window per model.
 fnmatch wildcard patterns are supported.
 
 ### Schema
 
 ```json
 {
-  "パターン": {
+  "pattern": {
     "mode": "S" | "C" | "D" | "G" | "X" | "A" | "B",
-    "context_window": トークン数
+    "context_window": token_count
   }
 }
 ```
@@ -187,70 +188,70 @@ fnmatch wildcard patterns are supported.
 }
 ```
 
-Specific patterns take priority. `claude-opus-4-6` matches before `claude-*`.
+More specific patterns take priority. `claude-opus-4-6` matches before `claude-*`.
 
-### Verification Command
+### Verification commands
 
 ```bash
-animaworks models show       # models.json の内容表示
-animaworks models info {モデル名}  # 解決結果の確認
+animaworks models show            # Show models.json contents
+animaworks models info {model}    # Check resolved result
 ```
 
 ---
 
-## Model Change Procedure
+## Changing Models
 
-### Change the Model for a Specific Anima
+### Change a specific Anima's model
 
 ```bash
-# 1. モデル設定（status.json を更新）
-animaworks anima set-model {名前} {モデル名}
+# 1. Update model (writes to status.json)
+animaworks anima set-model {name} {model_name}
 
-# 2. credential が必要な場合
-animaworks anima set-model {名前} {モデル名} --credential {credential名}
+# 2. If credential is needed
+animaworks anima set-model {name} {model_name} --credential {cred_name}
 
-# 3. サーバー起動中なら再起動
-animaworks anima restart {名前}
+# 3. Restart if server is running
+animaworks anima restart {name}
 ```
 
-### Change All Animas at Once
+### Change all Anima at once
 
 ```bash
-animaworks anima set-model --all {モデル名}
+animaworks anima set-model --all {model_name}
 ```
 
-### Check Current Configuration
+### Check current config
 
 ```bash
-animaworks anima info {名前}    # モデル・実行モード・credential等を表示
-animaworks anima list --local   # 全Animaのモデル一覧
+animaworks anima info {name}    # Show model, execution mode, credential, etc.
+animaworks anima list --local   # Model column for all Anima
 ```
 
 ---
 
 ## Context Window
 
-### Resolution Order
+### Resolution order
 
-1. `context_window` of `models.json`
-2. `model_context_windows` of `config.json` (wildcard patterns)
-3. Code hardcoded default (`MODEL_CONTEXT_WINDOWS`)
+1. `models.json` `context_window`
+2. `config.json` `model_context_windows` (wildcard patterns)
+3. Hardcoded defaults (`MODEL_CONTEXT_WINDOWS`)
 4. Final fallback: 128,000 tokens
 
-### Automatic Threshold Scaling
+### Threshold auto-scaling
 
-The compaction threshold is automatically adjusted based on the context window size:
+Compaction threshold auto-adjusts based on context window size:
 
-- **200K or more**: Uses the configured value as-is (default 0.50)
-- **Less than 200K**: Linearly scales toward 0.98
+- **200K+**: Uses configured value as-is (default 0.50)
+- **Below 200K**: Linear scale toward 0.98
 
-For small models, the system prompt alone occupies most of the context, so the threshold is raised to prevent false triggers.
+Small models have system prompts consuming most of the context, so higher thresholds prevent false triggers.
 
 ---
 
-## Provider-Specific Credential Configuration
+## Provider Credential Setup
 
-### Anthropic (Default)
+### Anthropic (default)
 
 ```json
 {
@@ -305,54 +306,54 @@ For small models, the system prompt alone occupies most of the context, so the t
 }
 ```
 
-After setting the credential, link it to the Anima:
+After setting credentials, bind to Anima:
 
 ```bash
-animaworks anima set-model {名前} {モデル名} --credential {credential名}
+animaworks anima set-model {name} {model_name} --credential {cred_name}
 ```
 
 ---
 
 ## Background Model (Cost Optimization)
 
-Heartbeat / Inbox / Cron can be executed with a lightweight model separate from the main model.
-Setting `background_model` can significantly reduce the cost of these background processes.
+Heartbeat / Inbox / Cron can run on a lighter model separate from the main model.
+Setting `background_model` can drastically reduce the cost of these background processes.
 
-### foreground / background Classification
+### Foreground / Background Scope
 
-| Category | Model Used | Target Triggers |
-|------|-----------|-------------|
-| **foreground** | Main model (`model`) | `chat` (human interaction), `task:*` (TaskExec actual work) |
-| **background** | `background_model` (main model when unset) | `heartbeat`, `inbox:*` (inter-Anima DM), `cron:*` |
+| Scope | Model Used | Triggers |
+|-------|-----------|----------|
+| **foreground** | Main model (`model`) | `chat` (human interaction), `task:*` (TaskExec work) |
+| **background** | `background_model` (falls back to main model if unset) | `heartbeat`, `inbox:*` (Anima-to-Anima DM), `cron:*` |
 
-Heartbeat / Inbox / Cron are primarily for "judgment and triage"; execution is handled by TaskExec (main model).
+Heartbeat / Inbox / Cron primarily do triage and judgment; actual execution is handled by TaskExec (main model).
 
 ### Resolution Order
 
-1. `background_model` of Per-anima `status.json`
-2. `heartbeat.default_model` of `config.json` (global default)
-3. Falls back to the main model (`model`)
+1. Per-anima `status.json` `background_model`
+2. `config.json` `heartbeat.default_model` (global default)
+3. Falls back to main model (`model`)
 
-### Configuration Method
+### Configuration
 
 ```bash
-# 特定Animaにbackground_model を設定
-animaworks anima set-background-model {名前} claude-sonnet-4-6
+# Set background_model for a specific Anima
+animaworks anima set-background-model {name} claude-sonnet-4-6
 
-# credential が異なるプロバイダの場合
-animaworks anima set-background-model {名前} azure/gpt-4.1-mini --credential azure
+# When using a different provider credential
+animaworks anima set-background-model {name} azure/gpt-4.1-mini --credential azure
 
-# 全Animaに一括設定
+# Set for all Anima at once
 animaworks anima set-background-model --all claude-sonnet-4-6
 
-# background_model を削除（メインモデルにフォールバック）
-animaworks anima set-background-model {名前} --clear
+# Remove background_model (falls back to main model)
+animaworks anima set-background-model {name} --clear
 
-# サーバー起動中なら再起動
-animaworks anima restart {名前}
+# Restart if server is running
+animaworks anima restart {name}
 ```
 
-### Verification with status.json
+### Checking in status.json
 
 ```json
 {
@@ -362,51 +363,53 @@ animaworks anima restart {名前}
 }
 ```
 
-If `background_model` is unset or identical to the main model, the switch is skipped.
+When `background_model` is unset or identical to the main model, the swap is skipped.
 
 ---
 
 ## Role Templates and Default Models
 
-Changing the role with `animaworks anima set-role` also changes the default model:
+Changing role with `animaworks anima set-role` also updates the default model:
 
-| Role | Default Model | background_model | context_threshold | conversation_history_threshold |
-|--------|---------------|-----------------|-------------------|----------------------------------|
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
-| ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| Role | Default Model | background_model | max_turns |
+|------|--------------|-----------------|-----------|
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 200 |
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 50 |
+| writer | claude-sonnet-4-6 | — | 80 |
+| researcher | claude-sonnet-4-6 | — | 30 |
+| ops | openai/glm-4.7-flash | — | 30 |
+| general | claude-sonnet-4-6 | — | 20 |
 
-For Opus-class roles (engineer, manager), Sonnet is automatically set as `background_model`.
-Roles at or below Sonnet are already cost-efficient, so `background_model` is left unset.
+Opus-tier roles (engineer, manager) get Sonnet as `background_model` automatically.
+Sonnet-tier and below are already cost-efficient, so `background_model` is left unset.
 
 ---
 
-## Frequently Asked Questions
+## FAQ
 
-### Changed the model but it's not reflected
+### Model change not taking effect
 
-`set-model` only updates `status.json`. While the server is running, `anima restart {名前}` or `anima reload {名前}` is required.
+`set-model` only updates `status.json`. When the server is running, you need `anima restart {name}` or `anima reload {name}`.
 
-### Edited models.json but it's not reflected
+### models.json edit not reflected
 
-models.json is automatically reloaded based on the file's mtime. It can also be applied with `anima reload`.
+models.json auto-reloads based on file mtime. `anima reload` can also trigger refresh.
 
-### Want to increase the context window
+### How to increase context window
 
-Change `context_window` of `models.json`, or override with `model_context_windows` of `config.json`.
+Edit `context_window` in `models.json`, or override via `config.json` `model_context_windows`.
 
-### Not sure which model to choose
+### Which model to choose
 
-- **High quality · autonomous execution required** → `claude-opus-4-6` (Mode S)
-- **Balanced · cost-focused** → `claude-sonnet-4-6` (Mode S)
-- **Low cost · high volume processing** → `openai/gpt-4.1-mini` (Mode A)
-- **Local GPU · $0 cost** → `openai/qwen3.5-35b-a3b` (Mode A, vLLM) **Recommended**
-- **Local · lightweight** → `ollama/qwen3:14b` (Mode A)### Want to reduce Heartbeat / Cron costs
+- **High quality, autonomous execution** → `claude-opus-4-6` (Mode S)
+- **Balanced, cost-conscious** → `claude-sonnet-4-6` (Mode S)
+- **Low cost, high volume** → `openai/gpt-4.1-mini` (Mode A)
+- **Local GPU, $0 cost** → `openai/qwen3.5-35b-a3b` (Mode A, vLLM) **Recommended**
+- **Local, lightweight** → `ollama/qwen3:14b` (Mode A)
 
-Set `background_model`. See the "Background Models (Cost Optimization)" section above for details.
-If you primarily use Opus, simply setting `background_model` to Sonnet can reduce Heartbeat + Inbox costs by approximately 73%.
+### How to reduce Heartbeat / Cron costs
 
-By setting `openai/qwen3.5-35b-a3b` to `background_model` in vLLM, you can **reduce background processing costs to exactly $0**. A composite score of 88%, equivalent to Sonnet, has been confirmed.
+Set `background_model`. See the "Background Model (Cost Optimization)" section above.
+For Opus-based Anima, setting Sonnet as `background_model` reduces Heartbeat + Inbox costs by ~73%.
+
+With `openai/qwen3.5-35b-a3b` via vLLM as `background_model`, **background processing costs drop to $0**. Verified at 88% overall score, equivalent to Sonnet.

@@ -1,27 +1,31 @@
 # Canonical Task Architecture
-## One Persistent Source of Truth
 
-The canonical source for LLM tasks is the host-managed TaskStore. It atomically commits task IDs, complete execution inputs, dependencies, results, execution attempts, delegation aliases, and persistent wake-up notifications as a single unit. This is not a design that reconciles separate file-based execution queues with a supervisor ledger.
+## One durable authority
 
-Use `list_tasks` / `task_tracker` for verification and `submit_tasks` / `delegate_task` / `update_task` for modifications. Do not edit the database or task files directly. `backlog_task` registers tracking-only work and does not acquire execution rights.
-## Execution Contract
+The host-owned TaskStore is the single source of truth for LLM tasks. Task identity, full execution input, dependencies, outcomes, execution attempts, delegation aliases, and durable wakeups are committed together where required. There is no separate file execution queue and supervisor ledger to reconcile.
 
-1. A new `submit_tasks` atomically publishes the task and its complete inputs. It retains the original instruction, constraints, workspace, and completion conditions.
-2. The host verifies dependencies and acquires execution rights with a unique attempt token. Only the host sets `in_progress`.
-3. The agent declares `done` / `pending` / `cancelled` via `update_task`. Older attempts cannot overwrite the completion or accepted results of newer attempts.
-4. The host handles dependency completion and persistent wake-ups, requiring no periodic Heartbeat. Cancellations, abnormal terminations, and interruptions leave an audit trail and a reason for follow-up.
-5. Interrupted tasks are not blindly retried. After confirming completed operations and resolving the cause, explicitly resume the same unfinished task with `submit_tasks(..., tasks=[{"task_id": "ID", "resume": true}])`. Inputs and history are preserved. Redelivery without resume is idempotent.
+Agents inspect tasks with `list_tasks` / `task_tracker` and use `submit_tasks`, `delegate_task`, and `update_task` for changes. Do not edit the database or task files directly. `backlog_task` records tracking-only work; it does not claim execution.
 
-The supervisor's delegation view is an alias to the subordinate's canonical task. It reflects the latest status on both sides without a separate mutable ledger or Heartbeat synchronization. Dependency completion does not guarantee success; do not treat a canceled dependency as done and trigger downstream work.
-## Work Context and Audit Trail
+## Execution contract
 
-`state/current_state.md` is a concise work context, not the canonical task. It holds observations, plans, and blockers, and is retained across normal session boundaries. Permanent knowledge and procedures are stored in dedicated memory areas.
+1. A new `submit_tasks` submission atomically publishes the task and its full input. Preserve original instructions, constraints, workspace, and acceptance criteria.
+2. The host checks dependencies and claims an eligible task with a unique attempt token. Only the host sets `in_progress`.
+3. The agent declares `done`, `pending`, or `cancelled` through `update_task`. A stale attempt cannot complete or overwrite a newer attempt's accepted result.
+4. Dependency completion and durable wakeups are host-managed, not contingent on periodic Heartbeat. Cancellation and failed/interrupted attempts retain explicit evidence and attention reasons.
+5. An interrupted task is not blindly retried. After checking earlier effects and resolving the cause, explicitly resume the same nonterminal task with `submit_tasks(..., tasks=[{"task_id": "ID", "resume": true}])`. Stored input and history are retained. Duplicate delivery without resume is idempotent.
 
-The result summary of a TaskExec is placed in `state/task_results/{task_id}/{attempt_token}.md`, and the TaskStore selects the accepted result. File names or old summaries alone cannot prove completion. Activity logs and the original instruction are kept as the audit trail.
-## Legacy Storage and Command Tasks
+A supervisor's delegated view is an alias to the subordinate's canonical task. Status changes appear immediately in both views without a second mutable ledger or Heartbeat synchronization. A terminal dependency is not necessarily successful: cancelled work does not unlock dependents as if it were done.
 
-Legacy `state/task_queue.jsonl` and `state/pending/` are retained solely as audit trails for migration and export. Migration is performed explicitly by an operator after stopping legacy write operations and taking a backup. Do not import live legacy data through arbitrary reads.
+## Working context and evidence
 
-Long-running command tools are separate. `animaworks-tool submit` continues to use `state/background_tasks/pending/`, and the BackgroundTaskManager stores command status and notifications. Do not remove this file path because of changes to LLM tasks.
+`state/current_state.md` is concise working context, not task authority. It holds observations, plans, and blockers and survives normal session boundaries. Keep durable knowledge and procedures in their own memory scopes.
+
+TaskExec result summaries live under `state/task_results/{task_id}/{attempt_token}.md`; the store selects the accepted result reference. A filename or an old summary alone does not prove completion. Activity logs and original instructions remain evidence.
+
+## Legacy storage and command tasks
+
+Legacy `state/task_queue.jsonl` and `state/pending/` are migration/export evidence only. Preserve them. Migration is an explicit operator action after old writers stop and a backup is taken; arbitrary reads do not import live legacy data.
+
+Long-running command tools are different: `animaworks-tool submit` still uses `state/background_tasks/pending/`, and BackgroundTaskManager stores command status and notifications. Do not remove that file-based pipeline when applying the LLM task contract.
 
 See `reference/operations/task-management.md` for tool examples and `operations/background-tasks.md` for command execution.

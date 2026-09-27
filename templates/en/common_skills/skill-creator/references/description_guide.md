@@ -1,30 +1,33 @@
-# description Writing Guide (Agent Skills Standard Compliant)
-## Basic Rules
+# description authoring guide (Agent Skills standard)
 
-The description is the most important field used for skill discovery and selection.
-The LLM reads the description to determine whether "this skill is relevant to the current conversation."
+## Basics
+
+The `description` field is the most important signal for skill discovery and selection.
+The LLM reads it to decide whether this skill is relevant to the current conversation.
+
 ### Format
 
 ```yaml
 description: >-
-  [1行目: 何をするスキルかの簡潔な説明（三人称）]
-  Use when: [利用シーンをカンマ区切りで列挙]
+  [Line 1: concise third-person summary of what the skill does]
+  Use when: [comma-separated usage scenarios]
 ```
 
 ### Rules
 
-1. **Within 250 characters** — Content exceeding 250 characters is truncated in catalog display
-2. **Write in third person** — Use forms like "can do ~" or "performs ~." "I" or "you" are not allowed
-3. **Must include Use when:** — The LLM uses it as a cue for usage decisions
-4. **Use specific verbs and nouns** — Such as "login," "screenshot," "email send"
-5. **No XML tags** — `<` `>` are prohibited for security reasons
-6. **Do not use `「」` keyword enumeration** — That is the old method. Rely on LLM reasoning
-### Good Examples
+1. **250 characters or fewer** — catalog views truncate beyond 250 characters
+2. **Third person** — use patterns like "Provides …" or "Handles …". Do not use "I" or "you"
+3. **Include `Use when:`** — gives the model clear cues for when to apply the skill
+4. **Use concrete verbs and nouns** — e.g. "login", "screenshot", "send email"
+5. **No XML tags** — `<` and `>` are disallowed for security reasons
+6. **Do not use `「」` keyword lists** — legacy style; rely on natural phrasing and `Use when:`
+
+### Good examples
 
 ```yaml
 description: >-
-  ヘッドレスブラウザ操作CLI。Webページを開いて閲覧・操作・ログイン・スクリーンショット撮影ができる。
-  Use when: ブラウザでサイトを開く、Webアプリの操作・確認、ログイン操作、スクショ撮影、画面のUI確認が必要なとき。
+  Headless browser CLI. Opens web pages for viewing, interaction, login, and screenshots.
+  Use when: opening sites in a browser, operating or verifying web apps, login flows, screenshots, UI checks.
 ```
 
 ```yaml
@@ -33,36 +36,37 @@ description: >-
   Use when: sending emails, checking inbox, searching mail, managing Gmail labels or filters.
 ```
 
-### Bad Examples
+### Bad examples
 
 ```yaml
-# ❌ 「」キーワード列挙（旧方式）
+# ❌ 「」 keyword list (legacy)
 description: >-
-  ブラウザ操作CLI。
-  「ブラウザで確認」「スクショ撮って」「ブラウザ操作」
+  Browser CLI.
+  「check in browser」「take a screenshot」「browser ops」
 
-# ❌ 曖昧すぎる
+# ❌ Too vague
 description: Helps with documents
 
-# ❌ 一人称
+# ❌ First person
 description: I can help you process PDF files
 
-# ❌ 250文字超
+# ❌ Over 250 characters
 description: >-
-  （非常に長い説明文...）
+  (Very long text…)
 ```
 
 ### Checklist
 
-- [ ] Is it within 250 characters?
-- [ ] Is it written in third person?
-- [ ] Does it include `Use when:`?
-- [ ] Are there specific verbs and nouns?
-- [ ] Is there no `「」` keyword enumeration?
-- [ ] Are there no XML tags?
-### Validation with linter
+- [ ] Within 250 characters
+- [ ] Written in third person
+- [ ] Contains `Use when:`
+- [ ] Uses concrete verbs and nouns
+- [ ] No `「」` keyword enumeration
+- [ ] No XML tags
 
-After creating a skill, you can validate it with the linter:
+### Lint
+
+After authoring, validate with:
 
 ```bash
 python scripts/lint_skill.py /path/to/SKILL.md

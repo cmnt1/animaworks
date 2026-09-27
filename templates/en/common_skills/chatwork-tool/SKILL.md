@@ -1,54 +1,67 @@
 ---
 name: chatwork-tool
 description: >-
-  Chatwork integration tool. Performs message send/receive, search, unread reply check, and room listing.
-  Use when: Use when: you need to send messages, retrieve room lists, check unread replies, search chats, or handle mentions in Chatwork.
+  Chatwork integration tool for send/receive messages, search, unreplied checks, and room listing.
+  Use when: posting to Chatwork, listing rooms, checking unreplied threads, searching messages, or handling mentions.
 tags: [communication, chatwork, external]
 ---
-Understood. Please provide the Japanese content you’d like me to translate, and I’ll follow all the specified rules.# Chatwork Tool
 
-An external tool for sending, receiving, searching, and managing Chatwork messages.## How to Call
+# Chatwork Tool
 
-**Bash**: Run with `animaworks-tool chatwork <サブコマンド> [引数]`. See below for syntax.## Action List### send — Send Message
+External tool for Chatwork messaging, search, and room management.
+
+## Invocation via Bash
+
+Use **Bash** with `animaworks-tool chatwork <subcommand> [args]`. See Actions below for syntax.
+
+## Actions
+
+### send — Send message
+```json
+{"tool_name": "chatwork", "action": "send", "args": {"room": "room name or ID", "message": "text"}}
+```
+
+### messages — Get messages
+```json
+{"tool_name": "chatwork", "action": "messages", "args": {"room": "room name or ID", "limit": 20}}
+```
+
+### search — Search messages
+```json
+{"tool_name": "chatwork", "action": "search", "args": {"keyword": "search term", "room": "room (optional)", "limit": 50}}
+```
+
+### unreplied — Check unreplied messages
+```json
+{"tool_name": "chatwork", "action": "unreplied", "args": {"include_toall": false}}
+```
+- `include_toall` (optional, default: false): Include messages addressed to all
+
+### rooms — List rooms
+```json
+{"tool_name": "chatwork", "action": "rooms", "args": {}}
+```
+
+### mentions — Get mentions
+```json
+{"tool_name": "chatwork", "action": "mentions", "args": {"include_toall": false}}
+```
+- `include_toall` (optional, default: false): Include messages addressed to all
+
+### delete — Delete message (own messages only)
+```json
+{"tool_name": "chatwork", "action": "delete", "args": {"room": "room name or ID", "message_id": "message ID"}}
+```
+
+### sync — Sync messages (cache update)
+```json
+{"tool_name": "chatwork", "action": "sync", "args": {"room": "room name or ID"}}
+```
+
+## CLI Usage (S/C/D/G-mode)
+
 ```bash
 animaworks-tool chatwork send ROOM MESSAGE
-```
-### Messages — Retrieving Messages
-```bash
-animaworks-tool chatwork messages ROOM [-n 20]
-```
-### Search — Message Search
-```bash
-animaworks-tool chatwork search KEYWORD [-r ROOM] [-n 50]
-```
-### unreplied — Check Unreplied Messages
-```bash
-animaworks-tool chatwork unreplied [--json]
-```
-- `include_toall` (optional, default: false): Whether to include messages addressed to everyone
-
-Use when: checking for messages that have not yet been replied to.### rooms — Room List
-```bash
-animaworks-tool chatwork rooms
-```
-### mentions — Fetching Mentions
-```bash
-animaworks-tool chatwork mentions [--json]
-```
-- `include_toall` (optional, default: false): Whether to include messages addressed to everyone
-
-Use when:### delete — Delete messages (own messages only)
-```bash
-animaworks-tool chatwork delete ROOM MESSAGE_ID
-```
-### sync — Message synchronization (cache update)
-```bash
-animaworks-tool chatwork sync [ROOM]
-```
-## CLI Usage
-
-```bash
-animaworks-tool chatwork send ROOM MESSAGE
 animaworks-tool chatwork messages ROOM [-n 20]
 animaworks-tool chatwork search KEYWORD [-r ROOM] [-n 50]
 animaworks-tool chatwork unreplied [--json]
@@ -56,10 +69,10 @@ animaworks-tool chatwork rooms
 animaworks-tool chatwork mentions [--json]
 animaworks-tool chatwork delete ROOM MESSAGE_ID
 animaworks-tool chatwork sync [ROOM]
-animaworks-tool chatwork <サブコマンド> ... --as <identity>
 ```
+
 ## Notes
 
-- Operates with your own dedicated token `CHATWORK_API_TOKEN__<自分の名前>`. Not available if unregistered
-- `--as <identity>` can only be used when delegated via `chatwork_tool.grants`. With read delegation, write (send/delete, etc.) is not possible
-- Rooms can be specified by either room name or room ID
+- Chatwork API Token must be configured in credentials
+- Room can be specified by name or room ID
+- Write token may be required for sending messages

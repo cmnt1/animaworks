@@ -1,47 +1,47 @@
-# Project Configuration Guide
+# Project Setup
 
-Reference for AnimaWorks configuration structure and Anima addition procedures.
-Use when: searching or referencing configuration changes are needed.
+Reference for AnimaWorks configuration structure and procedures for adding Anima.
+Search and refer to this when you need to change settings.
 
 ## Runtime Directory Initialization
 
-Runtime data is placed in `~/.animaworks/` (or `ANIMAWORKS_DATA_DIR`).
-During initial setup, initialize from the template using `animaworks init`.
+Runtime data is stored in `~/.animaworks/` (or `ANIMAWORKS_DATA_DIR`).
+On first setup, run `animaworks init` to initialize from templates.
 
-### init Command
+### init Commands
 
 | Command | Description |
 |---------|------|
-| `animaworks init` | Initialize runtime directory (non-interactive). Does nothing if it already exists |
-| `animaworks init --force` | Merge template diff into existing data. Adds only new files; `prompts/` is overwritten |
-| `animaworks init --skip-anima` | Initialize infrastructure only. Skips Anima creation |
-| `animaworks init --template NAME` | Create Anima non-interactively from template |
-| `animaworks init --from-md PATH` | Create Anima non-interactively from MD file |
-| `animaworks init --blank NAME` | Create blank Anima non-interactively |
+| `animaworks init` | Initialize runtime directory (non-interactive). Does nothing if already exists |
+| `animaworks init --force` | Merge template diffs into existing data. Adds new files only; overwrites `prompts/` |
+| `animaworks init --skip-anima` | Initialize infrastructure only. Skip Anima creation |
+| `animaworks init --template NAME` | Create Anima from template (non-interactive) |
+| `animaworks init --from-md PATH` | Create Anima from MD file (non-interactive) |
+| `animaworks init --blank NAME` | Create blank Anima (non-interactive) |
 
-**Recommended flow**: After running `animaworks init`, start the server with `animaworks start` and add Anima via the web UI setup wizard.
+**Recommended flow**: Run `animaworks init`, then start the server with `animaworks start`, and add Anima via the web UI setup wizard.
 
-### Directories Created During Initialization
+### Directories Created on Initialization
 
-The following are created by `ensure_runtime_dir` (`core/infra/runtime_init.py`):
+`ensure_runtime_dir` (`core/infra/runtime_init.py`) creates the following:
 
-- `animas/` — Anima directory
-- `shared/inbox/` — Receive message queue
+- `animas/` — Anima directories
+- `shared/inbox/` — Incoming message queue
 - `shared/users/` — User profiles
 - `shared/channels/` — Shared channels (initial files for general, ops)
 - `shared/dm_logs/` — DM history (fallback)
 - `tmp/attachments/` — Temporary attachment storage
-- `common_skills/` / `common_knowledge/` — Common skills and knowledge
+- `common_skills/` / `common_knowledge/` — Shared skills and knowledge
 - `prompts/` / `company/` — Prompt and organization templates
 - `tool_prompts.sqlite3` — Tool prompt DB
 - `models.json` — Model name → execution mode mapping (copied from `config_defaults/`)
 
-At every startup, `common_skills` and `common_knowledge` are incrementally synchronized from templates, adding only new entries (existing files are retained).
+On each startup, `common_skills` and `common_knowledge` are incrementally synced from templates; only new entries are added (existing files are preserved).
 
-## Overall Structure of config.json
+## config.json Structure
 
-The AnimaWorks integrated configuration file is placed in `~/.animaworks/config.json`.
-All configuration is defined in the `AnimaWorksConfig` model and has the following top-level fields.
+AnimaWorks' unified config file is at `~/.animaworks/config.json`.
+All settings are defined by the `AnimaWorksConfig` model with these top-level fields:
 
 ```json
 {
@@ -61,151 +61,117 @@ All configuration is defined in the `AnimaWorksConfig` model and has the followi
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "profile": "compact" },
+  "priming": { "dynamic_budget": true },
   "image_gen": {}
 }
 ```
 
-**Note**: The `animas` section holds only the organization layout (`supervisor`, `speciality`). Model names, credentials, and other model settings are recorded in each Anima's `status.json` (see "Anima Configuration Resolution" below).
+**Note**: The `animas` section holds only org layout (`supervisor`, `speciality`). Model name, credential, max_turns, etc. are stored in each Anima's `status.json` (see "Anima Config Resolution" below).
 
 Role of each section:
 
 | Section | Description |
-|-----------|------|
-| `version` | Configuration schema version (currently `1`) |
-| `setup_complete` | Initial setup completion flag |
+|---------|------|
+| `version` | Config schema version (currently `1`) |
+| `setup_complete` | First-time setup complete flag |
 | `locale` | UI language (`"ja"` / `"en"`) |
-| `system` | Server mode and log level |
+| `system` | Server mode, log level |
 | `credentials` | API keys and endpoints (named) |
 | `model_modes` | Model name → execution mode override map |
-| `anima_defaults` | Default settings common to all Anima |
-| `animas` | Anima organization layout (supervisor, speciality). Model settings are in status.json |
-| `consolidation` | Consolidation (daily/weekly) settings |
+| `anima_defaults` | Default settings for all Anima |
+| `animas` | Anima org layout (supervisor, speciality). Model settings are in status.json |
+| `consolidation` | Memory consolidation (daily/weekly) settings |
 | `rag` | RAG (embedding vector search) settings |
 | `priming` | Priming (automatic memory retrieval) token budget |
 | `image_gen` | Image generation style settings |
 
 <!-- AUTO-GENERATED:START config_fields -->
-### Configuration Item Reference (auto-generated)
+### 設定項目リファレンス（自動生成）
 
-#### Anima Settings (per-anima overrides)
+#### Anima設定 (per-anima overrides)
 
-| Field | Type | Default | Description |
+| フィールド | 型 | デフォルト | 説明 |
 |-----------|-----|----------|------|
 | `supervisor` | `str | None` | None |  |
-| `company` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
 | `model` | `str | None` | None |  |
-| `heartbeat_enabled` | `bool | None` | None |  |
-| `token_budget_monthly` | `int | None` | None |  |
-| `aliases` | `list[str]` | `[]` |  |
 
-#### Default Values (anima_defaults)
+#### デフォルト値 (anima_defaults)
 
-| Field | Type | Default | Description |
+| フィールド | 型 | デフォルト | 説明 |
 |-----------|-----|----------|------|
 | `model` | `str` | `"claude-sonnet-4-6"` |  |
 | `fallback_model` | `str | None` | None |  |
-| `fallback_models` | `list[str]` | `[]` |  |
 | `background_model` | `str | None` | None |  |
 | `background_credential` | `str | None` | None |  |
-| `background_thinking_effort` | `str | None` | None |  |
-| `voice_thinking_effort` | `str | None` | None |  |
 | `max_tokens` | `int` | `8192` |  |
+| `max_turns` | `int` | `10000` |  |
 | `credential` | `str` | `"anthropic"` |  |
 | `context_threshold` | `float` | `0.5` |  |
-| `context_absolute_ceiling` | `float` | `0.75` |  |
-| `task_compaction_tokens` | `int` | `0` |  |
-| `task_compaction_max` | `int` | `6` |  |
-| `max_session_age_hours` | `float` | `24.0` |  |
 | `conversation_history_threshold` | `float` | `0.3` |  |
 | `execution_mode` | `str | None` | None |  |
 | `supervisor` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
-| `extra_mcp_servers` | `dict[str, dict]` | `{}` |  |
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `max_outbound_per_hour` | `int | None` | None |  |
 | `max_outbound_per_day` | `int | None` | None |  |
 | `max_recipients_per_run` | `int | None` | None |  |
-| `default_workspace` | `str` | `""` |  |
-| `consolidation_enabled` | `bool` | `True` |  |
-| `heartbeat_enabled` | `bool` | `True` |  |
-| `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig Top Level
+#### AnimaWorksConfig トップレベル
 
-| Section | Description |
+| セクション | 説明 |
 |-----------|------|
-| `version` | Configuration file version |
-| `setup_complete` | Setup completion flag |
-| `locale` | Locale settings |
-| `system` | System settings (mode, log level) |
-| `credentials` | API authentication information |
-| `model_modes` | Model name → execution mode mapping |
+| `version` | 設定ファイルバージョン |
+| `setup_complete` | セットアップ完了フラグ |
+| `locale` | ロケール設定 |
+| `system` | システム設定（モード、ログレベル） |
+| `credentials` | API認証情報 |
+| `model_modes` | モデル名→実行モードマッピング |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
-| `anima_defaults` | Anima configuration default values |
-| `animas` | Per-Anima configuration overrides |
-| `consolidation` | Consolidation settings |
-| `rag` | RAG (retrieval-augmented generation) settings |
-| `gpu` |  |
-| `memory` |  |
-| `skills` |  |
-| `chatwork_tool` |  |
-| `prompt` |  |
-| `priming` | Priming (automatic memory recall) settings |
-| `image_gen` | Image generation settings |
+| `anima_defaults` | Anima設定デフォルト値 |
+| `animas` | Anima別設定オーバーライド |
+| `consolidation` | 記憶統合設定 |
+| `rag` | RAG（検索拡張生成）設定 |
+| `priming` | プライミング（自動記憶想起）設定 |
+| `image_gen` | 画像生成設定 |
 | `human_notification` |  |
-| `interaction` |  |
 | `server` |  |
-| `llm_rate_guard` |  |
-| `mcp` |  |
 | `external_messaging` |  |
-| `external_tasks` |  |
-| `github_webhook` |  |
-| `event_export` |  |
 | `background_task` |  |
 | `activity_log` |  |
-| `logging` |  |
 | `heartbeat` |  |
-| `cron_guard` |  |
 | `voice` |  |
 | `housekeeping` |  |
-| `inbox` |  |
-| `local_llm` |  |
-| `workspaces` |  |
-| `github_identities` |  |
-| `channel_company_defaults` |  |
 | `activity_level` |  |
 | `activity_schedule` |  |
-| `icon_url_template` |  |
 | `ui` |  |
 
 <!-- AUTO-GENERATED:END -->
 
-## How to Add a New Anima
+## Adding a New Anima
 
-There are three ways to add an Anima. All are executed with `animaworks anima create` or `animaworks init`.
-`animaworks anima create` has the `--role` and `--supervisor` options and is recommended.
+There are three ways to add an Anima. All use `animaworks anima create` or `animaworks init`.
+`animaworks anima create` supports `--role` and `--supervisor` options and is recommended.
 
-### Method 1: Create from Template
+### Method 1: From Template
 
-Use a predefined template (under `templates/ja/anima_templates/` or `templates/en/anima_templates/`).
+Uses predefined templates under `templates/ja/anima_templates/` or `templates/en/anima_templates/`.
 Templates include identity.md, injection.md, permissions.json, skills, etc.
 
 ```bash
-# テンプレートから作成（テンプレート名はディレクトリ名）
-animaworks anima create --template <テンプレート名>
+# Create from template (template name is the directory name)
+animaworks anima create --template <template_name>
 
-# 名前を変えて作成
-animaworks anima create --template <テンプレート名> --name <anima名>
+# Create with different name
+animaworks anima create --template <template_name> --name <anima_name>
 ```
 
-Templates are the most recommended method. Character settings are already complete, and bootstrap (self-definition at first startup) can be skipped.
+Templates are the most recommended method. Character setup is already in place and bootstrap (first-run self-definition) can be skipped.
 
-### Method 2: Create from Markdown File
+### Method 2: From Markdown File
 
 Prepare a character sheet (Markdown) and generate an Anima from it.
 
@@ -213,127 +179,135 @@ Prepare a character sheet (Markdown) and generate an Anima from it.
 animaworks anima create --from-md /path/to/character.md [--name ken] [--role engineer] [--supervisor aoi]
 ```
 
-- `--name`: Anima name (if omitted, extracted from the sheet)
+- `--name`: Anima name (extracted from sheet if omitted)
 - `--role`: Role template (engineer, researcher, manager, writer, ops, general). Default: general
-- `--supervisor`: Supervisor Anima name (overrides "supervisor" in the character sheet)
+- `--supervisor`: Supervisor Anima name (overrides "supervisor" in character sheet)
 
-The Markdown file is copied to the Anima directory as `character_sheet.md`.
-The sheet's "personality" and "role and action policy" sections are reflected in identity.md and injection.md.
+The Markdown file is copied as `character_sheet.md` into the Anima directory.
+The sheet's "Personality" and "Role and behavior guidelines" sections are reflected in identity.md and injection.md.
 permissions.json and specialty_prompt.md are applied from the role template.
 
 The Markdown file SHOULD include:
-- `# Character: 名前`-format heading, or an "English name" row in the basic information table (used for automatic name extraction)
-- `## 基本情報` — table with English name, supervisor, model, etc.
-- `## 人格` — reflected in identity.md
-- `## 役割・行動方針` — reflected in injection.md
+- Heading in form `# Character: Name`, or an "English name" row in the basic info table (used for name extraction)
+- `## Basic Info` — Table with English name, supervisor, model, etc.
+- `## Personality` — Reflected in identity.md
+- `## Role and behavior guidelines` — Reflected in injection.md
 
 ### Method 3: Blank Creation
 
-Create an Anima with minimal skeleton files.
+Creates an Anima with minimal skeleton files.
 
 ```bash
 animaworks anima create --name aoi
 ```
 
-`--name` is required. In blank creation, skeleton files are generated with `{name}` placeholders replaced by the real name.
-During first-startup bootstrap, the agent self-defines its character through dialogue with the user.
+`--name` is required. Blank creation produces skeleton files with `{name}` placeholders replaced by the real name.
+On first run (bootstrap), the agent self-defines the character through interaction with the user.
 
-### Directory Structure After Creation
+### Directory Layout After Creation
 
-Regardless of method, the following directories and files are generated:
+All methods produce the following directories and files:
 
 ```
 ~/.animaworks/animas/{name}/
-├── identity.md          # 人格定義（不変ベースライン）
-├── injection.md         # 役割・行動指針（可変）
-├── bootstrap.md         # 初回起動指示（完了後に削除）
-├── permissions.json       # ツール・コマンド権限
-├── heartbeat.md         # ハートビート設定
-├── cron.md              # 定時タスク設定
-├── episodes/            # エピソード記憶（日別ログ）
-├── knowledge/           # 意味記憶（学んだ知識）
-├── procedures/          # 手続き記憶（手順書）
-├── skills/              # 個人スキル
-├── state/               # ワーキングメモリ
-│   └── current_state.md  # 現在のタスク
-└── shortterm/           # 短期記憶（セッション継続用）
+├── identity.md          # Personality definition (invariant baseline)
+├── injection.md         # Role and behavior guidelines (variable)
+├── bootstrap.md         # First-run instructions (removed when done)
+├── permissions.json       # Tool and command permissions
+├── heartbeat.md         # Heartbeat config
+├── cron.md              # Scheduled task config
+├── episodes/            # Episode memory (daily logs)
+├── knowledge/            # Semantic memory (learned knowledge)
+├── procedures/          # Procedural memory (procedures)
+├── skills/              # Personal skills
+├── state/               # Working memory
+│   └── current_state.md  # Current task
+└── shortterm/           # Short-term memory (session continuity)
     └── archive/
 ```
 
-### Anima Naming Conventions
+### Anima Name Rules
 
-Anima names MUST follow these rules:
-- Only lowercase alphanumeric characters, hyphens (`-`), and underscores (`_`) are allowed
+Anima names MUST follow:
+- Only lowercase alphanumeric, hyphen (`-`), underscore (`_`)
 - Must start with a letter (`a-z`)
-- Cannot start with an underscore (reserved for templates)
+- Must not start with underscore (reserved for templates)
 - Examples: `aoi`, `taro-dev`, `worker01`
 
 ## Execution Modes (S / C / D / G / A / B)
 
-AnimaWorks has **6** execution modes. They are automatically determined from the model name, but can be overridden in `status.json` via `execution_mode`.
+AnimaWorks has **six** execution modes. They are determined from the model name but can be overridden with `execution_mode` in `status.json`.
 
 ### Mode S (SDK): Claude Agent SDK
 
-For Claude models only. Uses a Claude Code subprocess and enables the richest tool execution.
+Claude models only. Uses Claude Code subprocess for the richest tool execution.
 
-- **Target models**: `claude-*` (e.g., `claude-sonnet-4-6`, `claude-opus-4-6`)
-- **Features**: File operations, Bash execution, and autonomous memory search are all done via the Claude Agent SDK
-- **credential**: Use `anthropic` (MUST)### Mode C (Codex): Codex CLI
+- **Target models**: `claude-*` (e.g. `claude-sonnet-4-6`, `claude-opus-4-6`)
+- **Features**: File ops, Bash execution, and autonomous memory search all via Claude Agent SDK
+- **Credential**: MUST use `anthropic`
 
-Runs OpenAI Codex-family models via the Codex CLI wrapper.
+### Mode C (Codex): Codex CLI
 
-- **Target models**: `codex/*` (e.g., `codex/o4-mini`, `codex/gpt-4.1`)
-- **Features**: The integration path for MCP tools and AnimaWorks external tools is similar to Mode S/D/G
-- **credential**: Follows Codex / OpenAI requirements
+Runs OpenAI Codex-class models via the Codex CLI wrapper.
+
+- **Target models**: `codex/*` (e.g. `codex/o4-mini`, `codex/gpt-4.1`)
+- **Features**: MCP + AnimaWorks external-tool path is in the same family as S/D/G
+- **Credential**: Per Codex / OpenAI requirements
 
 ### Mode D (Cursor Agent): Cursor Agent CLI
 
-Runs Cursor's `cursor-agent` CLI as a child process. Uses AnimaWorks tools via MCP.
+Runs the Cursor `cursor-agent` CLI as a child process; MCP exposes AnimaWorks tools.
 
 - **Target models**: `cursor/*`
-- **Features**: Requires CLI and authentication on the host. Can switch to Mode A (LiteLLM) on failure
-- **credential**: Depends on Cursor / `agent login` authentication status
+- **Features**: Requires CLI and auth on the host. Can fall back to Mode A (LiteLLM) when needed
+- **Credential**: Depends on Cursor / `agent login` session
 
 ### Mode G (Gemini CLI): Gemini CLI
 
-Runs Google's `gemini` CLI as a child process. MCP integration.
+Runs Google's `gemini` CLI as a child process; MCP-integrated.
 
 - **Target models**: `gemini/*`
-- **Features**: Requires CLI or `GEMINI_API_KEY`. On fallback, may be remapped in Mode A from `gemini/` to `google/`, etc.
-- **credential**: CLI login or API key
+- **Features**: Needs CLI or `GEMINI_API_KEY`. On fallback to Mode A, `gemini/` may remap to `google/` (or similar) for LiteLLM
+- **Credential**: CLI login or API key
 
-### Mode A (Autonomous): LiteLLM + tool_use loop
+### Mode A (Autonomous): LiteLLM + tool_use Loop
 
-For cloud and local models that support tool_use. Uses LiteLLM to unify providers.
+For cloud and local models that support tool_use. LiteLLM unifies providers.
 
 - **Target models**: `openai/gpt-4.1`, `google/gemini-2.5-pro`, `vertex_ai/gemini-2.5-flash`, `ollama/qwen3:30b`, etc.
-- **Features**: Runs the tool_use loop via LiteLLM. Tool execution is dispatched by the framework
-- **credential**: Specify credentials corresponding to each provider
+- **Features**: Runs tool_use loop via LiteLLM. Framework dispatches tool execution
+- **Credential**: Specify credential for each provider
 
-Mode B has been deprecated. Models without tool_use support are not recommended. `execution_mode: "B"` remaining in configuration is treated as Mode A.
+### Mode B (Basic): Assisted (LLM thinks only)
 
-### Automatic mode detection mechanism
+For models without tool_use. LLM only thinks; framework handles memory I/O.
 
-Explicit mappings can be added via `~/.animaworks/models.json`.
-If unspecified, matching is done using default patterns in the code (fnmatch format).
+- **Target models**: `ollama/gemma3*`, `ollama/phi4*`, small Ollama models, etc.
+- **Features**: Single-shot response. No tool execution
+- **Credential**: Usually `ollama` or similar local credential
+
+### How Mode is Determined
+
+You can add explicit mapping in `~/.animaworks/models.json`.
+Otherwise, default patterns (fnmatch format) in code are used for matching.
 
 ```json
 {
   "model_modes": {
     "ollama/my-custom-model": "A",
-    "ollama/experimental-*": "A"
+    "ollama/experimental-*": "B"
   }
 }
 ```
 
-Detection priority:
-1. Anima's `execution_mode` field (per-anima override)
+Resolution priority:
+1. Anima `execution_mode` field (per-Anima override)
 2. `~/.animaworks/models.json` (exact match → wildcard)
-3. `model_modes` of `config.json` (deprecated fallback)
-4. Default patterns in the code (exact match → wildcard)
-5. If none match, use Mode A
+3. `config.json` `model_modes` (deprecated fallback)
+4. Default patterns in code (exact match → wildcard)
+5. `B` if nothing matches (safe fallback)
 
-## Credential configuration
+## Credential Configuration
 
 API keys are managed by name in the `credentials` section.
 
@@ -358,75 +332,75 @@ API keys are managed by name in the `credentials` section.
 
 Each Anima specifies which credential to use via the `credential` field.
 
-- `api_key` — API key string. If empty, attempts fallback from environment variables
-- `base_url` — Custom endpoint. Set when using Ollama or a proxy. Default is `null`
+- `api_key` — API key string. Empty string tries env var fallback
+- `base_url` — Custom endpoint. Set for Ollama or proxy. `null` for default
 
-**Security**: config.json is saved with file permissions `0600` (MUST). Since it contains API keys, prevent reading by other users.
+**Security**: config.json is saved with file permissions `0600` (MUST). Contains API keys; prevent read access from other users.
 
-## Permission configuration (permissions.json)
+## Permissions (permissions.json)
 
-Each Anima's `permissions.json` defines which tools can be used, which paths are accessible, and which commands can be executed.
+Each Anima's `permissions.json` defines allowed tools, accessible paths, and executable commands.
 
 ```markdown
 # Permissions: aoi
 
-## 使えるツール
+## Tools
 Read, Write, Edit, Bash, Grep, Glob
 
-## 読める場所
-- 自分のディレクトリ配下すべて
-- /shared/ 配下
+## Read paths
+- Your directory tree
+- /shared/
 
-## 書ける場所
-- 自分のディレクトリ配下すべて
+## Write paths
+- Your directory tree
 
-## 実行できるコマンド
-全般的なコマンド
+## Allowed commands
+General commands
 
-## 実行できないコマンド
-rm -rf, システム設定の変更
+## Disallowed commands
+rm -rf, system config changes
 
-## 外部ツール
+## External tools
 - image_gen: yes
 - web_search: yes
 - slack: no
 ```
 
 Permission rules:
-- Each Anima must read its own `permissions.json` at startup (MUST)
-- ToolHandler performs permission checks and blocks unauthorized operations
-- External tools (Slack, Gmail, GitHub, etc.) are individually allowed or denied in the `外部ツール` section
-- `読める場所` / `書ける場所` are written in natural language and interpreted by ToolHandler
+- Each Anima reads its own `permissions.json` at startup (MUST)
+- ToolHandler performs permission checks and blocks disallowed operations
+- External tools (Slack, Gmail, GitHub, etc.) are enabled/disabled individually in the `External tools` section
+- `Read paths` / `Write paths` are written in natural language; ToolHandler interprets them
 
-### Blocked commands
+### Blocked Commands
 
-If a `## 実行できないコマンド` section is listed in `permissions.json`, execution of the specified commands is blocked.
-In addition to the system-wide hardcoded blocklist (dangerous commands such as `rm -rf /`), each Anima's individual blocklist is applied.
+Adding a `## Disallowed commands` section in `permissions.json` blocks execution of the listed commands.
+In addition to the system-wide hardcoded block list (dangerous commands like `rm -rf /`), per-Anima block lists are applied.
 
 ```markdown
-## 実行できないコマンド
+## Disallowed commands
 rm -rf, docker rm, git push --force
 ```
 
-Commands in pipelines are also checked individually (e.g., in `cat file | rm -rf`, `rm -rf` is blocked).
+Commands in pipelines are checked per segment (e.g. `cat file | rm -rf` blocks on `rm -rf`).
 
-## Anima configuration resolution (two-layer merge)
+## Anima Config Resolution (2-Layer Merge)
 
-For Anima model configuration, **`status.json` is the Single Source of Truth (SSoT)**.
+Anima model settings use **`status.json` as Single Source of Truth (SSoT)**.
 
-### Two-layer structure of configuration resolution
+### 2-Layer Config Resolution
 
 | Priority | Source | Description |
-|--------|--------|------|
-| 1 (highest) | `status.json` | Placed in each Anima directory. Holds all model and execution parameter settings |
-| 2 (fallback) | `anima_defaults` | Global defaults for `config.json`. Applied to fields not set in `status.json` |
+|----------|--------|------|
+| 1 (highest) | `status.json` | In each Anima directory. Holds all model and runtime parameter settings |
+| 2 (fallback) | `anima_defaults` | Global defaults in config.json. Applied to fields not set in status.json |
 
-The `animas` section of `config.json` holds only the **organization layout** (`supervisor`, `speciality`).
-Model settings such as model name and credentials are recorded in `status.json`.
+The `animas` section in `config.json` holds only **org layout** (`supervisor`, `speciality`).
+Model name, credential, max_turns, etc. are stored in `status.json`.
 
-### Structure of status.json
+### status.json Structure
 
-File path: `~/.animaworks/animas/{name}/status.json`
+Path: `~/.animaworks/animas/{name}/status.json`
 
 ```json
 {
@@ -435,97 +409,99 @@ File path: `~/.animaworks/animas/{name}/status.json`
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
+  "max_turns": 10000,
   "context_threshold": 0.80,
   "execution_mode": null
 }
 ```
 
-### Model changes
+### Changing Model
 
-Use CLI commands to change models:
+Use the CLI to change model:
 
 ```bash
-animaworks anima set-model <anima名> <モデル名> [--credential <credential名>]
+animaworks anima set-model <anima_name> <model_name> [--credential <credential_name>]
 
-# 全 Anima のモデルを一括変更
-animaworks anima set-model --all <モデル名>
+# Change model for all Anima
+animaworks anima set-model --all <model_name>
 ```
 
-When a supervisor changes a subordinate's model, use the `set_subordinate_model` tool.
+Supervisors change subordinate models via the `set_subordinate_model` tool.
 
-### Configuration reload
+### Applying Config Changes
 
-After changing `status.json`, use the `reload` command to apply the configuration without restarting the process:
+After editing `status.json`, use `reload` to apply without restarting the process:
 
 ```bash
-# 単一 Anima のリロード
-animaworks anima reload <anima名>
+# Single Anima reload
+animaworks anima reload <anima_name>
 
-# 全 Anima のリロード
+# Reload all Anima
 animaworks anima reload --all
 ```
 
-The reload is applied immediately via IPC (no downtime). Running sessions complete with the old configuration, and new sessions use the new configuration.
+Reload takes effect via IPC immediately (no downtime). Running sessions finish with old config; new sessions use the new config.
 
-**Typical configuration change workflow**:
+**Typical config change workflow**:
 
-1. Change the model with `animaworks anima set-model <name> <model>`
-2. Apply immediately with `animaworks anima reload <name>`
+1. `animaworks anima set-model <name> <model>` to change model
+2. `animaworks anima reload <name>` to apply immediately
 
-If `status.json` is edited manually, it can also be applied with `reload` in the same way.
+Same applies if you edit `status.json` manually.
 
-### Default values list (anima_defaults)
+### Default Values (anima_defaults)
 
-| Field | Default value | Description |
-|-----------|-------------|------|
+| Field | Default | Description |
+|-------|---------|------|
 | `model` | `claude-sonnet-4-6` | LLM model to use |
-| `max_tokens` | `8192` | Maximum number of tokens per response |
+| `max_tokens` | `8192` | Max tokens per response |
+| `max_turns` | `10000` | Max turns per session |
 | `credential` | `"anthropic"` | Credential name to use |
-| `context_threshold` | `0.50` | When context usage exceeds this threshold, externalize short-term memory |
+| `context_threshold` | `0.50` | Short-term memory is externalized when context usage exceeds this threshold |
 
-### Hierarchy structure
+### Hierarchy
 
-Define the organization hierarchy using only the `supervisor` field (listed in the `animas` section of `config.json`).
+Org hierarchy is defined only by the `supervisor` field (in `config.json` `animas` section).
 
-- `supervisor: null` — Top-level Anima (top of the chain of command)
-- `supervisor: "aoi"` — Operates as a subordinate of aoi
+- `supervisor: null` — Top-level Anima (top of chain of command)
+- `supervisor: "aoi"` — Operates as subordinate of aoi
 
-The hierarchy works through instruction and reporting via messaging. Supervisors can delegate tasks to subordinates, and subordinates report results to supervisors.
+Hierarchy works via messaging for instructions and reports. Supervisors can delegate tasks to subordinates; subordinates report results to supervisors.
 
-## Anima management command list
+## Anima Management Commands
 
-CLI commands for daily Anima operations and management.
-Run while the server is running (`animaworks start`).
+CLI commands for daily Anima operations.
+Run while the server is up (`animaworks start`).
 
 | Command | Description | Downtime |
-|---------|------|-----------|
-| `animaworks anima list` | Display list and status of all Anima | None |
-| `animaworks anima status [name]` | Display process status of specified Anima (or all if omitted) | None |
-| `animaworks anima reload <name>` | Reload status.json and apply model configuration immediately (no process restart) | None |
-| `animaworks anima reload --all` | Reload configuration for all Anima at once | None |
-| `animaworks anima restart <name>` | Fully restart Anima processes (used when applying code changes) | 15-30 seconds |
-| `animaworks anima set-model <name> <model>` | Change model (updates status.json. Requires `reload` to apply) | None |
-| `animaworks anima set-model --all <model>` | Change models for all Anima at once | None |
-| `animaworks anima enable <name>` | Activate a dormant Anima and start its process | — |
-| `animaworks anima disable <name>` | Put Anima into dormancy (stop process, set enabled=false in status.json) | — |
-| `animaworks anima create` | Create a new Anima (`--from-md`, `--template`, `--blank`) | — |
-| `animaworks anima delete <name>` | Delete an Anima (archived by default) | — |
+|---------|------|----------|
+| `animaworks anima list` | List all Anima and status | None |
+| `animaworks anima status [name]` | Show process status for specified Anima (or all if omitted) | None |
+| `animaworks anima reload <name>` | Reload status.json and apply model config immediately (no process restart) | None |
+| `animaworks anima reload --all` | Reload all Anima config | None |
+| `animaworks anima restart <name>` | Fully restart Anima process (use when applying code changes) | 15–30s |
+| `animaworks anima set-model <name> <model>` | Change model (updates status.json; requires `reload` to apply) | None |
+| `animaworks anima set-model --all <model>` | Change model for all Anima | None |
+| `animaworks anima enable <name>` | Enable disabled Anima and start process | — |
+| `animaworks anima disable <name>` | Disable Anima (stop process, enabled=false in status.json) | — |
+| `animaworks anima create` | Create new Anima (`--from-md`, `--template`, `--blank`) | — |
+| `animaworks anima delete <name>` | Delete Anima (archived by default) | — |
 
-### Server management commands
+### Server Management Commands
 
 | Command | Description |
 |---------|------|
-| `animaworks start` | Start the server |
-| `animaworks stop` | Stop the server |
-| `animaworks restart` | Fully restart the server (regenerate all processes) |
-| `animaworks status` | Display system-wide status |
-| `animaworks reset` | After stopping the server, delete the runtime directory and reinitialize (destructive) |
-| `animaworks reset --restart` | After the above, restart the server |
+| `animaworks start` | Start server |
+| `animaworks stop` | Stop server |
+| `animaworks restart` | Full restart (all processes respawned) |
+| `animaworks status` | Show system-wide status |
+| `animaworks reset` | Stop server, remove runtime directory, reinitialize (destructive) |
+| `animaworks reset --restart` | Above, then restart server |
 
-### Distinction between reload / restart / system reload
+### reload vs restart vs system restart
 
-| Command | Behavior | Downtime | Use case |
-|---------|------|-----------|-------------|
-| `anima reload` | Swap ModelConfig via IPC | None | Model/parameter changes in status.json |
-| `anima restart` | Kill process → regenerate | 15-30 seconds | Applying code changes, memory leak countermeasures |
-| Server restart | Restart all Anima + detect new ones | 15-30 seconds | Reflecting Anima additions/deletions |
+| Command | Action | Downtime | Use case |
+|---------|------|----------|----------|
+| `anima reload` | IPC ModelConfig swap | None | Model/param changes in status.json |
+| `anima restart` | Kill process → respawn | 15–30s | Applying code changes, memory leak mitigation |
+| Server restart | All Anima restart + new detection | 15–30s | Applying Anima add/remove |

@@ -1,38 +1,18 @@
 ---
 name: slack-tool
 description: >-
-  Slack integration tool. It handles message sending and receiving, search, checking unreplied messages, channel list, and emoji reactions.
-  Use when: Use when: you need to post to Slack, view the channel list, reply in threads, check unreplied messages, or add reactions.
+  Slack integration tool for send/receive messages, search, unreplied checks, channel listing, and emoji reactions.
+  Use when: posting to Slack, listing channels, replying in threads, checking unreplied items, or adding reactions.
 tags: [communication, slack, external]
 ---
-Understood. Please provide the Japanese content you’d like me to translate, and I’ll follow all the specified rules.# Slack Tools
 
-External tools for sending, receiving, and searching Slack messages and reactions.## How to Invoke
+# Slack Tool
 
-**Bash**: Run with `animaworks-tool slack <サブコマンド> [引数]`## Action List### send — Send Message
-```bash
-animaworks-tool slack send CHANNEL MESSAGE [--thread TS]
-```
-### messages — Retrieving Messages
-```bash
-animaworks-tool slack messages CHANNEL [-n 20]
-```
-### Search — Message Search
-```bash
-animaworks-tool slack search KEYWORD [-c CHANNEL] [-n 50]
-```
-### unreplied — Check Unreplied Messages
-```bash
-animaworks-tool slack unreplied [--json]
-```
-### channels — Channel List
-```bash
-animaworks-tool slack channels
-```
-### react — Emoji reactions
-- `emoji`: Slack emoji name (without colons. e.g., `thumbsup`, `eyes`, `white_check_mark`)
-- `message_ts`: Timestamp of the message being reacted to (can be obtained from the result of the `messages` action)
-- **Note**: The `react` action is not supported in the CLI. Use it via MCP.## CLI Usage
+External tool for Slack messaging, search, reactions, and channel management.
+
+## Invocation via Bash
+
+Use **Bash** with `animaworks-tool slack <subcommand> [args]`:
 
 ```bash
 animaworks-tool slack send CHANNEL MESSAGE [--thread TS]
@@ -41,8 +21,55 @@ animaworks-tool slack search KEYWORD [-c CHANNEL] [-n 50]
 animaworks-tool slack unreplied [--json]
 animaworks-tool slack channels
 ```
+
+## Actions
+
+### send — Send message
+```json
+{"tool_name": "slack", "action": "send", "args": {"channel": "#channel-name", "message": "text", "thread": "thread ts (optional)"}}
+```
+
+### messages — Get messages
+```json
+{"tool_name": "slack", "action": "messages", "args": {"channel": "#channel-name", "limit": 20}}
+```
+
+### search — Search messages
+```json
+{"tool_name": "slack", "action": "search", "args": {"keyword": "search term", "channel": "#channel (optional)", "limit": 50}}
+```
+
+### unreplied — Check unreplied messages
+```json
+{"tool_name": "slack", "action": "unreplied", "args": {}}
+```
+
+### channels — List channels
+```json
+{"tool_name": "slack", "action": "channels", "args": {}}
+```
+
+### react — Add emoji reaction
+```json
+{"tool_name": "slack", "action": "react", "args": {"channel": "#channel-name", "emoji": "thumbsup", "message_ts": "message timestamp"}}
+```
+- `emoji`: Slack emoji name without colons (e.g. `thumbsup`, `eyes`, `white_check_mark`)
+- `message_ts`: Timestamp of the target message (available from `messages` action results)
+
+## CLI Usage (S/C/D/G-mode)
+
+```bash
+animaworks-tool slack send CHANNEL MESSAGE [--thread TS]
+animaworks-tool slack messages CHANNEL [-n 20]
+animaworks-tool slack search KEYWORD [-c CHANNEL] [-n 50]
+animaworks-tool slack unreplied [--json]
+animaworks-tool slack channels
+```
+
+> The `react` action is not available via CLI. Use MCP instead.
+
 ## Notes
 
-- The Slack Bot Token must be pre-configured in credentials
-- Specify the channel by name with # or by channel ID
-- The `reactions:write` scope is required for reactions
+- Slack Bot Token must be configured in credentials
+- Channel can be specified with # prefix or by channel ID
+- Reactions require the `reactions:write` scope

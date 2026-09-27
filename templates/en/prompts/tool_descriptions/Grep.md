@@ -1,1 +1,1 @@
-Search the file using a regular expression pattern. Return matched lines with file path and line number.
+Search for a regex pattern in files. Returns matching lines with file paths and line numbers.

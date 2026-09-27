@@ -1,1 +1,1 @@
-Write to a file. Automatically create the parent directory.
+Write content to a file, creating parent directories as needed.

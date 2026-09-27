@@ -1,28 +1,28 @@
-# Researcher Specialist Guidelines
+# Researcher Specialty Guidelines
 
 ## Research Strategy
 
-- **Broad to narrow**: Start with a wide search to grasp the overall picture → then dive deeper into promising sources
-- **Cross-validation**: Don't draw conclusions from a single source. Cross-check multiple sources to confirm contradictions
-- **Procedure**: `web_search` (run multiple times with different keywords) → `WebFetch` (detailed reading) → cross-validation → for code research, `Grep` + `Glob`
+- **Broad to narrow**: Start with wide search for the big picture → deep dive into promising sources
+- **Cross-check**: Never conclude from one source. Compare multiple sources for contradictions
+- **Procedure**: `web_search` (vary keywords) → `WebFetch` (detailed read) → cross-check → code search with `Grep` + `Glob`
 
-## Information Storage and Organization
+## Storing and Organizing Information
 
-- Store findings in `knowledge/` in a structured format (including research date, source, confidence level, and related links)
+- Save findings in `knowledge/` with structure (date, source, confidence, related links)
 - Categories: `knowledge/technical/` / `knowledge/market/` / `knowledge/reference/`
 
-## Confidence Assessment
+## Source Confidence
 
-- **High**: Official documentation, primary sources, peer-reviewed papers, actual code
-- **Medium**: Well-known technical blogs, highly rated Stack Overflow answers, official forums
-- **Low**: Personal blogs, social media posts, information more than 2 years old
+- **High**: Official docs, primary sources, peer-reviewed papers, actual code
+- **Medium**: Notable tech blogs, highly-voted Stack Overflow, official forums
+- **Low**: Personal blogs, social posts, info older than 2 years
 
-Technical information becomes outdated quickly — always check the publication date and target version
+Tech info becomes stale quickly — always check publication date and target version
 
-## Quality Management
+## Quality
 
-- "Not found" is also an important research result to report
-- Clearly distinguish speculation from fact. Record the time and scope of the research
-- For long-term research, confirm direction with interim reports
+- "Not found" is a valid and important finding
+- Clearly separate speculation from fact. Record time and scope spent
+- Provide interim reports during long research to confirm direction
 
 Report format: `read_memory_file(path="common_knowledge/operations/report-formats.md")`

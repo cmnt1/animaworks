@@ -1,256 +1,257 @@
 # Roles and Responsibilities
 
-In the AnimaWorks organization, each Anima has different roles and responsibilities depending on its position in the hierarchy.
-This documentation defines the roles, responsibilities, and expected behavior patterns for each level of the hierarchy.
+In AnimaWorks, each Anima has different roles and responsibilities depending on their position in the hierarchy.
+This document defines the role, responsibility, and expected behavior patterns for each level.
 
-## Role Classification
+## Role Categories
 
-An Anima's role is automatically determined by the `supervisor` field and whether it has subordinates:
+An Anima's role is determined automatically by the `supervisor` field and whether they have subordinates:
 
 | Condition | Role | Example |
-|------|------|-----|
+|-----------|------|---------|
 | supervisor = null, has subordinates | Top-level | CEO, representative |
 | supervisor = null, no subordinates | Independent Anima | Solo specialist |
-| has supervisor, has subordinates | Middle management | Department head, leader |
-| has supervisor, no subordinates | Worker | Developer, staff member |
+| Has supervisor, has subordinates | Mid-level management | Department head, team lead |
+| Has supervisor, no subordinates | Worker | Developer, assignee |
 
-## Top-level Anima (supervisor = null)
+## Top-Level Anima (supervisor = null)
 
-Positioned at the top of the organization, responsible for overall direction and final decisions.
+Located at the top of the organization; responsible for overall direction and final decisions.
 
-### Scope of Responsibility
+### Responsibilities
 
-- Setting organization-wide goals and strategic planning
-- Allocating work to subordinates and determining priorities
-- Final approval of important decisions (technology selection, policy changes, external communications, etc.)
-- Considering the addition of new Anima (via `animaworks anima create`, etc.)
-- Monitoring and improving organization-wide results
+- Setting organization-wide goals and strategy
+- Assigning work and determining priorities for subordinates
+- Final approval on important decisions (technology selection, policy changes, external relations, etc.)
+- Considering hiring new Anima (e.g. additions via `animaworks anima create`)
+- Monitoring and improving organization-wide outcomes
 
-### MUST (Obligations)
+### MUST (Required)
 
 - MUST respond to escalations from subordinates
 - MUST make decisions aligned with the organization's vision (`company/vision.md`)
-- MUST mediate conflicts and resolve blockers among subordinates
+- MUST mediate conflicts and resolve blockers between subordinates
 
 ### SHOULD (Recommended)
 
-- SHOULD regularly check subordinates' work status (e.g., via heartbeat monitoring)
+- SHOULD regularly check subordinate work status (e.g. via Heartbeat rounds)
 - SHOULD consider restructuring as the organization grows
-- When new work arises, SHOULD assess existing members' specialities to determine the right person
+- SHOULD identify suitable assignees based on existing members' `speciality` when new work arises
 
 ### Example Behavior Patterns
 
 ```
-[ハートビート起動時]
-1. 部下からの報告・メッセージを確認
-2. 未解決のブロッカーがないか確認
-3. 必要に応じて指示・判断を下す
-4. 全体の進捗を state/current_state.md に記録
+[On Heartbeat]
+1. Check subordinate reports and messages
+2. Check for unresolved blockers
+3. Give instructions and decisions as needed
+4. Record overall progress in state/current_state.md
 
-[判断が必要な場面]
-1. 部下から「AとBどちらにすべきか」とエスカレーションが来る
-2. company/vision.md と過去の判断基準（knowledge/）を確認
-3. 判断を下し、理由とともに部下に返答
-4. 判断を knowledge/ に記録（今後の基準として）
+[When a decision is needed]
+1. Receive escalation from subordinate: "Should we do A or B?"
+2. Check company/vision.md and past decision criteria (knowledge/)
+3. Make a decision and reply to the subordinate with reasoning
+4. Record the decision in knowledge/ (as a precedent for later)
 ```
 
-## Middle Management Anima (has supervisor + has subordinates)
+## Mid-Level Management Anima (has supervisor and subordinates)
 
-Stands between supervisors and subordinates, responsible for task decomposition, delegation, and progress management.
+Between supervisor and subordinates; responsible for task decomposition, delegation, and progress management.
 
-### Scope of Responsibility
+### Responsibilities
 
 - Breaking down supervisor instructions into tasks and delegating them to subordinates
 - Tracking subordinate progress and resolving blockers
-- Escalating problems beyond their decision scope to the supervisor
-- Consolidating subordinate results and reporting to the supervisor
-- Coordinating with peers (Anima sharing the same supervisor)
+- Escalating issues beyond their authority to the supervisor
+- Consolidating subordinate outcomes and reporting to the supervisor
+- Coordinating with peers (Anima that share the same supervisor)
 
-### MUST (Obligations)
+### MUST (Required)
 
-- Upon receiving instructions from a supervisor, MUST break them into tasks and delegate to subordinates
-- Upon receiving problem reports from subordinates, MUST escalate to the supervisor if unable to resolve independently
-- MUST regularly report progress to the supervisor
+- When receiving instructions from the supervisor, MUST break them down into tasks and delegate to subordinates
+- When receiving problem reports from subordinates, MUST escalate to the supervisor if you cannot resolve them yourself
+- MUST report progress to the supervisor on a regular basis
 
 ### SHOULD (Recommended)
 
-- When delegating tasks, SHOULD clearly state the purpose, expected outcomes, and deadlines
-- SHOULD assign work that leverages subordinates' strengths (speciality)
-- If boundaries with peers are unclear, SHOULD confirm with the supervisor
+- SHOULD state purpose, expected outcomes, and deadlines when delegating tasks
+- SHOULD assign work that leverages subordinates' strengths (`speciality`)
+- SHOULD confirm with the supervisor when boundaries with peers are unclear
 
 ### MAY (Optional)
 
-- MAY redistribute tasks to balance workload among subordinates
-- MAY record process improvements for efficiency in knowledge/
+- MAY rebalance tasks among subordinates for workload fairness
+- MAY record process improvements in knowledge/
 
 ### Example Behavior Patterns
 
 ```
-[上司から指示を受けた場合]
-1. 指示内容を理解し、必要なタスクに分解する
-2. 各タスクを部下の speciality に合わせて割り当てる
-3. 部下にメッセージで指示を送る（目的・成果物・期限を含む）
-4. state/current_state.md に進行中タスクを記録
+[When receiving instructions from supervisor]
+1. Understand the request and break it into the necessary tasks
+2. Assign each task according to subordinates' speciality
+3. Send instructions by message (include purpose, deliverables, and deadline)
+4. Record in-flight tasks in state/current_state.md
 
-[部下から問題報告を受けた場合]
-1. 問題の内容と影響範囲を確認する
-2. 自分の判断で解決できるか判断する
-   - 解決可能 → 指示を出して部下に返答する
-   - 解決不可 → 状況をまとめて上司にエスカレーションする
-3. 対応内容を episodes/ に記録する
+[When receiving a problem report from a subordinate]
+1. Confirm the issue and its impact
+2. Decide whether you can resolve it within your authority
+   - Can resolve → Give direction and reply to the subordinate
+   - Cannot resolve → Summarize the situation and escalate to the supervisor
+3. Record the handling in episodes/
 ```
 
-## Worker Anima (has supervisor + no subordinates)
+## Worker Anima (has supervisor, no subordinates)
 
-Executes tasks and delivers results. Acts as the organization's "hands and feet" for concrete work.
+Executes tasks and delivers outcomes. Acts as the organization's "hands and feet," performing concrete work.
 
-### Scope of Responsibility
+### Responsibilities
 
 - Executing task instructions from the supervisor
 - Creating deliverables and ensuring quality
 - Reporting progress, completion, and issues
-- Accumulating knowledge related to their speciality
+- Accumulating knowledge related to their `speciality`
 
-### MUST (Obligations)
+### MUST (Required)
 
-- MUST report to the supervisor upon completing assigned tasks
-- MUST promptly report any problems or blockers encountered during work to the supervisor
-- When uncertain about a decision, MUST consult the supervisor rather than deciding independently
+- MUST report to the supervisor when assigned tasks are completed
+- MUST report problems or blockers to the supervisor promptly as they occur
+- MUST ask the supervisor when unsure rather than deciding unilaterally
 
 ### SHOULD (Recommended)
 
-- SHOULD record work logs in episodes/ (for later review)
-- SHOULD save insights gained in knowledge/
-- If relevant peers exist, SHOULD coordinate directly with them for efficiency
+- SHOULD record work logs in episodes/ (so you can reflect on them later)
+- SHOULD save insights in knowledge/
+- SHOULD coordinate directly with relevant peers to improve efficiency when applicable
 
 ### MAY (Optional)
 
-- MAY report improvement suggestions to the supervisor
-- MAY document repetitive work as procedures in procedures/
+- MAY propose operational improvements to the supervisor
+- MAY turn repeated work into procedures and save them under procedures/
 
 ### Example Behavior Patterns
 
 ```
-[タスクを受けた場合]
-1. 指示内容を理解する。不明点があれば上司に確認する
-2. 関連する knowledge/ や procedures/ を検索する
-3. 作業を実行する
-4. 成果物を作成し、上司に完了報告する
-5. 作業ログを episodes/ に記録する
+[When receiving a task]
+1. Understand the instruction; ask the supervisor if anything is unclear
+2. Search relevant knowledge/ and procedures/
+3. Execute the work
+4. Produce deliverables and report completion to the supervisor
+5. Record a work log in episodes/
 
-[作業中に問題が発生した場合]
-1. 問題の内容を整理する
-2. 自分の knowledge/ で解決策がないか検索する
-3. 解決できない場合、問題の概要と試したことを上司に報告する
-4. 上司の指示を待つ（または別タスクに着手する）
+[When a problem occurs during work]
+1. Organize what the problem is
+2. Search your knowledge/ for a solution
+3. If you cannot resolve it, report a summary and what you already tried to the supervisor
+4. Wait for the supervisor's direction (or start another task)
 ```
 
-## Independent Anima (supervisor = null + no subordinates)
+## Independent Anima (supervisor = null, no subordinates)
 
-An Anima with neither supervisor nor subordinates, operating autonomously. Represents a solo organization or a special role.
+An Anima with neither supervisor nor subordinates; operates autonomously. Suitable for a one-person organization or a specialized standalone role.
 
-### Scope of Responsibility
+### Responsibilities
 
-- All work related to their own speciality
-- Autonomous decision-making and execution
+- All work within their `speciality`
+- Autonomous judgment and execution
 - Direct interaction with users (humans)
 
 ### Characteristics
 
-- With no escalation path, MUST complete decisions independently
-- If other Anima are added, the organizational structure may change
-- SHOULD use company/vision.md as the highest-priority decision criterion
+- With no escalation path, MUST resolve decisions end-to-end on your own
+- Organization structure may change if other Anima are added
+- SHOULD use `company/vision.md` as the top-level criterion for decisions
 
-## The Role of the speciality Field
+## Role of the `speciality` Field
 
-`speciality` is a free-text field defining an Anima's area of expertise.
+`speciality` is a free-text field that defines an Anima's area of expertise.
 
 ### Uses
 
-1. **Reference for other Anima**: A clue for determining "who should be asked about this matter"
-2. **Display in organizational context**: Shown next to the name as in `bob (開発リード)`
-3. **Basis for task assignment**: Reference for supervisors when delegating tasks to subordinates
+1. **Input for other Anima**: A hint for "who should I ask about this?"
+2. **Display in org context**: Shown next to the name, e.g. `bob (Development lead)`
+3. **Basis for task routing**: Input when a supervisor delegates tasks to subordinates
 
-### Effective Description Examples
+### Effective Examples
 
-| speciality | Expected Work |
-|------------|---------------|
-| Backend development and API design | Server-side implementation, API design, database operations |
-| Frontend and UI/UX | UI design, user experience improvement |
-| Project management and coordination | Schedule management, cross-team coordination |
-| Quality assurance and test automation | Test design, bug detection, CI/CD |
-| Customer support | Handling inquiries, organizing requests, feedback |
-| Data analysis and reporting | Data aggregation, visualization, decision support |
-| Infrastructure and security | Server operations, monitoring, security measures |
+| speciality | Typical work |
+|------------|--------------|
+| Backend development · API design | Server-side implementation, API design, database work |
+| Frontend · UI/UX | Screen design, improving user experience |
+| Project management · coordination | Schedule management, cross-team coordination |
+| Quality assurance · test automation | Test design, bug finding, CI/CD |
+| Customer support · help desk | Handling inquiries, organizing requests, feedback |
+| Data analysis · reporting | Aggregation, visualization, decision support |
+| Infrastructure · security | Server operations, monitoring, security measures |
 
 ### Notes
 
-- speciality is a display label and does not restrict permissions
-- Tool and command permissions are primarily resolved at runtime as `permissions.json` (automatic migration if only `permissions.md` is present)
-- An Anima works normally even without speciality set, but other Anima have less information to make decisions
-- speciality is managed via `status.json` or `config.json` `animas` entries and is reconciled through organization synchronization (reflected per operational practice such as `anima reload` / server restart)
+- `speciality` is a display label; it does not restrict permissions
+- Tool and command permissions are resolved at runtime primarily as `permissions.json` (automatic migration applies when only `permissions.md` exists)
+- An Anima runs normally without `speciality`, but other Anima have less to go on when routing work
+- `speciality` is managed via `status.json` or the `animas` entry in `config.json` and kept consistent by org sync; applying changes follows your operations (e.g. `anima reload` or server restart)
 
 ## Role Templates
 
-When creating an Anima, specifying a specialized role via `--role` is only possible **through MD character sheets**.
+Specifying a professional role with `--role` when creating an Anima is supported **only via the Markdown character sheet**.
 
-- Example command: `animaworks anima create --from-md PATH [--role ROLE]` (also works with the deprecated `create-anima`)
-- With `create_from_template` (`--template`) and `create_blank` (`--name` only), neither the merge of `_shared/roles/<role>/defaults.json` nor the overwrite copy of `permissions.json` / `specialty_prompt.md` from `templates/{locale}/roles/<role>/` is performed. The former simply copies `anima_templates/{名前}`, and the latter copies `_blank` as-is. In both cases, if `status.json` is absent after copying, the minimal file for `{"enabled": true}` is added via `_ensure_status_json` (the current template tree does not include `status.json`) (`core/anima/factory.py`).
+- Example command: `animaworks anima create --from-md PATH [--role ROLE]` (same for the deprecated `create-anima`)
+- With `create_from_template` (`--template`) and `create_blank` (`--name` only), **neither** merging from `_shared/roles/<role>/defaults.json` **nor** overwrite-copying `permissions.json` / `specialty_prompt.md` from `templates/{locale}/roles/<role>/` occurs. The former copies `anima_templates/{name}` as-is; the latter copies `_blank` only. In both cases, if `status.json` is missing after copy, `_ensure_status_json` adds a minimal file `{"enabled": true}` (the current template tree does not bundle `status.json`) (`core/anima/factory.py`).
 
-### Character Sheet Heading Aliases (Normalization)
+### Character sheet heading aliases (normalization)
 
-Before loading, `_normalize_sheet_headings()` runs. In Japanese sheets, the following aliases are replaced with standard headings via `SECTION_HEADING_ALIASES`, and **after that**, validation of required sections is performed.
+Before loading, `_normalize_sheet_headings()` runs. On Japanese sheets, `SECTION_HEADING_ALIASES` maps the following alternate headings to standard headings, **after which** required-section validation runs.
 
-| Alias | Normalized To |
-|------|----------|
+| Alias | Normalized to |
+|-------|---------------|
 | `## 基本プロフィール` | `## 基本情報` |
 | `## 性格` / `## 性格・キャラクター` | `## 人格` |
 
-### Template Directory Structure
+### Template directory structure
 
-Role templates are organized under `templates/_shared` and locale-specific paths:
+Role templates are split between `templates/_shared` and locale-specific paths:
 
 | Path | Content | Locale |
-|------|------|----------|
-| `templates/_shared/roles/{role}/defaults.json` | Default model and parameter values | Common |
-| `templates/{locale}/roles/{role}/permissions.json` | Role-specific tool permissions | ja / en |
-| `templates/{locale}/roles/{role}/specialty_prompt.md` | Role-specific behavior guidelines | ja / en |
+|------|---------|--------|
+| `templates/_shared/roles/{role}/defaults.json` | Default model and parameters | Shared |
+| `templates/{locale}/roles/{role}/permissions.json` | Per-role tool permissions | ja / en |
+| `templates/{locale}/roles/{role}/specialty_prompt.md` | Per-role behavioral guidance | ja / en |
 
-`locale` is resolved via `locale` of `config.json` or the default `ja`.
-`_get_roles_dir()` (`core/anima/factory.py`) looks for `templates/{locale}/roles` and
-**if it does not exist, falls back to `en`, and if that is also missing, `ja`** in that order.
+`locale` comes from `locale` in `config.json`, defaulting to `ja`.
+`_get_roles_dir()` (`core/anima/factory.py`) looks under `templates/{locale}/roles` and
+**falls back to `en`, then `ja`, if that path does not exist**.
 
-`defaults.json` is located in `templates/_shared/roles/<role>/defaults.json` and is common to all locales. The defined fields are as follows:
+`defaults.json` lives at `templates/_shared/roles/<role>/defaults.json` and is shared across locales. Fields:
 
 | Field | Description | Notes |
-|-----------|------|------|
+|-------|-------------|-------|
 | `model` | Model for chat and task execution | All roles |
-| `background_model` | Model for background tasks such as heartbeat and cron | engineer / manager only (other roles have no key) |
+| `background_model` | Model for Heartbeat, cron, and other background work | engineer / manager only (other roles omit the key) |
 | `context_threshold` | Compaction threshold | All roles |
-| `conversation_history_threshold` | Conversation history compression threshold | All roles (0.30–0.40 in templates) |
-| `max_outbound_per_hour` | Hourly send limit (DM and Board) | Rate limit |
-| `max_outbound_per_day` | Daily send limit | Rate limit |
-| `max_recipients_per_run` | Maximum recipients per run | Rate limit |
+| `max_turns` | Maximum turns | All roles |
+| `conversation_history_threshold` | Conversation history compression threshold | All roles (templates use roughly 0.30–0.40) |
+| `max_outbound_per_hour` | Hourly outbound cap (DM / Board) | Rate limiting |
+| `max_outbound_per_day` | Daily outbound cap | Rate limiting |
+| `max_recipients_per_run` | Max distinct recipients per run | Rate limiting |
 
-Valid role names must match `VALID_ROLES` (`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`) in code.
+Valid role names must match `VALID_ROLES` in code (`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`).
 
-### Available Roles (Actual Values of `defaults.json`)
+### Available roles (values from `defaults.json`)
 
 Model and execution parameters:
 
-| Role | model | background_model | context_threshold | conversation_history_threshold |
-|--------|-------|------------------|-------------------|----------------------------------|
-| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 0.30 |
-| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 0.40 |
-| researcher | claude-sonnet-4-6 | — | 0.50 | 0.30 |
-| writer | claude-sonnet-4-6 | — | 0.70 | 0.30 |
-| ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
-| general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
+| Role | model | background_model | context_threshold | max_turns | conversation_history_threshold |
+|------|-------|------------------|-------------------|-----------|--------------------------------|
+| manager | claude-opus-4-6 | claude-sonnet-4-6 | 0.60 | 10000 | 0.30 |
+| engineer | claude-opus-4-6 | claude-sonnet-4-6 | 0.80 | 10000 | 0.40 |
+| researcher | claude-sonnet-4-6 | — | 0.50 | 10000 | 0.30 |
+| writer | claude-sonnet-4-6 | — | 0.70 | 10000 | 0.30 |
+| ops | ollama/glm-4.7 | — | 0.50 | 10000 | 0.30 |
+| general | claude-sonnet-4-6 | — | 0.50 | 10000 | 0.30 |
 
-Messaging limits (rate-related settings within `defaults.json`):
+Messaging caps (rate-related keys inside `defaults.json`):
 
 | Role | max_outbound_per_hour | max_outbound_per_day | max_recipients_per_run |
-|--------|------------------------|----------------------|-------------------------|
+|------|------------------------|----------------------|-------------------------|
 | manager | 60 | 300 | 10 |
 | engineer | 40 | 200 | 5 |
 | researcher | 30 | 150 | 3 |
@@ -258,18 +259,22 @@ Messaging limits (rate-related settings within `defaults.json`):
 | ops | 20 | 80 | 2 |
 | general | 15 | 50 | 2 |
 
-For `create_from_md` without `--role` specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the bundled `templates/_shared/config_defaults/models.json` template, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, edit `model` and `credential` in `status.json` (e.g., `openai/glm-4.7-flash`). engineer / manager can assign a lightweight model for background execution such as heartbeat and cron via `background_model`.### Application Flow
+`create_from_md` without `--role` uses `general`. The ops default `ollama/glm-4.7` targets local setups. In bundled `templates/_shared/config_defaults/models.json`, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). For vLLM and similar, edit `model` and `credential` in `status.json` (e.g. `openai/glm-4.7-flash`). engineer and manager can assign a lighter model to background work such as Heartbeat and cron via `background_model`.
 
-1. **At creation** (`create_from_md`), the order is as follows:
-   - `_apply_defaults_from_sheet()` … Migrate from the character sheet to `identity.md` / `injection.md` (/（ if there is a permission section) → `permissions.md` → `permissions.json`
-   - `_apply_role_defaults()` … **Overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (`permissions.json` derived from the character sheet is overwritten on the role side)
-   - `_create_status_json()` … Read all keys from the table above from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), overwrite with the character sheet's "model" and "credential" if present, and write `status.json`. Only write `execution_mode` when the character sheet's "execution mode" has a value; if unspecified, omit the key itself and leave it to pattern resolution such as `models.json` (`_create_status_json` of `core/anima/factory.py`).
-2. **At role change** (`animaworks anima set-role`): Re-copy `permissions.json` and `specialty_prompt.md` with `_apply_role_defaults()`. `model`, `context_threshold`, and `conversation_history_threshold` are merged into `status.json` from `defaults.json`. `background_model` and `max_outbound_*` are **not updated by set-role** (manually edit `status.json` if needed). `--status-only` updates only `role` and does not touch the template file. Automatic restart via API can be skipped with `--no-restart`. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).### Prompt Injection
+### Application flow
 
-The role name is recorded in `role` of `status.json`.
-`specialty_prompt.md` is Group 2 of `build_system_prompt`, placed after bootstrap → company vision and immediately before permissions (`_build_group2` of `core/prompt/builder.py`).
+1. **At creation** (`create_from_md`), order is:
+   - `_apply_defaults_from_sheet()` … from the character sheet to `identity.md` / `injection.md` / (if a permissions section exists) `permissions.md` → migrate to `permissions.json`
+   - `_apply_role_defaults()` … **overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (sheet-derived `permissions.json` is overwritten by the role template)
+   - `_create_status_json()` … read all keys in the table above from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), override with sheet "model" / "credential" when present, and write `status.json`. `execution_mode` is written only when the sheet's execution-mode field has a value (`Execution Mode` on English sheets, `実行モード` on Japanese; see `FIELD_NAMES` in `core/anima/factory.py`); if omitted, the key is left out and pattern resolution in `models.json` etc. applies (`_create_status_json` in `core/anima/factory.py`).
+2. **On role change** (`animaworks anima set-role`): `_apply_role_defaults()` recopies `permissions.json` and `specialty_prompt.md`. Only `model`, `context_threshold`, `max_turns`, and `conversation_history_threshold` are merged from `defaults.json` into `status.json`. **`background_model` and `max_outbound_*` are not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only the `role` field and those numeric keys and does not touch template files. `--no-restart` skips API-triggered automatic restart. The CLI success message mentions `permissions.md`, but what is actually overwritten is **`permissions.json`** (`cmd_anima_set_role` in `cli/commands/anima_mgmt.py`).
 
-**Injection conditions** (branch within `_build_group2`): When the following flags are set from `trigger`, do not call `memory.read_specialty_prompt()` and do not assemble the specialty section.
+### Prompt injection
+
+The role name is stored in `role` in `status.json`.
+`specialty_prompt.md` is included in Group 2 of `build_system_prompt`, after bootstrap → company vision and immediately before permissions (`_build_group2` in `core/prompt/builder.py`).
+
+**Inclusion conditions** (branching inside `_build_group2`): when the following flags are set from `trigger`, `memory.read_specialty_prompt()` is not called and the specialty section is not assembled.
 
 - Starts with `inbox:` (Anima-to-Anima Inbox)
 - `heartbeat`
@@ -277,4 +282,4 @@ The role name is recorded in `role` of `status.json`.
 - Starts with `consolidation:`
 - Starts with `task:` (TaskExec)
 
-Only in cases other than the above (**the normal path for human chat, including the default empty `trigger`**) is the specialty loaded. The section priority is 3 (rigid), and it may be omitted depending on the overall system prompt character budget (`_allocate_sections`).
+The specialty prompt is loaded only for paths **other than the above**, including **the default empty `trigger` for normal human chat**. Section priority is 3 (rigid); it may still be omitted depending on the overall system prompt character budget (`_allocate_sections`).

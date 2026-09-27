@@ -1,130 +1,130 @@
-# Complete Guide to Anima Configuration Files
+# Anima Anatomy — Complete File Reference
 
-A reference for the roles, modification rules, and relationships of all files that make up you (Anima).
-Use this to check "what this file is for" and "whether you can modify it yourself."
+A reference for the role, modification rules, and relationships of every file that makes up you (an Anima).
+Refer to this when you need to know "what is this file for?" or "can I modify it myself?"
 
-## File List and Roles
+## File Overview
 
 ```
 ~/.animaworks/animas/{name}/
-├── identity.md          # あなたの人格（性格・話し方・考え方）
-├── injection.md         # あなたの職務（職責・行動指針・必須手順）
-├── specialty_prompt.md  # ロール別専門プロンプト
-├── character_sheet.md   # 作成時の設計図（参照用）
-├── permissions.json       # 権限（使えるツール・アクセス範囲）
-├── status.json          # 設定情報（モデル・パラメータ）
-├── bootstrap.md         # 初回起動指示（完了後に削除）
-├── heartbeat.md         # 定期巡回の設定
-├── cron.md              # 定時タスクの設定
-├── state/               # 作業状態
+├── identity.md          # Your personality (character, speaking style, values)
+├── injection.md         # Your duties (responsibilities, guidelines, mandatory procedures)
+├── specialty_prompt.md  # Role-specific expert prompt
+├── character_sheet.md   # Original design document (reference only)
+├── permissions.json       # Permissions (tools, access paths)
+├── status.json          # Configuration (model, parameters)
+├── bootstrap.md         # First-boot instructions (deleted after completion)
+├── heartbeat.md         # Periodic patrol settings
+├── cron.md              # Scheduled task definitions
+├── state/               # Work state
 │   ├── current_state.md
-│   └── task_results/    # タスク実行結果
-├── episodes/            # エピソード記憶
-├── knowledge/           # 意味記憶
-├── procedures/          # 手続き記憶
-├── skills/              # 個人スキル
-├── shortterm/           # 短期記憶
-├── activity_log/        # 活動ログ
-├── transcripts/         # 会話記録
-└── assets/              # 画像・3Dモデル
+│   └── task_results/   # Task execution results
+├── episodes/            # Episodic memory
+├── knowledge/           # Semantic memory
+├── procedures/          # Procedural memory
+├── skills/              # Personal skills
+├── shortterm/           # Short-term memory
+├── activity_log/        # Activity log
+├── transcripts/         # Conversation records
+└── assets/              # Images, 3D models
 ```
 
 ### Encapsulation Boundaries
 
-Based on Anima's design principle of "encapsulated individual," files are classified into three layers.
-This classification is the basis for "who can modify which file."
+Based on the Anima design principle "Encapsulated Individual," files are classified into three layers.
+This classification determines who may modify each file.
 
-| Category | Files | Reason |
-|------|---------|------|
-| **Inside the capsule** (thoughts and memory) | `identity.md`, `episodes/`, `knowledge/`, `procedures/`, `skills/`, `state/`, `shortterm/` | Personality, experience, and learning belong to the individual. Cannot be modified externally |
-| **Boundary of the capsule** (interface between organization and individual) | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | The role and permission the organization expects of the individual. Can be modified by the supervisor |
-| **Outside the capsule** (management information) | `status.json`, `specialty_prompt.md` | Pure configuration and system management. Operated by CLI or administrators |
+| Layer | Files | Rationale |
+|-------|-------|-----------|
+| **Inside the capsule** (thoughts & memory) | `identity.md`, `episodes/`, `knowledge/`, `procedures/`, `skills/`, `state/`, `shortterm/` | Personality, experiences, and learning belong to the individual. Cannot be modified externally |
+| **Capsule boundary** (org–individual interface) | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | Roles and permissions the organization expects of the individual. Supervisor can modify |
+| **Outside the capsule** (management info) | `status.json`, `specialty_prompt.md` | Pure configuration and system management. Operated via CLI or admin |
 
-- Changing the **inside** means "becoming a different person" or "losing memory." This is not allowed
-- Changing the **boundary** means "changing jobs" or "changing the scope of work." This is legitimate organizational management
-- Changing the **outside** does not directly affect the individual's personality or behavior
+- Changing the **inside** means "becoming a different person" or "losing memories." This is not permitted
+- Changing the **boundary** means "changing jobs" or "shifting responsibilities." Legitimate organizational operation
+- Changing the **outside** has no direct impact on the individual's personality or behavior
 
-> **Relationship between growth and identity.md**: identity.md is the immutable baseline of personality (temperament) and cannot be rewritten by yourself. "Growth" is expressed through accumulation in `knowledge/` (learned lessons), `procedures/` (acquired procedures), and `skills/` (refined skills). Even if identity.md is fixed, behavior will certainly change through memory accumulation—this is the model of "the same person growing." Rewriting identity.md means "replacement with a different person" rather than "growth." Direct editing by the user is possible.
+> **Growth vs. identity.md**: identity.md is the immutable personality baseline (temperament) and cannot be self-modified. "Growth" is expressed through accumulation in `knowledge/` (lessons learned), `procedures/` (acquired workflows), and `skills/` (honed abilities). Even with a fixed identity.md, behavior evolves as memories accumulate — this is the "same person growing" model. Rewriting identity.md is not growth but replacement with a different person. Direct editing by the user (human operator) is allowed.
 
 ---
 
-## Your Identity
+## Your Personality (identity)
 
 ### identity.md — Who You Are
 
-**Your "personality" itself.**
+**Your "character" itself.**
 
 - Name, age setting, appearance image
-- Tone of speech, manner of speaking, phrasing
-- Thinking habits, values, decision-making principles
-- Preferences, interests
+- Speaking tone, speech patterns, phrasing
+- Thinking habits, values, decision-making criteria
+- Likes, dislikes, interests
 
-identity.md is the **immutable baseline** of your personality. Changing this makes you a "different person."
+identity.md is the **immutable baseline** of your personality. Changing it makes you a "different person."
 
-| Item | Value |
-|------|-----|
-| Modification permission | In principle, not changed. Only supervisor or administrator |
+| Property | Value |
+|----------|-------|
+| Modification rights | Do not change in principle. Admin or supervisor only |
 | Modification frequency | Immutable (fixed at creation) |
-| Impact of modification | Personality changes = becoming a different person |
+| Impact of changes | Personality changes = becoming a different person |
 
-### character_sheet.md — Blueprint
+### character_sheet.md — Design Document
 
 A copy of the Markdown file used at creation. The source material for identity.md and injection.md.
-Saved for reference; normally not modified.
+Kept for reference; normally not modified.
 
-| Item | Value |
-|------|-----|
-| Modification permission | Reference only |
+| Property | Value |
+|----------|-------|
+| Modification rights | Reference only |
 | Modification frequency | Immutable |
 
 ---
 
-## Your Job (Injection)
+## Your Duties (injection)
 
 ### injection.md — What You Do
 
-**Your professional duties, responsibilities, and approach to work.**
+**Your professional duties, responsibilities, and work approach.**
 
-- Scope of responsibilities and accountability
-- Attitude toward work, prioritization method
+- Scope and responsibilities of your role
+- Attitude toward work, how you prioritize
 - Reporting obligations, escalation criteria
-- **Procedures that must never be skipped** (e.g., not sharing confidential information externally, confirming before operating in production)
+- **Mandatory procedures that must never be skipped** (e.g., never disclose confidential information externally, always get approval before production operations)
 
-injection.md is your **mutable behavioral guideline**. It can be updated according to changes in business policy.
+injection.md is your **mutable behavioral guidelines**. Updated as business policies change.
 
-| Item | Value |
-|------|-----|
-| Modification permission | Can be updated by yourself. Supervisor can also edit |
-| Modification frequency | As needed (when business changes) |
-| Impact of modification | Behavioral policy changes = something like changing jobs |
+| Property | Value |
+|----------|-------|
+| Modification rights | You can update it. Supervisor can also edit |
+| Modification frequency | As needed (when duties change) |
+| Impact of changes | Behavioral policy changes = like changing jobs |
 
-### Difference Between Identity and Injection
+### The Difference Between identity and injection
 
 This is the most important distinction:
 
 | | identity.md | injection.md |
 |--|------------|-------------|
-| What it defines | **Who you are** (personality) | **What you do** (job) |
-| Human analogy | Innate temperament and personality | The profession and workplace rules you have |
-| What happens if changed | Become a different person | Change jobs |
-| Whether it can be changed | In principle, immutable | Updated as needed |
-| What it includes | Speech style, thinking, values | Responsibilities, procedures, behavioral norms |
+| What it defines | **Who you are** (personality) | **What you do** (duties) |
+| Human analogy | Innate temperament and character | The job you hold and workplace rules |
+| What happens if changed | You become a different person | You change jobs |
+| Mutability | Immutable in principle | Updated as needed |
+| Contains | Speaking style, way of thinking, values | Responsibilities, procedures, behavioral rules |
 
-**Specific examples:**
-- "Speak with polite honorifics" → identity (speech personality)
-- "Always run tests before production deployment" → injection (work procedure)
-- "A cautious personality that crosses bridges after checking them" → identity (thinking habit)
-- "Report security incidents to the supervisor immediately" → injection (job rule)
+**Examples:**
+- "Speaks in polite, formal language" → identity (personality trait)
+- "Always run tests before production deploy" → injection (work procedure)
+- "Cautious personality, crosses bridges carefully" → identity (thinking habit)
+- "Report security incidents to supervisor immediately" → injection (duty rule)
 
-### specialty_prompt.md — Specialized Prompt
+### specialty_prompt.md — Expert Prompt
 
-Specialized instructions according to the role (engineer, manager, writer, etc.).
-Automatically generated from role templates. Updated only when the role changes.
+Role-specific instructions (engineer, manager, writer, etc.).
+Auto-generated from role templates. Updated only when the role changes.
 
-| Item | Value |
-|------|-----|
-| Modification permission | System automatic (when role is applied) |
-| Modification frequency | Rare (only when role changes) |
+| Property | Value |
+|----------|-------|
+| Modification rights | System automatic (on role application) |
+| Modification frequency | Rare (role changes only) |
 
 ---
 
@@ -132,18 +132,18 @@ Automatically generated from role templates. Updated only when the role changes.
 
 ### permissions.json — What You Can Do
 
-Definition of available tools, accessible paths, and executable commands.
+Defines available tools, accessible paths, and executable commands.
 
-- Places you can read and write
+- Readable and writable paths
 - Available external tools (Slack, Gmail, GitHub, etc.)
-- Commands that cannot be executed (blocklist for safety)
+- Blocked commands (safety block list)
 
-| Item | Value |
-|------|-----|
-| Modification permission | Supervisor or administrator |
+| Property | Value |
+|----------|-------|
+| Modification rights | Supervisor or admin |
 | Modification frequency | Rare |
 
-### status.json — Configuration Information
+### status.json — Configuration
 
 The **Single Source of Truth (SSoT)** for your execution parameters.
 
@@ -154,32 +154,35 @@ The **Single Source of Truth (SSoT)** for your execution parameters.
   "model": "claude-opus-4-6",
   "credential": "anthropic",
   "max_tokens": 16384,
+  "max_turns": 10000,
   "supervisor": "aoi"
 }
 ```
 
 | Field | Description |
-|-----------|------|
+|-------|-------------|
 | `enabled` | Enabled/disabled |
 | `role` | Role (engineer, manager, writer, researcher, ops, general) |
 | `model` | LLM model to use |
-| `credential` | Name of API authentication information |
+| `credential` | API credential name |
 | `max_tokens` | Maximum tokens per response |
-| `supervisor` | Supervisor's Anima name (null = top level) |
-| `background_model` | Lightweight model for Heartbeat/Cron (main model if not set) |
+| `max_turns` | Maximum turns per session |
+| `supervisor` | Supervisor Anima name (null = top-level) |
+| `background_model` | Lightweight model for Heartbeat/Cron (falls back to main model if unset) |
 
-| Item | Value |
-|------|-----|
-| Modification permission | CLI command or administrator. Supervisor can change via `set_subordinate_model` |
+| Property | Value |
+|----------|-------|
+| Modification rights | CLI commands or admin. Supervisor can change via `set_subordinate_model` |
 | Modification frequency | As needed |
 
-### bootstrap.md — Initial Startup Instructions
+### bootstrap.md — First-Boot Instructions
 
-A file that exists only at first startup. Instructs the enrichment of identity and injection, and the initial design of heartbeat and cron. Automatically deleted after completion.
+Exists only on first startup. Instructs you to enrich identity and injection,
+and design initial heartbeat and cron. Automatically deleted after completion.
 
-| Item | Value |
-|------|-----|
-| Modification permission | — |
+| Property | Value |
+|----------|-------|
+| Modification rights | — |
 | Modification frequency | Once (deleted after completion) |
 
 ---
@@ -188,78 +191,78 @@ A file that exists only at first startup. Instructs the enrichment of identity a
 
 ### heartbeat.md — Periodic Patrol
 
-**Settings for automatically starting at regular intervals to check the situation and make plans.**
+**Auto-starts at regular intervals to assess the situation and make plans.**
 Like a human periodically checking their inbox and reviewing ongoing work.
 
-What it includes:
-- **Active hours**: When you are active (e.g., `09:00 - 18:00`)
+Contains:
+- **Active hours**: When to be active (e.g., `09:00 - 18:00`)
 - **Checklist**: Items to check during patrol
-- **Notification rules**: Reports and notifications based on conditions
+- **Notification rules**: Conditional reporting and notifications
 
-**Important**: Heartbeat only performs **checking and planning**. When you find a task that needs execution, delegate it to a subordinate via `delegate_task` or submit it via `submit_tasks`.
+**Important**: Heartbeat performs **assessment and planning only**. When tasks needing execution are found, delegate to subordinates via `delegate_task` or submit via `submit_tasks`.
 
-| Item | Value |
-|------|-----|
-| Modification permission | Can be updated by yourself. Supervisor can also edit |
-| Modification frequency | As needed (when business changes) |
+| Property | Value |
+|----------|-------|
+| Modification rights | You can update. Supervisor can also edit |
+| Modification frequency | As needed (when duties change) |
 
 ### cron.md — Scheduled Tasks
 
-**Definitions of tasks that must be executed at fixed times.**
+**Tasks that must be executed at specific times.**
 
-There are two types of tasks:
-- **LLM type**: Executed by the agent with judgment and thinking (e.g., "Check yesterday's progress every morning at 9 and make today's plan")
-- **Command type**: Executed deterministically without judgment (e.g., "Run the backup script every day at 2")
+Two types of tasks:
+- **LLM type**: Agent performs with judgment and reasoning (e.g., "Every morning at 9, review yesterday's progress and plan today")
+- **Command type**: Deterministic execution without judgment (e.g., "Run backup script at 2 AM daily")
 
 ```markdown
-## 毎朝の業務計画
+## Daily Planning
 schedule: 0 9 * * *
 type: llm
-episodes/ から昨日の進捗を確認し、今日のタスクを計画する。
+Review yesterday's progress from episodes/ and plan today's tasks.
 
-## バックアップ実行
+## Backup Execution
 schedule: 0 2 * * *
 type: command
 command: /usr/local/bin/backup.sh
 ```
 
-| Item | Value |
-|------|-----|
-| Modification permission | Can be updated by yourself. Supervisor can also edit |
+| Property | Value |
+|----------|-------|
+| Modification rights | You can update. Supervisor can also edit |
 | Modification frequency | As needed |
 
-### Difference Between Heartbeat and Cron
+### The Difference Between heartbeat and cron
 
 | | heartbeat.md | cron.md |
 |--|-------------|---------|
-| Purpose | Check the situation and make plans | Execute fixed tasks |
-| Trigger | Fixed interval (default 30 minutes) | Specified time (cron expression) |
-| What it can do | Observe, plan, reflect (**does not execute**) | LLM tasks or command execution |
+| Purpose | Assess situation and make plans | Execute specific tasks |
+| Trigger | Regular interval (default 30 min) | Specified time (cron expression) |
+| What it can do | Observe, plan, reflect (**no execution**) | LLM task or command execution |
 | Human analogy | "Periodically look around" | "Do this every morning at 9" |
-| Configuration details | See `operations/heartbeat-cron-guide.md` | Same as left |
+| Configuration details | See `operations/heartbeat-cron-guide.md` | Same |
 
 ---
 
-## Work Status (state/）)
+## Work State (state/)
 
-### state/current_state.md — Current Status
+### state/current_state.md — Current State
 
-The task or situation you are currently working on (one item). Records the task's goal, progress, and blockers.
-Normally retained across Heartbeat / cron / conversation boundaries. Prompt injection is limited to 3000 characters, and disk trim is executed at a default of 8000 characters (`heartbeat.current_state_max_chars`, 0 = disabled).
+The task or situation you are currently working on (one at a time). Records the goal, progress, and blockers.
+Preserved across normal heartbeat, cron, and conversation boundaries. Prompt injection is capped at 3000 characters; disk trimming runs at 8000 characters by default (`heartbeat.current_state_max_chars`, 0 = disabled).
 
-> **Old task storage**: `state/task_queue.jsonl` and `state/pending/` are only traces for migration and export. Do not use them as an active queue or edit them. Use the canonical task tool.
+> **Legacy task storage**: `state/task_queue.jsonl` and `state/pending/` are migration/export evidence only. Do not use them as live queues or edit them; use the canonical task tools.
 
-### Canonical Tasks
+### Canonical tasks
 
-Use `list_tasks` / `submit_tasks` / `update_task`. The host stores instructions, dependencies, execution attempts, and delegation aliases in a single TaskStore. Prioritize human-originated tasks. `in_progress` is set only by the host, and results are declared via `done` / `pending` / `cancelled`. For explicit resumption, specify `resume: true` with the same ID, preserving the original input and history.
+Use `list_tasks` / `submit_tasks` / `update_task`; the host stores instructions, dependencies, attempts, and delegation aliases in one TaskStore. Human-origin tasks have highest priority. Only the host sets `in_progress`; declare outcomes with `done`, `pending`, or `cancelled`. Explicit resume uses the same task ID with `resume: true`, preserving input and history.
 
 ### state/task_results/ — Task Execution Results
 
-Accepted result summaries from TaskExec are stored in `{task_id}/{attempt_token}.md` (maximum 2000 characters). For subsequent steps, pass the accepted result selected by the host; do not judge completion based solely on the existence of a file.
+TaskExec stores accepted summaries under `{task_id}/{attempt_token}.md` (up to 2,000 characters). Dependents receive the host-selected accepted result; file presence alone does not prove completion.
 
-| Item | Value |
-|------|-----|
-| Modification permission | Operated by yourself (via tools) |
+| Property | Value |
+|----------|-------|
+| Modification rights | Self (via tools) |
 | Modification frequency | As needed (automatic) |
 
 ---
@@ -269,69 +272,71 @@ Accepted result summaries from TaskExec are stored in `{task_id}/{attempt_token}
 For details on the memory system, see `anatomy/memory-system.md`.
 
 | Directory | Type | Content |
-|------------|------|------|
-| `episodes/` | Episodic memory | Daily logs of what was done when |
+|-----------|------|---------|
+| `episodes/` | Episodic memory | Daily logs of what you did and when |
 | `knowledge/` | Semantic memory | Learned knowledge, know-how, patterns |
-| `procedures/` | Procedural memory | Procedure manuals (forgetting-resistant) |
+| `procedures/` | Procedural memory | Step-by-step procedures (forgetting-resistant) |
 | `skills/` | Skills | Personal skills (forgetting-resistant) |
-| `shortterm/` | Short-term memory | For context continuity between sessions |
+| `shortterm/` | Short-term memory | Context continuity between sessions |
 
 ---
 
-## Activity Logs and Assets
+## Activity Records & Assets
 
 ### activity_log/ — Activity Log
 
 Chronological record of all actions (`{date}.jsonl`). Automatically records message send/receive, tool usage, Heartbeat, errors, etc.
-Used as the source for Priming to inject recent activity into the system prompt.
-To search explicitly, use `search_memory(query="...", scope="activity_log")` (BM25; with `scope="all"`, vector results are integrated via RRF).
+Used by Priming as the source for injecting recent activity into the system prompt.
+You can also search it explicitly with `search_memory(query="...", scope="activity_log")` (BM25 over the unified log).
 
 ### transcripts/ — Conversation Records
 
 Transcripts of conversations with humans.
 
-### assets/ — Images and 3D Models
+### assets/ — Images & 3D Models
 
-Asset files such as character images and 3D models.
+Character images, 3D models, and other asset files.
 
-| Item | Value |
-|------|-----|
-| Modification permission | System automatic |
+| Property | Value |
+|----------|-------|
+| Modification rights | System automatic |
 | Modification frequency | Automatic |
 
 ---
 
-## Summary of Modification Permissions for All Files
+## Full File Modification Rights Summary
 
-| File | Modification permission | Modification frequency |
-|---------|---------|---------|
-| `identity.md` | In principle, immutable (administrator only) | Immutable |
+| File | Modification Rights | Frequency |
+|------|-------------------|-----------|
+| `identity.md` | Immutable in principle (admin only) | Immutable |
 | `character_sheet.md` | Reference only | Immutable |
 | `injection.md` | Self / supervisor | As needed |
 | `specialty_prompt.md` | System automatic | Rare |
-| `permissions.json` | Supervisor / administrator | Rare |
-| `status.json` | CLI / administrator / supervisor | As needed |
-| `bootstrap.md` | Once | Deleted |
+| `permissions.json` | Supervisor / admin | Rare |
+| `status.json` | CLI / admin / supervisor | As needed |
+| `bootstrap.md` | Once only | Deleted |
 | `heartbeat.md` | Self / supervisor | As needed |
 | `cron.md` | Self / supervisor | As needed |
 | `state/*` | Self (via tools) | As needed |
 | `episodes/` | System automatic | Daily |
-| `knowledge/` | Self / automatic integration | As needed |
-| `procedures/` | Self / automatic generation | As needed |
+| `knowledge/` | Self / auto-consolidation | As needed |
+| `procedures/` | Self / auto-generated | As needed |
 | `skills/` | Self | As needed |
 | `shortterm/` | System automatic | Automatic |
 | `activity_log/` | System automatic | Automatic |
 
----## Shared Resources (Outside Anima)
+---
 
-In addition to your directory, there are resources shared by all Anima:
+## Shared Resources (Outside Your Directory)
 
-| Path | Contents |
-|------|----------|
-| `common_knowledge/` | Reference documentation shared by all Anima (this file is one of them) |
-| `common_skills/` | Skills shared by all Anima |
-| `shared/channels/` | Board (shared channel) |
+Beyond your own directory, there are resources shared by all Animas:
+
+| Path | Content |
+|------|---------|
+| `common_knowledge/` | Reference documents shared by all Animas (including this file) |
+| `common_skills/` | Skills shared by all Animas |
+| `shared/channels/` | Board (shared channels) |
 | `shared/users/` | User profiles (cross-Anima) |
-| `shared/common_knowledge/` | Organization-specific shared knowledge (accumulated during operations) |
+| `shared/common_knowledge/` | Organization-specific shared knowledge (accumulated during operation) |
 | `company/vision.md` | Organization vision |
-| `prompts/` | System prompt template |
+| `prompts/` | System prompt templates |

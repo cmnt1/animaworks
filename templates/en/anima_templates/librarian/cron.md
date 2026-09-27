@@ -1,3 +1,3 @@
 # Cron: Librarian
 
-<!-- 定期タスクはありません。書庫の統合はシステムのconsolidationスケジュールで実行されます。 -->
+<!-- No cron tasks. Project archives are processed by the system consolidation schedule. -->

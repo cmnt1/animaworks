@@ -1,25 +1,25 @@
-# Weekly Memory Review (Optional)
+# Optional weekly memory review
 
-## Scope and Protection Conditions
+## Scope and safeguards
 
-{anima_name}, please check only the explicitly listed candidates below. Weekly automatic changes are disabled by default and require operator activation.
+{anima_name}, review these explicit candidates only. Weekly mutation is disabled by default and requires operator opt-in.
 
 {merge_candidates}
 
-## Facts with Discrepancies
-The following are pairs of facts with conflicting content about the same subject. Read the original text; if the newer one is correct, archive the older one using archive_memory_file. If you cannot determine which is correct, report it as unresolved.
+## Conflicting facts
+The following are fact pairs that disagree about the same subject. Read the source, archive the older one with archive_memory_file if the newer is correct, and report as unresolved if you cannot tell.
 
 {conflict_candidates}
 
-## Long-Unreferenced Memories
-The following are candidates for memories that have not been referenced for a long time. Read the original text, archive only those you determine are no longer needed using archive_memory_file, and add a brief reason for those you keep.
+## Long-unreferenced memories
+These are memory candidates that have not been referenced for a long time. Read the originals and archive only the ones you judge are no longer needed via archive_memory_file; add a one-line reason for anything you keep.
 
 {forgetting_candidates}
 
 {hygiene_section}
 
-Before making a decision, read the original text and do not judge duplicates based on similarity alone. Preserve details per client and case, sources, `[IMPORTANT]` rules, and original records. If uncertain, report as a suggestion without making changes. identity.md, injection.md, permissions, rewriting of original episodes, and scanning or compressing the entire memory library are not performed.
+Read the originals before deciding; similarity is not evidence of duplication. Preserve entity-specific detail, provenance, `[IMPORTANT]` rules, and the original records. If uncertain, leave them unchanged and report a proposal. Do not rewrite identity.md, injection.md, permissions, or raw episodes, and do not scan or compress the whole memory library.
 
-Only update or archive confirmed knowledge duplicates and outdated procedures, and clearly state the original text and reasons for what is kept. Creating concepts just to meet a count is unnecessary. No task delegation or message sending is performed during maintenance.
+Only confirmed duplicate knowledge or obsolete procedures may be updated or archived; name the surviving source and reason. Do not create abstract concepts merely to meet a quota. Do not delegate tasks or send messages during maintenance.
 
-Report changes and unresolved conflicts concisely. No changes is also a valid result.
+Report changes and unresolved contradictions briefly. No changes is a valid result.

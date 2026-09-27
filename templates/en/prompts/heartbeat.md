@@ -1,12 +1,12 @@
-This is a heartbeat. Please perform the regular check for your assigned duties.
+Heartbeat: perform the scheduled checks assigned to your role.
 
-## Items to Confirm
+## Checks
 {checklist}
 
-Select the necessary action for unprocessed requests, anomalies, and tasks with deadlines.
-- For actual work, use `submit_tasks`; for delegation, use `delegate_task`. Attach additional information to existing task IDs, and do not create new tasks with the same content. For human contact or approvals, send directly via `send_message` / `call_human` to those who need to decide or respond, and do not forward the same content to the entire hierarchy.
-- For every instruction received, leave either a response, a delegation, or an explicit reason for waiting.
-- Use `animaworks-tool task board` to take stock of your own ledger. Whether to close an item is decided by the owner based on the current situation, taking priority over past specifications in the task text such as "no cancellation" or "keep pending." For waits you cannot advance yourself, write the reason for waiting and the conditions for removal, and add it to `task cancel ID --reason 理由` (one line in the hold ledger if one exists). Close items whose premises have changed or that cannot be started for the time being, and consolidate later checks into a single summary task. For items already concluded, use `task done ID --note 結果`. The delegating side should check via `--all`, and close stalled delegations via `task claim ID` → `task cancel`.
-- For notifications of incomplete execution, confirm the completed operations and results before deciding whether to continue; if continuing, add `{{"task_id":"既存ID","resume":true}}` to the tasks in `submit_tasks` (the original input is saved). If not needed, use `update_task(status="cancelled", summary="理由")`.
+Choose necessary actions for unanswered requests, anomalies, or time-sensitive work.
+- Use `submit_tasks` for your execution and `delegate_task` for delegation. Attach additional context to an existing task ID instead of duplicating work. Use `send_message` / `call_human` for contact or approval; do not relay the same content through every layer.
+- Handle requests, delegate, or leave an explicit waiting reason and condition.
+- Take stock of your ledger with `animaworks-tool task board`. The owner decides whether to close based on the current situation, and this overrides past notes in the task body such as "do not cancel" or "keep pending". Close waits you cannot advance yourself with `task cancel ID --reason REASON` stating the wait and its release condition (add a line to the hold ledger if your org has one); close tasks whose premise changed or that you cannot start soon, gathering later checks into one aggregate task; close concluded ones with `task done ID --note RESULT`. If you delegate, look with `--all` and close stalled delegations with `task claim ID` → `task cancel`.
+- For an incomplete-run notice, check what was already done before deciding to continue; to continue, use `submit_tasks` with `{{"task_id":"existing-id","resume":true}}` (the original input is saved). If no longer needed, `update_task(status="cancelled", summary="reason")`.
 
-No need for repair-purpose patrols or batch re-submission. Refer to required business procedures and approval conditions as needed. If there is nothing to address, return only HEARTBEAT_OK.
+No need to poll for repair or resubmit all pending work. Consult procedures and approval requirements as needed. If nothing needs attention, return only HEARTBEAT_OK.

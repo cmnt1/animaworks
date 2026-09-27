@@ -1,158 +1,158 @@
-# Use Case: Research, Investigation, and Analysis
+# Use Case: Research, Investigation & Analysis
 
-This use case automates information gathering and analysis, including web search, market research, competitive analysis, and report creation.
+This use case automates information gathering and analysis—including web search, market research, competitive analysis, and report creation.
 
 ---
 
-## Problems This Can Solve
+## Problems This Addresses
 
-- Information gathering takes too long
-- You want to regularly check competitor activity but don't have the bandwidth
+- Information gathering takes too much time
+- You want to monitor competitors regularly but lack the bandwidth
 - Compiling collected information into reports is tedious
-- You want to track mentions of your company on social media
-- You want to automate periodic market data collection and analysis
+- You want to track mentions of your company on SNS
+- You want to automate regular collection and analysis of market data
 
 ---
 
 ## Pattern 1: Information Gathering via Web Search
 
 ### What It Does
-Performs web searches on a specified topic, then summarizes, organizes, and reports the results.
+Performs web searches on specified topics and reports findings in a summarized, organized format.
 
-### Workflow
-1. Receive a research topic from a human
-2. Collect information using multiple search queries
+### Flow
+1. Receive a research topic from the user
+2. Search for information using multiple queries
 3. Organize and summarize the collected information
-4. Report with sources cited
+4. Report with citations included
 
-### Example Uses
+### Examples
 - "Research the latest trends in the ○○ industry" → Summarize key articles and report
-- "Research the technology called ○○" → Compile an overview, pros, cons, and adoption examples
-- "Research company ○○" → Organize company overview, latest news, and reputation
+- "Look into ○○ technology" → Summarize overview, pros/cons, and adoption examples
+- "Research ○○ company" → Organize company overview, recent news, and reputation
 
 ### Key Points
-- Always include information sources (URLs)
-- Clearly mark unverifiable information as "unconfirmed"
+- Always include source URLs
+- Mark unverified information as "unverified"
 - Cross-check multiple sources to ensure reliability
 
 ---
 
-## Pattern 2: Regular Competitor and Market Monitoring
+## Pattern 2: Regular Competitive & Market Monitoring
 
 ### What It Does
-Regularly checks competitor and market developments and reports any changes.
+Periodically checks competitors and market trends, and reports when changes are detected.
 
-### Workflow
-1. Runs on a regular schedule (e.g., every Monday)
-2. Collects information on pre-configured monitoring targets:
-   - Competitors' new services and press releases
+### Flow
+1. Run on a schedule (e.g., every Monday)
+2. Gather information on predefined targets:
+   - Competitors’ new services and press releases
    - Industry news
-   - Relevant regulatory and legal changes
-3. Extracts the diff from the previous check
-4. Reports a summary if there are changes
+   - Relevant regulatory or legal changes
+3. Extract changes compared to the previous run
+4. Report a summary when changes are found
 
-### Example Uses
-- "Competitor A has released a new feature. Overview: ○○"
-- "A new regulatory proposal has been announced in the ○○ industry"
-- "A new research report useful for estimating market share has been published"
+### Examples
+- "Competitor A released a new feature. Summary: ○○"
+- "A new regulatory proposal was announced in the ○○ industry"
+- "A new market research report was published that can be used for market share estimates"
 
 ---
 
-## Pattern 3: Social Media and Media Monitoring
+## Pattern 3: SNS & Media Monitoring
 
 ### What It Does
-Regularly searches for mentions of your company and products on social media and news sites to gauge reputation.
+Periodically searches SNS and news sites for mentions of your company or products, and tracks sentiment.
 
-### Workflow
-1. Regularly search social media and news sites
-2. Collect mentions using company name, product name, and related keywords
-3. Classify mentions as positive, negative, or neutral
+### Flow
+1. Regularly search SNS and news sites
+2. Collect mentions of your company name, product names, and related keywords
+3. Classify as positive, negative, or neutral
 4. Report notable posts and trends
 
-### Example Uses
-- "This week there were 15 mentions of the company: 10 positive, 2 negative, 3 neutral"
+### Examples
+- "15 mentions of our company this week: 10 positive, 2 negative, 3 neutral"
 - "An influential user posted a favorable review of our product"
-- "Negative reviews are on the rise. The main complaints are ○○"
+- "Negative reviews are increasing. Main complaints: ○○"
 
-### Cautions
-- Report social media posts with full context (do not cherry-pick fragments)
-- Immediately notify a human if a post with reputational risk is detected
+### Notes
+- Report SNS posts with full context (avoid cherry-picking excerpts)
+- Report immediately to human users when high-risk posts are detected
 
 ---
 
-## Pattern 4: Data Collection and Periodic Reports
+## Pattern 4: Data Collection & Automated Reports
 
 ### What It Does
-Periodically collects public or market data and automatically generates analytical reports.
+Regularly collects public or market data and generates analytical reports.
 
-### Workflow
-1. Fetch data from data sources on a regular schedule
+### Flow
+1. Fetch data from sources on a schedule
 2. Analyze changes over time
 3. Detect anomalies and trend shifts
-4. Generate reports including charts and tables
+4. Generate reports with charts and tables
 
-### Example Uses
-- Daily reports on exchange rates, stock prices, and cryptocurrency prices
-- Weekly analysis of your service's usage statistics
-- Estimating market vitality from industry job posting trends
+### Examples
+- Daily reports on exchange rates, stock prices, or crypto prices
+- Weekly analysis of your service usage statistics
+- Estimating market activity from industry job posting trends
 
 ---
 
-## Pattern 5: Deep-Dive Research and Due Diligence
+## Pattern 5: Deep-Dive Research & Due Diligence
 
 ### What It Does
-Conducts multi-faceted, in-depth research on a specific company, individual, or technology.
+Conducts thorough, multi-angle research on specific companies, individuals, or technologies.
 
-### Workflow
-1. Confirm the research target and purpose
-2. Collect information from web searches, public databases, news archives, etc.
-3. Categorize and organize the collected information:
-   - Basic information (founding year, location, business description, etc.)
-   - Financial information (if publicly available)
+### Flow
+1. Confirm the research target and objectives
+2. Gather information from web search, public databases, news archives, etc.
+3. Organize and classify information:
+   - Basic info (founding year, location, business, etc.)
+   - Financial info (if publicly available)
    - Reputation and reviews
    - Risk information
-4. Report as a structured report
+4. Report as a structured document
 
-### Example Uses
-- Company research for potential M&A targets
-- Credit checks on new business partners (based on public information)
-- Evaluating whether to adopt new technology (pros, cons, costs, examples)
+### Examples
+- Company research for M&A targets
+- Credit research on new business partners (based on public information)
+- Feasibility assessment for adopting new technology (pros, cons, cost, case studies)
 
 ---
 
-## Pattern 6: Regular Regulatory and Compliance Checks
+## Pattern 6: Regular Regulatory & Compliance Checks
 
 ### What It Does
-Regularly checks for changes in laws and regulations relevant to your business.
+Periodically checks for changes in regulations relevant to your business.
 
-### Workflow
-1. Search for relevant laws and regulations on a regular schedule (e.g., weekly)
-2. Detect changes in new laws, regulations, and guidelines
-3. Assess the impact on your business
-4. If there is an impact, compile details and report
+### Flow
+1. Search for relevant regulations on a schedule (e.g., weekly)
+2. Detect new or amended laws, regulations, or guidelines
+3. Assess impact on your company
+4. Report details when impact is significant
 
-### Example Uses
-- "An amendment to the Personal Information Protection Act has been proposed. Impact on our service: ○○"
-- "A new guideline has been issued by an industry association"
-- "Related regulations have been tightened in ○○ (country). Impact level: Medium"
+### Examples
+- "A revision to the Personal Information Protection Act was proposed. Impact on our services: ○○"
+- "A new guideline was issued by the industry association"
+- "Related regulations were strengthened in ○○ country. Impact level: medium"
 
 ---
 
-## Configuration Tips
+## Deployment Tips
 
-### Minimal Configuration (1 Anima)
-- A single instance receives and executes research requests
-- Operates on an ad-hoc basis with human instructions
-- Can also handle periodic monitoring
+### Minimal Setup (1 Anima)
+- One Anima handles research requests and execution
+- Ad-hoc operation based on user requests
+- Can also handle regular monitoring
 
-### Recommended Configuration (2–3 Anima)
-- **Research role**: Executes research requests and deep-dive investigations
-- **Monitoring role**: Handles regular market, social media, and regulatory monitoring
-- **Analysis role**: Analyzes collected data and generates reports
+### Recommended Setup (2–3 Anima)
+- **Research specialist**: Executes research requests and deep-dive investigations
+- **Monitoring specialist**: Regular monitoring of market, SNS, and regulations
+- **Analysis specialist**: Analyzes collected data and generates reports
 
-### Tips for Improving Research Quality
-- Always evaluate the reliability of information sources
+### Tips for Higher Quality Research
+- Always evaluate source reliability
 - Cross-check with multiple sources
-- Clearly distinguish between "confirmed facts" and "speculation"
-- Include dates for older information
-- Accumulate research results as knowledge and leverage them in future work
+- Clearly separate "verified facts" from "assumptions"
+- Mark dates on older information
+- Store findings as knowledge for reuse in future research

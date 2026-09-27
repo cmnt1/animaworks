@@ -1,29 +1,34 @@
 ---
 name: workspace-manager
 description: >-
-  작업 공간(작업 디렉터리)의 등록・목록・삭제・할당을 설정한다.
-  Use when: 프로젝트 경로를 Anima에 연결하고, 별칭 관리, 작업 디렉터리 전환이 필요할 때.
+  워크스페이스(작업 디렉토리) 등록·목록·삭제·할당을 설정한다.
+  Use when: 프로젝트 경로를 Anima에 연결, 별칭 관리, 작업 루트 전환이 필요할 때.
 tags: [workspace, directory, project, management]
 ---
-Understood. Please provide the Japanese content you would like me to translate into Korean.# 작업 공간 관리
 
-Anima가 작업하는 프로젝트 디렉터리(작업 공간)를 관리하는 스킬.## 概念
+# 워크스페이스 관리
 
-Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
-プロジェクトの作業をするときは「仕事場」（ワークスペース）に出かけて作業する。
+Anima가 작업하는 프로젝트 디렉토리(워크스페이스)를 관리하는 스킬입니다.
 
-ワークスペースは組織共有のレジストリ（config.json の workspaces セクション）に登録し、エイリアス#ハッシュで参照する。
+## 개념
 
-## 별칭과 해시
+Anima는 평소 "자신의 집" (~/.animaworks/animas/{name}/)에 있습니다.
+프로젝트 작업을 할 때는 "직장"(워크스페이스)으로 이동하여 작업합니다.
 
-- 별칭: 사람이 붙이는 짧은 이름 (예: `myproject`)
-- 해시: 경로의 SHA-256 앞 8자리가 자동 부여됨 (예: `3af4be6e`)
-- 완전형: `myproject#3af4be6e` — 충돌 가능성 제로
-- 도구 인자에는 별칭만, 완전형, 해시만, 절대 경로 중 어느 것이든 사용 가능## 操作方法
+워크스페이스는 조직 공유 레지스트리(config.json의 workspaces 섹션)에 등록하고, 에일리어스#해시로 참조합니다.
+
+## 에일리어스와 해시
+
+- 에일리어스: 사람이 부여하는 짧은 이름 (예: `myproject`)
+- 해시: 경로의 SHA-256 앞 8자리가 자동 부여 (예: `3af4be6e`)
+- 완전 형태: `myproject#3af4be6e` — 충돌 가능성이 제로
+- 도구 인수에는 에일리어스만, 완전 형태, 해시만, 절대 경로 중 어느 것이든 사용 가능
+
+## 조작 방법
 
 ### 등록
 
-인간으로부터 명시적 지시를 받은 최상위 Anima는 `grant_workspace_access`을 사용한다:
+인간의 명시적 지시를 받은 최상위 Anima는 `grant_workspace_access`를 사용합니다:
 
 ```json
 {
@@ -33,19 +38,27 @@ Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
 }
 ```
 
-이 도구는 조직 공유 레지스트리 등록, `permissions.json.file_roots`에 대한 쓰기 권한 추가, 필요에 따른 `status.json.default_workspace` 업데이트를 한 번에 수행한다.
+이 도구는 조직 공유 레지스트리 등록, 대상 Anima의 `permissions.json.file_roots` 쓰기 권한 추가, 필요 시 `status.json.default_workspace` 갱신을 함께 수행합니다.
 
-**주의**: 디렉토리가 존재하지 않으면 오류가 발생한다.
-**주의**: `read_memory_file(path="config.json")`는 자신의 Anima 디렉토리의 `config.json`를 읽는다. 조직 공유 레지스트리 등록에는 사용하지 않는다.### 목록
+**주의**: 디렉토리가 존재하지 않으면 에러가 발생합니다.
+**주의**: `read_memory_file(path="config.json")`은 자신의 Anima 디렉토리에 있는 `config.json`을 읽습니다. 조직 공유 레지스트리 등록에는 사용하지 않습니다.
 
-조직 공유 레지스트리의 목록은 `core.org.workspace.list_workspaces()`에서 확인한다. `read_memory_file(path="config.json")`은 사용하지 않는다.### 삭제
+### 목록 조회
 
-삭제는 관리자 작업으로 취급한다. 일반적인 작업에서는 기존 별칭을 덮어쓰지 않고, 새로운 별칭을 등록한다.### 기본 작업 공간 변경
+조직 공유 레지스트리 목록은 `core.org.workspace.list_workspaces()`로 확인합니다. `read_memory_file(path="config.json")`은 사용하지 않습니다.
 
-최상위 Anima는 `grant_workspace_access`에 `make_default: true`을 지정한다.
-비최상위 Anima는 스스로 권한을 추가할 수 없다. 최상위 Anima에게 인간이 지침을 내려야 한다.### 부하에게 할당하기 (슈퍼바이저용)
+### 삭제
 
-인간으로부터 명시적 지침을 받은 톱레벨 Anima는 `target_anima` 을 지정하여 부하 또는 하위 Anima에게 권한을 부여할 수 있다:
+삭제는 관리자 작업으로 취급합니다. 일반 작업에서는 기존 에일리어스를 덮어쓰지 말고 새 에일리어스를 등록합니다.
+
+### 자신의 기본 워크스페이스 변경
+
+최상위 Anima는 `grant_workspace_access` 호출 시 `make_default: true`를 지정합니다.
+최상위가 아닌 Anima는 스스로 워크스페이스 권한을 추가할 수 없습니다. 인간 지시를 통해 최상위 Anima에게 요청합니다.
+
+### 부하에 할당 (슈퍼바이저용)
+
+인간의 명시적 지시를 받은 최상위 Anima는 `target_anima`를 지정하여 부하 또는 자손 Anima에 권한을 부여할 수 있습니다:
 
 ```json
 {
@@ -55,12 +68,15 @@ Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
   "make_default": true
 }
 ```
+
 ## 도구에서의 사용
 
-- **submit_tasks**: 각 작업의 `workspace` 필드에 별칭 지정
-- **delegate_task**: `workspace` 필드에 별칭 지정## 주의사항
+- **submit_tasks**: 각 태스크의 `workspace` 필드에 에일리어스를 지정
+- **delegate_task**: `workspace` 필드에 에일리어스를 지정
 
-- 디렉터리는 등록 시와 사용 시 모두 존재 여부가 확인됨
-- 존재하지 않는 디렉터리를 등록하려 하면 오류 발생
-- 별칭을 덮어쓰면 해시도 변경되므로, 이전 해시 참조는 해결에 실패함
-- 사용자는 해시를 기억할 필요 없음 — 별칭만으로 충분함
+## 주의사항
+
+- 디렉토리는 등록 시와 해석 시 양쪽에서 존재 확인이 이루어집니다
+- 존재하지 않는 디렉토리를 등록하려 하면 에러가 발생합니다
+- 에일리어스를 덮어쓰면 해시도 바뀌므로 이전 해시 참조는 해석 실패합니다
+- 사람은 해시를 기억할 필요가 없습니다 — 에일리어스만으로 충분합니다

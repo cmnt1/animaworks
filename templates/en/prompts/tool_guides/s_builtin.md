@@ -1,2 +1,2 @@
-Commands that take nearly 20 minutes should be started in the background, and check the status and the end of `state/cmd_output/{id}.txt` every few minutes to track progress.
-Use Bash as the primary method for search and aggregation, and use Read/Write/Edit for file reading and writing.
+Run commands that may take ~20 minutes in the background and check their status or the tail of `state/cmd_output/{id}.txt` every few minutes.
+Bash first for search/aggregation; Read/Write/Edit for file I/O.

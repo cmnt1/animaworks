@@ -1,72 +1,91 @@
 ---
 name: google-tasks-tool
 description: >-
-  Google Tasks integration tool. It uses OAuth2 to list, add, and update task lists and tasks.
-  Use when: Use when: you need to fetch the TODO list, add tasks, update completion, or switch task lists.
+  Google Tasks integration for listing task lists and tasks and creating or updating tasks via OAuth2.
+  Use when: fetching TODO lists, adding tasks, marking items complete, or switching task lists.
 tags: [tasks, google, todo, external]
 ---
-Understood. I’m ready to translate the Japanese content into natural English while preserving all Markdown structure, headings, tables, links, identifiers, sentinels (including ⟦§number⟧ markers), and YAML frontmatter keys. I’ll keep the literal prefix “Use when:” unchanged and translate only exposed values in the frontmatter. Please provide the content to translate.# Google Tasks Tool
 
-An external tool for operating task lists and tasks via the Google Tasks API.## How to Call
+# Google Tasks Tool
 
-**Bash**: Run with `animaworks-tool google_tasks <サブコマンド> [引数]`## Action List### list_tasklists — Task List Overview
+External tool for Google Tasks API: list task lists, list tasks, create tasks.
+
+## Invocation via Bash
+
+```bash
+animaworks-tool google_tasks <subcommand> [args]
+```
+
+## Actions
+
+### list_tasklists — List task lists
 ```bash
 animaworks-tool google_tasks tasklists [-n 50]
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| max_results | integer | 50 | Maximum number of results to retrieve |### list_tasks — Task List
+| max_results | integer | 50 | Max results |
+
+### list_tasks — List tasks in a task list
 ```bash
-animaworks-tool google_tasks list <タスクリストID> [-n 50] [--no-completed]
+animaworks-tool google_tasks list <tasklist_id> [-n 50] [--no-completed]
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | tasklist_id | string | Yes | Task list ID |
-| max_results | integer | 50 | Maximum number of results to retrieve |
-| show_completed | boolean | true | Whether to include completed tasks |
+| max_results | integer | 50 | Max results |
+| show_completed | boolean | true | Include completed tasks |
 
-Use when:### insert_task — Add Task
+### insert_task — Add a task
 ```bash
-animaworks-tool google_tasks add <タスクリストID> "タスク名" [--notes メモ] [--due 日時]
+animaworks-tool google_tasks add <tasklist_id> "Task title" [--notes notes] [--due datetime]
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | tasklist_id | string | Yes | Task list ID |
-| title | string | Yes | Task name |
+| title | string | Yes | Task title |
 | notes | string | No | Notes |
-| due | string | No | Deadline (RFC 3339) |### insert_tasklist — Create Task List
+| due | string | No | Due date (RFC 3339) |
+
+### insert_tasklist — Create a task list
 ```bash
-animaworks-tool google_tasks new-list "リスト名"
+animaworks-tool google_tasks new-list "List name"
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| title | string | Yes | List name |### update_task — Task Update
-Updates the title, notes, deadline, and completion status of a specified task (only the specified items are updated).
+| title | string | Yes | List title |
+
+### update_task — Update a task
+Update a task's title, notes, due date, or status (only provided fields are updated).
 
 ```bash
-animaworks-tool google_tasks update <タスクリストID> <タスクID> [--title タイトル] [--notes メモ] [--due 日時] [--status completed|needsAction]
+animaworks-tool google_tasks update <tasklist_id> <task_id> [--title title] [--notes notes] [--due datetime] [--status completed|needsAction]
 ```
 
 | Parameter | Type | Required | Description |
-|-----------|-----|----------|-------------|
+|-----------|------|----------|-------------|
 | tasklist_id | string | Yes | Task list ID |
 | task_id | string | Yes | Task ID |
 | title | string | No | New title |
 | notes | string | No | Notes |
-| due | string | No | Deadline (RFC 3339) |
-| status | string | No | `needsAction` (incomplete) or `completed` (complete). Specify at least one of title/notes/due/status. |### update_tasklist — Update Task List Name
+| due | string | No | Due date (RFC 3339) |
+| status | string | No | `needsAction` (incomplete) or `completed`. At least one of title/notes/due/status required. |
+
+### update_tasklist — Update a task list title
 ```bash
-animaworks-tool google_tasks update-list <タスクリストID> "新しいリスト名"
+animaworks-tool google_tasks update-list <tasklist_id> "New list name"
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | tasklist_id | string | Yes | Task list ID |
-| title | string | Yes | New list name |## Notes
+| title | string | Yes | New list title |
 
-- OAuth2 authentication flow is required on first use
-- Place credentials.json in `~/.animaworks/credentials/google_tasks/` (the same OAuth client as Gmail/Calendar can be copied)
+## Notes
+
+- OAuth2 flow required on first use
+- Place credentials.json at `~/.animaworks/credentials/google_tasks/` (same OAuth client as Gmail/Calendar can be copied)

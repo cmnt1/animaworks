@@ -1,142 +1,162 @@
-# Use case: Communication automation
+# Use Case: Communication Automation
 
-This use case automates the monitoring and handling of external chat tools and email.
-
----
-
-## Problems this can solve
-
-- Replies to chat or email tend to be delayed
-- Cannot monitor multiple channels at the same time
-- Important messages get overlooked
-- Cannot respond to contact at night or on holidays
-- Regular updates to external partners are forgotten
+This use case automates monitoring and responding to external chat tools and email.
 
 ---
 
-## Pattern 1: Periodic monitoring of chat tools
+## Problems This Addresses
 
-### What it does
-Anima checks for new messages in chat tools at fixed intervals (e.g., every 30 minutes) and responds according to the content.
-
-### How it works
-1. Retrieve new messages from the specified channel during periodic checks
-2. Analyze the message content (assess urgency and whether a response is needed)
-3. Branch processing based on the response pattern:
-   - **Content you can handle yourself** → Reply directly
-   - **Requires human judgment** → Notify a human and ask for their decision
-   - **Intended for another person in charge** → Forward to the appropriate internal Anima
-   - **No response needed** → Record in the log and move on
-
-### Example uses
-- Immediately reply "We'll check and get back to you" to a client's delivery date confirmation
-- Detect urgent contact from a customer and send an alert notification to a human
-- Automatically send template responses to frequently asked questions
-
-### What you need to get started
-- API integration configuration for the chat tool
-- Specification of the channels or groups to monitor
-- Response rules (what to auto-reply to and what to escalate)
+- Chat and email responses tend to be delayed
+- Unable to monitor multiple channels at once
+- Important messages get missed
+- No coverage for after-hours or holiday communications
+- Forgetting to send regular updates to external partners
 
 ---
 
-## Pattern 2: Email handling automation
+## Pattern 1: Scheduled Chat Monitoring
 
-### What it does
-Periodically checks incoming email and automates classification, replies, and forwarding.
+### What It Does
 
-### How it works
-1. Periodically check the mailbox
-2. Classify content based on subject, sender, and body:
-   - Invoices and receipts → Forward to the accounting person in charge
-   - Inquiries → Forward to the customer support person in charge
-   - Sales emails and spam → Ignore (log only)
-   - Important contact → Notify a human
-3. Automatically send acknowledgment emails as needed
+Anima checks new messages in chat tools at regular intervals (e.g., every 30 minutes) and responds based on content.
 
-### Example uses
-- Receive a "quote request" email → Notify a human that "a quote request has arrived"
-- Alert emails from external services → Summarize the content and forward to the monitoring person in charge
-- Standard inquiries → Save a draft template reply (a human reviews it before sending)
+### Flow
 
-### Points to note
-- Set the scope of emails to send automatically with care
-- Starting with "draft only" and having a human confirm before sending is safer
-- Always notify a human for emails from important business partners
+1. During periodic checks, fetch new messages from specified channels
+2. Analyze message content (urgency, whether a response is needed)
+3. Branch by response pattern:
+   - **Can handle directly** → Reply immediately
+   - **Needs human judgment** → Notify a human and ask for a decision
+   - **For another owner** → Forward to the appropriate internal Anima
+   - **No action needed** → Log and move on
+
+### Examples
+
+- Reply immediately to a partner's delivery-date inquiry with "We'll check and get back to you"
+- Detect urgent customer messages and alert humans
+- Send template replies automatically for common questions
+
+### What You Need to Get Started
+
+- Chat tool API integration
+- Specification of channels and groups to monitor
+- Response rules (what to auto-reply vs. escalate)
 
 ---
 
-## Pattern 3: Escalation automation
+## Pattern 2: Email Handling Automation
 
-### What it does
-Monitors multiple channels (chat, email, SNS, etc.) across the board and escalates to the appropriate person based on importance.
+### What It Does
 
-### How it works
+Periodically check incoming email and automate classification, replies, and forwarding.
+
+### Flow
+
+1. Check the mailbox on a schedule
+2. Classify by subject, sender, and body:
+   - Invoices, receipts → Forward to accounting
+   - Inquiries → Forward to customer support
+   - Sales mail, spam → Ignore (log only)
+   - Important communications → Notify humans
+3. Send confirmation emails when appropriate
+
+### Examples
+
+- Receive "quote request" email → Notify human: "Quote request received"
+- External service alert email → Summarize and forward to monitoring team
+- Standard inquiries → Save template reply as draft (human reviews before sending)
+
+### Notes
+
+- Configure the scope of auto-sent emails carefully
+- Safer to start with "draft only" and have humans verify before sending
+- Always notify humans for important business contacts
+
+---
+
+## Pattern 3: Automated Escalation
+
+### What It Does
+
+Monitor multiple channels (chat, email, social media) and escalate to the appropriate recipient based on importance.
+
+### Flow
+
 1. Periodically monitor each channel
-2. Determine the importance of the message:
-   - **Urgent** (service outage, complaints, etc.) → Notify a human immediately
-   - **Important** (content related to contracts or money) → Report to a human at the next check
-   - **Normal** (everyday inquiries) → Anima attempts to handle it
-   - **Low** (information sharing only) → Record in the log
-3. When escalating, include a summary and recommended action
+2. Assess message importance:
+   - **Critical** (service outage, complaints, etc.) → Notify humans immediately
+   - **Important** (contracts, money-related) → Report to humans at next check
+   - **Normal** (routine inquiries) → Anima attempts to handle
+   - **Low** (informational only) → Log only
+3. Include a summary and recommended actions when escalating
 
-### Example uses
-- A server outage alert arrives late at night → Send an urgent notification to a human's smartphone
-- A business partner sends a contract change notice → Present a summary when the human arrives at work the next morning
-- An employee submits a paid leave request → Tentatively register it in the calendar and request approval from a human
+### Examples
 
----
-
-## Pattern 4: Regular contact automation
-
-### What it does
-Automatically sends standard messages to specified recipients at fixed times.
-
-### How it works
-1. Configure the schedule (daily, weekly, monthly, etc.)
-2. Create the message when the specified time arrives
-3. Send it to the specified channel or recipient
-4. Record the send result in the log
-
-### Example uses
-- Post a "today's schedule summary" to chat every morning at 9:00
-- Send a "weekly activity report" to stakeholders every Friday
-- Notify the accounting person in charge of an "invoice sending reminder" at the end of each month
-- Automatically report project progress to stakeholders on a weekly basis
+- Server outage alert at night → Urgent notification to human's phone
+- Contract change notice from partner → Summary ready when human arrives in the morning
+- Leave request from employee → Tentative calendar entry and approval request to human
 
 ---
 
-## Pattern 5: Multilingual communication support
+## Pattern 4: Scheduled Outreach
 
-### What it does
-Automatically translates and summarizes messages received in foreign languages.
+### What It Does
 
-### How it works
-1. Detect a foreign language message
-2. Translate and summarize the content
-3. Report to a human in their native language that "a message with this content has arrived"
-4. Create a draft reply in the foreign language as needed
+Send fixed-format messages to fixed recipients at fixed times.
 
-### Example uses
-- English email from an overseas business partner → Summarize and report in Japanese
-- Mentions of your company on overseas SNS → Translate and share
-- Inquiries in multiple languages → Create reply drafts in each language
+### Flow
+
+1. Set schedule (daily/weekly/monthly, etc.)
+2. At the specified time, create the message
+3. Send to the specified channel or recipient
+4. Log the result
+
+### Examples
+
+- Post "Today's schedule summary" to chat every morning at 9
+- Send "This week's activity report" to stakeholders every Friday
+- End-of-month reminder to accounting for invoice submission
+- Weekly automatic progress report to project stakeholders
 
 ---
 
-## Configuration tips
+## Pattern 5: Multilingual Communication Support
 
-### Minimum configuration (1 Anima)
-- Monitor multiple channels with a single instance
-- Branch responses using simple rule-based logic
-- Escalate everything to a human when uncertain
+### What It Does
 
-### Recommended configuration (2–3 Anima)
-- **Monitoring and routing role**: Monitors all channels and classifies content
-- **Response role**: Executes replies and processing for classified messages
-- Dividing roles ensures both monitoring coverage and response quality
+When messages in other languages are received, automatically translate and summarize them.
 
-### Large-scale configuration
-- Assign a dedicated monitoring Anima to each channel
-- A coordinating Anima manages the overall picture
-- Humans only need to check the summary from the coordinating Anima
+### Flow
+
+1. Detect messages in other languages
+2. Translate and summarize content
+3. Report to humans in their language: "A message with this content arrived"
+4. Optionally draft replies in the original language
+
+### Examples
+
+- Email from overseas partner → Summarize in your language and report
+- Overseas social media mentions of your company → Translate and share
+- Multilingual inquiries → Draft replies in each language
+
+---
+
+## Configuration Tips
+
+### Minimal Setup (1 Anima)
+
+- One Anima monitors multiple channels
+- Simple rule-based branching for responses
+- Escalate everything uncertain to humans
+
+### Recommended Setup (2–3 Anima)
+
+- **Monitor & routing**: Monitor all channels and classify content
+- **Response handler**: Reply and process classified messages
+- Splitting roles improves both coverage and quality
+
+### Large-Scale Setup
+
+- Dedicated monitoring Anima per channel
+- Coordinator Anima oversees the whole
+- Humans only need to review summaries from the coordinator

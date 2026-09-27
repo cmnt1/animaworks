@@ -1,3 +1,3 @@
-## Background Task Completion Notification
+## Background task completion notice
 
-The following background task has been completed. Please review the results and take action as necessary.
+The following background tasks have completed. Check the results and take action as needed.

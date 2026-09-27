@@ -1,4 +1,4 @@
-Report the execution results of the procedure manual and skill. The success/failure count and confidence level are updated.
-After working according to the procedure manual (procedures/）) or skill (skills/）), always report the results using this tool.
-On success, set success=true; on failure or when an issue occurs, set success=false and record details in notes.
-Procedures with low confidence are automatically marked for improvement.
+Report outcome of following a procedure or skill. Updates success/failure counts and confidence.
+Always call this after completing work per procedures/ or skills/.
+Use success=true on success; success=false and notes for failures.
+Low-confidence procedures are auto-flagged for improvement.

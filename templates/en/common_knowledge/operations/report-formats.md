@@ -1,108 +1,108 @@
-# Report Format Collection
+# Report Formats
 
-Standard reporting templates and checklists used by each role.
+Standard report templates and checklists used by each role.
 
 ## Manager: Status Report
 
 ```markdown
-## 状況報告
+## Status Report
 
-### 完了事項
-- [完了したタスクと成果]
+### Completed
+- [Completed tasks and outcomes]
 
-### 進行中
-- [タスク名]: [進捗率/状態] — [次のステップ]
+### In Progress
+- [Task name]: [Progress % / status] — [Next step]
 
-### 課題・リスク
-- [課題の内容と影響度] — [対応方針]
+### Issues and Risks
+- [Issue and impact] — [Response plan]
 
-### 判断が必要な事項
-- [判断を仰ぎたい内容と選択肢]
+### Decisions Needed
+- [What decision is needed and options]
 ```
 
 ## Researcher: Research Report
 
 ```markdown
-# 調査レポート: [テーマ]
+# Research Report: [Topic]
 
-## 概要
-[1-3文で調査結果のサマリ]
+## Summary
+[1–3 sentence summary of findings]
 
-## 調査目的
-[何を明らかにしようとしたか]
+## Research Objective
+[What you were trying to clarify]
 
-## 調査方法
-[どのように調べたか — 検索キーワード、参照先]
+## Method
+[How you researched — search terms, references]
 
-## 発見事項
-### 主要な発見
-- [箇条書きで列挙]
+## Findings
+### Main Findings
+- [Bullet list]
 
-### 詳細
-[各発見事項の詳細説明]
+### Details
+[Detailed explanation of each finding]
 
-## 情報源と信頼度
-| ソース | 種別 | 信頼度 |
-|--------|------|--------|
-| [URL/名前] | [公式/一次/二次] | [高/中/低] |
+## Sources and Confidence
+| Source | Type | Confidence |
+|--------|------|------------|
+| [URL/name] | [Official/Primary/Secondary] | [High/Medium/Low] |
 
-## 結論と推奨
-[調査結果に基づく判断と次のアクション]
+## Conclusion and Recommendations
+[Judgment and next actions based on findings]
 ```
 
-## Operations: Periodic Monitoring Report
+## Operations: Regular Monitoring Report
 
 ```markdown
-## 定期監視レポート
+## Regular Monitoring Report
 
-### 確認時刻
+### Check Time
 [YYYY-MM-DD HH:MM]
 
-### システム状態
-- [対象]: [正常/注意/異常] — [補足]
+### System State
+- [Target]: [Normal/Caution/Anomaly] — [notes]
 
-### リソース状況
-- ディスク: [使用率]%
-- メモリ: [使用率]%
+### Resources
+- Disk: [usage]%
+- Memory: [usage]%
 
-### 直近のイベント
-- [イベントの要約]
+### Recent Events
+- [Event summary]
 
-### 対応事項
-- [対応が必要な場合の内容]
+### Follow-up
+- [Actions needed, if any]
 ```
 
 ## Operations: Incident Record
 
 ```markdown
-## インシデント記録
+## Incident Record
 
-- 発生時刻: [YYYY-MM-DD HH:MM]
-- 検知方法: [heartbeat/cron/手動]
-- 重大度: [P1-P4]
-- 影響範囲: [具体的な影響]
-- 原因: [判明した原因 / 調査中]
-- 対応内容: [実施した対応]
-- 再発防止: [必要な対策]
+- Occurrence: [YYYY-MM-DD HH:MM]
+- Detected via: [heartbeat/cron/manual]
+- Severity: [P1–P4]
+- Impact: [Concrete impact]
+- Cause: [Identified cause / under investigation]
+- Response: [Actions taken]
+- Prevention: [Required measures]
 ```
 
 ## Writer: Self-Review Checklist
 
 ### Content
-- [ ] Is the purpose clearly stated at the beginning?
-- [ ] Are there any logical leaps?
-- [ ] Is the level of explanation appropriate for the reader's prior knowledge?
-- [ ] Is any necessary information missing?
-- [ ] Is any unnecessary information included?
+- [ ] Purpose is clearly stated at the start
+- [ ] No logical gaps
+- [ ] Explanation level matches reader's background
+- [ ] Nothing essential is missing
+- [ ] No unnecessary information
 
 ### Expression
-- [ ] Are sentences too long? (Guideline: within 60 characters)
-- [ ] Is there repetition of the same content?
-- [ ] Are there too many passive constructions? (Prefer active voice)
-- [ ] Can vague expressions (such as "etc." or "various") be made more specific?
+- [ ] Sentences not too long (target: ~60 chars)
+- [ ] No unnecessary repetition
+- [ ] Not overly passive (prefer active voice)
+- [ ] Vague wording made concrete where possible
 
 ### Format
-- [ ] Is the heading hierarchy well organized?
-- [ ] Is the granularity of bullet lists consistent?
-- [ ] Do code blocks, links, and tables display correctly?
-- [ ] Are there any typos or missing characters?
+- [ ] Heading hierarchy is consistent
+- [ ] Bullet granularity is uniform
+- [ ] Code blocks, links, tables render correctly
+- [ ] No typos or grammar errors
