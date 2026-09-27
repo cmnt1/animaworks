@@ -16,13 +16,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.execution.base import ExecutionResult
+from core.execution.engine_base import engine_error_metadata
 from core.execution.engines.cursor.cursor_agent import (
     _MAX_RESUME_TURNS,
     _RESUMABLE_TRIGGERS,
     CursorAgentExecutor,
     _chat_id_path,
     _clear_chat_id,
-    _cursor_error_metadata,
     _find_cursor_agent_binary,
     _load_chat_id,
     _resolve_session_type,
@@ -73,28 +73,28 @@ def executor(model_config, anima_dir):
 
 class TestBinaryDiscovery:
     def test_find_binary_returns_first_match(self):
-        with patch("shutil.which", side_effect=lambda n: f"/usr/bin/{n}" if n == "agent" else None):
+        with patch(
+            "core.platform.cursor.shutil.which", side_effect=lambda n: f"/usr/bin/{n}" if n == "agent" else None
+        ):
             assert _find_cursor_agent_binary() == "/usr/bin/agent"
 
     def test_find_binary_fallback_to_cursor_agent(self):
         def _which(name):
             return "/usr/local/bin/cursor-agent" if name == "cursor-agent" else None
 
-        with patch("shutil.which", side_effect=_which):
+        with patch("core.platform.cursor.shutil.which", side_effect=_which):
             assert _find_cursor_agent_binary() == "/usr/local/bin/cursor-agent"
 
     def test_find_binary_returns_none_when_missing(self):
-        with patch("shutil.which", return_value=None):
+        with patch("core.platform.cursor.shutil.which", return_value=None):
             assert _find_cursor_agent_binary() is None
 
     def test_is_available_true(self):
-        with patch(
-            "core.execution.engines.cursor.cursor_agent._find_cursor_agent_binary", return_value="/usr/bin/agent"
-        ):
+        with patch("core.platform.cursor.find_cursor_agent_binary", return_value="/usr/bin/agent"):
             assert is_cursor_agent_available() is True
 
     def test_is_available_false(self):
-        with patch("core.execution.engines.cursor.cursor_agent._find_cursor_agent_binary", return_value=None):
+        with patch("core.platform.cursor.find_cursor_agent_binary", return_value=None):
             assert is_cursor_agent_available() is False
 
 
@@ -1143,8 +1143,10 @@ class TestCursorErrorMetadata:
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
 
-        with patch("core.execution.engines.cursor.cursor_agent.get_rate_guard", return_value=guard):
-            metadata = _cursor_error_metadata("quota exceeded", "cursor/claude-4-sonnet")
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata(
+                "quota exceeded", mode="D", model="cursor/claude-4-sonnet", always_terminal=True
+            )
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
         assert metadata == {"terminal": True, "reason": "quota_exhausted"}
@@ -1158,8 +1160,10 @@ class TestCursorErrorMetadata:
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)
 
-        with patch("core.execution.engines.cursor.cursor_agent.get_rate_guard", return_value=guard):
-            metadata = _cursor_error_metadata("some random internal thing", "cursor/claude-4-sonnet")
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata(
+                "some random internal thing", mode="D", model="cursor/claude-4-sonnet", always_terminal=True
+            )
 
         assert metadata == {"terminal": True, "reason": "unknown"}
         assert not guard_path.exists() or json.loads(guard_path.read_text(encoding="utf-8")) == {}

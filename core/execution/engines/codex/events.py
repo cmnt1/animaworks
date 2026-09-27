@@ -17,14 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error_message,
-    guard_key,
-    provider_family_of,
-)
 from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
 from core.execution.tool_evidence import ToolEvidence
 from core.prompt.context import ContextTracker
 
@@ -40,36 +33,6 @@ def _get_thread_id(thread: Any) -> str | None:
         if val:
             return str(val)
     return None
-
-
-def _codex_error_metadata(message: str, model: str) -> dict[str, Any]:
-    """Classify a Codex event error, report fleet blocks, and return chunk metadata."""
-    reason, hint = classify_llm_error_message(message)
-    if reason in {
-        FailoverReason.RATE_LIMIT,
-        FailoverReason.OVERLOADED,
-        FailoverReason.QUOTA_EXHAUSTED,
-    }:
-        try:
-            guard = get_rate_guard()
-            cfg = guard.config
-            block_seconds = (
-                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
-            )
-            guard.report_block(
-                guard_key(provider_family_of(model), "codex"),
-                block_seconds,
-                reason.value,
-                reset_in_s=hint.reset_in_s,
-            )
-        except Exception:
-            # Classification must not turn a provider error event into an
-            # executor failure.  The shared guard remains fail-open.
-            logger.debug("failed to report Codex error to rate guard", exc_info=True)
-
-    if hint.is_terminal or not hint.retryable:
-        return {"terminal": True, "reason": reason.value}
-    return {}
 
 
 _ITEM_TYPE_ALIASES = {

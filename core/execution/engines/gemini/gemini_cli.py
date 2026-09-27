@@ -24,7 +24,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -32,17 +31,12 @@ from typing import Any
 
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
 from core.execution.cli_stream import CLIStreamExecutor
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error_message,
-    guard_key,
-    provider_family_of,
-)
+from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_event
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.i18n import t
+from core.platform.gemini import find_gemini_binary as _find_gemini_binary
+from core.platform.gemini import is_gemini_cli_available
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -51,66 +45,6 @@ logger = logging.getLogger("animaworks.execution.gemini_cli")
 __all__ = ["GeminiCLIExecutor", "is_gemini_cli_available"]
 
 # ── Constants ───────────────────────────────────────────────────
-
-_GEMINI_BINARY_NAMES = ("gemini",)
-_EVENT_IDLE_TIMEOUT_SECONDS = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
-_GRACEFUL_KILL_WAIT = 3.0
-
-
-# ── Rate-guard wiring ───────────────────────────────────────
-
-# Realm for Gemini's credential pool — mirrors the ``codex`` / ``grok`` /
-# ``cursor`` realm split so a quota hit blocks the gemini realm specifically
-# while the shared fleet guard prefers other realms.
-_GEMINI_REALM = "gemini"
-
-
-def _gemini_error_metadata(message: str, model: str) -> dict[str, Any]:
-    """Classify a Gemini CLI failure, report fleet blocks, and return metadata.
-
-    Mirrors ``codex._codex_error_metadata`` / ``grok._grok_error_metadata``:
-    RATE / OVERLOAD / QUOTA failures are registered against the shared rate
-    guard so the fleet handler can begin a backoff / failover for the realm.
-    """
-    reason, hint = classify_llm_error_message(message)
-    guarded_reasons = {
-        FailoverReason.RATE_LIMIT,
-        FailoverReason.OVERLOADED,
-        FailoverReason.QUOTA_EXHAUSTED,
-    }
-    if reason in guarded_reasons:
-        try:
-            guard = get_rate_guard()
-            cfg = guard.config
-            block_seconds = (
-                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
-            )
-            guard.report_block(
-                guard_key(provider_family_of(model), _GEMINI_REALM),
-                block_seconds,
-                reason.value,
-                reset_in_s=hint.reset_in_s,
-            )
-        except Exception:
-            logger.debug("Failed to report gemini error to rate guard", exc_info=True)
-    return {"terminal": True, "reason": reason.value}
-
-
-# ── Binary discovery ───────────────────────────────────────────
-
-
-def _find_gemini_binary() -> str | None:
-    """Return path to gemini CLI binary, or None if not found."""
-    for name in _GEMINI_BINARY_NAMES:
-        path = shutil.which(name)
-        if path:
-            return path
-    return None
-
-
-def is_gemini_cli_available() -> bool:
-    """Return True when gemini CLI is available on PATH."""
-    return _find_gemini_binary() is not None
 
 
 def _resolve_gemini_model(model: str) -> str:
@@ -135,6 +69,8 @@ class GeminiCLIExecutor(CLIStreamExecutor):
     Spawns gemini CLI as a subprocess with stream-json NDJSON output.
     MCP integration with core/mcp/server.py provides AnimaWorks tools.
     """
+
+    engine_mode = "G"
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
@@ -289,17 +225,6 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             return os.environ.get(env_name)
         return os.environ.get("GEMINI_API_KEY")
 
-    def _parse_ndjson_event(self, stdout_line: str) -> dict[str, Any] | None:
-        """Parse a single NDJSON line. Return dict or None on parse error."""
-        line = stdout_line.strip()
-        if not line:
-            return None
-        return self.parse_json_line(line)
-
-    async def _kill_process(self, proc: asyncio.subprocess.Process, timeout: float = _GRACEFUL_KILL_WAIT) -> None:
-        """Delegate process-tree shutdown to the shared process runner."""
-        await ProcessRunner.terminate_process(proc, timeout=timeout)
-
     def _extract_tool_record(self, event: dict[str, Any], result_event: dict[str, Any] | None = None) -> ToolCallRecord:
         """Build a ToolCallRecord from a tool_use event, optionally paired with tool_result."""
         tool_name = event.get("tool_name", "unknown")
@@ -361,11 +286,22 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             }
             return
 
+        error_meta: dict[str, Any] | None = None
         binary = _find_gemini_binary()
         if not binary:
             text = t("gemini_cli.not_installed")
+            error_meta = self._error_metadata(text)
+            error_meta["reason"] = "unknown"
             yield {"type": "text_delta", "text": text}
-            yield {"type": "done", "full_text": text, "result_message": None, "tool_call_records": []}
+            yield engine_error_event(text, error_meta)
+            yield {
+                "type": "done",
+                "full_text": text,
+                "result_message": None,
+                "tool_call_records": [],
+                "error": True,
+                "reason": "unknown",
+            }
             return
 
         self._ensure_workspace()
@@ -384,7 +320,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
         usage: TokenUsage | None = None
 
         proc: asyncio.subprocess.Process | None = None
-        process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT)
+        process_runner = ProcessRunner(graceful_timeout=GRACEFUL_KILL_WAIT_SECONDS)
         try:
             proc = await process_runner.start(
                 *cmd,
@@ -453,14 +389,11 @@ class GeminiCLIExecutor(CLIStreamExecutor):
 
                         elif etype == "result":
                             usage = self._parse_stats(event.get("stats"))
-                            if event.get("status") == "error" and not accumulated_text:
+                            if event.get("status") == "error":
                                 err = event.get("error", {})
                                 err_msg = err.get("message", "") if isinstance(err, dict) else str(err)
-                                if err_msg:
-                                    _gemini_error_metadata(
-                                        err_msg,
-                                        _resolve_gemini_model(self._model_config.model),
-                                    )
+                                error_meta = self._error_metadata(err_msg)
+                                if err_msg and not accumulated_text:
                                     accumulated_text = f"[Gemini CLI Error: {err_msg}]"
                                     yield {"type": "text_delta", "text": accumulated_text}
 
@@ -469,14 +402,19 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                             msg = event.get("message", "")
                             if severity == "error":
                                 logger.warning("Gemini CLI error event: %s", msg)
+                                if error_meta is None:
+                                    error_meta = self._error_metadata(str(msg))
 
             except TimeoutError:
-                logger.warning("Gemini CLI idle timeout after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
+                logger.warning("Gemini CLI idle timeout after %ds", self.event_idle_timeout_seconds)
                 await self._kill_process(proc)
-                timeout_msg = t("gemini_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
+                timeout_msg = t("gemini_cli.timeout", timeout=self.event_idle_timeout_seconds)
                 timeout_text = f"\n\n{timeout_msg}" if accumulated_text else timeout_msg
                 accumulated_text += timeout_text
                 yield {"type": "text_delta", "text": timeout_text}
+                if error_meta is None:
+                    error_meta = self._error_metadata(timeout_msg)
+                error_meta["reason"] = "timeout"
 
             await proc.wait()
             await process_runner.close()
@@ -485,8 +423,13 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             if proc.returncode != 0:
                 stderr_text = stderr_bytes.decode("utf-8", errors="replace")
                 logger.warning("Gemini CLI exited with code %d: %s", proc.returncode, stderr_text[:500])
-                _gemini_error_metadata(stderr_text, _resolve_gemini_model(self._model_config.model))
-                if any(kw in stderr_text.lower() for kw in ("auth", "login", "unauthorized", "unauthenticated")):
+                if error_meta is None:
+                    error_meta = self._error_metadata(stderr_text)
+                is_auth_error = any(
+                    kw in stderr_text.lower() for kw in ("auth", "login", "unauthorized", "unauthenticated")
+                )
+                if is_auth_error:
+                    error_meta["reason"] = "auth"
                     err_text = t("gemini_cli.not_authenticated")
                     accumulated_text = err_text
                     yield {"type": "text_delta", "text": err_text}
@@ -498,9 +441,12 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             text = t("gemini_cli.not_installed")
             yield {"type": "text_delta", "text": text}
             accumulated_text = text
+            error_meta = self._error_metadata(text)
+            error_meta["reason"] = "unknown"
         except Exception as e:
             logger.exception("Gemini CLI streaming error")
-            _gemini_error_metadata(str(e), _resolve_gemini_model(self._model_config.model))
+            if error_meta is None:
+                error_meta = self._error_metadata(str(e))
             err = f"[Gemini CLI Error: {e}]"
             yield {"type": "text_delta", "text": err}
             accumulated_text = err
@@ -509,8 +455,11 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                 await process_runner.close()
             self._cleanup_prompt_files()
 
+        if error_meta is not None:
+            yield engine_error_event(accumulated_text, error_meta)
         yield {
             "type": "done",
+            **({"error": True, "reason": str(error_meta.get("reason") or "")} if error_meta is not None else {}),
             "full_text": accumulated_text,
             "result_message": None,
             "tool_call_records": [r.__dict__ for r in tool_records],

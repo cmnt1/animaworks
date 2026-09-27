@@ -16,10 +16,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.execution.base import ExecutionResult
+from core.execution.engine_base import engine_error_metadata
 from core.execution.engines.gemini.gemini_cli import (
     GeminiCLIExecutor,
     _find_gemini_binary,
-    _gemini_error_metadata,
     _resolve_gemini_model,
     is_gemini_cli_available,
 )
@@ -86,19 +86,21 @@ def _mock_proc(stdout_data: bytes, returncode: int = 0, stderr_data: bytes = b""
 
 class TestBinaryDiscovery:
     def test_find_binary_returns_match(self):
-        with patch("shutil.which", side_effect=lambda n: "/usr/bin/gemini" if n == "gemini" else None):
+        with patch(
+            "core.platform.gemini.shutil.which", side_effect=lambda n: "/usr/bin/gemini" if n == "gemini" else None
+        ):
             assert _find_gemini_binary() == "/usr/bin/gemini"
 
     def test_find_binary_returns_none_when_missing(self):
-        with patch("shutil.which", return_value=None):
+        with patch("core.platform.gemini.shutil.which", return_value=None):
             assert _find_gemini_binary() is None
 
     def test_is_available_true(self):
-        with patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"):
+        with patch("core.platform.gemini.find_gemini_binary", return_value="/usr/bin/gemini"):
             assert is_gemini_cli_available() is True
 
     def test_is_available_false(self):
-        with patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.platform.gemini.find_gemini_binary", return_value=None):
             assert is_gemini_cli_available() is False
 
 
@@ -601,8 +603,8 @@ class TestGeminiErrorMetadata:
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
 
-        with patch("core.execution.engines.gemini.gemini_cli.get_rate_guard", return_value=guard):
-            metadata = _gemini_error_metadata("quota exceeded", "gemini-2.5-pro")
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata("quota exceeded", mode="G", model="gemini-2.5-pro", always_terminal=True)
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
         assert metadata == {"terminal": True, "reason": "quota_exhausted"}
@@ -616,8 +618,10 @@ class TestGeminiErrorMetadata:
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)
 
-        with patch("core.execution.engines.gemini.gemini_cli.get_rate_guard", return_value=guard):
-            metadata = _gemini_error_metadata("rate limit exceeded", "gemini-2.5-pro")
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata(
+                "rate limit exceeded", mode="G", model="gemini-2.5-pro", always_terminal=True
+            )
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
         assert metadata == {"terminal": True, "reason": "rate_limit"}

@@ -111,27 +111,13 @@ def _resolved_mode_for_config(model_config: ModelConfig, config: AnimaWorksConfi
 
 def _guard_key_for_model_config(model_config: ModelConfig, config: AnimaWorksConfig) -> str:
     """Build the realm-qualified rate-guard key used by an execution mode."""
-    from core.execution.error_classifier import (
-        guard_key,
-        litellm_realm_of,
-        provider_family_of,
-    )
+    from core.execution.engine_base import engine_guard_key
 
-    mode = _resolved_mode_for_config(model_config, config)
-    if mode == "C":
-        realm = "codex"
-    elif mode == "S":
-        realm = model_config.mode_s_auth or "max"
-    elif mode == "D":
-        realm = "cursor"
-    elif mode == "G":
-        realm = "gemini"
-    elif mode == "X":
-        realm = "grok"
-    else:
-        realm = litellm_realm_of(model_config.model)
-    family = {"S": "anthropic", "C": "openai", "G": "google", "X": "grok"}.get(mode)
-    return guard_key(family or provider_family_of(model_config.model), realm)
+    return engine_guard_key(
+        _resolved_mode_for_config(model_config, config),
+        model_config.model,
+        mode_s_auth=model_config.mode_s_auth,
+    )
 
 
 def _fallback_credential_name(model: str, config: AnimaWorksConfig | None = None) -> str | None:

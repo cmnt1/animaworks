@@ -179,7 +179,7 @@ def test_grok_quota_block_selects_sonnet_fallback(
     shared_data_dir: Path,
 ) -> None:
     from core.config.model_config import resolve_effective_model_config
-    from core.execution.engines.grok.grok_cli import _grok_error_metadata
+    from core.execution.engine_base import engine_error_metadata
 
     primary = ModelConfig(
         model="grok/grok-4.5",
@@ -196,7 +196,12 @@ def test_grok_quota_block_selects_sonnet_fallback(
     message = "API error (status 402 Payment Required): Grok Build usage balance exhausted"
 
     with patch("core.config.io.load_config", return_value=config):
-        metadata = _grok_error_metadata(message, primary.model)
+        metadata = engine_error_metadata(
+            message,
+            mode="X",
+            model=primary.model,
+            always_terminal=True,
+        )
         effective = resolve_effective_model_config(primary)
 
     state = json.loads(_guard_file(shared_data_dir).read_text(encoding="utf-8"))

@@ -22,11 +22,11 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 
 from core.execution.base import ExecutionResult, TokenUsage, ToolCallRecord
+from core.execution.engine_base import engine_error_metadata
 from core.execution.engines.grok.grok_cli import (
     _MAX_RESUME_TURNS,
     GrokCLIExecutor,
     _find_grok_binary,
-    _grok_error_metadata,
     _load_session_id,
     _resolve_grok_model,
     _resolve_real_error,
@@ -200,11 +200,11 @@ async def _stream(
 
 class TestDiscoveryAndHelpers:
     def test_binary_discovery_and_availability(self):
-        with patch("core.execution.engines.grok.grok_cli.shutil.which", return_value="/opt/grok"):
+        with patch("core.platform.grok.shutil.which", return_value="/opt/grok"):
             assert _find_grok_binary() == "/opt/grok"
-        with patch("core.execution.engines.grok.grok_cli._find_grok_binary", return_value="/opt/grok"):
+        with patch("core.platform.grok.get_grok_executable", return_value="/opt/grok"):
             assert is_grok_cli_available() is True
-        with patch("core.execution.engines.grok.grok_cli._find_grok_binary", return_value=None):
+        with patch("core.platform.grok.get_grok_executable", return_value=None):
             assert is_grok_cli_available() is False
 
     @pytest.mark.parametrize(
@@ -308,10 +308,12 @@ class TestGrokFailureMetadata:
             path=guard_path,
         )
 
-        with patch("core.execution.engines.grok.grok_cli.get_rate_guard", return_value=guard):
-            metadata = _grok_error_metadata(
+        with patch("core.execution.engine_base.get_rate_guard", return_value=guard):
+            metadata = engine_error_metadata(
                 _REAL_GROK_QUOTA_ERROR,
-                "grok/grok-4.5",
+                mode="X",
+                model="grok/grok-4.5",
+                always_terminal=True,
             )
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
@@ -1146,7 +1148,7 @@ class TestTerminalPaths:
                     "message": _REAL_GROK_QUOTA_ERROR,
                 },
             ),
-            patch("core.execution.engines.grok.grok_cli.get_rate_guard", return_value=guard),
+            patch("core.execution.engine_base.get_rate_guard", return_value=guard),
         ):
             events = await _stream(executor, proc)
 
