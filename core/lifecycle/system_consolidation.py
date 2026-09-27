@@ -180,14 +180,6 @@ async def run_daily_consolidation_post_processing(
         from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, anima_name)
-        engine._rebuild_rag_index()
-    except Exception:
-        logger.exception("RAG index rebuild failed for anima=%s", anima_name)
-
-    try:
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
         await engine.ingest_recent_to_backend(hours=48)
     except Exception:
         logger.exception("Neo4j ingest failed for anima=%s", anima_name)
@@ -205,14 +197,6 @@ async def run_weekly_integration_post_processing(
     """Run framework-side weekly integration post-processing."""
     if getattr(consolidation_cfg, "weekly_distillation_enabled", False) is True:
         await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
-
-    try:
-        from core.memory.maintenance.consolidation import ConsolidationEngine
-
-        engine = ConsolidationEngine(anima_dir, anima_name)
-        engine._rebuild_rag_index()
-    except Exception:
-        logger.exception("RAG index rebuild failed for anima=%s", anima_name)
 
     try:
         from core.memory.maintenance.consolidation import ConsolidationEngine

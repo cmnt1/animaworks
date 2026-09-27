@@ -181,7 +181,6 @@ class _RecordingHandle:
 class _RecentEpisodesEngine:
     """Minimal consolidation engine stub with work to do."""
 
-    rebuild_calls: list[tuple[str, str]] = []
     ingest_calls: list[tuple[str, int]] = []
 
     def __init__(self, anima_dir: Path, anima_name: str) -> None:
@@ -196,9 +195,6 @@ class _RecentEpisodesEngine:
 
     def count_pending_phase_b_carryover(self) -> int:
         return 0
-
-    def _rebuild_rag_index(self) -> None:
-        self.rebuild_calls.append((self.anima_name, str(self.anima_dir)))
 
     async def ingest_recent_to_backend(self, hours: int) -> dict[str, int]:
         self.ingest_calls.append((self.anima_name, hours))
@@ -251,7 +247,6 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     _create_anima_dir(sup.animas_dir, "mio")
     handle = _TimeoutHandle()
     sup.processes["mio"] = handle
-    _RecentEpisodesEngine.rebuild_calls = []
     _RecentEpisodesEngine.ingest_calls = []
     mock_forgetter = MagicMock()
     mock_forgetter.synaptic_downscaling.return_value = {"scanned": 1}
@@ -276,7 +271,6 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     # synaptic_downscaling_enabled defaults to True (harness diet PR-6),
     # so framework-side post-processing still runs downscaling on timeout.
     mock_forgetter.synaptic_downscaling.assert_called_once()
-    assert _RecentEpisodesEngine.rebuild_calls == [("mio", str(sup.animas_dir / "mio"))]
     assert _RecentEpisodesEngine.ingest_calls == [("mio", 48)]
 
 

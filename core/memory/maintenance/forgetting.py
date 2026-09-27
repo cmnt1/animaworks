@@ -55,7 +55,6 @@ PROCEDURE_INACTIVITY_DAYS = 180  # Days since last use (vs 90 for knowledge)
 PROCEDURE_MIN_USAGE = 3  # Minimum total usage to avoid downscaling
 PROCEDURE_LOW_UTILITY_THRESHOLD = 0.3  # Utility score below this is low
 PROCEDURE_LOW_UTILITY_MIN_FAILURES = 3  # Min failures for utility check
-PROCEDURE_ARCHIVE_KEEP_VERSIONS = 5  # Keep N most recent archive versions
 
 # ── ForgettingCandidate ────────────────────────────────────────────
 

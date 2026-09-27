@@ -794,7 +794,8 @@ class TestRegisterAllSteps:
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
-        assert ids.index("engine_timeout_config_cleanup") == ids.index("update_version") - 1
+        assert ids.index("engine_timeout_config_cleanup") + 1 == ids.index("memory_maintenance_config_cleanup_20260927")
+        assert ids.index("memory_maintenance_config_cleanup_20260927") == ids.index("update_version") - 1
 
 
 def test_step_v0146_removes_retired_prompt_copies(tmp_path):

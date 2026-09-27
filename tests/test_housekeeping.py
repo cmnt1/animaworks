@@ -51,7 +51,7 @@ class TestHousekeepingConfig:
         assert cfg.anima_local_log_retention_days == 30
         assert cfg.suppressed_messages_max_size_mb == 10
         assert cfg.suppressed_messages_keep_generations == 5
-        assert cfg.hygiene_grace_days == 21
+        assert cfg.archive_versions_keep_per_file == 5
 
     def test_custom_values(self):
         from core.config.models import HousekeepingConfig
@@ -898,6 +898,8 @@ class TestRunHousekeeping:
         assert "codex_execution_logs" in results
         assert "codex_tmp" in results
         assert "anima_runtime_artifacts" in results
+        assert "archive_versions" in results
+        assert "memory_hygiene" not in results
 
     @pytest.mark.asyncio
     async def test_handles_missing_dirs_gracefully(self, tmp_path: Path):
@@ -918,6 +920,8 @@ class TestRunHousekeeping:
         assert "codex_execution_logs" in results
         assert "codex_tmp" in results
         assert "anima_runtime_artifacts" in results
+        assert "archive_versions" in results
+        assert "memory_hygiene" not in results
         assert "shared_inbox" in results
         assert results["shared_inbox"]["skipped"] is True
 
@@ -970,270 +974,81 @@ class TestRunHousekeeping:
 # ── Task results cleanup tests ──────────────────────────────────
 
 
-class TestMemoryHygieneFallback:
-    """Test the grace-period archive fallback for semantic cleanup items."""
+class TestArchiveVersionPruning:
+    """Tests for per-source generation retention in archive/versions."""
 
-    def test_moves_only_stale_merge_items_and_refreshes_report(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        from datetime import date
+    def test_keeps_five_newest_generations_per_file(self, tmp_path: Path) -> None:
+        from core.memory.maintenance.housekeeping import _prune_archive_versions
 
-        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
+        versions_dir = tmp_path / "animas" / "alice" / "archive" / "versions"
+        versions_dir.mkdir(parents=True)
+        for version in range(1, 8):
+            (versions_dir / f"procedures__a__deploy_v{version}_202609{version:02d}_020000.md").write_text(
+                str(version), encoding="utf-8"
+            )
 
-        fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
+        result = _prune_archive_versions(tmp_path / "animas", keep_per_file=5)
 
-        anima_dir = tmp_path / "animas" / "alice"
-        knowledge = anima_dir / "knowledge"
-        inherited = knowledge / "inherited-team"
-        inherited.mkdir(parents=True)
-        (inherited / "notes.md").write_text("inherited", encoding="utf-8")
-        stale = knowledge / "_merged_stale.md"
-        stale.write_text("stale", encoding="utf-8")
-        recent = knowledge / "_merged_recent.md"
-        recent.write_text("recent", encoding="utf-8")
-        mdc = knowledge / "legacy.mdc"
-        mdc.write_text("legacy", encoding="utf-8")
+        assert result == {"deleted_files": 2, "kept_files": 5}
+        assert sorted(path.name for path in versions_dir.iterdir()) == [
+            f"procedures__a__deploy_v{version}_202609{version:02d}_020000.md" for version in range(3, 8)
+        ]
 
-        state = anima_dir / "state"
-        state.mkdir()
-        report = {
-            "merged_leftovers": [
-                {"path": "knowledge/_merged_stale.md", "first_seen": "2026-06-26"},
-                {"path": "knowledge/_merged_recent.md", "first_seen": "2026-06-28"},
-            ],
-            "inherited_dirs": [{"path": "knowledge/inherited-team", "first_seen": "2026-06-26"}],
-            "mdc_files": [{"path": "knowledge/legacy.mdc", "first_seen": "2026-06-01"}],
-            "oversized_knowledge": [],
-            "noncanonical_archive_dirs": [],
-            "noncanonical_episodes": [],
-        }
-        (state / "memory_hygiene.json").write_text(json.dumps(report), encoding="utf-8")
+    def test_breaks_timestamp_ties_by_numeric_version_descending(self, tmp_path: Path) -> None:
+        from core.memory.maintenance.housekeeping import _prune_archive_versions
 
-        result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
+        versions_dir = tmp_path / "animas" / "alice" / "archive" / "versions"
+        versions_dir.mkdir(parents=True)
+        older_version = versions_dir / "knowledge__topic_v2_20260901_020000.md"
+        newer_version = versions_dir / "knowledge__topic_v10_20260901_020000.md"
+        older_version.write_text("old", encoding="utf-8")
+        newer_version.write_text("new", encoding="utf-8")
 
-        assert result == {"scanned_animas": 1, "moved_items": 2}
-        archive = knowledge / "archive" / "unmerged"
-        assert (archive / "_merged_stale.md").read_text(encoding="utf-8") == "stale"
-        assert (archive / "inherited-team" / "notes.md").read_text(encoding="utf-8") == "inherited"
-        assert not stale.exists()
-        assert not inherited.exists()
-        assert recent.read_text(encoding="utf-8") == "recent"
-        assert mdc.read_text(encoding="utf-8") == "legacy"
+        result = _prune_archive_versions(tmp_path / "animas", keep_per_file=1)
 
-        refreshed = json.loads((state / "memory_hygiene.json").read_text(encoding="utf-8"))
-        assert [item["path"] for item in refreshed["merged_leftovers"]] == ["knowledge/_merged_recent.md"]
-        assert refreshed["inherited_dirs"] == []
-        assert [item["path"] for item in refreshed["mdc_files"]] == ["knowledge/legacy.mdc"]
+        assert result == {"deleted_files": 1, "kept_files": 1}
+        assert not older_version.exists()
+        assert newer_version.exists()
 
-    def test_rejects_symlink_in_archive_destination(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-        caplog,
-    ) -> None:
-        from datetime import date
+    def test_groups_distinct_stems_separately(self, tmp_path: Path) -> None:
+        from core.memory.maintenance.housekeeping import _prune_archive_versions
 
-        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
+        versions_dir = tmp_path / "animas" / "alice" / "archive" / "versions"
+        versions_dir.mkdir(parents=True)
+        for stem in ("procedures__a__deploy", "procedures__b__deploy"):
+            (versions_dir / f"{stem}_v1_20260901_020000.md").write_text("old", encoding="utf-8")
+            (versions_dir / f"{stem}_v2_20260902_020000.md").write_text("new", encoding="utf-8")
 
-        fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
+        result = _prune_archive_versions(tmp_path / "animas", keep_per_file=1)
 
-        anima_dir = tmp_path / "animas" / "alice"
-        knowledge = anima_dir / "knowledge"
-        knowledge.mkdir(parents=True)
-        source = knowledge / "_merged_stale.md"
-        source.write_text("stale", encoding="utf-8")
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        archive = knowledge / "archive"
-        archive.mkdir()
-        (archive / "unmerged").symlink_to(outside, target_is_directory=True)
-        state = anima_dir / "state"
-        state.mkdir()
-        (state / "memory_hygiene.json").write_text(
-            json.dumps({"merged_leftovers": [{"path": "knowledge/_merged_stale.md", "first_seen": "2026-06-26"}]}),
-            encoding="utf-8",
-        )
+        assert result == {"deleted_files": 2, "kept_files": 2}
+        assert sorted(path.name for path in versions_dir.iterdir()) == [
+            "procedures__a__deploy_v2_20260902_020000.md",
+            "procedures__b__deploy_v2_20260902_020000.md",
+        ]
 
-        with caplog.at_level("WARNING", logger="animaworks.housekeeping"):
-            result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
+    def test_leaves_unrecognized_files_and_directories_untouched(self, tmp_path: Path) -> None:
+        from core.memory.maintenance.housekeeping import _prune_archive_versions
 
-        assert result["moved_items"] == 0
-        assert source.read_text(encoding="utf-8") == "stale"
-        assert list(outside.iterdir()) == []
-        assert "symlink" in caplog.text
+        versions_dir = tmp_path / "animas" / "alice" / "archive" / "versions"
+        versions_dir.mkdir(parents=True)
+        invalid_file = versions_dir / "manual-copy.md"
+        invalid_file.write_text("keep", encoding="utf-8")
+        invalid_dir = versions_dir / "not-a-file"
+        invalid_dir.mkdir()
 
-    def test_suffixes_archive_destination_when_name_exists(self, tmp_path: Path, monkeypatch) -> None:
-        from datetime import date
+        result = _prune_archive_versions(tmp_path / "animas", keep_per_file=1)
 
-        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
+        assert result == {"deleted_files": 0, "kept_files": 0}
+        assert invalid_file.read_text(encoding="utf-8") == "keep"
+        assert invalid_dir.is_dir()
 
-        fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
+    def test_skips_anima_without_archive_versions_directory(self, tmp_path: Path) -> None:
+        from core.memory.maintenance.housekeeping import _prune_archive_versions
 
-        anima_dir = tmp_path / "animas" / "alice"
-        knowledge = anima_dir / "knowledge"
-        knowledge.mkdir(parents=True)
-        source = knowledge / "_merged_stale.md"
-        source.write_text("new", encoding="utf-8")
-        archive = knowledge / "archive" / "unmerged"
-        archive.mkdir(parents=True)
-        existing = archive / "_merged_stale.md"
-        existing.write_text("existing", encoding="utf-8")
-        state = anima_dir / "state"
-        state.mkdir()
-        (state / "memory_hygiene.json").write_text(
-            json.dumps({"merged_leftovers": [{"path": "knowledge/_merged_stale.md", "first_seen": "2026-06-26"}]}),
-            encoding="utf-8",
-        )
+        (tmp_path / "animas" / "alice").mkdir(parents=True)
 
-        result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
-
-        assert result["moved_items"] == 1
-        assert existing.read_text(encoding="utf-8") == "existing"
-        assert (archive / "_merged_stale-1.md").read_text(encoding="utf-8") == "new"
-        assert not source.exists()
-
-    def test_archives_stale_noncanonical_episodes_and_keeps_recent(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        from datetime import date
-        from unittest.mock import MagicMock, patch
-
-        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
-
-        fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
-
-        anima_dir = tmp_path / "animas" / "alice"
-        episodes = anima_dir / "episodes"
-        episodes.mkdir(parents=True)
-        stale = episodes / "recovered_2026-06-19_081003.md"
-        stale.write_text("stale recovery", encoding="utf-8")
-        recent = episodes / "inbox-recent.md"
-        recent.write_text("recent inbox", encoding="utf-8")
-        canonical = episodes / "2026-07-18.md"
-        canonical.write_text("canonical", encoding="utf-8")
-
-        state = anima_dir / "state"
-        state.mkdir()
-        report = {
-            "merged_leftovers": [],
-            "inherited_dirs": [],
-            "mdc_files": [],
-            "oversized_knowledge": [],
-            "noncanonical_archive_dirs": [],
-            "noncanonical_episodes": [
-                {"path": "episodes/recovered_2026-06-19_081003.md", "first_seen": "2026-06-26"},
-                {"path": "episodes/inbox-recent.md", "first_seen": "2026-06-28"},
-            ],
-        }
-        (state / "memory_hygiene.json").write_text(json.dumps(report), encoding="utf-8")
-
-        mock_store = MagicMock()
-        mock_result = MagicMock()
-        mock_result.document.id = "chunk-1"
-        mock_store.get_by_metadata.return_value = [mock_result]
-        mock_store.delete_documents.return_value = True
-
-        with patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store):
-            result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
-
-        assert result["moved_items"] == 1
-        archive = episodes / "archive"
-        assert (archive / "recovered_2026-06-19_081003.md").read_text(encoding="utf-8") == "stale recovery"
-        assert not stale.exists()
-        assert recent.read_text(encoding="utf-8") == "recent inbox"
-        assert canonical.read_text(encoding="utf-8") == "canonical"
-
-        mock_store.get_by_metadata.assert_called_once_with(
-            "alice_episodes",
-            {"source_file": "episodes/recovered_2026-06-19_081003.md"},
-            limit=10_000,
-        )
-        mock_store.delete_documents.assert_called_once_with("alice_episodes", ["chunk-1"])
-
-        refreshed = json.loads((state / "memory_hygiene.json").read_text(encoding="utf-8"))
-        assert [item["path"] for item in refreshed["noncanonical_episodes"]] == ["episodes/inbox-recent.md"]
-
-    def test_noncanonical_episode_move_succeeds_when_index_delete_fails(
-        self,
-        tmp_path: Path,
-        monkeypatch,
-    ) -> None:
-        from datetime import date
-        from unittest.mock import patch
-
-        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
-
-        fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
-
-        anima_dir = tmp_path / "animas" / "bob"
-        episodes = anima_dir / "episodes"
-        episodes.mkdir(parents=True)
-        source = episodes / "recovered_old.md"
-        source.write_text("content", encoding="utf-8")
-        state = anima_dir / "state"
-        state.mkdir()
-        (state / "memory_hygiene.json").write_text(
-            json.dumps({"noncanonical_episodes": [{"path": "episodes/recovered_old.md", "first_seen": "2026-06-26"}]}),
-            encoding="utf-8",
-        )
-
-        with patch(
-            "core.memory.rag.singleton.get_vector_store",
-            side_effect=RuntimeError("vector unavailable"),
-        ):
-            result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
-
-        assert result["moved_items"] == 1
-        assert not source.exists()
-        assert (episodes / "archive" / "recovered_old.md").read_text(encoding="utf-8") == "content"
-
-    def test_suffixes_episode_archive_when_name_exists(self, tmp_path: Path, monkeypatch) -> None:
-        from datetime import date
-        from unittest.mock import patch
-
-        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
-
-        fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
-
-        anima_dir = tmp_path / "animas" / "alice"
-        episodes = anima_dir / "episodes"
-        episodes.mkdir(parents=True)
-        source = episodes / "inbox-note.md"
-        source.write_text("new", encoding="utf-8")
-        archive = episodes / "archive"
-        archive.mkdir()
-        existing = archive / "inbox-note.md"
-        existing.write_text("existing", encoding="utf-8")
-        state = anima_dir / "state"
-        state.mkdir()
-        (state / "memory_hygiene.json").write_text(
-            json.dumps({"noncanonical_episodes": [{"path": "episodes/inbox-note.md", "first_seen": "2026-06-26"}]}),
-            encoding="utf-8",
-        )
-
-        with patch("core.memory.rag.singleton.get_vector_store", return_value=None):
-            result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
-
-        assert result["moved_items"] == 1
-        assert existing.read_text(encoding="utf-8") == "existing"
-        assert (archive / "inbox-note-1.md").read_text(encoding="utf-8") == "new"
-        assert not source.exists()
+        assert _prune_archive_versions(tmp_path / "animas", keep_per_file=5) == {"skipped": True}
 
 
 # ── Task results cleanup tests ──────────────────────────────────

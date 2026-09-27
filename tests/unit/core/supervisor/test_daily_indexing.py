@@ -213,6 +213,32 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_daily_indexing_rebuilds_entity_collection(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+    mock_store = MagicMock()
+
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_bm25,
+        patch("core.memory.facts.entity_index.rebuild_entity_collection", return_value=True) as mock_rebuild_entity,
+    ):
+        mock_indexer = MagicMock()
+        mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())
+        mock_indexer.index_conversation_summary = MagicMock(return_value=0)
+        mock_indexer_cls.return_value = mock_indexer
+        mock_bm25.return_value = MagicMock(documents=1)
+
+        await sup._run_daily_indexing()
+
+    mock_rebuild_entity.assert_called_once_with(sup.animas_dir / "sakura", vector_store=mock_store)
+
+
+@pytest.mark.asyncio
 async def test_daily_indexing_skips_repair_locked_anima(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)

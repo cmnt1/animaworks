@@ -603,6 +603,15 @@ class MemoryIndexer:
             logger.error("Failed to read file %s: %s", file_path, e)
             return self._finish_index_file(0, "failed")
 
+        if memory_type == "knowledge" and not origin:
+            from core.memory.frontmatter import parse_frontmatter
+
+            metadata, _ = parse_frontmatter(content)
+            frontmatter_origin = metadata.get("origin")
+            origin = (
+                frontmatter_origin if isinstance(frontmatter_origin, str) and frontmatter_origin else "consolidation"
+            )
+
         # Chunk the content
         chunks = self._chunk_file(file_path, content, memory_type, origin=origin)
         if not self._source_stat_matches(file_path, source_stat):

@@ -376,52 +376,61 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
     assert override.resolved_mode == "D"
 
 
-@pytest.mark.parametrize(
-    ("report", "expected"),
-    [
-        (
-            {
-                "merged_leftovers": [{"path": "knowledge/_merged_team.md", "first_seen": "2026-07-18"}],
-                "inherited_dirs": [],
-                "mdc_files": [],
-                "oversized_knowledge": [],
-                "noncanonical_archive_dirs": [],
-            },
-            "knowledge/_merged_team.md",
-        ),
-        (
-            {
-                "merged_leftovers": [],
-                "inherited_dirs": [],
-                "mdc_files": [],
-                "oversized_knowledge": [],
-                "noncanonical_archive_dirs": [],
-            },
-            "",
-        ),
-    ],
-)
 @pytest.mark.asyncio
-async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, expected):
+async def test_weekly_consolidation_passes_hygiene_candidates_to_prompt(tmp_path: Path):
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
-    anima.anima_dir = Path("/tmp/test-weekly-hygiene")
+    anima.anima_dir = tmp_path / "animas" / "ritsu"
+    knowledge = anima.anima_dir / "knowledge"
+    knowledge.mkdir(parents=True)
+    (knowledge / "_merged_x.md").write_text("leftover", encoding="utf-8")
     prompt_kwargs: dict = {}
 
     def capture_prompt(name: str, **kwargs):
         prompt_kwargs.update(kwargs)
         return "weekly prompt"
 
+    fake_forgetter = MagicMock()
+    fake_forgetter.list_forgetting_candidates.return_value = []
+
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.maintenance.hygiene.scan_memory_hygiene", return_value=report) as scan,
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_forgetter),
         patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(_FakeEngine())
 
-    assert prompt_kwargs["hygiene_section"] == ""
+    assert "knowledge/_merged_x.md" in prompt_kwargs["hygiene_section"]
+
+
+@pytest.mark.asyncio
+async def test_weekly_project_consolidation_does_not_scan_hygiene(tmp_path: Path):
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    anima.anima_dir = tmp_path / "animas" / "ritsu"
+    prompt_kwargs: dict = {}
+
+    def capture_prompt(name: str, **kwargs):
+        prompt_kwargs.update(kwargs)
+        return "weekly prompt"
+
+    fake_forgetter = MagicMock()
+    fake_forgetter.list_forgetting_candidates.return_value = []
+    engine = _FakeEngine()
+    engine.project = "project-a"
+
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_forgetter),
+        patch("core.memory.maintenance.hygiene.scan_memory_hygiene") as scan,
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
+    ):
+        await anima._run_weekly_consolidation(engine)
+
     scan.assert_not_called()
+    assert prompt_kwargs["hygiene_section"] == ""
 
 
 @pytest.mark.asyncio
