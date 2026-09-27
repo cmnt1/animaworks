@@ -19,8 +19,8 @@ from core.memory.facts.extraction import (
     records_from_extraction,
 )
 from core.memory.facts.observability import reset_warning_rate_limits
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 from core.memory.facts.store import FactRecord
-from core.memory.ontology.default import ExtractedEntity, ExtractedFact
 
 
 class FakeExtractor:
@@ -154,7 +154,7 @@ async def test_extract_fact_records_constructs_default_extractor(
                 )
             ]
 
-    monkeypatch.setattr("core.memory.extraction.extractor.FactExtractor", ConstructedExtractor)
+    monkeypatch.setattr("core.memory.facts.extractor.FactExtractor", ConstructedExtractor)
 
     records = await extract_fact_records(
         anima_dir,

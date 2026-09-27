@@ -233,8 +233,8 @@ class TestNeo4jGraphBackendWithMockedDriver:
         from unittest.mock import MagicMock
 
         from core.memory.backend.neo4j_graph import Neo4jGraphBackend
+        from core.memory.facts.ontology import ExtractedEntity
         from core.memory.graph.queries import CREATE_MENTION
-        from core.memory.ontology.default import ExtractedEntity
 
         backend = Neo4jGraphBackend(tmp_path, group_id="group-a")
         backend._embedding_available = False

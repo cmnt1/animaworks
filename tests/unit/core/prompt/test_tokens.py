@@ -91,7 +91,6 @@ async def test_prime_memories_keeps_japanese_channels_within_token_budgets(
     monkeypatch.setattr(engine, "_collect_recent_outbound", empty)
     monkeypatch.setattr(engine, "_channel_f_episodes", empty)
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
-    monkeypatch.setattr(engine, "_channel_g_graph_context", empty)
 
     result = await engine.prime_memories("根拠を教えて")
 

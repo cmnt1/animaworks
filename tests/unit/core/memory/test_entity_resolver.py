@@ -12,7 +12,7 @@ from core.memory.extraction.minhash import (
     text_similarity,
 )
 from core.memory.extraction.resolver import EntityResolver, ResolvedEntity
-from core.memory.ontology.default import ExtractedEntity
+from core.memory.facts.ontology import ExtractedEntity
 
 # ── TestMinHash ─────────────────────────────────────────────
 

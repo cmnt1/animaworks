@@ -225,7 +225,6 @@ async def test_prime_memories_selects_items_within_single_budget(tmp_path: Path,
     monkeypatch.setattr(engine, "_collect_recent_outbound", empty)
     monkeypatch.setattr(engine, "_channel_f_episodes", empty)
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
-    monkeypatch.setattr(engine, "_channel_g_graph_context", empty)
 
     result = await engine.prime_memories("知識を確認", max_tokens=160)
 
@@ -261,6 +260,14 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
         rank=1,
     )
     related_items = (low, high)
+    scheduled_channels: list[str] = []
+    run_channel = engine._run_priming_channel
+
+    async def record_channel(name: str, coro):
+        scheduled_channels.append(name)
+        return await run_channel(name, coro)
+
+    monkeypatch.setattr(engine, "_run_priming_channel", record_channel)
 
     async def empty(*args, **kwargs):
         return ""
@@ -285,6 +292,7 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
     assert high.text in result.related_knowledge
     assert low.text not in result.related_knowledge
     assert "..." not in result.related_knowledge
+    assert "G" not in scheduled_channels
 
 
 @pytest.mark.asyncio
@@ -313,8 +321,6 @@ async def test_full_profile_shares_budget_by_channel_priority(tmp_path: Path, mo
     monkeypatch.setattr(engine, "_collect_recent_outbound", filled)
     monkeypatch.setattr(engine, "_channel_f_episodes", filled)
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", pending_notifications)
-    monkeypatch.setattr(engine, "_graph_context_enabled", lambda: True)
-    monkeypatch.setattr(engine, "_channel_g_graph_context", filled)
 
     result = await engine.prime_memories("query", profile="full", max_tokens=500)
 
@@ -323,7 +329,6 @@ async def test_full_profile_shares_budget_by_channel_priority(tmp_path: Path, mo
     assert result.pending_tasks
     assert result.recent_outbound
     assert not result.episodes
-    assert not result.graph_context
 
 
 async def empty_pair() -> tuple[str, str]:

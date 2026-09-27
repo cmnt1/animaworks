@@ -197,33 +197,3 @@ class TestRetrieverCacheTTL:
             result = cache.get_or_create(tmp_path, knowledge_dir)
 
         assert result is sentinel
-
-
-class TestBackendLatchTTL:
-    def test_backend_latch_retries_after_ttl(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        from core.memory.priming import engine as engine_module
-        from core.memory.priming.engine import PrimingEngine
-
-        engine = PrimingEngine(tmp_path)
-        clock = {"t": 500.0}
-        monkeypatch.setattr(engine_module.time, "monotonic", lambda: clock["t"])
-
-        with patch(
-            "core.memory.backend.registry.resolve_backend_type",
-            side_effect=RuntimeError("transient"),
-        ):
-            assert engine._get_memory_backend() is None
-            # Second call within TTL: latched, not retried.
-            clock["t"] = 500.0 + engine_module._BACKEND_INIT_RETRY_TTL_SECONDS - 1
-            assert engine._get_memory_backend() is None
-        assert engine._memory_backend_init_failed is True
-
-        # After TTL, a retry succeeds.
-        clock["t"] = 500.0 + engine_module._BACKEND_INIT_RETRY_TTL_SECONDS + 1
-        mock_backend = MagicMock()
-        with (
-            patch("core.memory.backend.registry.resolve_backend_type", return_value="neo4j"),
-            patch("core.memory.backend.registry.get_backend", return_value=mock_backend),
-        ):
-            assert engine._get_memory_backend() is mock_backend
-        assert engine._memory_backend_init_failed is False

@@ -14,6 +14,7 @@ from core.config.models import (
     AnimaWorksConfig,
     CredentialConfig,
     CronGuardConfig,
+    FactEdgeTypeConfig,
     GatewaySystemConfig,
     GPUConfig,
     MemoryConfig,

@@ -229,7 +229,12 @@ class TestChannelFEpisodes:
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Channel F formats retrieval results into score/path pointer cues."""
+        """Legacy vector search returns pointer cues without a backend argument."""
+        import inspect
+
+        from core.memory.priming.channel_f import channel_f_episodes
+
+        assert "get_memory_backend" not in inspect.signature(channel_f_episodes).parameters
         engine = PrimingEngine(temp_anima_dir)
 
         mock_result = MagicMock()
@@ -309,46 +314,6 @@ class TestChannelFEpisodes:
 
         assert "episodes/archive/old.md" not in result
         assert "episodes/current.md" in result
-
-    @pytest.mark.asyncio
-    async def test_channel_f_neo4j_formats_pointer_results(
-        self,
-        temp_anima_dir: Path,
-    ) -> None:
-        """Neo4j Channel F path also emits score/path pointer cues, not full body."""
-
-        class FakeNeo4jBackend:
-            def __init__(self):
-                self.retrieve_kwargs = None
-
-            async def retrieve(self, *args, **kwargs):
-                self.retrieve_kwargs = kwargs
-                mem = MagicMock()
-                mem.content = "Neo4j episode body should not be primed"
-                mem.score = 0.77
-                mem.source = "episode:abc123"
-                mem.metadata = {"source": "episodes/2026-03-02.md"}
-                return [mem]
-
-            async def record_access(self, memories):
-                self.recorded = memories
-
-        engine = PrimingEngine(temp_anima_dir)
-        backend = FakeNeo4jBackend()
-
-        with (
-            patch("core.memory.backend.neo4j_graph.Neo4jGraphBackend", FakeNeo4jBackend),
-            patch.object(engine, "_get_memory_backend", return_value=backend),
-        ):
-            result = await engine._channel_f_episodes(
-                ["deploy"],
-                message="デプロイでエラー",
-                trigger="heartbeat",
-            )
-
-        assert "📌 [0.77] episodes/2026-03-02.md" in result
-        assert "episode:abc123" not in result
-        assert backend.retrieve_kwargs["trigger"] == "heartbeat"
 
     @pytest.mark.asyncio
     async def test_channel_f_keeps_heading_and_collapses_body(

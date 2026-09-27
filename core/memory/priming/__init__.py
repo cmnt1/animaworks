@@ -22,11 +22,9 @@ from core.memory.priming import (
     channel_c,
     channel_e,
     channel_f,
-    channel_g,
     outbound,
 )
 from core.memory.priming.constants import (
-    _BUDGET_GRAPH_CONTEXT,
     _BUDGET_GREETING,
     _BUDGET_HEARTBEAT,
     _BUDGET_IMPORTANT_KNOWLEDGE,
@@ -53,7 +51,6 @@ __all__ = [
     "format_priming_section",
     "render_items",
     "select_within_budget",
-    "_BUDGET_GRAPH_CONTEXT",
     "_BUDGET_GREETING",
     "_BUDGET_HEARTBEAT",
     "_BUDGET_IMPORTANT_KNOWLEDGE",

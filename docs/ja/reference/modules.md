@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 451b67f2a1a947a0060ea39d11e69bf184661b559a1babda8a4a333b8316acd4 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 63f0709b63558dca644d1f42c678d1f1d7e5be9a61a3197407e5b5e9225b417d -->
 
 # モジュール一覧
 
@@ -133,7 +133,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.inbox` | 1009 | — |
 | `core.anima.inbox_overflow` | 130 | — |
 | `core.anima.lifecycle` | 1237 | — |
-| `core.anima.messaging` | 1694 | — |
+| `core.anima.messaging` | 1596 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.skills_check` | 15 | — |
@@ -154,7 +154,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.config` | 44 | — |
+| `core.config` | 45 | — |
 | `core.config.anima_registry` | 295 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.cli` | 348 | CLI handlers for the ``animaworks config`` subcommand. |
 | `core.config.env_slots` | 118 | — |
@@ -167,7 +167,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.model_config` | 866 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 123 | Central configuration module — facade re-exporting split modules. |
+| `core.config.models` | 124 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
 | `core.config.schemas` | 1465 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
@@ -461,17 +461,18 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.conversation.shortterm` | 349 | Short-term memory (短期記憶) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
-| `core.memory.extraction.extractor` | 328 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.extraction.minhash` | 53 | MinHash-based approximate Jaccard similarity for entity deduplication. |
-| `core.memory.extraction.prompts.en` | 77 | English prompts for entity / fact extraction. |
-| `core.memory.extraction.prompts.ja` | 78 | Japanese prompts for entity / fact extraction. |
 | `core.memory.extraction.resolver` | 170 | Entity Resolution: Vector + MinHash candidate filtering, new-entity default. |
 | `core.memory.facts.config` | 110 | — |
 | `core.memory.facts.entity_index` | 457 | — |
 | `core.memory.facts.extraction` | 466 | — |
+| `core.memory.facts.extractor` | 328 | LLM-based entity and fact extraction pipeline. |
 | `core.memory.facts.invalidation` | 497 | — |
 | `core.memory.facts.invalidation_llm` | 109 | — |
 | `core.memory.facts.observability` | 41 | — |
+| `core.memory.facts.ontology` | 249 | Pydantic models for entity / fact extraction results. |
+| `core.memory.facts.prompts.en` | 77 | English prompts for entity / fact extraction. |
+| `core.memory.facts.prompts.ja` | 78 | Japanese prompts for entity / fact extraction. |
 | `core.memory.facts.store` | 460 | — |
 | `core.memory.frontmatter` | 443 | — |
 | `core.memory.graph.community` | 337 | — |
@@ -487,24 +488,22 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 653 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
-| `core.memory.manager` | 828 | — |
+| `core.memory.manager` | 796 | — |
 | `core.memory.migration.backup` | 150 | — |
 | `core.memory.migration.checkpoint` | 74 | — |
 | `core.memory.migration.migrator` | 146 | — |
-| `core.memory.ontology.default` | 241 | Pydantic models for entity / fact extraction results. |
 | `core.memory.priming.channel_a` | 52 | — |
 | `core.memory.priming.channel_b` | 553 | — |
 | `core.memory.priming.channel_c` | 628 | — |
 | `core.memory.priming.channel_e` | 240 | — |
-| `core.memory.priming.channel_f` | 295 | — |
-| `core.memory.priming.channel_g` | 104 | — |
-| `core.memory.priming.constants` | 104 | — |
-| `core.memory.priming.engine` | 630 | — |
-| `core.memory.priming.format` | 124 | — |
+| `core.memory.priming.channel_f` | 215 | — |
+| `core.memory.priming.constants` | 103 | — |
+| `core.memory.priming.engine` | 538 | — |
+| `core.memory.priming.format` | 119 | — |
 | `core.memory.priming.items` | 59 | — |
 | `core.memory.priming.outbound` | 142 | — |
 | `core.memory.priming.policy` | 39 | — |
-| `core.memory.priming.result` | 76 | — |
+| `core.memory.priming.result` | 72 | — |
 | `core.memory.priming.utils` | 308 | — |
 | `core.memory.rag.cli_access` | 231 | CLI access to phase3 vector stores through the active owner or server. |
 | `core.memory.rag.contextual_header` | 163 | — |
@@ -547,7 +546,6 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.retrieval.rag_search` | 1312 | — |
 | `core.memory.retrieval.reranker` | 298 | — |
 | `core.memory.retrieval.rrf` | 107 | — |
-| `core.memory.retrieval.scope_policy` | 145 | — |
 | `core.memory.retrieval.search_metadata` | 108 | — |
 | `core.memory.retrieval.temporal` | 196 | — |
 | `core.memory.retrieval.time_expr` | 230 | — |
@@ -580,22 +578,6 @@ Model Context Protocol サーバーとクライアント。
 |---|---:|---|
 | `core.memory.conversation` | 23 | — |
 
-## `core.memory.extraction`
-
-—
-
-| モジュール | 行数 | docstring 1行目 |
-|---|---:|---|
-| `core.memory.extraction` | 15 | — |
-
-## `core.memory.extraction.prompts`
-
-—
-
-| モジュール | 行数 | docstring 1行目 |
-|---|---:|---|
-| `core.memory.extraction.prompts` | 3 | — |
-
 ## `core.memory.facts`
 
 —
@@ -603,6 +585,14 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.memory.facts` | 37 | — |
+
+## `core.memory.facts.prompts`
+
+—
+
+| モジュール | 行数 | docstring 1行目 |
+|---|---:|---|
+| `core.memory.facts.prompts` | 3 | — |
 
 ## `core.memory.graph`
 
@@ -628,21 +618,13 @@ Model Context Protocol サーバーとクライアント。
 |---|---:|---|
 | `core.memory.migration` | 12 | — |
 
-## `core.memory.ontology`
-
-—
-
-| モジュール | 行数 | docstring 1行目 |
-|---|---:|---|
-| `core.memory.ontology` | 39 | — |
-
 ## `core.memory.priming`
 
 —
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.memory.priming` | 71 | Priming layer - automatic memory retrieval (自動想起). |
+| `core.memory.priming` | 68 | Priming layer - automatic memory retrieval (自動想起). |
 
 ## `core.memory.rag`
 
@@ -916,7 +898,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.handler_create_anima` | 237 | — |
 | `core.tooling.handler_delegation` | 260 | — |
 | `core.tooling.handler_files` | 1143 | — |
-| `core.tooling.handler_memory` | 1472 | — |
+| `core.tooling.handler_memory` | 1202 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 199 | — |
 | `core.tooling.handler_perms` | 434 | — |

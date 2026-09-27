@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -177,6 +176,7 @@ class TestHandleRouting:
             },
         ]
         result = handler.handle("search_memory", {"query": "test", "scope": "all"})
+        memory.search_memory_text.assert_called_once()
         assert "knowledge/k1.md" in result
         assert "some result" in result
 
@@ -278,32 +278,6 @@ class TestHandleRouting:
         assert "shared public result" in result
         assert "shared classified result" not in result
         assert "common_knowledge/private" not in result
-
-    def test_neo4j_search_filters_denied_source(self, handler: ToolHandler, anima_dir: Path):
-        denied = (anima_dir / "knowledge" / "private").resolve()
-        handler._retrieve_neo4j_memories = MagicMock(
-            return_value=[
-                SimpleNamespace(
-                    source="knowledge/private/secret.md",
-                    content="graph classified result",
-                    score=0.9,
-                    metadata={},
-                ),
-                SimpleNamespace(
-                    source="knowledge/public.md",
-                    content="graph public result",
-                    score=0.8,
-                    metadata={},
-                ),
-            ]
-        )
-
-        result = handler._search_via_neo4j("graph", "knowledge", 0, denied_roots=(denied,))
-
-        assert result is not None
-        assert "graph public result" in result
-        assert "graph classified result" not in result
-        assert "knowledge/private" not in result
 
     def test_read_memory_file(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -65,6 +66,24 @@ def test_stale_dictionary_key_fails_check(tmp_path: Path, monkeypatch: pytest.Mo
         gen_reference.main()
 
     assert exc_info.value.code == 1
+
+
+def test_module_file_discovery_uses_current_worktree_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    tracked = tmp_path / "core" / "memory" / "__init__.py"
+    untracked = tmp_path / "core" / "memory" / "new_module.py"
+    tracked.parent.mkdir(parents=True)
+    tracked.write_text("", encoding="utf-8")
+    untracked.write_text("", encoding="utf-8")
+    monkeypatch.setattr(gen_reference, "PROJECT_DIR", tmp_path)
+
+    git_files = "core/memory/__init__.py\\ncore/memory/deleted.py\\n"
+    with patch(
+        "scripts.gen_reference.subprocess.run",
+        return_value=SimpleNamespace(stdout=git_files),
+    ):
+        files = gen_reference._tracked_python_files(["core"])
+
+    assert files == [tracked, untracked]
 
 
 def test_generation_is_byte_deterministic():

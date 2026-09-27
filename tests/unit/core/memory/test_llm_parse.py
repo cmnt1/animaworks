@@ -25,7 +25,7 @@ import pytest
 
 from core.memory._llm_parse import is_none_marker, load_json, strip_code_fence
 from core.memory._llm_utils import supports_structured_output
-from core.memory.extraction.extractor import FactExtractor
+from core.memory.facts.extractor import FactExtractor
 from core.memory.facts.observability import reset_warning_rate_limits
 from core.memory.maintenance.distillation import ProceduralDistiller
 

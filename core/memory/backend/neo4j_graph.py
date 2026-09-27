@@ -431,7 +431,7 @@ class Neo4jGraphBackend(MemoryBackend):
         if self._extractor is None:
             model, llm_extra, credential = self._resolve_extraction_config()
             locale = self._resolve_locale()
-            from core.memory.extraction.extractor import FactExtractor
+            from core.memory.facts.extractor import FactExtractor
 
             self._extractor = FactExtractor(
                 model=model,

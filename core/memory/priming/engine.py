@@ -7,7 +7,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""PrimingEngine - slim orchestrator for six-channel memory priming."""
+"""PrimingEngine - slim orchestrator for memory priming."""
 
 import asyncio
 import logging
@@ -36,15 +36,9 @@ from core.memory.priming import (
     channel_f as _channel_f,
 )
 from core.memory.priming import (
-    channel_g as _channel_g,
-)
-from core.memory.priming import (
     outbound as _outbound,
 )
-from core.memory.priming.constants import (
-    _BUDGET_GRAPH_CONTEXT,
-    _DEFAULT_MAX_PRIMING_TOKENS,
-)
+from core.memory.priming.constants import _DEFAULT_MAX_PRIMING_TOKENS
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
@@ -56,21 +50,16 @@ _BUDGET_SENDER_PROFILE = 400
 _BUDGET_PENDING_TASKS = 500
 _BUDGET_RECENT_OUTBOUND = 250
 
-# TTL (seconds) before a failed MemoryBackend init is retried once.  Prevents a
-# transient failure from permanently disabling graph/episode priming.
-_BACKEND_INIT_RETRY_TTL_SECONDS = 300.0
-
 
 class PrimingEngine:
     """Automatic memory priming engine.
 
-    Executes 6-channel parallel memory retrieval:
+    Executes parallel memory retrieval:
       A. Sender profile (direct file read)
       B. Recent activity (unified activity log, replaces old episodes + channels)
       C. Related knowledge (dense vector search)
       E. Pending tasks (persistent task queue summary)
       F. Episodes (dense vector search over episode memory)
-      G. Graph context (community summaries + recent facts via MemoryBackend)
     """
 
     def __init__(
@@ -87,11 +76,6 @@ class PrimingEngine:
         self._config_loaded = False
         self._channel_timeout_seconds = 60.0
         self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
-        self._memory_backend: Any | None = None
-        self._memory_backend_init_failed = False
-        # Monotonic timestamp of the last failed backend init; ``None`` when the
-        # latch was set without a timestamp (e.g. tests) → treated as still latched.
-        self._memory_backend_init_failed_at: float | None = None
 
     def _get_or_create_retriever(self):
         """Get or create a retriever instance from the RetrieverCache."""
@@ -102,51 +86,6 @@ class PrimingEngine:
     def _get_retriever(self):
         """Delegate to _get_or_create_retriever (tests may patch either)."""
         return self._get_or_create_retriever()
-
-    def _get_memory_backend(self):
-        """Return lazy-initialized MemoryBackend from config.
-
-        Resolution: per-anima status.json → global config → 'legacy'.
-        """
-        if self._memory_backend is not None:
-            return self._memory_backend
-        if self._memory_backend_init_failed:
-            failed_at = self._memory_backend_init_failed_at
-            if failed_at is None or (time.monotonic() - failed_at) < _BACKEND_INIT_RETRY_TTL_SECONDS:
-                return None
-            # TTL elapsed: fall through to attempt one re-initialization.
-        first_failure = not self._memory_backend_init_failed
-        try:
-            from core.memory.backend.registry import get_backend, resolve_backend_type
-
-            backend_type = resolve_backend_type(self.anima_dir)
-            self._memory_backend = get_backend(backend_type, self.anima_dir)
-            self._memory_backend_init_failed = False
-            self._memory_backend_init_failed_at = None
-            return self._memory_backend
-        except Exception:
-            if first_failure:
-                logger.warning("Failed to init MemoryBackend for priming", exc_info=True)
-            else:
-                logger.debug("Failed to init MemoryBackend for priming (retry)", exc_info=True)
-            self._memory_backend_init_failed = True
-            self._memory_backend_init_failed_at = time.monotonic()
-            return None
-
-    def _graph_context_enabled(self) -> bool:
-        """Return whether channel G should be scheduled for this engine."""
-        from core.memory.backend.legacy import LegacyRAGBackend
-
-        if self._memory_backend is not None:
-            return not isinstance(self._memory_backend, LegacyRAGBackend)
-        try:
-            from core.memory.backend.registry import resolve_backend_type
-
-            return resolve_backend_type(self.anima_dir) != "legacy"
-        except Exception:
-            # Backend resolution itself defaults to legacy. Match that safe
-            # default here without constructing a backend just to skip G.
-            return False
 
     def _load_channel_timeout(self) -> None:
         if self._config_loaded:
@@ -270,14 +209,6 @@ class PrimingEngine:
                 self._collect_pending_human_notifications(channel=channel),
             ),
         ]
-        graph_context_enabled = self._graph_context_enabled()
-        if graph_context_enabled:
-            channel_calls.append(("G", self._channel_g_graph_context(effective_message, trigger=channel)))
-        else:
-            # Legacy has no graph data, so creating/scheduling G only burns a
-            # channel slot and reserves budget that can never produce context.
-            logger.debug("Priming channel G not scheduled for legacy backend")
-
         channel_names = [name for name, _ in channel_calls]
         gathered = await asyncio.gather(
             *(self._run_priming_channel(name, coro) for name, coro in channel_calls),
@@ -309,8 +240,6 @@ class PrimingEngine:
         recent_outbound, outbound_items = unpack_itemized(results["outbound"])
         episodes, episode_items = unpack_itemized(results["F"])
         pending_human_notifications, _ = unpack_itemized(results["pending_human_notifications"])
-        graph_value = results.get("G", "")
-        graph_context = graph_value if isinstance(graph_value, str) else ""
 
         for name, r in results.items():
             if isinstance(r, Exception):
@@ -339,7 +268,6 @@ class PrimingEngine:
                     allocated.get("recent_outbound", ""),
                     allocated.get("episodes", ""),
                     pending_human_notifications,
-                    allocated.get("graph_context", ""),
                 )
             )
             return max(
@@ -415,7 +343,6 @@ class PrimingEngine:
         untrusted_text = _select("related_knowledge_untrusted", untrusted_items, related_knowledge_untrusted)
         recent_activity_text = _select("recent_activity", recent_activity_items, recent_activity, tail=True)
         episodes_text = _select("episodes", episode_items, episodes, tail=True)
-        graph_context_text = _select("graph_context", (), graph_context, tail=True)
 
         result = PrimingResult(
             sender_profile=sender_profile_text,
@@ -426,7 +353,6 @@ class PrimingEngine:
             recent_outbound=recent_outbound_text,
             episodes=episodes_text,
             pending_human_notifications=pending_human_notifications,
-            graph_context=graph_context_text,
         )
 
         logger.info(
@@ -601,29 +527,11 @@ class PrimingEngine:
             keywords,
             message=message,
             recent_human_messages=recent_human_messages,
-            get_memory_backend=self._get_memory_backend,
             trigger=trigger,
         )
 
     async def _collect_pending_human_notifications(self, *, channel: str = "") -> str:
         return await _outbound.collect_pending_human_notifications(self.anima_dir, channel=channel)
-
-    async def _channel_g_graph_context(self, query: str, *, trigger: str = "chat") -> str:
-        backend = self._get_memory_backend()
-        if backend is None:
-            return ""
-        from core.memory.backend.legacy import LegacyRAGBackend
-
-        if isinstance(backend, LegacyRAGBackend):
-            logger.debug("Priming channel G skipped for legacy backend")
-            return ""
-        return await _channel_g.collect_graph_context(
-            backend,
-            query,
-            budget_tokens=_BUDGET_GRAPH_CONTEXT,
-            anima_dir=self.anima_dir,
-            trigger=trigger,
-        )
 
     def _extract_keywords(self, message: str) -> list[str]:
         """Backward compat: delegate to utils.extract_keywords."""

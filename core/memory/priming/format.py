@@ -49,7 +49,6 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         result.pending_tasks,
         result.recent_outbound,
         result.episodes,
-        result.graph_context,
     )
     if result.is_empty() or not any(value.strip() for value in content_fields):
         return ""
@@ -115,10 +114,6 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
 
     if result.recent_outbound.strip():
         parts.append(_wrap("recent_outbound", result.recent_outbound, trust="trusted"))
-        parts.append("")
-
-    if result.graph_context.strip():
-        parts.append(_wrap("graph_context", result.graph_context, trust="medium"))
         parts.append("")
 
     return "\n".join(parts)

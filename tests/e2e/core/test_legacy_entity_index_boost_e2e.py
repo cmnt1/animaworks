@@ -7,7 +7,7 @@ import pytest
 from core.memory.facts.entity_index import load_entity_registry, match_query_entities
 from core.memory.facts.extraction import extract_and_store_facts
 from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
-from core.memory.ontology.default import ExtractedEntity, ExtractedFact
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
 
 

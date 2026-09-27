@@ -68,7 +68,7 @@ async def test_ingest_text_appends_fact_without_invalidation(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_resolver_always_creates_new_entity() -> None:
     from core.memory.extraction.resolver import EntityResolver, ResolvedEntity
-    from core.memory.ontology.default import ExtractedEntity
+    from core.memory.facts.ontology import ExtractedEntity
 
     resolver = EntityResolver(
         AsyncMock(),

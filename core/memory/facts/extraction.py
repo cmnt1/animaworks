@@ -15,8 +15,8 @@ from typing import Any
 from core.memory.facts.config import _resolve_extraction_config
 from core.memory.facts.invalidation import ReconcileAction, ReconcileResult, reconcile_new_fact
 from core.memory.facts.observability import warn_rate_limited
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record
-from core.memory.ontology.default import ExtractedEntity, ExtractedFact
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.memory.fact_extraction")
@@ -166,7 +166,7 @@ async def extract_fact_records_with_outcome(
 
     try:
         if extractor is None:
-            from core.memory.extraction.extractor import FactExtractor
+            from core.memory.facts.extractor import FactExtractor
 
             resolved_model, resolved_extra, resolved_locale, timeout, credential = _resolve_extraction_config(anima_dir)
             extractor = FactExtractor(

@@ -27,7 +27,6 @@ _BUDGET_RELATED_KNOWLEDGE = 1200
 _BUDGET_IMPORTANT_KNOWLEDGE = 300
 _BUDGET_PENDING_TASKS = 500
 _BUDGET_RELATED_EPISODES = 400
-_BUDGET_GRAPH_CONTEXT = 500
 
 # Pre-compiled regex pattern for language-agnostic keyword extraction
 _RE_UNICODE_WORDS = re.compile(r"[\w]+", re.UNICODE)

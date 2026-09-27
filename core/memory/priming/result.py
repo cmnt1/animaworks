@@ -23,7 +23,6 @@ class PrimingResult:
     recent_outbound: str = ""
     episodes: str = ""
     pending_human_notifications: str = ""
-    graph_context: str = ""
     resident_knowledge: str = ""
 
     def is_empty(self) -> bool:
@@ -38,7 +37,6 @@ class PrimingResult:
             and not self.recent_outbound
             and not self.episodes
             and not self.pending_human_notifications
-            and not self.graph_context
         )
 
     def total_chars(self) -> int:
@@ -53,7 +51,6 @@ class PrimingResult:
             + len(self.recent_outbound)
             + len(self.episodes)
             + len(self.pending_human_notifications)
-            + len(self.graph_context)
         )
 
     def estimated_tokens(self) -> int:
@@ -70,7 +67,6 @@ class PrimingResult:
                     self.recent_outbound,
                     self.episodes,
                     self.pending_human_notifications,
-                    self.graph_context,
                 )
             )
         )
