@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: d77378ba7135ee82cd20571be84a27b55e7ccc9719957c6f3b753084ff008a45 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 2e4bc6787caabe106510db6de482a80db3af8205b1d168fe1e712016c81214ab -->
 
 # API リファレンス
 
@@ -152,8 +152,6 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/vector/get-by-metadata` | 内部 | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | 内部 | — | `server/routes/internal.py:vector_list_collections` |
 | POST | `/api/internal/vector/query` | 内部 | 内部サービス向けのベクトル検索を実行します。 | `server/routes/internal.py:vector_query` |
-| POST | `/api/internal/vector/quick-check` | 内部 | — | `server/routes/internal.py:vector_quick_check` |
-| POST | `/api/internal/vector/reset-store` | 内部 | — | `server/routes/internal.py:vector_reset_store` |
 | POST | `/api/internal/vector/update-metadata` | 内部 | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | 内部 | — | `server/routes/internal.py:vector_upsert` |
 | GET | `/api/messages/{message_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |

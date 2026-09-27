@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: cbc10cb8abc9c88b76d5d659cc9a85c5eba37628c363419ca0625b31fc984cc4 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: a417691e23837145503b42c75209beaa4fc7c1c19b9772f4ad1155d87c456582 -->
 
 # 設定リファレンス
 
@@ -124,23 +124,12 @@
 | `rag.repair_max_consecutive_failures` | `int` | `2` | — |
 | `rag.repair_timeout_seconds` | `int` | `1800` | — |
 | `rag.repair_poll_interval_seconds` | `int` | `5` | — |
-| `rag.repair_stop_anima` | `bool` | `false` | — |
 | `rag.repair_max_concurrent` | `int` | `1` | — |
 | `rag.upsert_quarantine_failure_threshold` | `int` | `3` | — |
 | `rag.shared_check_ttl_seconds` | `float` | `30.0` | — |
 | `rag.shared_check_backoff_initial_seconds` | `float` | `5.0` | — |
 | `rag.shared_check_backoff_max_seconds` | `float` | `300.0` | — |
-| `rag.startup_repair_preflight_enabled` | `bool` | `true` | — |
-| `rag.startup_repair_window_minutes` | `int` | `1440` | — |
 | `rag.quick_check_timeout_seconds` | `float` | `10.0` | — |
-| `rag.vector_worker_enabled` | `bool` | `true` | — |
-| `rag.vector_worker_host` | `str` | `"127.0.0.1"` | — |
-| `rag.vector_worker_port` | `int` | `0` | — |
-| `rag.vector_worker_startup_timeout_seconds` | `float` | `10.0` | — |
-| `rag.vector_worker_request_timeout_seconds` | `float` | `30.0` | — |
-| `rag.vector_worker_restart_backoff_seconds` | `float` | `2.0` | — |
-| `rag.vector_worker_shutdown_timeout_seconds` | `float` | `30.0` | — |
-| `rag.vector_worker_fallback_direct` | `bool` | `false` | — |
 | `rag.rerank_enabled` | `bool` | `true` | — |
 | `rag.rerank_candidate_pool` | `int` | `50` | — |
 | `rag.cross_encoder_model` | `str` | `"cross-encoder/ms-marco-MiniLM-L-12-v2"` | — |
