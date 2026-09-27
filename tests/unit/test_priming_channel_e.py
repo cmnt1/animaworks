@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.priming import _BUDGET_PENDING_TASKS, PrimingEngine, PrimingResult
+from core.memory.priming import PrimingEngine, PrimingResult
+from core.memory.priming.engine import _BUDGET_PENDING_TASKS
 
 
 @pytest.fixture
