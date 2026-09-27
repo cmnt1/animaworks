@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 5cd6d9d4024c771e3a6850dff2ef7aa97b805ae37f849a89d49c5b9aa6c7aa64 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 8eada34fac32ec662b6e58c9e95085e725ed2eaef3154f3f7a0c19b3560f4916 -->
 
 # 設定リファレンス
 
@@ -165,7 +165,10 @@
 | `memory.neo4j.password` | `str` | `"animaworks"` | — |
 | `memory.neo4j.database` | `str` | `"neo4j"` | — |
 | `memory.neo4j_realtime_ingest` | `bool` | `false` | — |
-| `memory.neo4j_edge_types` | `list[Neo4jEdgeTypeConfig]` | `[]` | — |
+| `memory.fact_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
+| `memory.fact_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
+| `memory.fact_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
+| `memory.neo4j_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
 | `memory.neo4j_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
 | `memory.neo4j_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
 | `skills` | `SkillsConfig` | `{SkillsConfig}` | スキル読み込みと管理の設定。 |

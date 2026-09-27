@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.memory.graph.driver import Neo4jDriver
 
-from core.memory.ontology.default import ExtractedEntity
+from core.memory.facts.ontology import ExtractedEntity
 
 logger = logging.getLogger(__name__)
 

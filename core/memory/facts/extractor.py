@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, get_args
 
 from core.memory.facts.observability import warn_rate_limited
-from core.memory.ontology.default import (
+from core.memory.facts.ontology import (
     ENTITY_TYPES,
     EntityExtractionResult,
     ExtractedEntity,
@@ -322,7 +322,7 @@ class FactExtractor:
     def _select_prompts(self) -> Any:
         """Return the prompt module for the configured locale."""
         if self._locale == "en":
-            from core.memory.extraction.prompts import en as prompts
+            from core.memory.facts.prompts import en as prompts
         else:
-            from core.memory.extraction.prompts import ja as prompts
+            from core.memory.facts.prompts import ja as prompts
         return prompts

@@ -83,6 +83,7 @@ from core.config.schemas import (
     ExternalMessagingChannelConfig,
     ExternalMessagingConfig,
     ExternalToolsPermission,
+    FactEdgeTypeConfig,
     GatewaySystemConfig,
     GitHubWebhookConfig,
     GPUConfig,

@@ -113,7 +113,7 @@ def _edge_type_descriptions_from_entries(entries: object) -> dict[str, str]:
     for entry in candidates:
         coerced = _coerce_edge_type_entry(entry)
         if coerced is None:
-            logger.debug("Ignoring invalid Neo4j edge type config entry: %r", entry)
+            logger.debug("Ignoring invalid fact edge type config entry: %r", entry)
             continue
         name, description = coerced
         result[name] = description
@@ -139,9 +139,15 @@ def _load_configured_edge_type_entries() -> object:
 
         cfg = load_config()
         memory_cfg = getattr(cfg, "memory", None)
+        fact_edge_types = getattr(memory_cfg, "fact_edge_types", None)
+        fields_set = getattr(memory_cfg, "model_fields_set", None)
+        if isinstance(fields_set, set) and "fact_edge_types" in fields_set:
+            return fact_edge_types or []
+        if isinstance(fact_edge_types, (list, tuple)) and fact_edge_types:
+            return fact_edge_types
         return getattr(memory_cfg, "neo4j_edge_types", [])
     except Exception:
-        logger.debug("Failed to load global Neo4j edge ontology config", exc_info=True)
+        logger.debug("Failed to load global fact edge ontology config", exc_info=True)
         return []
 
 
@@ -154,10 +160,12 @@ def _load_status_edge_type_entries(anima_dir: Path | None) -> object:
     try:
         data = json.loads(status_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        logger.debug("Failed to load per-anima Neo4j edge ontology config", exc_info=True)
+        logger.debug("Failed to load per-anima fact edge ontology config", exc_info=True)
         return []
     if not isinstance(data, Mapping):
         return []
+    if "fact_edge_types" in data:
+        return data.get("fact_edge_types", [])
     return data.get("neo4j_edge_types", [])
 
 

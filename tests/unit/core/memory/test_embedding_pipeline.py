@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.memory.backend.neo4j_graph import Neo4jGraphBackend
-from core.memory.ontology.default import ExtractedEntity, ExtractedFact
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 

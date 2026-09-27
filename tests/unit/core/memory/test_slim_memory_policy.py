@@ -24,7 +24,6 @@ def _mock_channels(engine: PrimingEngine) -> dict[str, AsyncMock]:
         "_channel_e_pending_tasks",
         "_collect_recent_outbound",
         "_channel_f_episodes",
-        "_channel_g_graph_context",
         "_collect_pending_human_notifications",
     ):
         channels[name] = AsyncMock(return_value=("", "") if name == "_channel_c_related_knowledge" else "")
@@ -46,7 +45,6 @@ async def test_compact_simple_event_never_starts_general_search(tmp_path: Path, 
         "_channel_b_recent_activity",
         "_channel_c_related_knowledge",
         "_channel_f_episodes",
-        "_channel_g_graph_context",
     ):
         channels[name].assert_not_called()
     channels["_channel_c0_important_knowledge"].assert_awaited_once_with([], trigger=channel, resident_only=True)

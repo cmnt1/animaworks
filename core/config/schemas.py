@@ -350,13 +350,8 @@ class Neo4jConfig(BaseModel):
     database: str = "neo4j"
 
 
-class Neo4jEdgeTypeConfig(BaseModel):
-    """Configurable semantic Neo4j edge type.
-
-    Neo4j stores facts with the physical relationship type ``RELATES_TO``.
-    This model controls the semantic ``edge_type`` property exposed to the
-    extraction prompt and preserved on the relationship.
-    """
+class FactEdgeTypeConfig(BaseModel):
+    """Configurable semantic edge type for extracted facts."""
 
     name: str = Field(..., description="Upper snake case semantic edge type name")
     description: str = Field(..., description="Short explanation shown in extraction prompts")
@@ -366,9 +361,9 @@ class Neo4jEdgeTypeConfig(BaseModel):
     def _validate_name(cls, value: str) -> str:
         name = value.strip().upper()
         if not name:
-            raise ValueError("Neo4j edge type name must not be empty")
+            raise ValueError("Fact edge type name must not be empty")
         if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
-            raise ValueError("Neo4j edge type name must be upper snake case")
+            raise ValueError("Fact edge type name must be upper snake case")
         return name
 
     @field_validator("description")
@@ -376,8 +371,11 @@ class Neo4jEdgeTypeConfig(BaseModel):
     def _validate_description(cls, value: str) -> str:
         description = value.strip()
         if not description:
-            raise ValueError("Neo4j edge type description must not be empty")
+            raise ValueError("Fact edge type description must not be empty")
         return description
+
+
+Neo4jEdgeTypeConfig = FactEdgeTypeConfig
 
 
 class MemoryConfig(BaseModel):
@@ -386,7 +384,8 @@ class MemoryConfig(BaseModel):
     backend: Literal["legacy", "neo4j"] = "legacy"
     neo4j: Neo4jConfig = Neo4jConfig()
     neo4j_realtime_ingest: bool = False
-    neo4j_edge_types: list[Neo4jEdgeTypeConfig] = Field(default_factory=list)
+    fact_edge_types: list[FactEdgeTypeConfig] = Field(default_factory=list)
+    neo4j_edge_types: list[FactEdgeTypeConfig] = Field(default_factory=list)
 
 
 class PromptConfig(BaseModel):
@@ -1445,6 +1444,7 @@ __all__ = [
     "MediaProxyConfig",
     "MemoryConfig",
     "Neo4jConfig",
+    "FactEdgeTypeConfig",
     "Neo4jEdgeTypeConfig",
     "NotificationChannelConfig",
     "PrimingConfig",

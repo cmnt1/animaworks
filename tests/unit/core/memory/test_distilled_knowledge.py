@@ -111,7 +111,6 @@ class TestPrimingAlwaysRunsChannelC:
             patch.object(engine, "_collect_recent_outbound", new_callable=AsyncMock, return_value=""),
             patch.object(engine, "_channel_f_episodes", new_callable=AsyncMock, return_value=""),
             patch.object(engine, "_collect_pending_human_notifications", new_callable=AsyncMock, return_value=""),
-            patch.object(engine, "_channel_g_graph_context", new_callable=AsyncMock, return_value=""),
         ):
             await engine.prime_memories("test query")
 

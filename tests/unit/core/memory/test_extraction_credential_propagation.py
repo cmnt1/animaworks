@@ -26,7 +26,7 @@ def _capture_kwargs_resolver(captured: dict):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fact_extractor_passes_credential():
-    from core.memory.extraction.extractor import FactExtractor
+    from core.memory.facts.extractor import FactExtractor
 
     ext = FactExtractor(
         model="qwen-model",

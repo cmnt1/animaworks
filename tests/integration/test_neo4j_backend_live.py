@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from core.memory.ontology.default import ExtractedEntity, ExtractedFact
+from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
 
 pytestmark = [pytest.mark.integration, pytest.mark.neo4j, pytest.mark.asyncio]
 

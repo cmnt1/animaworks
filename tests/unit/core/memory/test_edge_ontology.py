@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.ontology.default import (
+from core.memory.facts.ontology import (
     DEFAULT_EDGE_TYPE,
     EDGE_TYPE_DESCRIPTIONS,
     EDGE_TYPES,
@@ -183,7 +183,7 @@ class TestExtractorEdgeTypeValidation:
 
     @pytest.mark.asyncio
     async def test_invalid_edge_type_falls_back_to_default(self) -> None:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         extractor = FactExtractor(model="test-model")
         llm_response = json.dumps(
@@ -222,7 +222,7 @@ class TestExtractorEdgeTypeValidation:
 
     @pytest.mark.asyncio
     async def test_valid_edge_type_preserved(self) -> None:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         extractor = FactExtractor(model="test-model")
         llm_response = json.dumps(
@@ -261,7 +261,7 @@ class TestExtractorEdgeTypeValidation:
 
     @pytest.mark.asyncio
     async def test_configured_edge_type_from_status_is_preserved(self, tmp_path) -> None:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         (tmp_path / "status.json").write_text(
             json.dumps({"neo4j_edge_types": [{"name": "mentors", "description": "Mentorship"}]}),
@@ -307,21 +307,21 @@ class TestPromptEdgeTypes:
     """Verify prompt templates include edge type instructions."""
 
     def test_ja_prompt_has_edge_types_placeholder(self) -> None:
-        from core.memory.extraction.prompts import ja
+        from core.memory.facts.prompts import ja
 
         assert "{edge_types_list}" in ja.FACT_USER
         assert "{reference_time}" in ja.FACT_USER
         assert "edge_type" in ja.FACT_USER
 
     def test_en_prompt_has_edge_types_placeholder(self) -> None:
-        from core.memory.extraction.prompts import en
+        from core.memory.facts.prompts import en
 
         assert "{edge_types_list}" in en.FACT_USER
         assert "{reference_time}" in en.FACT_USER
         assert "edge_type" in en.FACT_USER
 
     def test_ja_prompt_formats_correctly(self) -> None:
-        from core.memory.extraction.prompts import ja
+        from core.memory.facts.prompts import ja
 
         edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
         result = ja.FACT_USER.format(
@@ -334,7 +334,7 @@ class TestPromptEdgeTypes:
         assert "RELATES_TO" in result
 
     def test_en_prompt_formats_correctly(self) -> None:
-        from core.memory.extraction.prompts import en
+        from core.memory.facts.prompts import en
 
         edge_types_list = "\n".join(f"- `{k}`: {v}" for k, v in EDGE_TYPE_DESCRIPTIONS.items())
         result = en.FACT_USER.format(
@@ -619,16 +619,16 @@ class TestOntologyImports:
     """Verify re-exports from __init__.py."""
 
     def test_import_edge_types_from_init(self) -> None:
-        from core.memory.ontology import EDGE_TYPES
+        from core.memory.facts.ontology import EDGE_TYPES
 
         assert EDGE_TYPES is not None
 
     def test_import_edge_type_descriptions_from_init(self) -> None:
-        from core.memory.ontology import EDGE_TYPE_DESCRIPTIONS
+        from core.memory.facts.ontology import EDGE_TYPE_DESCRIPTIONS
 
         assert isinstance(EDGE_TYPE_DESCRIPTIONS, dict)
 
     def test_import_default_edge_type_from_init(self) -> None:
-        from core.memory.ontology import DEFAULT_EDGE_TYPE
+        from core.memory.facts.ontology import DEFAULT_EDGE_TYPE
 
         assert DEFAULT_EDGE_TYPE == "RELATES_TO"

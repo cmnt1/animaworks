@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory.facts.observability import reset_warning_rate_limits
-from core.memory.ontology.default import (
+from core.memory.facts.ontology import (
     EntityExtractionResult,
     ExtractedEntity,
     ExtractedFact,
@@ -55,19 +55,19 @@ class TestExtractedModels:
 
 class TestFactExtractorInit:
     def test_default_locale(self):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         ext = FactExtractor(model="m")
         assert ext._locale == "ja"
 
     def test_custom_locale(self):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         ext = FactExtractor(model="m", locale="en")
         assert ext._locale == "en"
 
     def test_model_stored(self):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         ext = FactExtractor(model="claude-sonnet-4-6")
         assert ext._model == "claude-sonnet-4-6"
@@ -80,7 +80,7 @@ class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_success(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         payload = {
             "entities": [
@@ -102,7 +102,7 @@ class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_forwards_custom_endpoint_settings(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         payload = {
             "entities": [
@@ -135,7 +135,7 @@ class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_empty_content(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         mock_acompletion.return_value = ""
 
@@ -146,7 +146,7 @@ class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_llm_failure(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         mock_acompletion.side_effect = RuntimeError("API down")
 
@@ -157,13 +157,13 @@ class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_invalid_json(self, mock_acompletion, caplog):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         reset_warning_rate_limits()
         mock_acompletion.return_value = "NOT VALID JSON {{{"
 
         ext = FactExtractor(model="test-model", max_retries=1)
-        with caplog.at_level("WARNING", logger="core.memory.extraction.extractor"):
+        with caplog.at_level("WARNING", logger="core.memory.facts.extractor"):
             entities = await ext.extract_entities("テスト")
 
         assert entities == []
@@ -173,7 +173,7 @@ class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_filters_empty_names(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         payload = {
             "entities": [
@@ -192,9 +192,9 @@ class TestFactExtractorExtractEntities:
 
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
-    @patch("core.memory.extraction.extractor.asyncio.sleep", new_callable=AsyncMock)
+    @patch("core.memory.facts.extractor.asyncio.sleep", new_callable=AsyncMock)
     async def test_call_llm_retries_none_until_exhausted(self, mock_sleep, mock_one_shot):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         mock_one_shot.return_value = None
         ext = FactExtractor(model="test-model", max_retries=3)
@@ -207,9 +207,9 @@ class TestFactExtractorExtractEntities:
 
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
-    @patch("core.memory.extraction.extractor.asyncio.sleep", new_callable=AsyncMock)
+    @patch("core.memory.facts.extractor.asyncio.sleep", new_callable=AsyncMock)
     async def test_call_llm_succeeds_after_none(self, mock_sleep, mock_one_shot):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         mock_one_shot.side_effect = [None, "recovered response"]
         ext = FactExtractor(model="test-model", max_retries=3)
@@ -228,7 +228,7 @@ class TestParseJsonResponse:
     _PAYLOAD = json.dumps({"entities": [{"name": "田中", "entity_type": "Person"}]}, ensure_ascii=False)
 
     def _parse(self, text: str) -> EntityExtractionResult:
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         ext = FactExtractor(model="test-model")
         result = ext._parse_json_response(text, EntityExtractionResult, stage="entity")
@@ -263,7 +263,7 @@ class TestFactExtractorExtractFacts:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_facts_success(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         payload = {
             "facts": [
@@ -291,7 +291,7 @@ class TestFactExtractorExtractFacts:
 
     @pytest.mark.asyncio
     async def test_extract_facts_no_entities(self):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         ext = FactExtractor(model="test-model")
         facts = await ext.extract_facts("テスト", [])
@@ -300,7 +300,7 @@ class TestFactExtractorExtractFacts:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_facts_filters_invalid_refs(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         payload = {
             "facts": [
@@ -333,7 +333,7 @@ class TestFactExtractorExtractFacts:
     @pytest.mark.asyncio
     @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_facts_llm_failure(self, mock_acompletion):
-        from core.memory.extraction.extractor import FactExtractor
+        from core.memory.facts.extractor import FactExtractor
 
         mock_acompletion.side_effect = RuntimeError("API down")
 

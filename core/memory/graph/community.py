@@ -331,7 +331,7 @@ class CommunityDetector:
     def _select_prompts(self):  # noqa: ANN202
         """Return locale-appropriate prompt module."""
         if self._locale == "en":
-            from core.memory.extraction.prompts import en as p
+            from core.memory.facts.prompts import en as p
         else:
-            from core.memory.extraction.prompts import ja as p
+            from core.memory.facts.prompts import ja as p
         return p

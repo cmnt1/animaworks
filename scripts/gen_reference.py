@@ -778,16 +778,17 @@ def _tracked_python_files(roots: list[str]) -> list[Path]:
             capture_output=True,
             text=True,
         )
-        files = [PROJECT_DIR / name for name in result.stdout.splitlines() if name.endswith(".py")]
-        if files:
-            return files
+        files = {
+            PROJECT_DIR / name
+            for name in result.stdout.splitlines()
+            if name.endswith(".py") and (PROJECT_DIR / name).is_file()
+        }
     except (OSError, subprocess.CalledProcessError):
-        pass
-    candidates = [
+        files = set()
+    workspace_files = {
         path for root in roots for path in (PROJECT_DIR / root).rglob("*.py") if "__pycache__" not in path.parts
-    ]
-    package_dirs = {path.parent for path in candidates if path.name == "__init__.py"}
-    return sorted(path for path in candidates if path.name == "__init__.py" or path.parent in package_dirs)
+    }
+    return sorted(files | workspace_files)
 
 
 def extract_modules() -> tuple[str, Any, list[str]]:
