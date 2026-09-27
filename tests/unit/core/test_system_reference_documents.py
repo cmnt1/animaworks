@@ -321,7 +321,7 @@ def _make_mock_memory(anima_dir: Path) -> MagicMock:
 
 
 class TestBuildSystemPromptCommonKnowledge:
-    """Test that the common_knowledge hint section appears/disappears correctly."""
+    """Common and reference guidance is merged into the memory section."""
 
     def test_includes_section_when_common_knowledge_has_md_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from core.prompt.builder import build_system_prompt
@@ -346,7 +346,7 @@ class TestBuildSystemPromptCommonKnowledge:
                 "困ったとき・手順が不明なときは `common_knowledge/` を "
                 "`search_memory` で検索するか、`read_memory_file` で直接読んでください。\n"
                 "目次: `common_knowledge/00_index.md`"
-                if name == "builder/common_knowledge_hint"
+                if name == "memory_guide"
                 else f"[{name}]"
             ),
         )
@@ -358,7 +358,7 @@ class TestBuildSystemPromptCommonKnowledge:
         assert "read_memory_file" in prompt
         assert "common_knowledge/00_index.md" in prompt
 
-    def test_excludes_section_when_common_knowledge_is_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_no_separate_hint_when_common_knowledge_is_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from core.prompt.builder import build_system_prompt
 
         data_dir = tmp_path / "data"
@@ -382,7 +382,7 @@ class TestBuildSystemPromptCommonKnowledge:
 
         assert "共有リファレンス" not in prompt
 
-    def test_excludes_section_when_common_knowledge_dir_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_no_separate_hint_when_common_knowledge_dir_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         from core.prompt.builder import build_system_prompt
 
         data_dir = tmp_path / "data"
@@ -405,8 +405,10 @@ class TestBuildSystemPromptCommonKnowledge:
 
         assert "共有リファレンス" not in prompt
 
-    def test_section_includes_subdirectory_md_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """rglob('*.md') should detect .md files in subdirectories too."""
+    def test_integrated_hint_with_common_knowledge_subdirectory_files(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Integrated guidance remains available with nested shared knowledge."""
         from core.prompt.builder import build_system_prompt
 
         data_dir = tmp_path / "data"
@@ -426,7 +428,7 @@ class TestBuildSystemPromptCommonKnowledge:
             "core.prompt.builder.load_prompt",
             lambda name, **kw: (
                 "## 共有リファレンス\n\ncommon_knowledge/ を検索してください。"
-                if name == "builder/common_knowledge_hint"
+                if name == "memory_guide"
                 else f"[{name}]"
             ),
         )
@@ -435,8 +437,8 @@ class TestBuildSystemPromptCommonKnowledge:
 
         assert "共有リファレンス" in prompt
 
-    def test_non_md_files_do_not_trigger_section(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """Only .md files should count; .txt or other files should not."""
+    def test_non_md_files_do_not_emit_a_separate_hint(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Common guidance is not conditionally injected as a second section."""
         from core.prompt.builder import build_system_prompt
 
         data_dir = tmp_path / "data"

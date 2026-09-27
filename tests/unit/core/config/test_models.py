@@ -24,6 +24,7 @@ from core.config.models import (
     ImageGenConfig,
     LocalLLMConfig,
     PermissionsConfig,
+    PromptConfig,
     RAGConfig,
     SkillPromotionConfig,
     SkillsConfig,
@@ -56,6 +57,14 @@ class TestSystemConfig:
         assert sc.log_level == "INFO"
         assert isinstance(sc.gateway, GatewaySystemConfig)
         assert isinstance(sc.worker, WorkerSystemConfig)
+
+    def test_prompt_identity_business_exclusions_default(self):
+        assert PromptConfig().identity_business_exclude_headings == [
+            "外見",
+            "基本プロフィール",
+            "Appearance",
+            "Basic Profile",
+        ]
 
 
 class TestGatewaySystemConfig:
@@ -248,6 +257,23 @@ class TestFormatPermissionsForPrompt:
         config = load_permissions(anima_dir)
 
         assert config == PermissionsConfig()
+
+    def test_prompt_omits_default_permissions(self):
+        assert _format_permissions_for_prompt(PermissionsConfig(), "sora") == ""
+
+    def test_prompt_displays_only_non_default_permission_constraints(self):
+        prompt = _format_permissions_for_prompt(
+            PermissionsConfig(
+                commands=CommandsPermission(allow_all=False, allow=["git status"], deny=["rm -rf"]),
+                tool_creation=ToolCreationPermission(personal=False, shared=True),
+            ),
+            "sora",
+        )
+        assert "Allowed commands: git status" in prompt
+        assert "Additionally denied commands: rm -rf" in prompt
+        assert "Personal tool creation: not allowed" in prompt
+        assert "Shared tool creation: allowed" in prompt
+        assert "External tools: all allowed" not in prompt
 
     def test_prompt_displays_denied_roots(self, tmp_path: Path):
         denied = tmp_path / "private"

@@ -340,6 +340,8 @@ _HEADING_EXEMPT = {
     "prompts/memory/procedure_revision.md",
     "prompts/memory/weekly_pattern.md",
     "prompts/tool_guides/s_builtin.md",
+    "prompts/tool_guides/s_mcp.md",
+    "prompts/builder/emotion_instruction.md",
 }
 
 

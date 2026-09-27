@@ -142,3 +142,27 @@ class TestHeartbeatHistoryLoad:
         assert text != ""
         lines = text.strip().splitlines()
         assert len(lines) == 2
+
+    def test_newlines_are_flattened_and_capped(self, dp, anima_dir):
+        """B5: heartbeat history entries are one line each, newlines flattened, capped."""
+        from core.time_utils import now_jst
+
+        today = now_jst().strftime("%Y-%m-%d")
+        multiline = "first line\nsecond line\n" + "x" * 300 + "TAIL"
+        entries = [
+            {
+                "ts": f"{today}T09:00:00",
+                "type": "heartbeat_end",
+                "summary": multiline,
+            }
+        ]
+        self._write_activity_entries(anima_dir, {today: entries})
+
+        text = dp._load_heartbeat_history()
+        lines = text.strip().splitlines()
+        # One entry -> exactly one line, no internal newline leaks.
+        assert len(lines) == 1
+        assert "second line" in lines[0]
+        # Capped at _PLAN_OUTCOME_MAX_CHARS (120) with no TAIL overflow.
+        assert "TAIL" not in lines[0]
+        assert len(lines[0]) <= dp._PLAN_OUTCOME_MAX_CHARS + 16

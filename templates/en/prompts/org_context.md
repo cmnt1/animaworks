@@ -6,7 +6,7 @@ Supervisor: {supervisor_line}
 Subordinates: {subordinates_line}
 Peers (members with the same supervisor): {peers_line}
 
-The entries above are independent AI agents (Animas). Their live status is shown in【】and directory path after →.
+Subordinates and peers are independent AI agents (Animas). Subordinate directories are `<animas_dir>/<name>/`.
 
 **Subordinate tool quick-reference** (no other method is permitted):
 - Check status/existence → `ping_subordinate(name="<AnimaName>")`

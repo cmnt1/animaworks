@@ -12,6 +12,5 @@ Board投稿:
 ```json
 {{"name": "post_channel", "arguments": {{"channel": "general", "text": "投稿内容"}}}}
 ```
-- Board: restricted な部門/チームチャネルに参加している場合、通常の作業報告・完了報告はまずそこへ出す。`general` は全体共有、`ops` は運用横断共有
-- {board_channel_guidance}
+{board_channel_guidance}
 - `read_channel(channel)` / `read_dm_history(peer)` で履歴参照

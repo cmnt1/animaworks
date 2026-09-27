@@ -1,10 +1,25 @@
 from __future__ import annotations
 
-from core.prompt.assembler import PromptBudget, SectionEntry, _allocate_sections
+from core.prompt.assembler import PromptBudget, SectionEntry, _allocate_sections, _assemble_with_tags
 
 
 def _by_id(allocated: list[SectionEntry], section_id: str) -> SectionEntry | None:
     return next((section for section in allocated if section.id == section_id), None)
+
+
+def test_empty_group_header_is_not_emitted() -> None:
+    prompt = _assemble_with_tags([SectionEntry("group4_header", 1, "rigid", "4. Memory")])
+    assert prompt == ""
+
+
+def test_priming_heading_without_recalled_content_is_not_emitted() -> None:
+    from core.prompt.builder import _priming_has_content
+
+    from core.i18n import t
+
+    empty_formatted = f"## {t('priming.section_title')}\n\n{t('priming.section_intro')}\n\n### Pending tasks"
+    assert not _priming_has_content(empty_formatted)
+    assert _priming_has_content('## Recalled\n<priming source="knowledge">remembered</priming>')
 
 
 def test_priming_blocks_are_trimmed_as_complete_items() -> None:

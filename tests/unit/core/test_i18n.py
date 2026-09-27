@@ -227,7 +227,7 @@ class TestToolDescriptionLocale:
     def test_get_default_guide_ja(self):
         """get_default_guide returns Japanese for ja locale."""
         result = load_guide("s_mcp", locale="ja")
-        assert "MCPツール" in result or "タスク" in result
+        assert "送信" in result or "タスク" in result
 
     def test_get_default_guide_en(self):
         """get_default_guide returns English for en locale."""

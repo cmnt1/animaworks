@@ -148,28 +148,28 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                     "trust_level": {
                         "type": "string",
                         "enum": ["builtin", "official", "trusted", "community", "untrusted"],
-                        "description": "Trust level for the skill (default: trusted)",
+                        "description": "Trust level (default: trusted).",
                     },
                     "source_type": {
                         "type": "string",
                         "enum": ["local", "anima", "hub", "url"],
-                        "description": "Source type indicating where the skill came from (default: anima)",
+                        "description": "Where the skill came from (default: anima).",
                     },
                     "category": {
                         "type": "string",
-                        "description": "Category tag for skill classification (e.g. software-development, communication)",
+                        "description": "Category tag for classification.",
                     },
                     "source_origin": {
                         "type": "string",
-                        "description": "Provenance origin such as manual or auto_created.",
+                        "description": "Provenance origin (manual / auto_created).",
                     },
                     "promotion_status": {
                         "type": "string",
-                        "description": "Skill promotion status such as probation or trusted.",
+                        "description": "Promotion status (probation / trusted).",
                     },
                     "skill_policy": {
                         "type": "object",
-                        "description": "Prompt policy with use_mode and injection fields.",
+                        "description": "Prompt policy (use_mode, injection fields).",
                     },
                     "use_when": {
                         "type": "array",
@@ -179,17 +179,17 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                     "trigger_phrases": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Phrases that should activate this skill as a candidate.",
+                        "description": "Phrases that activate this skill.",
                     },
                     "negative_phrases": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Phrases that should suppress this skill.",
+                        "description": "Phrases that suppress this skill.",
                     },
                     "domains": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Routing domains for this skill.",
+                        "description": "Routing domains.",
                     },
                     "routing_examples": {
                         "type": "array",
@@ -221,10 +221,9 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
         {
             "name": "promote_procedure_to_skill",
             "description": (
-                "Generate a reviewed skill draft from a successful procedure, "
-                "or approve an existing quarantine draft. Drafts are written to "
-                "skills/quarantine/<skill_name>/SKILL.md and require explicit "
-                "human approval before activation."
+                "Generate a skill draft from a successful procedure, or approve a quarantine draft. "
+                "action='draft' writes skills/quarantine/<skill_name>/SKILL.md; action='approve' "
+                "activates a reviewed draft (requires explicit human approval)."
             ),
             "parameters": {
                 "type": "object",
@@ -236,11 +235,11 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                     },
                     "path": {
                         "type": "string",
-                        "description": "Procedure path under procedures/ for action=draft, e.g. procedures/deploy.md.",
+                        "description": "Procedure path under procedures/ for action=draft.",
                     },
                     "skill_name": {
                         "type": "string",
-                        "description": "Optional draft name for action=draft; required quarantine skill name for action=approve.",
+                        "description": "Optional draft name for draft; required quarantine name for approve.",
                     },
                     "approved_by": {
                         "type": "string",
@@ -248,7 +247,7 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                     },
                     "approval_callback_id": {
                         "type": "string",
-                        "description": "Resolved interactive approval callback_id required for action=approve.",
+                        "description": "Interactive approval callback_id, required for action=approve.",
                     },
                     "description": {
                         "type": "string",
@@ -267,7 +266,7 @@ def _create_skill_schemas() -> list[dict[str, Any]]:
                     "negative_phrases": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Phrases that should suppress routing to the generated skill.",
+                        "description": "Phrases that should suppress routing.",
                     },
                     "domains": {
                         "type": "array",

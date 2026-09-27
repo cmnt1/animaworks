@@ -194,21 +194,21 @@ def test_compaction_extraction_golden(log_dir: Path):
                 meta={"thread_id": "default", "from_type": "human"},
             ),
             _default_row(
-                "response_sent",
-                ts="2026-01-01T09:00:05+09:00",
-                content="anima a1",
-            ),
-            _default_row(
                 "tool_use",
-                ts="2026-01-01T09:00:10+09:00",
+                ts="2026-01-01T09:00:02+09:00",
                 tool="read",
                 meta={"tool_use_id": "t1", "args": {"path": "/x"}, "thread_id": "default"},
             ),
             _default_row(
                 "tool_result",
-                ts="2026-01-01T09:00:20+09:00",
+                ts="2026-01-01T09:00:03+09:00",
                 content="file body",
                 meta={"tool_use_id": "t1", "thread_id": "default"},
+            ),
+            _default_row(
+                "response_sent",
+                ts="2026-01-01T09:00:05+09:00",
+                content="anima a1",
             ),
             _default_row(
                 "message_received",

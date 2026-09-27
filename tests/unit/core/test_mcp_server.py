@@ -146,9 +146,13 @@ class TestListToolsHandler:
         assert result_names == {t.name for t in MCP_TOOLS if t.name != "submit_tasks"}
 
     async def test_background_session_can_list_submit_tasks(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """submit_tasks is listed only for explicit background task-authoring sessions."""
+        """submit_tasks is listed only for explicit background task-authoring sessions.
+
+        ``background:*`` is a scoped (default) trigger, so skill-management
+        tools are still omitted but submit_tasks is advertised.
+        """
         import core.mcp.server as mcp_mod
-        from core.mcp.server import MCP_TOOLS, list_tools
+        from core.mcp.server import list_tools
 
         monkeypatch.setenv("ANIMAWORKS_TRIGGER", "background:manual")
         with (
@@ -159,7 +163,8 @@ class TestListToolsHandler:
 
         result_names = {t.name for t in result}
         assert "submit_tasks" in result_names
-        assert result_names == {t.name for t in MCP_TOOLS}
+        # background is a scoped trigger -> skill-management tools are omitted
+        assert not result_names & mcp_mod._SKILL_MANAGEMENT_TOOL_NAMES
 
     async def test_filters_supervisor_tools_when_non_supervisor(self) -> None:
         """list_tools() excludes supervisor tools when Anima has no subordinates."""
@@ -473,6 +478,171 @@ class TestCallToolHandler:
         assert payload["error_type"] != "ToolTimeout"
         assert payload["error_type"] == "UnhandledError"
         assert "socket timed out" in payload["message"]
+
+
+# ── TestTriggerScopedTools ────────────────────────────────────────────────
+
+
+class TestTriggerScopedTools:
+    """Tests for trigger-based aw MCP tool set selection."""
+
+    SKILL_MANAGEMENT = frozenset(
+        {
+            "curate_skills",
+            "archive_skill",
+            "restore_skill",
+            "block_skill",
+            "unblock_skill",
+            "delete_skill",
+            "set_skill_lifecycle",
+            "promote_procedure_to_skill",
+        }
+    )
+
+    def test_default_triggers_omit_skill_management(self) -> None:
+        """chat / inbox / cron / task (and friends) drop skill-management tools."""
+        from core.mcp.server import _trigger_scoped_tool_names
+
+        for trigger in ("chat", "inbox", "cron", "task", "message", "background:manual"):
+            names = _trigger_scoped_tool_names(trigger)
+            assert not names & self.SKILL_MANAGEMENT, trigger
+            assert "search_memory" in names
+            assert "send_message" in names
+
+    def test_heartbeat_keeps_skill_management(self) -> None:
+        """heartbeat and consolidation keep every tool."""
+        from core.mcp.server import _trigger_scoped_tool_names
+
+        for trigger in ("heartbeat", "heartbeat:seeded", "consolidation", "consolidation:cc"):
+            names = _trigger_scoped_tool_names(trigger)
+            assert names >= self.SKILL_MANAGEMENT, trigger
+            assert "curate_skills" in names
+
+    def test_empty_trigger_keeps_everything(self) -> None:
+        """An unknown/empty trigger keeps the full default set (safe default)."""
+        from core.mcp.server import _EXPOSED_TOOL_NAMES, _trigger_scoped_tool_names
+
+        assert _trigger_scoped_tool_names("") == _EXPOSED_TOOL_NAMES
+
+    def test_mcp_tools_env_for_trigger_scoped(self) -> None:
+        """A scoped trigger pins an explicit reduced ANIMAWORKS_MCP_TOOLS value."""
+        from core.mcp.server import _mcp_tools_env_for_trigger
+
+        value = _mcp_tools_env_for_trigger("inbox", enabled=True)
+        assert value is not None
+        names = set(value.split(","))
+        assert not names & self.SKILL_MANAGEMENT
+        assert "search_memory" in names
+
+    def test_mcp_tools_env_for_trigger_full_returns_none(self) -> None:
+        """heartbeat and disabled config leave the env var unset (full tool set)."""
+        from core.mcp.server import _mcp_tools_env_for_trigger
+
+        assert _mcp_tools_env_for_trigger("heartbeat", enabled=True) is None
+        assert _mcp_tools_env_for_trigger("inbox", enabled=False) is None
+
+    def test_inbox_tool_json_total_under_12000(self) -> None:
+        """Inbox-trigger aw MCP tool definitions stay under 12,000 chars.
+
+        Simulates the published set for a normal (non-supervisor, non-newstaff)
+        Anima in an inbox run: trigger scoping + supervisor + newstaff gates
+        + the runtime submit_tasks block.
+        """
+        import core.mcp.server as mcp_mod
+
+        tools, _exposed = mcp_mod._build_mcp_tools()
+        by_name = {t.name: t for t in tools}
+        names = set(mcp_mod._trigger_scoped_tool_names("inbox"))
+        names -= set(mcp_mod._SUPERVISOR_TOOL_NAMES)  # not a supervisor
+        names -= {"create_anima"}  # no newstaff skill
+        names -= {"submit_tasks"}  # blocked outside explicit bg sessions
+
+        total = sum(
+            len(
+                json.dumps(
+                    {"description": by_name[n].description, "inputSchema": by_name[n].inputSchema},
+                    ensure_ascii=False,
+                )
+            )
+            for n in names
+        )
+        assert total <= 12000, f"inbox MCP tool JSON total {total} > 12000"
+
+    def test_create_anima_not_advertised_without_newstaff(self) -> None:
+        """create_anima is not sent to an Anima without the newstaff skill."""
+        import asyncio
+
+        import core.mcp.server as mcp_mod
+        from core.mcp.server import list_tools
+
+        with (
+            patch.object(mcp_mod, "_is_supervisor", False),
+            patch.object(mcp_mod, "_has_newstaff", False),
+        ):
+            result = asyncio.run(list_tools())
+        assert "create_anima" not in {t.name for t in result}
+
+    def test_skill_tool_not_found_message_mentions_heartbeat(self) -> None:
+        """Not-found message for a skill tool hints it is available in heartbeat."""
+        from core.mcp.server import _tool_not_found_message
+
+        msg = _tool_not_found_message("curate_skills")
+        assert "heartbeat" in msg or "consolidation" in msg
+        plain = _tool_not_found_message("search_memory")
+        assert isinstance(plain, str) and plain
+
+
+class TestAgentSdkMcpTriggerEnv:
+    """Tests for the Agent SDK injecting ANIMAWORKS_MCP_TOOLS from the trigger."""
+
+    def _executor(self, tmp_path: Path, anima_dir: Path | None = None):
+        from core.schemas import ModelConfig
+
+        mc = ModelConfig(model="claude-sonnet-4-6", api_key="test-key", extra_mcp_servers={})
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir or (tmp_path / "animas" / "a"))
+
+    def test_scoped_trigger_sets_mcp_tools_env(self, tmp_path: Path) -> None:
+        """A scoped trigger propagates ANIMAWORKS_MCP_TOOLS to the subprocess env."""
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor = self._executor(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="inbox", thread_id="t", trigger="inbox")
+        with runtime_session_scope(ctx):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_MCP_TOOLS" in env
+        names = set(env["ANIMAWORKS_MCP_TOOLS"].split(","))
+        assert not names & TestTriggerScopedTools.SKILL_MANAGEMENT
+
+    def test_disabled_config_keeps_full_tool_set(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With config mcp.trigger_scoped_tools=False the env stays unset (full set)."""
+        from core.config.schemas import AnimaWorksConfig
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        cfg = AnimaWorksConfig()
+        cfg.mcp.trigger_scoped_tools = False
+        monkeypatch.setattr("core.config.models.load_config", lambda *a, **k: cfg)
+
+        executor = self._executor(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="inbox", thread_id="t", trigger="inbox")
+        with runtime_session_scope(ctx):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_MCP_TOOLS" not in env or env.get("ANIMAWORKS_MCP_TOOLS") == ""
+
+    def test_heartbeat_leaves_full_tool_set(self, tmp_path: Path) -> None:
+        """Heartbeat leaves ANIMAWORKS_MCP_TOOLS unset so the full set is advertised."""
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor = self._executor(tmp_path)
+        ctx = RuntimeSessionContext.create(session_type="heartbeat", thread_id="t", trigger="heartbeat")
+        with runtime_session_scope(ctx):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_MCP_TOOLS" not in env
 
 
 # ── TestResolveToolTimeout ───────────────────────────────────────────

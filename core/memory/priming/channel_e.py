@@ -204,17 +204,7 @@ async def channel_e_pending_tasks(
                 reverse=True,
             )
             if files:
-                names = [f.name for f in files[:5]]
-                listing = ", ".join(names)
-                remaining = f" (+{len(files) - 5})" if len(files) > 5 else ""
-                parts.append(
-                    t(
-                        "dedup.overflow_inbox_summary",
-                        count=len(files),
-                        listing=listing,
-                        remaining=remaining,
-                    )
-                )
+                parts.append(t("dedup.overflow_inbox_summary", count=len(files)))
         except Exception:
             logger.debug("Channel E: overflow_inbox read failed", exc_info=True)
 
@@ -254,7 +244,7 @@ async def channel_e_pending_tasks(
                         content = rf.read_text(encoding="utf-8").strip()
                         task_id = canonical_ids.get(rf, rf.stem)
                         task_updates[task_id] = datetime.fromtimestamp(rf.stat().st_mtime, tz=now.tzinfo).isoformat()
-                        preview = content[:150].replace("\n", " ")
+                        preview = " ".join(content.split())[:80]
                         lines.append(f"- [{task_id}] {preview}")
                     except Exception:
                         logger.debug("Channel E: failed to read %s", rf.name, exc_info=True)

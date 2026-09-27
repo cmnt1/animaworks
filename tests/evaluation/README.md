@@ -54,7 +54,7 @@ config = ExperimentConfig.create_condition_d(
     memory_size=MemorySize.MEDIUM,
     conversation_length=ConversationLength.MEDIUM,
     domain=Domain.BUSINESS,
-    priming_budget=2000
+    priming_budget=2000,
 )
 ```
 
@@ -78,9 +78,7 @@ result, latency_ms = await collector.measure_latency_async(some_async_func, arg1
 
 # Calculate search quality
 precision, recall, f1 = collector.calculate_precision_recall(
-    retrieved=["doc1", "doc2", "doc3"],
-    relevant=["doc1", "doc3", "doc4"],
-    k=3
+    retrieved=["doc1", "doc2", "doc3"], relevant=["doc1", "doc3", "doc4"], k=3
 )
 
 # Count tokens
@@ -106,12 +104,7 @@ Structured logging to JSON:
 ```python
 from framework import ExperimentLogger
 
-logger = ExperimentLogger(
-    experiment_id="exp_001",
-    output_dir=Path("results/raw"),
-    condition="D",
-    participant_id=1
-)
+logger = ExperimentLogger(experiment_id="exp_001", output_dir=Path("results/raw"), condition="D", participant_id=1)
 
 # Log conversation
 logger.start_conversation("conv_001")
@@ -168,9 +161,9 @@ scenarios = [
                 turn_id="turn_001",
                 message="山田さんのプロジェクトの締め切りはいつでしたか?",
                 relevant_memories=["knowledge/clients/yamada-project.md"],
-                expected_answer="2026年3月15日"
+                expected_answer="2026年3月15日",
             )
-        ]
+        ],
     )
 ]
 experiment.scenarios = scenarios
@@ -201,6 +194,7 @@ import asyncio
 from pathlib import Path
 from framework import ExperimentConfig, MemoryExperiment
 
+
 async def main():
     # Configure experiment
     config = ExperimentConfig.create_condition_d(
@@ -209,10 +203,7 @@ async def main():
     )
 
     # Create experiment
-    experiment = MemoryExperiment(
-        config=config,
-        output_dir=Path("results/raw")
-    )
+    experiment = MemoryExperiment(config=config, output_dir=Path("results/raw"))
 
     # Load scenarios (TODO: implement load_scenarios)
     # experiment.load_scenarios(Path("scenarios/"))
@@ -226,6 +217,7 @@ async def main():
     summary = await experiment.run_participant(participant_id=1)
     print(f"Participant 1 complete: {summary}")
 
+
 asyncio.run(main())
 ```
 
@@ -238,12 +230,10 @@ The framework is designed to integrate with AnimaWorks core components:
 ```python
 from core.person import DigitalPerson
 
+
 async def create_agent(self, participant_id: int) -> DigitalPerson:
     person_dir = self._create_person_environment(participant_id)
-    agent = DigitalPerson(
-        person_dir=person_dir,
-        search_config=self.config.search_config
-    )
+    agent = DigitalPerson(person_dir=person_dir, search_config=self.config.search_config)
     return agent
 ```
 
@@ -252,9 +242,7 @@ async def create_agent(self, participant_id: int) -> DigitalPerson:
 ```python
 async def _measure_priming(self, agent: DigitalPerson, message: str):
     result, latency = await self.metrics_collector.measure_latency_async(
-        agent.priming_engine.prime_memories,
-        message=message,
-        sender="user"
+        agent.priming_engine.prime_memories, message=message, sender="user"
     )
     return result, latency
 ```
@@ -263,10 +251,7 @@ async def _measure_priming(self, agent: DigitalPerson, message: str):
 
 ```python
 async def _measure_response(self, agent: DigitalPerson, message: str):
-    result, latency = await self.metrics_collector.measure_latency_async(
-        agent.process_message,
-        message=message
-    )
+    result, latency = await self.metrics_collector.measure_latency_async(agent.process_message, message=message)
     # Extract metrics from result
     response = AgentResponse(...)
     return response, latency
@@ -288,7 +273,7 @@ memory_file = MemoryFile(
     path=Path("knowledge/company_vision.md"),
     content="# Company Vision\n...",
     tokens=500,
-    metadata={"topic": "Company Vision", "index": 0}
+    metadata={"topic": "Company Vision", "index": 0},
 )
 
 # Memory base (full dataset)
@@ -296,8 +281,8 @@ memory_base = MemoryBase(
     domain="business",
     size="small",
     knowledge_files=[...],  # 50 files
-    episode_files=[...],    # 30 files
-    skill_files=[...]       # 10 files
+    episode_files=[...],  # 30 files
+    skill_files=[...],  # 10 files
 )
 
 # Conversation scenario
@@ -309,9 +294,9 @@ scenario = Scenario(
         ConversationTurn(
             message="What information do you have about Company Vision?",
             relevant_memories=[Path("knowledge/company_vision_0000.md")],
-            expected_answer=None
+            expected_answer=None,
         )
-    ]
+    ],
 )
 ```
 
@@ -333,23 +318,19 @@ from framework import DatasetGenerator
 # Initialize generator
 generator = DatasetGenerator(
     output_dir=Path("datasets"),
-    use_llm=False  # Template mode (fast)
+    use_llm=False,  # Template mode (fast)
     # use_llm=True, model="anthropic/claude-sonnet-4-20250514"  # LLM mode (high quality)
 )
 
 # Generate memory base
 memory_base = generator.generate_memory_base(
     domain="business",  # or "tech_support", "education"
-    size="small"        # or "medium", "large"
+    size="small",  # or "medium", "large"
 )
 # Result: 90 files (50 knowledge + 30 episodes + 10 skills)
 
 # Generate scenarios
-scenarios = generator.generate_scenarios(
-    domain="business",
-    memory_base=memory_base,
-    total_count=50
-)
+scenarios = generator.generate_scenarios(domain="business", memory_base=memory_base, total_count=50)
 # Result: 50 scenarios (factual: 40%, episodic: 30%, multihop: 20%, long: 10%)
 
 # Save scenarios
@@ -374,11 +355,7 @@ from framework import GroundTruthManager
 gt_manager = GroundTruthManager(output_dir=Path("ground_truth"))
 
 # Create annotations
-annotation_set = gt_manager.create_annotations(
-    scenarios=scenarios,
-    memory_base=memory_base,
-    annotator_id="annotator1"
-)
+annotation_set = gt_manager.create_annotations(scenarios=scenarios, memory_base=memory_base, annotator_id="annotator1")
 
 # Save annotations
 saved_path = gt_manager.save_annotations(annotation_set)

@@ -76,7 +76,7 @@ class TestInjectionOverThreshold:
         from core.prompt.builder import build_system_prompt
 
         memory = MemoryManager(anima_dir)
-        result = build_system_prompt(memory, trigger="chat")
+        result = build_system_prompt(memory, trigger="consolidation:daily")
 
         assert "injection_size_warning" in result.system_prompt
         assert "⚠️" in result.system_prompt
@@ -91,7 +91,7 @@ class TestInjectionOverThreshold:
         from core.prompt.builder import build_system_prompt
 
         memory = MemoryManager(anima_dir)
-        result = build_system_prompt(memory, trigger="chat")
+        result = build_system_prompt(memory, trigger="consolidation:daily")
 
         assert "6000" in result.system_prompt
         assert "2000" in result.system_prompt
@@ -121,7 +121,7 @@ class TestInjectionCustomThreshold:
         from core.prompt.builder import build_system_prompt
 
         memory = MemoryManager(anima_dir)
-        result = build_system_prompt(memory, trigger="chat")
+        result = build_system_prompt(memory, trigger="consolidation:daily")
 
         assert "4000" in result.system_prompt
         assert "3000" in result.system_prompt

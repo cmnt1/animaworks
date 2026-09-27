@@ -85,7 +85,8 @@ async def test_human_notify_surfaces_with_subject_body_key_meta(tmp_path: Path) 
 
     result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
 
-    assert "Please check deployment" in result
+    assert "Deploy check" in result
+    assert "Please check deployment" not in result
 
 
 @pytest.mark.asyncio

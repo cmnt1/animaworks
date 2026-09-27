@@ -442,6 +442,9 @@ class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
     injection_size_warning_chars: int = 2000
+    identity_business_exclude_headings: list[str] = Field(
+        default_factory=lambda: ["外見", "基本プロフィール", "Appearance", "Basic Profile"]
+    )
     system_prompt_target_tokens: int = Field(default=6000, ge=2000)
     system_prompt_ceiling_pct: float = Field(default=0.35, gt=0.0, le=1.0)
     skill_catalog_router_enabled: bool = True
@@ -450,6 +453,7 @@ class PromptConfig(BaseModel):
     skill_catalog_router_include_body: bool = True
     skill_catalog_router_dense_enabled: bool = True
     skill_catalog_router_dense_weight: float = Field(default=8.0, ge=0.0)
+    skill_catalog_max_items: int = Field(default=3, ge=1)
 
 
 class PrimingConfig(BaseModel):
@@ -634,6 +638,11 @@ class GitHubWebhookConfig(BaseModel):
     # Treated like bot_login for comment exclusion.
     reviewer_login: str = ""
     quiet_seconds: float = Field(default=180, ge=0)
+    # Thin out auto-detected bot noise (logins ending in "[bot]"): drop
+    # notifications whose body is empty or is only a "Review thread
+    # resolved" auto-reply, while still delivering bots with a real body.
+    # Independent of bot_login/reviewer_login (those are filtered outright).
+    drop_bot_noise: bool = True
 
 
 class EventExportConfig(BaseModel):
@@ -752,6 +761,16 @@ class LlmRateGuardConfig(BaseModel):
     max_block_seconds: int = Field(default=600, ge=0)
     quota_block_seconds: int = Field(default=1800, ge=0)
     max_quota_block_seconds: int = Field(default=14400, ge=0)
+
+
+class MCPConfig(BaseModel):
+    """Configuration for the Mode S aw MCP server tool exposure."""
+
+    # Limit the advertised aw MCP tool set by trigger: interactive triggers
+    # (chat / inbox / cron / task) skip the skill-management tools, while
+    # heartbeat / consolidation still receive the full set.  Set False to
+    # always expose every tool (previous behaviour).
+    trigger_scoped_tools: bool = True
 
 
 class BackgroundToolConfig(BaseModel):
@@ -937,6 +956,14 @@ class HeartbeatConfig(BaseModel):
         description=(
             "Max bytes of heartbeat.md before a compaction instruction is "
             "injected into the heartbeat prompt; 0 = disabled"
+        ),
+    )
+    recent_dialogue_max_age_hours: int = Field(
+        default=6,
+        ge=0,
+        description=(
+            "Include recent chat dialogue in heartbeat context only when the "
+            "last turn is younger than this many hours; 0 = always include"
         ),
     )
     soft_timeout_seconds: int = Field(
@@ -1265,8 +1292,8 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
 
 
 def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -> str:
-    """Convert PermissionsConfig to a human/LLM-readable text block."""
-    lines = [f"## Permissions: {anima_name}"]
+    """Render only permission constraints that differ from open defaults."""
+    lines: list[str] = []
     if sys.platform == "win32":
         lines.extend(
             [
@@ -1275,38 +1302,37 @@ def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -
                 "- Command execution runs through a PowerShell-compatible shell via execute_command; do not assume Bash-only behavior unless a command actually fails",
             ]
         )
-    if config.file_roots == ["/"]:
-        lines.append("- File access: unrestricted")
-    elif not config.file_roots and not config.file_roots_readonly:
-        lines.append("- File access: own directory and shared framework directories only")
-    else:
-        if config.file_roots:
-            lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
-        if config.file_roots_readonly:
-            lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
+    if config.file_roots != ["/"]:
+        if not config.file_roots and not config.file_roots_readonly:
+            lines.append("- File access: own directory and shared framework directories only")
+        else:
+            if config.file_roots:
+                lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
+            if config.file_roots_readonly:
+                lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
     if config.file_roots_denied:
         lines.append(f"- Denied file access (read/write; overrides all grants): {', '.join(config.file_roots_denied)}")
-    if config.commands.allow_all:
-        lines.append("- Commands: all allowed (global permission blocks still apply)")
-    else:
+    if not config.commands.allow_all:
         if config.commands.allow:
             lines.append(f"- Allowed commands: {', '.join(config.commands.allow)}")
         else:
             lines.append("- Commands: none allowed")
     if config.commands.deny:
         lines.append(f"- Additionally denied commands: {', '.join(config.commands.deny)}")
-    if config.external_tools.allow_all:
-        lines.append("- External tools: all allowed")
-    else:
+    if not config.external_tools.allow_all:
         if config.external_tools.allow:
             lines.append(f"- Allowed external tools: {', '.join(config.external_tools.allow)}")
         else:
             lines.append("- External tools: none allowed")
     if config.external_tools.deny:
         lines.append(f"- Denied external tools: {', '.join(config.external_tools.deny)}")
-    tc = config.tool_creation
-    lines.append(f"- Tool creation: personal={'yes' if tc.personal else 'no'}, shared={'yes' if tc.shared else 'no'}")
-    return "\n".join(lines)
+    if not config.tool_creation.personal:
+        lines.append("- Personal tool creation: not allowed")
+    if config.tool_creation.shared:
+        lines.append("- Shared tool creation: allowed")
+    if not lines:
+        return ""
+    return f"## Permissions: {anima_name}\n" + "\n".join(lines)
 
 
 # ── Main Config ─────────────────────────────────────────────────────────────
@@ -1391,6 +1417,7 @@ class AnimaWorksConfig(BaseModel):
     interaction: InteractionConfig = InteractionConfig()
     server: ServerConfig = ServerConfig()
     llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
+    mcp: MCPConfig = MCPConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     external_tasks: ExternalTasksConfig = Field(default_factory=ExternalTasksConfig)
     github_webhook: GitHubWebhookConfig = GitHubWebhookConfig()
@@ -1462,6 +1489,7 @@ __all__ = [
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
+    "MCPConfig",
     "MediaProxyConfig",
     "MemoryConfig",
     "Neo4jConfig",

@@ -247,8 +247,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "- イベント: {event_label}\n"
             "- 起点: {author}\n"
             "- URL: {url}{ci_line}\n\n"
-            "本文（先頭500文字）:\n{excerpt}\n\n"
-            "対応が必要なら誰に頼むか決めてdelegate_taskしてください。"
+            "本文（先頭500文字）:\n{excerpt}"
         ),
         "en": (
             "[GitHub notification]\n\n"
@@ -256,8 +255,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "- Event: {event_label}\n"
             "- Origin: {author}\n"
             "- URL: {url}{ci_line}\n\n"
-            "Body (first 500 chars):\n{excerpt}\n\n"
-            "If this needs action, decide who to ask and call delegate_task."
+            "Body (first 500 chars):\n{excerpt}"
         ),
         "ko": (
             "【GitHub 알림】\n\n"
@@ -265,8 +263,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "- 이벤트: {event_label}\n"
             "- 시작자: {author}\n"
             "- URL: {url}{ci_line}\n\n"
-            "본문(첫 500자):\n{excerpt}\n\n"
-            "대응이 필요하면 누구에게 맡길지 정해서 delegate_task 하세요."
+            "본문(첫 500자):\n{excerpt}"
         ),
     },
     "github_gateway.notify_ci_line": {

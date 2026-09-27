@@ -1,49 +1,5 @@
-## Tool Usage Guide
-
-全モードで統一されたツールセットが利用可能です。
-
-### File Operations (Claude Code-compatible)
-- **Read**: 行番号付きでファイルを読む。大きいファイルはoffset/limitで部分読み取り
-- **Write**: ファイルに書き込む。親ディレクトリを自動作成
-- **Edit**: ファイル内の特定の文字列を置換（old_stringは一意であること）
-- **Bash**: シェルコマンドを実行（permissionsの許可範囲内）
-  - 長時間コマンド: `background: true` で非同期実行 → cmd_id + 出力ファイルパスが返る
-  - 進捗確認: `Read(path="state/cmd_output/{cmd_id}.txt")` で中間出力を確認
-  - 一覧: `Glob(pattern="state/cmd_output/*.txt")` でバックグラウンドタスク一覧
-  - 20分近くかかりうるコマンド（重いテスト等）はバックグラウンドで起動し、数分おきに状態や出力の末尾を確認して進捗を追う
-- **Grep**: 正規表現でファイル内を検索
-- **Glob**: グロブパターンでファイルを検索
-- **WebSearch**: Web検索
-- **WebFetch**: URLを取得して返す（markdown形式）
-
-### Memory
-- **search_memory**: 長期記憶をキーワード検索
-  - scope: knowledge | episodes | procedures | common_knowledge | activity_log | all
-- **read_memory_file**: 記憶ディレクトリ内のファイルを相対パスで読む
-- **write_memory_file**: 記憶ディレクトリに書き込みまたは追記
-
-### Action Rules
-- `[ACTION-RULE]` は送信・投稿・通知・記憶書き込みの結果に、関連するルール本文が添付されます
-- 本文に `read_memory_file(path="...")` が示されたら、同じセッションで必ず読んでから再実行する
-- 詳細は `read_memory_file(path="common_knowledge/operations/action-rules-guide.md")`
-
-### Communication
-- **send_message**: DM送信（1 runあたり最大2宛先、各1通）
-  - intent必須: 'report' または 'question' のみ
-  - タスク委譲はdelegate_task。ack/FYI/3人以上はpost_channelを使う
-- **post_channel**: 共有Boardチャネルに投稿
-
-### Task Management
-- **update_task**: タスクステータスを更新
-
-### Skills
-- **create_skill**: 新しいスキルディレクトリを作成する
-- 既存のスキル文書・CLIマニュアルは **read_memory_file** でカタログのパスを指定して読む
-
-
-### Other Tools via CLI
-スーパーバイザー管理、vault、チャネル管理、バックグラウンドタスク、全外部ツール:
-```
-Bash: animaworks-tool <tool> <subcommand> [args]
-```
-利用可能なCLIコマンドは `Bash: animaworks-tool --help` で確認。
+## ツール使用
+20分近くかかるコマンドはバックグラウンド実行し、`state/cmd_output/{id}.txt` を確認。検索・集計は Bash、ファイル読み書きは Read/Write/Edit を使う。
+送信・投稿・通知・記憶書き込み前の `[ACTION-RULE]` に従い、指定された記憶は読んでから実行する。対象: `call_human`, `send_message`, `post_channel`, `write_memory_file`, `gmail_draft/send`, `chatwork_send`, `slack_send`, `discord_send`。
+`send_message` は1 runあたり最大2宛先・各1通、intent必須。ack/FYI/3人以上への通知は `post_channel`。部下への委譲は `delegate_task`、自分の作業は Bash で行う。
+その他（supervisor・vault・channel・background・外部ツール）は `animaworks-tool <tool> <subcommand>`。一覧: `animaworks-tool --help`。

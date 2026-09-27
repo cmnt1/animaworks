@@ -270,6 +270,19 @@ class SDKOptionsMixin:
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())
+            # Trigger-scoped aw MCP tool set: when enabled, scoped interactive
+            # triggers advertise a reduced tool set (skill-management tools are
+            # omitted) by pinning ANIMAWORKS_MCP_TOOLS on the subprocess.
+            from core.config.models import load_config
+            from core.mcp.server import _mcp_tools_env_for_trigger
+
+            try:
+                enabled = bool(load_config().mcp.trigger_scoped_tools)
+            except Exception:
+                enabled = True
+            tools_env = _mcp_tools_env_for_trigger(ctx.trigger, enabled=enabled)
+            if tools_env:
+                env["ANIMAWORKS_MCP_TOOLS"] = tools_env
         return env
 
     def _make_pending_executor_wake_callback(self) -> Callable[[], None] | None:

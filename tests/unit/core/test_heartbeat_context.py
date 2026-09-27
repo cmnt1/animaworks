@@ -646,3 +646,148 @@ class TestHeartbeatDialogueContext:
             assert "Message number 5" in prompt
             assert "Message number 6" in prompt
             assert "Message number 7" in prompt
+
+    async def test_no_dialogue_when_last_turn_is_stale(self, data_dir, make_anima, monkeypatch):
+        """B5: heartbeat omits dialogue when the last turn is older than the window."""
+        from datetime import timedelta
+
+        from core.time_utils import now_local
+
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockMM.return_value.read_heartbeat_config.return_value = "checklist"
+            MockMM.return_value.append_episode = MagicMock()
+            MockMsg.return_value.has_unread.return_value = False
+
+            turn = MagicMock()
+            turn.role = "human"
+            turn.content = "An old request from a while ago"
+            turn.timestamp = (now_local() - timedelta(hours=10)).isoformat()
+            mock_state = MagicMock()
+            mock_state.turns = [turn]
+            MockConv.return_value.load.return_value = mock_state
+
+            from core.anima.digital_anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            captured_prompts: list[str] = []
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                captured_prompts.append(prompt)
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": "heartbeat",
+                        "action": "checked",
+                        "summary": "HEARTBEAT_OK",
+                        "duration_ms": 50,
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            await dp.run_heartbeat()
+
+            prompt = captured_prompts[0]
+            assert "直近の対話履歴" not in prompt
+            assert "An old request" not in prompt
+
+    async def test_dialogue_when_last_turn_is_fresh(self, data_dir, make_anima):
+        """B5: heartbeat includes dialogue when the last turn is within the window."""
+        from core.time_utils import now_local
+
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockMM.return_value.read_heartbeat_config.return_value = "checklist"
+            MockMM.return_value.append_episode = MagicMock()
+            MockMsg.return_value.has_unread.return_value = False
+
+            turn = MagicMock()
+            turn.role = "human"
+            turn.content = "A recent request"
+            turn.timestamp = now_local().isoformat()
+            mock_state = MagicMock()
+            mock_state.turns = [turn]
+            MockConv.return_value.load.return_value = mock_state
+
+            from core.anima.digital_anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.replied_to = set()
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+
+            captured_prompts: list[str] = []
+
+            async def mock_stream(prompt, trigger="manual", **kwargs):
+                captured_prompts.append(prompt)
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": {
+                        "trigger": "heartbeat",
+                        "action": "checked",
+                        "summary": "HEARTBEAT_OK",
+                        "duration_ms": 50,
+                    },
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            await dp.run_heartbeat()
+
+            prompt = captured_prompts[0]
+            assert "直近の対話履歴" in prompt
+            assert "A recent request" in prompt
+
+
+class TestDialogueFreshnessGate:
+    """B5: unit tests for the heartbeat recent-dialogue freshness gate."""
+
+    @staticmethod
+    def _turn(timestamp: str):
+        return type("Turn", (), {"role": "human", "content": "x", "timestamp": timestamp})()
+
+    def test_old_turn_is_not_recent(self, dp):
+        from datetime import timedelta
+
+        from core.time_utils import now_local
+
+        old = (now_local() - timedelta(hours=10)).isoformat()
+        assert dp._dialogue_is_recent([self._turn(old)]) is False
+
+    def test_fresh_turn_is_recent(self, dp):
+        from core.time_utils import now_local
+
+        assert dp._dialogue_is_recent([self._turn(now_local().isoformat())]) is True
+
+    def test_missing_timestamp_defaults_to_recent(self, dp):
+        assert dp._dialogue_is_recent([self._turn("")]) is True
+
+    def test_zero_window_always_recent(self, dp, monkeypatch):
+        from datetime import timedelta
+
+        from core.time_utils import now_local
+
+        monkeypatch.setattr(dp, "_get_recent_dialogue_max_age_hours", lambda: 0)
+        old = (now_local() - timedelta(hours=48)).isoformat()
+        assert dp._dialogue_is_recent([self._turn(old)]) is True

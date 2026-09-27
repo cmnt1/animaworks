@@ -1,10 +1,1 @@
-Write or append to a file in your memory directory.
-Record when:
-- Problem solved → knowledge/ with cause and solution
-- Correct parameters discovered → knowledge/
-- Procedure established/improved → procedures/ with new doc
-- New reusable capability learned → use create_skill for skills/{name}/SKILL.md
-- Pre-send/post/notify/write check needed → create knowledge/action-rule-*.md with [ACTION-RULE] and trigger_tools
-- Updating heartbeat.md or cron.md
-mode='overwrite' for replace, mode='append' for append.
-Write important discoveries immediately; do not wait for consolidation.
+Write or append to a file in your memory directory. Record: a solved problem → knowledge/ (cause and solution); correct parameters → knowledge/; an established procedure → procedures/; a new reusable capability → create a skill with create_skill (skills/{name}/SKILL.md); a pre-send/post/notify/write check rule → knowledge/action-rule-*.md with [ACTION-RULE] and trigger_tools; updating heartbeat.md or cron.md. mode='overwrite' replaces the file, mode='append' appends. Write important findings immediately; do not wait for consolidation.

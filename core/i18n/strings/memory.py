@@ -164,18 +164,8 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     # "dedup.messages_merged" removed: consolidate_messages() abolished in dedup overhaul
     "dedup.overflow_inbox_summary": {
-        "ja": (
-            "⚠️ 未処理メッセージ {count}件 (state/overflow_inbox/): "
-            "{listing}{remaining}\n"
-            'read_memory_file(path="state/overflow_inbox/<filename>") で確認可能。'
-            "処理後は archive_memory_file で移動してください。"
-        ),
-        "en": (
-            "⚠️ {count} unprocessed messages (state/overflow_inbox/): "
-            "{listing}{remaining}\n"
-            'Use read_memory_file(path="state/overflow_inbox/<filename>") to review. '
-            "After processing, use archive_memory_file to move them."
-        ),
+        "ja": "⚠️ 未処理メッセージ {count}件（state/overflow_inbox/、read_memory_file で確認・処理後 archive_memory_file）",
+        "en": "⚠️ {count} unprocessed messages (state/overflow_inbox/; review with read_memory_file and archive after processing)",
     },
     "distillation.none": {
         "ja": "(なし)",
@@ -216,6 +206,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "priming.outbound_sent": {
         "ja": "- [{time_str}] {to} にメッセージ送信済み: 「{text_preview}」",
         "en": '- [{time_str}] Message sent to {to}: "{text_preview}"',
+    },
+    "priming.human_notification_summary": {
+        "ja": "[{time_str}] {summary}",
+        "en": "[{time_str}] {summary}",
+        "ko": "[{time_str}] {summary}",
     },
     "priming.pending_tasks_header": {
         "ja": "### 未完了タスク",

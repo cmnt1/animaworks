@@ -188,11 +188,13 @@ class TestTriggerBasedPromptFiltering:
         result = build_system_prompt(mm, trigger=trigger)
         return result.system_prompt
 
-    def test_task_trigger_includes_full_context(self, data_dir, make_anima):
-        """TaskExec now gets full-context prompts (same as cron-level)."""
+    def test_task_trigger_includes_full_context_without_empty_meta_group(self, data_dir, make_anima):
+        """TaskExec gets full context while empty groups are omitted."""
         anima_dir = make_anima("filter_test")
         prompt = self._build("task:test-id", anima_dir)
-        assert "メタ設定" in prompt
+        assert '<section name="tool_guides">' in prompt
+        assert '<section name="current_state">' in prompt
+        assert "<group_6" not in prompt
 
     def test_task_trigger_similar_to_cron(self, data_dir, make_anima):
         """Task prompt should be roughly comparable to cron (no longer minimal)."""
@@ -244,8 +246,8 @@ class TestTriggerBasedPromptFiltering:
         anima_dir = make_anima("filter_inbox_emo")
         inbox_prompt = self._build("inbox:peer", anima_dir)
         chat_prompt = self._build("", anima_dir)
-        assert "表情メタデータ" in chat_prompt
-        assert "表情メタデータ" not in inbox_prompt
+        assert "## 表情" in chat_prompt
+        assert "## 表情" not in inbox_prompt
 
     def test_cron_and_task_comparable_length(self, data_dir, make_anima):
         """Task and cron should have comparable context (both full-context)."""

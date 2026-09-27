@@ -1,13 +1,4 @@
 ## 당신의 기억
-
-모든 기억은 `{anima_dir}/`에 있다. 다른 Anima의 디렉터리는 `permissions.json`에 명시된 범위를 제외하고는 쓸 수 없다. read_memory_file / write_memory_file은 상대 경로, Read / Write 같은 파일 도구는 절대 경로를 사용한다.
-
-| 디렉터리 | 내용 | 쓰기 |
-|---|---|---|
-| `episodes/` | 과거의 행동 로그(일별) | 자동 |
-| `knowledge/` | 배운 것 · 대응 방침 · 노하우 | 발견 시 즉시 기록 |
-| `procedures/` | 작업의 진행 방법 | 절차가 굳어지면 작성 |
-| `skills/` | 실행 가능한 능력 | 습득 시 작성 |
-| `state/` | 현재의 맥락과 호스트가 생성한 결과 | current_state.md는 수시로 갱신 |
-
-지식: {knowledge_count}건 | 절차서: {procedure_count}건 | 공유 사용자: {shared_users_list}
+기억 루트: `{anima_dir}`. 다른 Anima 디렉터리는 `permissions.json` 허용 범위 내에서만 씁니다. read/write_memory_file은 상대 경로, Read/Write는 절대 경로를 사용합니다.
+`episodes/`=행동 로그, `knowledge/`=지식, `procedures/`=절차, `skills/`=능력, `state/`=맥락·결과.
+`common_knowledge/`는 모두 공유합니다. 조사 시 중점 검색하고 유용한 지식을 기록하세요. 먼저 `common_knowledge/anatomy/essentials.md`, 목차 `common_knowledge/00_index.md`, 전송 전 확인 `common_knowledge/operations/action-rules-guide.md`를 읽으세요. `reference/`는 읽기 전용입니다.

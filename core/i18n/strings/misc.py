@@ -146,6 +146,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "あなたのデフォルトワークスペース: (未解決: {alias})",
         "en": "Your default workspace: (unresolved: {alias})",
     },
+    "builder.external_tools": {
+        "ja": "外部ツール（`animaworks-tool <name>` 経由）: {categories}",
+        "en": "External tools (via `animaworks-tool <name>`): {categories}",
+        "ko": "외부 도구 (`animaworks-tool <name>` 경유): {categories}",
+    },
+    "builder.external_tools.direct": {
+        "ja": "ツール一覧に専用の外部ツールがあれば、そのツール名で直接呼び出す。",
+        "en": "If a dedicated external tool is visible in your tool list, call it directly by name.",
+        "ko": "도구 목록에 전용 외부 도구가 있으면 해당 도구 이름으로 직접 호출하세요.",
+    },
     "builder.heartbeat_tool_fallback": {
         "ja": (
             "Heartbeatでは**観察・報告・計画・フォローアップ**にツールを使ってください。\n- OK: read_channel, search_memory, read_memory_file, send_message, post_channel, update_task, delegate_task, submit_tasks, Write（pending作成用）\n- NG: コード変更、ファイル大量編集、長時間の分析・調査\n重い作業が必要な場合は state/pending/ にタスクファイルを書き出してください。"
@@ -188,9 +198,29 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": "(이전 버전. {latest} 에 통합)",
     },
     "builder.skill_catalog_instruction": {
-        "ja": "ここに出るスキルは候補です。使う前に表示パスを `read_memory_file` で読み、全文の手順・制約を確認すること。新規スキル作成時は `common_skills/skill-creator/SKILL.md` を読むこと。`external/...` はホスト側スキル。SKILL.md 内の相対パス（scripts/ 等）は実体ディレクトリ基準で、`read_memory_file` の結果冒頭に実体ディレクトリが表示される。",
-        "en": "Skills shown here are candidates. Before using one, read the shown path with `read_memory_file` and verify the full instructions and constraints. Before authoring a new skill, read `common_skills/skill-creator/SKILL.md`. `external/...` are host-side skills. Relative paths inside their SKILL.md (e.g. scripts/) are relative to the real directory, which is shown at the top of the `read_memory_file` result.",
-        "ko": "여기에 표시되는 스킬은 후보입니다. 사용하기 전에 표시된 경로를 `read_memory_file`로 읽고 전체 절차와 제약을 확인하세요. 새 스킬을 작성할 때는 `common_skills/skill-creator/SKILL.md`를 읽으세요. `external/...`은 호스트측 스킬입니다. SKILL.md 내부의 상대 경로(scripts/ 등)는 실제 디렉토리 기준이며, `read_memory_file` 결과 맨 앞에 실제 디렉토리가 표시됩니다.",
+        "ja": "使う前に表示パスを `read_memory_file` で読み、手順・制約を確認する。\n新規作成時は `common_skills/skill-creator/SKILL.md` を読む。`external/...` はホスト側スキル。",
+        "en": "Before use, read the shown path with `read_memory_file` and verify its instructions and constraints.\nBefore creating a skill, read `common_skills/skill-creator/SKILL.md`; `external/...` are host-side skills.",
+        "ko": "사용 전에 표시된 경로를 `read_memory_file`로 읽고 절차와 제약을 확인하세요.\n새 스킬 작성 전 `common_skills/skill-creator/SKILL.md`를 읽으세요. `external/...`은 호스트측 스킬입니다.",
+    },
+    "builder.board_channels_none": {
+        "ja": "（なし）",
+        "en": "(none)",
+        "ko": "(없음)",
+    },
+    "builder.board_channels_more": {
+        "ja": "、ほか{count}件",
+        "en": ", and {count} more",
+        "ko": " 외 {count}개",
+    },
+    "builder.board_guidance_with_team": {
+        "ja": "- 所属チームの限定チャネル（報告先）: {team_channels}（通常の作業報告・完了報告を優先）\n- 現在アクセスできるBoardチャネル: {visible_channels}\n- `general` は全体共有のみ、`ops` は部門横断の運用・インフラ共有のみ。",
+        "en": "- Restricted team channel(s) (reporting destination): {team_channels} (prioritize for routine work/completion reports)\n- Accessible Board channels: {visible_channels}\n- Use `general` only for org-wide sharing and `ops` only for cross-team operations/infrastructure.",
+        "ko": "- 소속 팀 제한 채널(보고처): {team_channels} (일반 업무/완료 보고 우선)\n- 현재 접근 가능한 Board 채널: {visible_channels}\n- `general`은 전체 공유용으로만, `ops`는 팀 간 운영/인프라 공유용으로만 사용합니다.",
+    },
+    "builder.board_guidance_without_team": {
+        "ja": "- 所属チームの限定チャネル（報告先）: なし\n- 現在アクセスできるBoardチャネル: {visible_channels}\n- 最も関連性の高い共有チャネルを使う（`general` は全体共有のみ、`ops` は部門横断の運用・インフラ共有のみ）。",
+        "en": "- Restricted team channel (reporting destination): none\n- Accessible Board channels: {visible_channels}\n- Use the most relevant shared channel (`general` only for org-wide sharing; `ops` only for cross-team operations/infrastructure).",
+        "ko": "- 소속 팀 제한 채널(보고처): 없음\n- 현재 접근 가능한 Board 채널: {visible_channels}\n- 가장 관련성 높은 공유 채널을 사용합니다 (`general`은 전체 공유용으로만, `ops`는 팀 간 운영/인프라 공유용으로만 사용).",
     },
     "builder.procedure_label": {
         "ja": "手順",
