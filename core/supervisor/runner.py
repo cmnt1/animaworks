@@ -45,6 +45,48 @@ logger = logging.getLogger(__name__)
 _ORPHAN_CHECK_INTERVAL_SEC = 300  # 5 minutes
 _ORPHAN_MAX_AGE_SEC = 7200  # 2 hours
 
+
+# ── Task Runner Subtree Discovery ────────────────────────────────
+
+
+def _task_runner_subtree_pids(root: psutil.Process, job_pids: set[int]) -> set[int]:
+    """Return PIDs of task-runner roots and all their descendants.
+
+    A task-runner root is either a registered job pid or a descendant
+    whose cmdline references ``core.supervisor.task_runner`` (which also
+    catches runners spawned but not yet registered).  These roots and their
+    full descendant trees are managed by :class:`TaskRunnerSupervisor`
+    (liveness watchdog and child exit cleanup), so the root's orphan
+    cleanup must never kill them.  The root orphan cleanup uses this to
+    build an exclusion set.
+    """
+    excluded: set[int] = set()
+
+    def _add_subtree(pid: int) -> None:
+        if pid in excluded:
+            return
+        excluded.add(pid)
+        try:
+            for sub in psutil.Process(pid).children(recursive=True):
+                excluded.add(sub.pid)
+        except (psutil.Error, AttributeError):
+            pass
+
+    for pid in job_pids:
+        _add_subtree(pid)
+    try:
+        descendants = root.children(recursive=True)
+    except (psutil.Error, AttributeError):
+        return excluded
+    for proc in descendants:
+        try:
+            if any("core.supervisor.task_runner" in token for token in proc.cmdline()):
+                _add_subtree(proc.pid)
+        except (psutil.Error, TypeError, AttributeError):
+            continue
+    return excluded
+
+
 # ── AnimaRunner ──────────────────────────────────────────────────
 
 
@@ -694,6 +736,12 @@ class AnimaRunner:
         than :data:`_ORPHAN_MAX_AGE_SEC`, then kills each such process and its
         descendants.
 
+        Task-runner subtrees (registered job pids and running
+        ``core.supervisor.task_runner`` processes plus all their descendants)
+        are excluded: they are managed by ``TaskRunnerSupervisor`` (liveness
+        watchdog and child exit cleanup), so this sweep only targets Claude
+        CLIs the root itself launched (e.g. idle compaction via the SDK).
+
         Individual process errors are ignored so one bad PID does not block
         the rest. Failures in the overall walk are logged at DEBUG only.
         """
@@ -706,8 +754,17 @@ class AnimaRunner:
 
         try:
             current = psutil.Process()
+            scheduler = getattr(self, "_scheduler_mgr", None)
+            supervisor = getattr(scheduler, "_task_runner_supervisor", None) if scheduler is not None else None
+            jobs = getattr(supervisor, "jobs", None) if supervisor is not None else None
+            job_pids: set[int] = set()
+            if isinstance(jobs, dict):
+                job_pids = {job.pid for job in jobs.values() if getattr(job, "pid", None)}
+            excluded = _task_runner_subtree_pids(current, job_pids)
             for child in current.children(recursive=True):
                 try:
+                    if child.pid in excluded:
+                        continue
                     proc_name = child.name()
                     if "claude" not in proc_name.lower():
                         continue
@@ -895,15 +952,16 @@ class AnimaRunner:
         return {"status": "completed"}
 
     async def _handle_process_inbox(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Handle process_inbox IPC request."""
+        """Handle process_inbox IPC request (queue a rate-limited inbox trigger).
+
+        Inbox LLM execution now runs in an isolated task runner child (lane
+        ``inbox``); the root only requests the trigger through the limiter.
+        """
         if not self.anima:
             return {"error": "Anima not ready"}
-        result = await self.anima.process_inbox_message()
-        return (
-            result.model_dump()
-            if hasattr(result, "model_dump")
-            else {"action": result.action, "summary": result.summary}
-        )
+        if not self._inbox_limiter:
+            return {"action": "skipped", "reason": "inbox limiter unavailable"}
+        return self._inbox_limiter.request_trigger()
 
     async def _handle_run_consolidation(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_consolidation request (Anima-driven memory consolidation)."""

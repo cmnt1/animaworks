@@ -253,13 +253,14 @@ class TestMessageTriggeredHeartbeatGuard:
         """message_triggered_inbox should skip when heartbeat_running is True."""
         mock_scheduler_mgr = MagicMock(spec=SchedulerManager)
         mock_scheduler_mgr.heartbeat_running = True
+        mock_scheduler_mgr._task_runner_supervisor = MagicMock()
 
         limiter = _make_inbox_limiter(tmp_path, mock_scheduler_mgr)
         limiter._pending_trigger = True
 
         await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_not_called()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False
 
 

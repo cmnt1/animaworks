@@ -229,6 +229,29 @@ class TaskRunnerSupervisor:
             log_context="heartbeat",
         )
 
+    async def run_inbox(
+        self,
+        *,
+        cascade_suppressed_senders: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Spawn one inbox (inter-Anima message) task runner and return its terminal result.
+
+        Uses a dedicated ``inbox`` lane rather than reusing the ``cron`` lane so
+        that journal recovery (lane name == session type) picks up the inbox
+        journal (``session_type="inbox"``).
+        """
+        senders = list(cascade_suppressed_senders) if cascade_suppressed_senders else None
+        return await self._run_isolated_job(
+            lane="inbox",
+            job_prefix="inbox",
+            params_builder=lambda url_env: {
+                "cascade_suppressed_senders": senders,
+                "environment": {"urls": url_env},
+            },
+            log_context="inbox",
+            display_lane="inbox",
+        )
+
     async def run_task(
         self,
         task_desc: dict[str, Any],
@@ -762,7 +785,7 @@ class TaskRunnerSupervisor:
 
     async def _recover_task_journals(
         self,
-        session_types: tuple[str, ...] = ("task", "heartbeat", "chat", "cron"),
+        session_types: tuple[str, ...] = ("task", "heartbeat", "chat", "cron", "inbox"),
     ) -> None:
         """Best-effort orphan StreamingJournal recovery after a child exits.
 

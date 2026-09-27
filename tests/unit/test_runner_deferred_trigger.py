@@ -111,22 +111,6 @@ class TestTryDeferredTrigger:
             assert limiter._pending_trigger is False
 
     @pytest.mark.asyncio
-    async def test_reschedules_when_lock_held(self, tmp_path):
-        """Re-schedules if anima inbox lock is held."""
-        limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = True
-        limiter._anima._inbox_lock = MagicMock()
-        limiter._anima._inbox_lock.locked.return_value = True
-        limiter._deferred_timer = MagicMock()
-
-        with (
-            patch.object(limiter, "is_in_cooldown", return_value=False),
-            patch.object(limiter, "schedule_deferred_trigger") as mock_sched,
-        ):
-            await limiter.try_deferred_trigger()
-            mock_sched.assert_called_once()
-
-    @pytest.mark.asyncio
     async def test_noop_when_no_unread(self, tmp_path):
         """Does nothing if inbox is empty."""
         limiter = _make_limiter(tmp_path)

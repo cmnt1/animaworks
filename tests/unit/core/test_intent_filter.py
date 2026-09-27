@@ -58,7 +58,8 @@ def _make_limiter(messages: list[Message], anima_name: str = "alice") -> InboxRa
     """Create an InboxRateLimiter with a mock anima.
 
     The anima's messenger.receive() returns *messages* and
-    run_heartbeat is an AsyncMock.
+    run_inbox is an AsyncMock (the inbox now runs in an isolated
+    task runner child).
     """
     mock_anima = MagicMock()
     # Nonexistent status.json → _read_anima_enabled defaults to True.
@@ -66,11 +67,19 @@ def _make_limiter(messages: list[Message], anima_name: str = "alice") -> InboxRa
     mock_anima.messenger = MagicMock()
     mock_anima.messenger.receive.return_value = messages
     mock_anima._lock = asyncio.Lock()
-    mock_anima.run_heartbeat = AsyncMock(return_value=MagicMock())
-    mock_anima.run_heartbeat.return_value.model_dump.return_value = {}
+
+    supervisor = MagicMock()
+    supervisor.run_inbox = AsyncMock(
+        return_value={
+            "task_type": "inbox",
+            "result": {"action": "responded", "reason": "", "summary": "ok"},
+            "success": True,
+        }
+    )
 
     mock_scheduler_mgr = MagicMock(spec=SchedulerManager)
     mock_scheduler_mgr.heartbeat_running = False
+    mock_scheduler_mgr._task_runner_supervisor = supervisor
 
     limiter = InboxRateLimiter(
         anima=mock_anima,
@@ -101,7 +110,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_called_once()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_external_delegation_with_intent_triggers_inbox(self):
@@ -115,7 +124,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_called_once()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_empty_intent_skips_inbox(self):
@@ -129,7 +138,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_not_called()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False
 
     async def test_limiter_human_source_always_triggers(self):
@@ -146,7 +155,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_called_once()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_slack_directed_triggers(self):
@@ -163,7 +172,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_called_once()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_slack_undirected_defers(self):
@@ -180,7 +189,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_not_called()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False
 
     async def test_limiter_chatwork_directed_triggers(self):
@@ -194,14 +203,14 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_called_once()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_mixed_messages_actionable_wins(self):
         """If any message has an actionable intent, inbox processing triggers."""
         messages = [
-            _make_message(intent=""),              # non-actionable
-            _make_message(intent="question"),       # actionable
+            _make_message(intent=""),  # non-actionable
+            _make_message(intent="question"),  # actionable
         ]
         limiter = _make_limiter(messages)
 
@@ -211,7 +220,7 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_called_once()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_called_once()
         assert limiter._pending_trigger is False
 
     async def test_limiter_all_ack_messages_skip(self):
@@ -228,5 +237,5 @@ class TestLimiterIntentFilter:
         ):
             await limiter.message_triggered_inbox()
 
-        limiter._anima.process_inbox_message.assert_not_called()
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False

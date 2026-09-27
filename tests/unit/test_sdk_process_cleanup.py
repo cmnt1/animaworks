@@ -286,6 +286,90 @@ class TestCleanupOrphanedClaudeProcesses:
         with patch("core.supervisor.runner.psutil.Process", side_effect=RuntimeError("unexpected")):
             runner._cleanup_orphaned_claude_processes()
 
+    @staticmethod
+    def _old_claude(pid: int):
+        proc = MagicMock()
+        proc.pid = pid
+        proc.name.return_value = "claude"
+        proc.create_time.return_value = time.time() - 10800  # 3 hours < 2-hour threshold
+        proc.children.return_value = []
+        return proc
+
+    def test_does_not_kill_claude_under_registered_task_runner_job(self) -> None:
+        """Task-runner (registered job pid) descendant Claude CLIs must survive."""
+        from core.supervisor.runner import AnimaRunner
+
+        runner = AnimaRunner.__new__(AnimaRunner)
+        runner.anima_name = "test-anima"
+
+        task_runner_root = MagicMock()
+        task_runner_root.pid = 700
+        task_runner_root.name.return_value = "python3"
+        old_claude_under_runner = self._old_claude(701)
+        root_claude = self._old_claude(800)
+
+        current = MagicMock()
+        current.children.return_value = [task_runner_root, old_claude_under_runner, root_claude]
+
+        job = MagicMock()
+        job.pid = 700
+        supervisor = MagicMock()
+        supervisor.jobs = {"job1": job}
+        runner._scheduler_mgr = MagicMock()
+        runner._scheduler_mgr._task_runner_supervisor = supervisor
+
+        def proc_for(pid=None):
+            if pid == 700:
+                subtree = MagicMock()
+                subtree.children.return_value = [old_claude_under_runner]
+                return subtree
+            return current
+
+        with patch("core.supervisor.runner.psutil.Process", side_effect=proc_for):
+            runner._cleanup_orphaned_claude_processes()
+
+        old_claude_under_runner.kill.assert_not_called()
+        root_claude.kill.assert_called_once()
+
+    def test_does_not_kill_claude_under_cmdline_task_runner(self) -> None:
+        """Task-runner roots found by cmdline (spawned but not yet registered) are excluded too."""
+        from core.supervisor.runner import AnimaRunner
+
+        runner = AnimaRunner.__new__(AnimaRunner)
+        runner.anima_name = "test-anima"
+        runner._scheduler_mgr = MagicMock()
+        runner._scheduler_mgr._task_runner_supervisor = MagicMock()
+        runner._scheduler_mgr._task_runner_supervisor.jobs = {}
+
+        task_runner_root = MagicMock()
+        task_runner_root.pid = 710
+        task_runner_root.name.return_value = "python3"
+        task_runner_root.cmdline.return_value = [
+            "python",
+            "-m",
+            "core.supervisor.task_runner",
+            "--anima",
+            "sakura",
+        ]
+        old_claude_under_runner = self._old_claude(711)
+        root_claude = self._old_claude(810)
+
+        current = MagicMock()
+        current.children.return_value = [task_runner_root, old_claude_under_runner, root_claude]
+
+        def proc_for(pid=None):
+            if pid == 710:
+                subtree = MagicMock()
+                subtree.children.return_value = [old_claude_under_runner]
+                return subtree
+            return current
+
+        with patch("core.supervisor.runner.psutil.Process", side_effect=proc_for):
+            runner._cleanup_orphaned_claude_processes()
+
+        old_claude_under_runner.kill.assert_not_called()
+        root_claude.kill.assert_called_once()
+
 
 # ── Layer 2: _orphan_cleanup_loop ────────────────────────────
 

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 _CONNECT_DEADLINE_SECONDS = 10.0
 _PROGRESS_INTERVAL_SECONDS = 5.0
 _RECONNECT_RETRY_SECONDS = 5.0
-_SUPPORTED_LANES = frozenset({"chat", "cron", "heartbeat", "task", "background"})
+_SUPPORTED_LANES = frozenset({"chat", "cron", "heartbeat", "task", "background", "inbox"})
 
 # Total budget and per-try wait for retrying a backpressured terminal ack.
 _TERMINAL_ACK_TIMEOUT = 60.0
@@ -51,7 +51,7 @@ _ACTIVE_JOURNALS: list[Any] = []
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one isolated Anima task")
     parser.add_argument("--anima", required=True)
-    parser.add_argument("--lane", required=True, choices=("chat", "heartbeat", "cron", "task", "background"))
+    parser.add_argument("--lane", required=True, choices=("chat", "heartbeat", "cron", "task", "background", "inbox"))
     parser.add_argument("--job", required=True)
     return parser.parse_args(argv)
 
@@ -140,6 +140,29 @@ async def execute_heartbeat_contract(
         "result": result_dict,
         "success": result.action not in {"error", "cancelled", "failed"},
         "usage": result.usage,
+    }
+
+
+async def execute_inbox_contract(
+    anima: DigitalAnima,
+    *,
+    cascade_suppressed_senders: list[str] | None = None,
+) -> dict[str, Any]:
+    """Execute the inbox (inter-Anima message) contract inside the child process.
+
+    Mirrors :func:`execute_heartbeat_contract` but runs
+    ``DigitalAnima.process_inbox_message`` which is the same function the
+    root previously invoked inline.
+    """
+    senders = set(cascade_suppressed_senders) if cascade_suppressed_senders else None
+    result = await anima.process_inbox_message(cascade_suppressed_senders=senders)
+    result_dict = result.model_dump(mode="json")
+    success = result.action not in {"error", "cancelled", "failed"} and not result.reason
+    return {
+        "task_type": "inbox",
+        "result": result_dict,
+        "success": success,
+        "usage": getattr(result, "usage", None),
     }
 
 
@@ -595,6 +618,17 @@ async def _prepare_execution(
         else:
             raise ValueError("cascade_suppressed_senders must be a list of strings or null")
         return asyncio.create_task(execute_heartbeat_contract(anima, cascade_suppressed_senders=senders))
+
+    if identity.lane == "inbox":
+        raw_senders = params.get("cascade_suppressed_senders")
+        senders: list[str] | None
+        if raw_senders is None:
+            senders = None
+        elif isinstance(raw_senders, list) and all(isinstance(item, str) for item in raw_senders):
+            senders = list(raw_senders)
+        else:
+            raise ValueError("cascade_suppressed_senders must be a list of strings or null")
+        return asyncio.create_task(execute_inbox_contract(anima, cascade_suppressed_senders=senders))
 
     if identity.lane == "task":
         task_desc = params.get("task_desc")

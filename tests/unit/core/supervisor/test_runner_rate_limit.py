@@ -15,7 +15,6 @@ from core.config.models import load_config
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.scheduler_manager import SchedulerManager
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -62,9 +61,7 @@ class TestCooldown:
         """Returns False when cooldown period has passed since last heartbeat end."""
         limiter = _make_limiter()
         cooldown_s = load_config().heartbeat.msg_heartbeat_cooldown_s
-        limiter._last_msg_heartbeat_end = (
-            time.monotonic() - cooldown_s - 1
-        )
+        limiter._last_msg_heartbeat_end = time.monotonic() - cooldown_s - 1
         assert limiter.is_in_cooldown() is False
 
 
@@ -81,9 +78,7 @@ class TestCascadeDetection:
         now = time.monotonic()
         key = ("test", "alice")
         # Add entries below threshold
-        limiter._pair_heartbeat_times[key] = [
-            now - (i + 1) for i in range(threshold - 1)
-        ]
+        limiter._pair_heartbeat_times[key] = [now - (i + 1) for i in range(threshold - 1)]
         assert limiter.check_cascade({"alice"}) is False
 
     def test_cascade_detected_at_threshold(self):
@@ -92,9 +87,7 @@ class TestCascadeDetection:
         threshold = load_config().heartbeat.cascade_threshold
         now = time.monotonic()
         key = ("test", "alice")
-        limiter._pair_heartbeat_times[key] = [
-            now - (i + 1) for i in range(threshold)
-        ]
+        limiter._pair_heartbeat_times[key] = [now - (i + 1) for i in range(threshold)]
         assert limiter.check_cascade({"alice"}) is True
 
     def test_cascade_entries_expire(self):
@@ -206,13 +199,16 @@ class TestInboxWatcher:
         assert limiter._pending_trigger is False
 
     @pytest.mark.asyncio
-    async def test_defers_when_lock_held(self):
-        """Sets _deferred_inbox when anima._lock is locked."""
+    async def test_defers_when_inbox_job_in_flight(self):
+        """Watcher defers the next trigger while an inbox job is in flight.
+
+        Previously this was keyed off the anima's ``_inbox_lock``; after the
+        inbox moved to isolated task runners the in-flight indicator is
+        ``_pending_trigger``.
+        """
         limiter = _make_limiter()
         limiter._anima.messenger.has_unread.return_value = True
-
-        # Acquire the lock before the watcher checks it
-        await limiter._anima._lock.acquire()
+        limiter._pending_trigger = True  # an inbox job is already running
 
         iteration_count = 0
         original_sleep = asyncio.sleep
@@ -227,8 +223,6 @@ class TestInboxWatcher:
         with patch("asyncio.sleep", side_effect=mock_sleep):
             await limiter.inbox_watcher_loop()
 
-        assert limiter._deferred_timer is not None
-        assert limiter._pending_trigger is False
-
-        # Release the lock to clean up
-        limiter._anima._lock.release()
+        # The in-flight job is still marked running; no new trigger was queued.
+        assert limiter._pending_trigger is True
+        limiter._anima.messenger.has_unread.assert_not_called()
