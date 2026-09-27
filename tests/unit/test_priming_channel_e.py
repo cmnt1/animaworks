@@ -103,8 +103,11 @@ class TestChannelEOverflowInbox:
             )
         engine = PrimingEngine(temp_anima_dir)
         result = await engine._channel_e_pending_tasks()
-        assert "8" in result
-        assert "(+3)" in result
+        assert "未処理メッセージ 8件" in result
+        assert "read_memory_file" in result
+        assert "archive_memory_file" in result
+        assert "sender0" not in result
+        assert "sender7" not in result
 
     @pytest.mark.asyncio
     async def test_non_md_files_ignored(self, temp_anima_dir):

@@ -78,7 +78,8 @@ class TestCollectPendingHumanNotifications:
         result = await engine._collect_pending_human_notifications(channel="chat")
         assert "## Pending Human Notifications" in result
         assert "192.168.1.100" in result
-        assert "slack" in result
+        assert "slack" not in result
+        assert all(len(line) < 120 for line in result.splitlines() if line.startswith("["))
 
     @pytest.mark.asyncio
     async def test_heartbeat_channel_returns_notifications(self, anima_dir: Path):
@@ -211,6 +212,27 @@ class TestCollectPendingHumanNotifications:
         first_idx = result.index("First notification")
         second_idx = result.index("Second notification")
         assert first_idx < second_idx
+
+    @pytest.mark.asyncio
+    async def test_notification_is_one_line_and_limited_to_80_chars(self, anima_dir: Path):
+        ts = now_iso()
+        _write_activity(
+            anima_dir,
+            [
+                {
+                    "ts": ts,
+                    "type": "human_notify",
+                    "content": "x" * 120,
+                    "meta": {"subject": "subject"},
+                    "via": "slack",
+                },
+            ],
+        )
+        result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
+        notification_lines = [line for line in result.splitlines() if line.startswith("[")]
+        assert notification_lines == [f"[{ts[:16]}] subject"]
+        assert "x" * 81 not in result
+        assert "slack" not in result
 
     @pytest.mark.asyncio
     async def test_uses_summary_when_content_empty(self, anima_dir: Path):

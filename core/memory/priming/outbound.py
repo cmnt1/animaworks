@@ -115,10 +115,12 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
     for entry in reversed(entries):
         ts = entry.ts[:16]
         body = entry.content or entry.summary or ""
-        via = entry.via or ""
         subject = str(entry.meta.get("subject") or "")
         notification_key = str(entry.meta.get("notification_key") or notification_key_for(subject, body))
-        line = f"[{ts}] call_human (via {via}):\n{body}"
+        summary = " ".join((subject or body).split())[:80]
+        if not summary:
+            continue
+        line = t("priming.human_notification_summary", time_str=ts, summary=summary)
         items.append(
             MemoryItem(
                 source="pending_human_notifications",
