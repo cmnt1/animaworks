@@ -269,10 +269,11 @@ class TestMicroTierSectionExclusion:
         result = self._build(tmp_path, data_dir, 8_193)
         assert "[behavior_rules content]" in result
 
-    def test_micro_group5_header_only(self, tmp_path, data_dir):
-        """MICRO should include Group 5 header but skip org_context and messaging."""
+    def test_micro_omits_empty_group5(self, tmp_path, data_dir):
+        """MICRO skips org_context and messaging, so the empty group is omitted."""
         result = self._build(tmp_path, data_dir, 4_000)
-        assert "Organization" in result or "5." in result
+        assert "<group_5" not in result
+        assert "</group_5>" not in result
 
 
 class TestDefaultContextWindowBackwardCompat:

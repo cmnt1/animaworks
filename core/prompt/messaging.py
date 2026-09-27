@@ -170,10 +170,5 @@ def _load_a_reflection() -> str:
 
 
 def _build_human_notification_guidance(execution_mode: str = "") -> str:
-    """Build the human notification instruction for top-level Animas."""
-    if _is_mcp_mode(execution_mode):
-        how_to = load_prompt("builder/human_notification_howto_s")
-    else:
-        how_to = load_prompt("builder/human_notification_howto_other")
-
-    return load_prompt("builder/human_notification", how_to=how_to)
+    """Build concise human-notification guidance for top-level Animas."""
+    return load_prompt("builder/human_notification").strip()

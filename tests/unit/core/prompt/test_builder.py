@@ -345,8 +345,8 @@ class TestBuildSystemPrompt:
             assert "common_skills/deploy/SKILL.md" in prompt
             assert "<available_skills>" in prompt
 
-    def test_memory_guide_uses_counts(self, tmp_path, data_dir):
-        """memory_guide receives knowledge/procedure counts, not file name lists."""
+    def test_memory_guide_only_receives_absolute_root(self, tmp_path, data_dir):
+        """memory_guide omits irrelevant counts and receives the absolute root."""
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
@@ -384,12 +384,7 @@ class TestBuildSystemPrompt:
 
         mg_calls = [c for c in captured_calls if c["name"] == "memory_guide"]
         assert len(mg_calls) == 1
-        kw = mg_calls[0]["kwargs"]
-        assert kw["knowledge_count"] == 3
-        assert kw["procedure_count"] == 1
-        assert "skill_names" not in kw
-        assert "episode_list" not in kw
-        assert "knowledge_list" not in kw
+        assert mg_calls[0]["kwargs"] == {"anima_dir": anima_dir.resolve()}
 
     def test_includes_bootstrap(self, tmp_path, data_dir):
         anima_dir = tmp_path / "animas" / "alice"
@@ -486,8 +481,8 @@ class TestBuildSystemPrompt:
             assert "Bash" in result
             assert "animaworks-tool" in result
 
-    def test_s_mode_injects_external_tools_hint_with_direct_tool_priority(self, tmp_path, data_dir):
-        """S mode should prefer dedicated MCP tools over Bash CLI."""
+    def test_s_mode_lists_external_tools_and_direct_tool_priority(self, tmp_path, data_dir):
+        """S mode lists CLI categories and separately permits visible direct tools."""
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("I am Alice", encoding="utf-8")
@@ -518,8 +513,8 @@ class TestBuildSystemPrompt:
                 tool_registry=["chatwork", "slack_channel_post"],
                 execution_mode="s",
             )
-            assert "External Tools" in result
-            assert "call it directly by tool name" in result
+            assert "外部ツール（`animaworks-tool <name>` 経由）" in result
+            assert "専用の外部ツール" in result
             assert "slack_channel_post" in result
             assert "Use `animaworks-tool <tool> <subcommand>` via Bash" not in result
 
@@ -787,8 +782,9 @@ class TestAssemblyWithTags:
 
         assert "<group_1" in prompt
         assert "</group_1>" in prompt
-        assert "<group_2" in prompt
-        assert "</group_2>" in prompt
+        # Group 2 has no content in this fixture, so its tags are omitted.
+        assert "<group_2" not in prompt
+        assert "</group_2>" not in prompt
 
     def test_prompt_has_section_tags(self, tmp_path, data_dir):
         """Non-header sections wrapped in <section> tags."""

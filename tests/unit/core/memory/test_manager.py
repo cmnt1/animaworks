@@ -83,17 +83,15 @@ class TestReadInjection:
 
 class TestReadPermissions:
     def test_no_file(self, mm):
-        """When no permissions file exists, returns formatted default config."""
-        result = mm.read_permissions()
-        assert "Permissions:" in result
-        assert "File access" in result or "Commands" in result
+        """The default open policy adds no prompt section."""
+        assert mm.read_permissions() == ""
 
     def test_with_file(self, mm, anima_dir):
-        """When permissions.md exists, migrates to JSON and returns formatted config."""
+        """Legacy open permissions migrate but add no default-only prompt section."""
         (anima_dir / "permissions.md").write_text("- web_search: OK", encoding="utf-8")
         result = mm.read_permissions()
-        assert "Permissions:" in result
-        assert "web_search" in result or "External tools" in result
+        assert result == ""
+        assert (anima_dir / "permissions.json").is_file()
 
 
 class TestReadCurrentState:

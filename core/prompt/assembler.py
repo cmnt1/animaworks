@@ -73,27 +73,36 @@ def _assemble_with_tags(allocated: list[SectionEntry]) -> str:
     """Join allocated sections using XML group/section boundary tags.
 
     Group-header sections (id matching ``groupN_header``) open/close
-    ``<group_N>`` tags. All other sections are wrapped in
-    ``<section name="...">`` tags with heading normalization applied.
+    ``<group_N>`` tags only when the group has content. All other sections
+    are wrapped in ``<section name="...">`` tags with heading normalization.
     """
     parts: list[str] = []
     current_group: str | None = None
+    current_title = ""
+    current_sections: list[str] = []
+
+    def _flush_group() -> None:
+        if current_group is not None and current_sections:
+            parts.append(f'<group_{current_group} title="{current_title}">')
+            parts.extend(current_sections)
+            parts.append(f"</group_{current_group}>")
 
     for section in allocated:
         match = _GROUP_HEADER_RE.match(section.id)
         if match:
-            if current_group is not None:
-                parts.append(f"</group_{current_group}>")
+            _flush_group()
             current_group = match.group(1)
-            title = section.content.strip()
-            parts.append(f'<group_{current_group} title="{title}">')
+            current_title = section.content.strip()
+            current_sections = []
         else:
             body = _normalize_headings(section.content)
-            parts.append(f'<section name="{section.id}">\n{body}\n</section>')
+            rendered = f'<section name="{section.id}">\n{body}\n</section>'
+            if current_group is None:
+                parts.append(rendered)
+            else:
+                current_sections.append(rendered)
 
-    if current_group is not None:
-        parts.append(f"</group_{current_group}>")
-
+    _flush_group()
     return "\n\n".join(parts)
 
 

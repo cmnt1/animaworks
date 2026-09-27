@@ -145,10 +145,7 @@ from tests.evaluation.framework.analysis import StatisticalAnalyzer
 analyzer = StatisticalAnalyzer(alpha=0.05)
 
 # Test H1: Priming effect
-result = analyzer.hypothesis_h1_priming_effect(
-    latencies_hybrid=[...],
-    latencies_hybrid_priming=[...]
-)
+result = analyzer.hypothesis_h1_priming_effect(latencies_hybrid=[...], latencies_hybrid_priming=[...])
 
 print(f"P-value: {result['p_value']:.4f}")
 print(f"Effect size: {result['effect_size']:.2f} ({result['interpretation']})")
@@ -163,17 +160,10 @@ from tests.evaluation.framework.visualization import ExperimentVisualizer
 viz = ExperimentVisualizer(style="publication")
 
 # Generate latency comparison
-viz.plot_latency_comparison(
-    data=latency_df,
-    output_path=Path("figures/latency"),
-    formats=["png", "pdf"]
-)
+viz.plot_latency_comparison(data=latency_df, output_path=Path("figures/latency"), formats=["png", "pdf"])
 
 # Generate all figures from results directory
-generated = viz.generate_all_figures(
-    results_dir=Path("results/processed"),
-    output_dir=Path("results/figures")
-)
+generated = viz.generate_all_figures(results_dir=Path("results/processed"), output_dir=Path("results/figures"))
 ```
 
 ## Demo Execution

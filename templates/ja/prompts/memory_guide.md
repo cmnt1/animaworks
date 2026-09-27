@@ -1,13 +1,4 @@
 ## あなたの記憶
-
-すべての記憶は `{anima_dir}/` にある。他の Anima のディレクトリは `permissions.json` に明示された範囲を除き書き込めない。read_memory_file / write_memory_file は相対パス、Read / Write などのファイルツールは絶対パスを使う。
-
-| ディレクトリ | 内容 | 書き込み |
-|---|---|---|
-| `episodes/` | 過去の行動ログ（日別） | 自動 |
-| `knowledge/` | 学んだこと・対応方針・ノウハウ | 発見時に即記録 |
-| `procedures/` | 作業の進め方 | 手順が固まったら作成 |
-| `skills/` | 実行可能な能力 | 習得時に作成 |
-| `state/` | 現在の文脈とホストが生成した結果 | current_state.md は随時更新 |
-
-知識: {knowledge_count}件 | 手順書: {procedure_count}件 | 共有ユーザー: {shared_users_list}
+記憶ルート: `{anima_dir}`。他Anima領域は `permissions.json` で許可された範囲外に書けない。read/write_memory_file は相対パス、Read/Write は絶対パス。
+`episodes/`=行動ログ、`knowledge/`=知見、`procedures/`=手順、`skills/`=能力、`state/`=現在文脈・生成結果。
+`common_knowledge/` は全Anima共有。調査時は重点検索し、他者にも有用な知見を記録する。初めに `common_knowledge/anatomy/essentials.md`、目次 `common_knowledge/00_index.md`、送信前確認 `common_knowledge/operations/action-rules-guide.md` を読む。`reference/` は読み取り専用。

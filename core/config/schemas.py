@@ -442,6 +442,9 @@ class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
     injection_size_warning_chars: int = 2000
+    identity_business_exclude_headings: list[str] = Field(
+        default_factory=lambda: ["外見", "基本プロフィール", "Appearance", "Basic Profile"]
+    )
     system_prompt_target_tokens: int = Field(default=6000, ge=2000)
     system_prompt_ceiling_pct: float = Field(default=0.35, gt=0.0, le=1.0)
     skill_catalog_router_enabled: bool = True
@@ -1265,8 +1268,8 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
 
 
 def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -> str:
-    """Convert PermissionsConfig to a human/LLM-readable text block."""
-    lines = [f"## Permissions: {anima_name}"]
+    """Render only permission constraints that differ from open defaults."""
+    lines: list[str] = []
     if sys.platform == "win32":
         lines.extend(
             [
@@ -1275,38 +1278,37 @@ def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -
                 "- Command execution runs through a PowerShell-compatible shell via execute_command; do not assume Bash-only behavior unless a command actually fails",
             ]
         )
-    if config.file_roots == ["/"]:
-        lines.append("- File access: unrestricted")
-    elif not config.file_roots and not config.file_roots_readonly:
-        lines.append("- File access: own directory and shared framework directories only")
-    else:
-        if config.file_roots:
-            lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
-        if config.file_roots_readonly:
-            lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
+    if config.file_roots != ["/"]:
+        if not config.file_roots and not config.file_roots_readonly:
+            lines.append("- File access: own directory and shared framework directories only")
+        else:
+            if config.file_roots:
+                lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
+            if config.file_roots_readonly:
+                lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
     if config.file_roots_denied:
         lines.append(f"- Denied file access (read/write; overrides all grants): {', '.join(config.file_roots_denied)}")
-    if config.commands.allow_all:
-        lines.append("- Commands: all allowed (global permission blocks still apply)")
-    else:
+    if not config.commands.allow_all:
         if config.commands.allow:
             lines.append(f"- Allowed commands: {', '.join(config.commands.allow)}")
         else:
             lines.append("- Commands: none allowed")
     if config.commands.deny:
         lines.append(f"- Additionally denied commands: {', '.join(config.commands.deny)}")
-    if config.external_tools.allow_all:
-        lines.append("- External tools: all allowed")
-    else:
+    if not config.external_tools.allow_all:
         if config.external_tools.allow:
             lines.append(f"- Allowed external tools: {', '.join(config.external_tools.allow)}")
         else:
             lines.append("- External tools: none allowed")
     if config.external_tools.deny:
         lines.append(f"- Denied external tools: {', '.join(config.external_tools.deny)}")
-    tc = config.tool_creation
-    lines.append(f"- Tool creation: personal={'yes' if tc.personal else 'no'}, shared={'yes' if tc.shared else 'no'}")
-    return "\n".join(lines)
+    if not config.tool_creation.personal:
+        lines.append("- Personal tool creation: not allowed")
+    if config.tool_creation.shared:
+        lines.append("- Shared tool creation: allowed")
+    if not lines:
+        return ""
+    return f"## Permissions: {anima_name}\n" + "\n".join(lines)
 
 
 # ── Main Config ─────────────────────────────────────────────────────────────

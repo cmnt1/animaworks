@@ -146,6 +146,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "あなたのデフォルトワークスペース: (未解決: {alias})",
         "en": "Your default workspace: (unresolved: {alias})",
     },
+    "builder.external_tools": {
+        "ja": "外部ツール（`animaworks-tool <name>` 経由）: {categories}",
+        "en": "External tools (via `animaworks-tool <name>`): {categories}",
+        "ko": "외부 도구 (`animaworks-tool <name>` 경유): {categories}",
+    },
+    "builder.external_tools.direct": {
+        "ja": "ツール一覧に専用の外部ツールがあれば、そのツール名で直接呼び出す。",
+        "en": "If a dedicated external tool is visible in your tool list, call it directly by name.",
+        "ko": "도구 목록에 전용 외부 도구가 있으면 해당 도구 이름으로 직접 호출하세요.",
+    },
     "builder.heartbeat_tool_fallback": {
         "ja": (
             "Heartbeatでは**観察・報告・計画・フォローアップ**にツールを使ってください。\n- OK: read_channel, search_memory, read_memory_file, send_message, post_channel, update_task, delegate_task, submit_tasks, Write（pending作成用）\n- NG: コード変更、ファイル大量編集、長時間の分析・調査\n重い作業が必要な場合は state/pending/ にタスクファイルを書き出してください。"

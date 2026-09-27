@@ -92,6 +92,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # cron instruction prompt to Anima
     "core/prompt/messaging.py": 2,
     "core/prompt/org_context.py": 3,
+    # identity heading exclusion defaults are matching data, not UI copy
+    "core/config/schemas.py": 1,
     "core/anima/response_normalize.py": 15,
     # orphan reaper — Japanese notification body sent to the owning anima (plan-specified wording)
     # label "個人ツール"

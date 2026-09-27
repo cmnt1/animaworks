@@ -64,6 +64,9 @@ logger = logging.getLogger("animaworks.prompt_builder")
 # Re-exported constants
 _MCP_MODES = frozenset({"s", "c", "d", "g", "x"})
 _CURRENT_STATE_MAX_CHARS = 3000
+_IDENTITY_H2_RE = re.compile(r"^ {0,3}##(?!#)[ \t]+(?P<heading>.+?)\s*#*\s*$")
+_PRIMING_TAG_RE = re.compile(r"</?priming\b[^>]*>", re.IGNORECASE)
+_MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+.*$", re.MULTILINE)
 
 # ── Prompt tier constants ─────────────────────────────────────
 TIER_FULL = "full"
@@ -91,7 +94,7 @@ def _build_emotion_instruction() -> str:
     from core.schemas import VALID_EMOTIONS
 
     emotion_list = ", ".join(sorted(VALID_EMOTIONS))
-    return load_prompt("builder/emotion_instruction", emotion_list=emotion_list)
+    return load_prompt("builder/emotion_instruction", emotion_list=emotion_list).strip()
 
 
 EMOTION_INSTRUCTION = _build_emotion_instruction()
@@ -155,6 +158,52 @@ class _SkillCatalogRouterSettings:
 # ``load_prompt`` binding that tests patch.
 
 
+def _filter_identity_business_sections(identity: str, excluded_headings: list[str]) -> str:
+    """Remove configured H2 sections from identity text for non-chat triggers."""
+    exclusions = [heading.casefold() for heading in excluded_headings if heading.strip()]
+    if not identity or not exclusions:
+        return identity
+
+    sections: list[tuple[bool, str]] = []
+    current: list[str] = []
+    current_excluded = False
+    found_heading = False
+    in_fence = False
+
+    for line in identity.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+        match = _IDENTITY_H2_RE.match(line.rstrip("\r\n")) if not in_fence else None
+        if match:
+            found_heading = True
+            if current:
+                sections.append((current_excluded, "".join(current)))
+            current = [line]
+            heading = match.group("heading").casefold()
+            current_excluded = any(exclusion in heading for exclusion in exclusions)
+        else:
+            current.append(line)
+
+    if current:
+        sections.append((current_excluded, "".join(current)))
+    if not found_heading:
+        return identity
+
+    filtered = "".join(content for excluded, content in sections if not excluded)
+    return filtered if filtered.strip() else identity
+
+
+def _priming_has_content(content: str) -> bool:
+    """Return whether priming contains data beyond headings and empty wrappers."""
+    without_tags = _PRIMING_TAG_RE.sub("", content)
+    intro = t("priming.section_intro").strip()
+    if intro:
+        without_tags = without_tags.replace(intro, "")
+    without_headings = _MARKDOWN_HEADING_RE.sub("", without_tags)
+    return bool(without_headings.strip())
+
+
 def _build_group1(
     pd: Path,
     data_dir: Path,
@@ -165,6 +214,7 @@ def _build_group1(
     tier: str = TIER_FULL,
     is_heartbeat: bool = False,
     is_chat: bool = False,
+    is_consolidation: bool = False,
 ) -> list[SectionEntry]:
     """Group 1: Environment, identity, injection, and behaviour rules."""
     out: list[SectionEntry] = []
@@ -193,6 +243,14 @@ def _build_group1(
 
     identity = memory.read_identity()
     if identity:
+        if not is_chat:
+            try:
+                from core.config import load_config
+
+                excluded = load_config().prompt.identity_business_exclude_headings
+                identity = _filter_identity_business_sections(identity, excluded)
+            except Exception:
+                logger.debug("Could not load identity heading exclusions", exc_info=True)
         _add(identity, "identity", 1)
 
     injection = memory.read_injection()
@@ -203,7 +261,7 @@ def _build_group1(
 
             config = load_config()
             threshold = config.prompt.injection_size_warning_chars
-            if len(injection) > threshold:
+            if is_consolidation and len(injection) > threshold:
                 _add(
                     t("builder.injection_size_warning", size=len(injection), threshold=threshold),
                     "injection_size_warning",
@@ -499,7 +557,7 @@ def _build_group3(
     except Exception:
         logger.debug("Failed to inject resolution registry", exc_info=True)
 
-    if priming_section:
+    if priming_section and _priming_has_content(priming_section):
         # Explicit source contracts survive recall trimming. Never infer safety
         # importance from arbitrary memory prose or split a trust-boundary block.
         protected, recall = [], []
@@ -692,23 +750,9 @@ def _build_group4(
 
     _add(_ss.get("group4_header", "# 3. Memory and Capabilities"), "group4_header", 1)
 
-    _none = _fs.get("none", "(none)")
-    mg = load_prompt(
-        "memory_guide",
-        anima_dir=pd,
-        knowledge_count=len(memory.list_knowledge_files()),
-        procedure_count=len(memory.list_procedure_files()),
-        shared_users_list=", ".join(memory.list_shared_users()) or _none,
-    )
+    mg = load_prompt("memory_guide", anima_dir=pd.resolve()).strip()
     if mg:
         _add(mg, "memory_guide", 3)
-
-    ck_dir = data_dir / "common_knowledge"
-    if ck_dir.exists() and any(ck_dir.rglob("*.md")):
-        _add(load_prompt("builder/common_knowledge_hint"), "common_knowledge_hint", 4)
-    ref_dir = data_dir / "reference"
-    if ref_dir.exists() and any(ref_dir.rglob("*.md")):
-        _add(load_prompt("builder/reference_hint"), "reference_hint", 4)
 
     # ── Tool guides ───
     if is_heartbeat:
@@ -718,8 +762,8 @@ def _build_group4(
             hb_tool = t("builder.heartbeat_tool_fallback")
         _add(hb_tool, "tool_guides", 2)
     elif _is_mcp_mode(execution_mode):
-        sb = load_guide("s_builtin")
-        sm = load_guide("s_mcp")
+        sb = load_guide("s_builtin").strip()
+        sm = load_guide("s_mcp").strip()
         g = "\n\n".join(p for p in (sb, sm) if p)
         if g:
             host_line = _host_tool_line(execution_mode)
@@ -727,7 +771,7 @@ def _build_group4(
                 g = host_line + "\n\n" + g
             _add(g, "tool_guides", 2)
     else:
-        ns = load_guide("non_s")
+        ns = load_guide("non_s").strip()
         if ns:
             host_line = _host_tool_line(execution_mode)
             if host_line:
@@ -737,16 +781,9 @@ def _build_group4(
     if not is_heartbeat and (tool_registry or personal_tools):
         cats = sorted(set((tool_registry or []) + list((personal_tools or {}).keys())))
         if cats:
-            if _is_mcp_mode(execution_mode):
-                et = (
-                    f"## External Tools\nAvailable categories: {', '.join(cats)}\n"
-                    "When a dedicated external tool is visible in your tool list, call it directly by tool name."
-                )
-            else:
-                et = (
-                    f"## External Tools\nAvailable categories: {', '.join(cats)}\n"
-                    "Read the skill document with read_memory_file for CLI usage."
-                )
+            et = t("builder.external_tools", categories=", ".join(cats))
+            if _is_mcp_mode(execution_mode) or execution_mode == "a":
+                et += "\n" + t("builder.external_tools.direct")
             _add(et, "external_tools", 2)
 
     if is_chat:
@@ -987,6 +1024,7 @@ def build_system_prompt(
         tier=tier,
         is_heartbeat=is_heartbeat,
         is_chat=is_chat,
+        is_consolidation=is_consolidation,
     )
     group2 = _build_group2(memory, permissions, is_background_auto, is_task, _ss)
     group3 = _build_group3(
