@@ -41,13 +41,29 @@ class _FakeEngine:
         self.project = project
         self.collect_calls: list[dict] = []
         self.write_calls: list[dict] = []
+        self.target_date: date | None = None
 
     def previous_local_day_window(self, reference=None):
-        return ConsolidationEngine.previous_local_day_window(reference)
+        result = ConsolidationEngine.previous_local_day_window(reference)
+        self.target_date = result[0]
+        return result
 
-    def collect_activity_chunks(self, *, hours: int, model: str, since=None, until=None):
-        self.collect_calls.append({"hours": hours, "model": model, "since": since, "until": until})
-        return self.chunks
+    def local_day_window(self, target_date: date, reference=None):
+        return ConsolidationEngine.local_day_window(target_date, reference)
+
+    def collect_activity_chunks(
+        self,
+        *,
+        hours: int,
+        model: str,
+        since=None,
+        until=None,
+        max_input_bytes: int = 200 * 1024,
+    ):
+        self.collect_calls.append(
+            {"hours": hours, "model": model, "since": since, "until": until, "max_input_bytes": max_input_bytes}
+        )
+        return self.chunks if since is None or since.date() == self.target_date else []
 
     def unprocessed_activity_chunks(self, target_date, chunks):
         return chunks
@@ -63,6 +79,8 @@ class _FakeEngine:
 
     def _sanitize_llm_output(self, text):
         return text
+
+    _truncate_utf8 = staticmethod(ConsolidationEngine._truncate_utf8)
 
     def write_consolidated_episode(self, target_date, consolidated_timeline):
         self.write_calls.append({"target_date": target_date, "content": consolidated_timeline})
@@ -112,6 +130,7 @@ def _mock_config(
                 keys={},
             ),
         },
+        model_modes={},
     )
 
 
@@ -240,16 +259,22 @@ async def test_daily_phase_a_llm_failure_leaves_existing_episode_unchanged(tmp_p
     original = "# 2026-06-09\n\n## 14:00 — Raw\n\nmust survive"
     episode_path.write_text(original, encoding="utf-8")
     engine.collect_activity_chunks = MagicMock(return_value=["[14:00] RESPONSE: work"])
+    config = _mock_config()
+    config.consolidation.episode_summary_backfill_days = 1
 
     with (
-        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.load_config", return_value=config),
         patch("core.anima.lifecycle.now_local", return_value=fixed_now),
         patch("core.anima.lifecycle.load_prompt", return_value="episode prompt"),
         patch("core.memory._llm_utils.one_shot_completion", side_effect=RuntimeError("llm timeout")),
-        pytest.raises(RuntimeError, match="llm timeout"),
+        patch("core.anima.lifecycle.logger.warning") as warning,
     ):
-        await anima._run_daily_consolidation(engine)
+        result = await anima._run_daily_consolidation(engine)
 
+    assert result.action == "skipped"
+    warning.assert_called_once()
+    assert "Episode summary failed" in warning.call_args.args[0]
+    assert "RuntimeError" in warning.call_args.args[-1]
     assert episode_path.read_text(encoding="utf-8") == original
     assert not (anima_dir / "archive" / "episodes").exists()
 

@@ -369,9 +369,13 @@ class SchedulerMixin:
         defaults = ConsolidationConfig()
         min_entries = defaults.min_episodes_threshold
         model = defaults.llm_model
+        backfill_days = defaults.episode_summary_backfill_days
+        max_input_bytes = defaults.episode_summary_max_input_bytes
         if consolidation_cfg:
             min_entries = getattr(consolidation_cfg, "min_episodes_threshold", min_entries)
             model = getattr(consolidation_cfg, "llm_model", model)
+            backfill_days = getattr(consolidation_cfg, "episode_summary_backfill_days", backfill_days)
+            max_input_bytes = getattr(consolidation_cfg, "episode_summary_max_input_bytes", max_input_bytes)
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
             inactive = should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg)
@@ -401,14 +405,18 @@ class SchedulerMixin:
                 anima_name,
                 threshold=min_entries,
                 hours=24,
+                backfill_days=backfill_days,
+                model=model,
+                max_input_bytes=max_input_bytes,
             )
             if not gate.should_run:
                 logger.info(
-                    "Daily consolidation skipped for %s: activity=%d episodes=%d threshold=%d",
+                    "Daily consolidation skipped for %s: activity=%d episodes=%d threshold=%d backfill_days=%d",
                     anima_name,
                     gate.activity_count,
                     gate.episode_count,
                     gate.threshold,
+                    gate.pending_backfill_days,
                 )
                 await self._run_project_archive_consolidations(
                     handle,

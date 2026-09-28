@@ -150,9 +150,11 @@ def test_curator_proposal_cannot_change_access_or_remove_vectors(tmp_path: Path)
 @pytest.mark.asyncio
 async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
     from core.anima.lifecycle import LifecycleMixin
-    from core.config.models import AnimaWorksConfig
+    from core.config.models import AnimaWorksConfig, ConsolidationConfig
+    from core.schemas import ModelConfig
 
-    anima = SimpleNamespace(name="fixture", anima_dir=tmp_path)
+    anima = SimpleNamespace(name="fixture", anima_dir=tmp_path, memory=MagicMock())
+    anima.memory.read_model_config.return_value = ModelConfig(model="chat-model")
     engine = ConsolidationEngine(tmp_path, "fixture")
     engine.collect_activity_chunks = MagicMock(return_value=["new activity"])
 
@@ -162,7 +164,12 @@ async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
         return "## 12:00 — Work\nEvidence"
 
     with (
-        patch("core.config.load_config", return_value=AnimaWorksConfig()),
+        patch(
+            "core.config.load_config",
+            return_value=AnimaWorksConfig(
+                consolidation=ConsolidationConfig(episode_summary_backfill_days=1),
+            ),
+        ),
         patch(
             "core.memory._llm_utils.one_shot_completion",
             new_callable=AsyncMock,

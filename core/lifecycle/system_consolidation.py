@@ -98,6 +98,7 @@ class DailyConsolidationGate:
     activity_count: int
     episode_count: int
     threshold: int
+    pending_backfill_days: int = 0
 
 
 def evaluate_daily_consolidation_gate(
@@ -106,8 +107,15 @@ def evaluate_daily_consolidation_gate(
     *,
     threshold: int,
     hours: int = 24,
+    backfill_days: int = 1,
+    model: str | None = None,
+    max_input_bytes: int = 200 * 1024,
 ) -> DailyConsolidationGate:
-    """Return whether daily consolidation should run for one anima."""
+    """Return whether daily consolidation should run for one anima.
+
+    A pending unprocessed activity chunk within the configured recovery window
+    also makes the daily job eligible, even when yesterday itself was quiet.
+    """
     from core.memory.maintenance.consolidation import ConsolidationEngine
 
     engine = ConsolidationEngine(anima_dir, anima_name)
@@ -118,19 +126,41 @@ def evaluate_daily_consolidation_gate(
     except Exception:
         logger.debug("Failed to count recent episodes for %s", anima_name, exc_info=True)
     try:
-        _target_date, window_start, window_end = engine.previous_local_day_window()
+        target_date, window_start, window_end = engine.previous_local_day_window()
         activity_count = engine.count_recent_activity_entries(
             hours=hours,
             since=window_start,
             until=window_end,
         )
     except Exception:
+        target_date = None
         logger.debug("Failed to count recent activity entries for %s", anima_name, exc_info=True)
+
+    pending_backfill_days = 0
+    if backfill_days > 1 and target_date is not None and callable(getattr(engine, "local_day_window", None)):
+        try:
+            for offset in range(max(1, backfill_days)):
+                candidate_date = target_date - timedelta(days=offset)
+                start, end = engine.local_day_window(candidate_date)
+                chunks = engine.collect_activity_chunks(
+                    hours=24,
+                    model=model,
+                    since=start,
+                    until=end,
+                    max_input_bytes=max_input_bytes,
+                )
+                if engine.unprocessed_activity_chunks(candidate_date, chunks):
+                    pending_backfill_days += 1
+        except Exception:
+            logger.debug("Failed to inspect episode backfill window for %s", anima_name, exc_info=True)
+            pending_backfill_days = 0
+
     return DailyConsolidationGate(
-        should_run=activity_count >= threshold or episode_count >= threshold,
+        should_run=activity_count >= threshold or episode_count >= threshold or pending_backfill_days > 0,
         activity_count=activity_count,
         episode_count=episode_count,
         threshold=threshold,
+        pending_backfill_days=pending_backfill_days,
     )
 
 
