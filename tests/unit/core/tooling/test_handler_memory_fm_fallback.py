@@ -61,6 +61,32 @@ def handler(tmp_path: Path) -> _FakeWriteHandler:
 # ── Tests: parse-failed frontmatter fallback ─────────────
 
 
+def test_case_record_knowledge_write_completes_with_episodes_hint(handler: _FakeWriteHandler) -> None:
+    content = "Release follow-up for PR #1842, commit deadbee, on 2026-09-28."
+
+    result = handler._handle_write_memory_file(
+        {"path": "knowledge/release-note.md", "content": content, "mode": "overwrite"}
+    )
+
+    assert "Written to knowledge/release-note.md" in result
+    assert "episodes/" in result
+    assert (handler._anima_dir / "knowledge" / "release-note.md").is_file()
+    assert "Release follow-up" in (handler._anima_dir / "knowledge" / "release-note.md").read_text()
+
+
+def test_regular_knowledge_write_has_no_case_record_hint(handler: _FakeWriteHandler) -> None:
+    result = handler._handle_write_memory_file(
+        {
+            "path": "knowledge/stable-setting.md",
+            "content": "The stable retry delay is 30 seconds.",
+            "mode": "overwrite",
+        }
+    )
+
+    assert "Written to knowledge/stable-setting.md" in result
+    assert "episodes/" not in result
+
+
 class TestParsefailedFrontmatterFallback:
     """When LLM writes broken YAML frontmatter, fallback FM is generated."""
 

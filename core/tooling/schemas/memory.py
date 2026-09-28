@@ -38,8 +38,9 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                         "all",
                     ],
                     "description": (
-                        "Memory category to search. 'facts' searches atomic extracted facts. 'activity_log' searches recent tool results "
-                        "and messages (last 3 days via BM25). 'code' searches tracked files in a registered project."
+                        "Memory category to search. 'facts' searches atomic extracted facts. 'activity_log' performs a full-history "
+                        "keyword search across active and rotated logs, newest first, with optional time_range filtering. "
+                        "Other RAG/vector activity retrieval remains limited to the recent 3 days. 'code' searches tracked files in a registered project."
                     ),
                 },
                 "offset": {
@@ -84,7 +85,11 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "write_memory_file",
-        "description": "Write or append to a file in the anima's memory directory.",
+        "description": (
+            "Write or append to a file in the anima's memory directory. Keep confirmed reusable knowledge in knowledge/; "
+            "put temporary unresolved failures and PR/SHA/date-specific case records in episodes/. Do not record "
+            "unverified negative claims as knowledge or skills. Case-record hints do not block writes."
+        ),
         "parameters": {
             "type": "object",
             "properties": {

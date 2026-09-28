@@ -50,7 +50,7 @@ async def test_compact_background_event_runs_bounded_recall_without_activity_sea
         result = await engine.prime_memories(
             "Routine result", channel=channel, intent=intent, profile="compact", max_tokens=200
         )
-    channels["_channel_b_recent_activity"].assert_not_called()
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", ["Routine", "result"], channel=channel)
     channels["_channel_c_related_knowledge"].assert_awaited_once()
     channels["_channel_f_episodes"].assert_awaited_once()
     channels["_channel_c0_important_knowledge"].assert_awaited_once_with([], trigger=channel, resident_only=True)
@@ -65,12 +65,14 @@ async def test_compact_background_recall_skips_empty_message_and_can_be_disabled
     config = SimpleNamespace(priming=PrimingConfig())
     with patch("core.config.models.load_config", return_value=config):
         await engine.prime_memories("  \n", channel="heartbeat", profile="compact")
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", [], channel="heartbeat")
     channels["_channel_c_related_knowledge"].assert_not_called()
     channels["_channel_f_episodes"].assert_not_called()
 
     config.priming.compact_background_recall_enabled = False
     with patch("core.config.models.load_config", return_value=config):
         await engine.prime_memories("heartbeat task", channel="heartbeat", profile="compact")
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", [], channel="heartbeat")
     channels["_channel_c_related_knowledge"].assert_not_called()
     channels["_channel_f_episodes"].assert_not_called()
 
@@ -188,6 +190,63 @@ def test_compact_background_recall_defaults_are_bounded_per_trigger():
         assert limits.related_knowledge_max_tokens == 180
         assert limits.episodes_max_items == 2
         assert limits.episodes_max_tokens == 400
+        assert limits.recent_activity_max_items == 5
+        assert limits.recent_activity_max_tokens == 300
+
+
+@pytest.mark.asyncio
+async def test_compact_recent_activity_is_newest_first_and_bounded(tmp_path: Path):
+    from core.memory.priming.items import ItemizedMemory, MemoryItem
+    from core.prompt.tokens import estimate_tokens
+
+    settings = CompactBackgroundRecallConfig(
+        recent_activity_max_items=5,
+        recent_activity_max_tokens=300,
+    )
+    config = SimpleNamespace(priming=PrimingConfig(compact_background_recall={"heartbeat": settings}))
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    entries = tuple(
+        MemoryItem(
+            source="recent_activity",
+            key=f"entry-{index}",
+            text=f"activity {index}",
+            updated=f"2026-09-28T10:{index:02}:00+09:00",
+            rank=float(index),
+        )
+        for index in range(8)
+    )
+    channels["_channel_b_recent_activity"].return_value = ItemizedMemory("", entries)
+
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("", channel="heartbeat", profile="compact")
+
+    lines = result.recent_activity.splitlines()
+    assert len(lines) == 5
+    assert lines[0] == "activity 7"
+    assert lines[-1] == "activity 3"
+    assert "activity 2" not in result.recent_activity
+    assert estimate_tokens(result.recent_activity) <= 300
+    channels["_channel_b_recent_activity"].assert_awaited_once_with("human", [], channel="heartbeat")
+
+
+@pytest.mark.asyncio
+async def test_compact_recent_activity_zero_disables_it_and_chat_is_unchanged(tmp_path: Path):
+    engine = PrimingEngine(tmp_path)
+    channels = _mock_channels(engine)
+    settings = CompactBackgroundRecallConfig(recent_activity_max_items=0)
+    config = SimpleNamespace(priming=PrimingConfig(compact_background_recall={"heartbeat": settings}))
+
+    with patch("core.config.models.load_config", return_value=config):
+        result = await engine.prime_memories("routine", channel="heartbeat", profile="compact")
+    assert not result.recent_activity
+    channels["_channel_b_recent_activity"].assert_not_called()
+
+    chat_engine = PrimingEngine(tmp_path / "chat")
+    chat_channels = _mock_channels(chat_engine)
+    with patch("core.config.models.load_config", return_value=config):
+        await chat_engine.prime_memories("hello", channel="chat", profile="compact")
+    chat_channels["_channel_b_recent_activity"].assert_not_called()
 
 
 def test_defaults_keep_storage_but_reenable_automatic_mutation():

@@ -426,6 +426,7 @@ class TestSearchMemoryTextKeywordOnly:
 
         assert search.call_args.kwargs["time_start"] == "2026-07-01"
         assert search.call_args.kwargs["time_end"] == "2026-07-02"
+        assert search.call_args.kwargs["all_time"] is True
 
     def test_explicit_time_range_is_forwarded_to_unified_search(
         self,

@@ -382,8 +382,8 @@ class PrimingEngine:
         """Retrieve only event-relevant sources; preserve notifications independently.
 
         Resident pointers are explicit opt-ins. Background triggers may also
-        receive small, configured knowledge and episode recall; broader activity
-        and graph expansion remain outside the compact profile.
+        receive bounded recent activity plus configured knowledge and episode
+        recall; broader graph expansion remains outside the compact profile.
         """
         started = time.perf_counter()
         calls = [
@@ -423,6 +423,21 @@ class PrimingEngine:
                 )
             )
         if (
+            background_settings is not None
+            and background_settings.recent_activity_max_items > 0
+            and background_settings.recent_activity_max_tokens > 0
+        ):
+            calls.append(
+                (
+                    "B",
+                    self._channel_b_recent_activity(
+                        sender_name,
+                        self._extract_keywords(message),
+                        channel=channel,
+                    ),
+                )
+            )
+        if (
             include_related
             and has_query
             and background_settings is not None
@@ -450,12 +465,28 @@ class PrimingEngine:
             value = results.get(name, "")
             return value if isinstance(value, str) else ""
 
-        def bounded_items(value: str, budget: int, max_items: int | None = None) -> tuple[str, int]:
+        def bounded_items(
+            value: str,
+            budget: int,
+            max_items: int | None = None,
+            *,
+            newest_first: bool = False,
+        ) -> tuple[str, int]:
             if isinstance(value, ItemizedMemory):
-                items = sorted(value.items, key=lambda item: (item.rank, item.updated), reverse=True)
+                if newest_first:
+                    items = sorted(value.items, key=lambda item: (item.updated, item.rank), reverse=True)
+                else:
+                    items = sorted(value.items, key=lambda item: (item.rank, item.updated), reverse=True)
                 if max_items is not None:
                     items = items[:max_items]
-                selected = select_within_budget(items, budget)
+                if newest_first:
+                    selected: list[MemoryItem] = []
+                    for item in items:
+                        candidate = render_items((*selected, item), "")
+                        if estimate_tokens(candidate) <= budget:
+                            selected.append(item)
+                else:
+                    selected = select_within_budget(items, budget)
                 return render_items(selected, ""), len(selected)
             text = truncate_head(value, budget)
             return text, int(bool(text.strip()))
@@ -472,6 +503,16 @@ class PrimingEngine:
             # meet a recall optimization budget.
             pending_human_notifications=content("pending_human_notifications"),
         )
+        activity_value = results.get("B")
+        if isinstance(activity_value, str) and background_settings is not None:
+            remaining = max(0, token_budget - result.estimated_tokens())
+            result.recent_activity = bounded_items(
+                activity_value,
+                min(remaining, background_settings.recent_activity_max_tokens),
+                background_settings.recent_activity_max_items,
+                newest_first=True,
+            )[0]
+
         related_value = results.get("C")
         if isinstance(related_value, tuple):
             remaining = max(0, token_budget - result.estimated_tokens())
@@ -504,9 +545,10 @@ class PrimingEngine:
                 background_settings.episodes_max_items,
             )[0]
         logger.info(
-            "Priming compact: channels=%s related_searches=%d elapsed=%.3fs tokens=%d",
+            "Priming compact: channels=%s related_searches=%d activity_chars=%d elapsed=%.3fs tokens=%d",
             ",".join(results),
             int("C" in results),
+            len(result.recent_activity),
             time.perf_counter() - started,
             result.estimated_tokens(),
         )

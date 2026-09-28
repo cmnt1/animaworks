@@ -265,6 +265,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("類似する既存の知識ファイル（トークン重複）:\n{files}"),
         "en": ("Similar existing knowledge files (token overlap):\n{files}"),
     },
+    "handler.case_record_episodes_hint": {
+        "ja": "案件記録は episodes/ 向きです。記録は knowledge/ に書き込み済みです。",
+        "en": "Case-specific records are better suited to episodes/. The write to knowledge/ was completed.",
+        "ko": "사건별 기록은 episodes/에 더 적합합니다. knowledge/ 쓰기는 완료되었습니다.",
+    },
     "handler.since_hours": {
         "ja": "{hours}時間{minutes}分前",
         "en": "{hours}h {minutes}m ago",

@@ -8,3 +8,7 @@
 - heartbeat.md 또는 cron.md 업데이트
 mode='overwrite'로 전체 교체, mode='append'로 끝에 추가.
 자동 통합(일일 consolidation)을 기다리지 말고 중요한 발견은 즉시 기록할 것.
+기록 위치 규칙:
+- 근거를 확인하지 않은 “X는 사용할 수 없다/하면 안 된다”와 같은 부정적 주장을 knowledge/·skills/에 기록하지 말 것.
+- 환경에 따라 달라지는 일시적 실패나 미해결 시행착오는 knowledge/가 아니라 episodes/에 남길 것.
+- PR 번호·SHA·여러 날짜에 연결된 사건 기록은 episodes/에 쓸 것.

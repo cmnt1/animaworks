@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -201,6 +203,72 @@ def test_activity_time_range_filters_matches(tmp_path: Path) -> None:
     )
     assert [hit["ts"] for hit in hits] == [f"{today}T11:00:00Z"]
     assert search_activity_log(anima_dir, "Meridian", time_start="2099-01-01T00:00:00Z") == []
+
+
+def test_full_history_activity_search_is_newest_first_filtered_and_contextual(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    today = today_local()
+    matching_days = [today - timedelta(days=8), today - timedelta(days=5), today - timedelta(days=2), today]
+    for index, day in enumerate(matching_days):
+        content = (
+            f"before context {index}\nneedle release detail {index}\nafter context {index}\n"
+            f"unrelated trailing line {index}"
+        )
+        _write_activity_log(
+            anima_dir,
+            [{"ts": f"{day.isoformat()}T10:00:00", "type": "message_received", "content": content}],
+            date_str=day.isoformat(),
+        )
+
+    results = search_activity_log(anima_dir, "needle", all_time=True, top_k=2)
+
+    assert [result["ts"][:10] for result in results] == [today.isoformat(), matching_days[-2].isoformat()]
+    assert "before context 3" in results[0]["content"]
+    assert "needle release detail 3" in results[0]["content"]
+    assert "after context 3" in results[0]["content"]
+    assert "unrelated trailing line 3" not in results[0]["content"]
+    assert len(search_activity_log(anima_dir, "needle", all_time=True, top_k=10, offset=2)) == 2
+
+    old_day = matching_days[0]
+    filtered = search_activity_log(
+        anima_dir,
+        "needle",
+        all_time=True,
+        time_start=f"{old_day.isoformat()}T00:00:00",
+        time_end=f"{old_day.isoformat()}T23:59:59",
+    )
+    assert len(filtered) == 1
+    assert filtered[0]["ts"].startswith(old_day.isoformat())
+
+    # The regular search path, used by unified/RAG retrieval, remains limited to the latest 3 days.
+    recent_results = search_activity_log(anima_dir, "needle", days=3)
+    assert recent_results
+    assert all(result["ts"][:10] >= (today - timedelta(days=2)).isoformat() for result in recent_results)
+
+
+def test_full_history_activity_search_includes_gzip_and_rotated_files(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    old_day = today_local() - timedelta(days=12)
+    log_dir = anima_dir / "activity_log"
+    log_dir.mkdir(parents=True)
+    entry = {
+        "ts": f"{old_day.isoformat()}T10:00:00",
+        "type": "message_received",
+        "content": "archived zircon finding",
+    }
+    archive_path = log_dir / f"{old_day.isoformat()}.jsonl.gz"
+    with gzip.open(archive_path, "wt", encoding="utf-8") as archive:
+        archive.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    rotated_entry = {**entry, "content": "rotated zircon finding", "ts": f"{old_day.isoformat()}T11:00:00"}
+    rotated_path = log_dir / f"{old_day.isoformat()}.jsonl.bloated.bak"
+    rotated_path.write_text(json.dumps(rotated_entry, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    results = search_activity_log(anima_dir, "zircon", all_time=True)
+
+    assert len(results) == 2
+    assert {Path(result["source_file"]).name for result in results} == {archive_path.name, rotated_path.name}
+    assert {result["content"] for result in results} == {"archived zircon finding", "rotated zircon finding"}
 
 
 def test_activity_cache_tokenizes_only_appended_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
