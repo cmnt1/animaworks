@@ -305,8 +305,12 @@ def _collect_activity(anima_dir: Path, since: datetime | None, *, max_entries: i
 def _related_people(entries: list[Any], anima_name: str) -> list[str]:
     names: list[str] = []
     for entry in reversed(entries):
-        for candidate in (entry.from_person, entry.to_person):
-            name = str(candidate or "").strip()
+        # Inbox batches record several senders as one comma-separated field.
+        candidates = [
+            part for field_value in (entry.from_person, entry.to_person) for part in str(field_value or "").split(",")
+        ]
+        for candidate in candidates:
+            name = candidate.strip()
             if not name or name == anima_name or normalize_peer_name(name) == normalize_peer_name(anima_name):
                 continue
             if not normalize_peer_name(name):
@@ -328,9 +332,9 @@ def _build_prompt(
     knowledge_names = memory.list_knowledge_files()[:_MAX_KNOWLEDGE_NAMES]
     peer_lines: list[str] = []
     for name in _related_people(entries, anima_dir.name):
+        # List every related person so a first peer note can be written.
         profile = memory.read_peer_profile(name, max_chars=settings.peer_profile_max_chars)
-        if profile:
-            peer_lines.append(f"### {name}\n{profile}")
+        peer_lines.append(f"### {name}\n{profile or '(no notes yet)'}")
 
     def _empty_prompt() -> str:
         knowledge_files = "\n".join(f"- {name[:100]}" for name in knowledge_names) or "(none)"
