@@ -72,9 +72,11 @@ async def test_post_consolidation_reconsolidates_failing_knowledge_with_file_cap
     second_meta = mm.read_knowledge_metadata(second)
     assert summary["reconsolidation"]["knowledge"]["targets_found"] == 1
     assert summary["reconsolidation"]["knowledge"]["updated"] == 1
-    assert first_meta["failure_count"] == 0
-    assert first_meta["version"] == 2
+    assert first_meta["failure_count"] == 3
+    assert first_meta["version"] == 1
     assert second_meta["failure_count"] == 4
+    assert second_meta["reconsolidated_failure_count"] == 4
+    assert second_meta["version"] == 2
 
 
 @pytest.mark.asyncio

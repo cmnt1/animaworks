@@ -43,6 +43,12 @@ class _MemoryStore(VectorStore):
     def get_by_metadata(self, collection: str, where: dict, limit: int = 20):
         return []
 
+    def get_all(self, collection: str, limit: int = 100_000):
+        return [SearchResult(document=item, score=1.0) for item in self.documents.get(collection, [])[:limit]]
+
+    def count(self, collection: str) -> int:
+        return len(self.documents.get(collection, []))
+
     def get_by_ids(self, collection: str, ids: list[str]) -> list[Document]:
         return [item for item in self.documents.get(collection, []) if item.id in ids]
 
@@ -55,6 +61,8 @@ class _MemoryStore(VectorStore):
     _delete_documents_once = delete_documents
     _update_metadata_once = update_metadata
     _get_by_metadata_once = get_by_metadata
+    _get_all_once = get_all
+    _count_once = count
     _get_by_ids_once = get_by_ids
 
     def close(self) -> None:
