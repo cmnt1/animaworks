@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, ClassVar
 
+from core.i18n import t
 from core.memory.state_lock import StateFileLock
 from core.platform.process import subprocess_session_kwargs, terminate_subprocess
 from core.tooling.handler_base import (
@@ -431,6 +432,14 @@ class FileToolsMixin:
         end_idx = min(start_idx + limit, total_lines)
         selected = all_lines[start_idx:end_idx]
 
+        anima_dir = getattr(self, "_anima_dir", None)
+        if anima_dir is not None:
+            from core.skills.ledger import skill_memory_pointer
+
+            skill_pointer = skill_memory_pointer(path, anima_dir)
+            if skill_pointer and not truncated_read and offset == 1 and end_idx == total_lines:
+                self._read_paths.add(skill_pointer)
+
         width = len(str(end_idx)) if end_idx > 0 else 1
         numbered = [f"{str(i).rjust(width)}|{line}" for i, line in enumerate(selected, start=offset)]
 
@@ -467,6 +476,22 @@ class FileToolsMixin:
             return err
         path = Path(path_str)
         content = args.get("content", "")
+        anima_dir = getattr(self, "_anima_dir", None)
+        skill_capture = None
+        if anima_dir is not None:
+            from core.skills.ledger import capture_skill_document, skill_memory_pointer
+
+            skill_pointer = skill_memory_pointer(path, anima_dir)
+            if skill_pointer and path.is_file() and skill_pointer not in self._read_paths:
+                try:
+                    existing = path.read_text(encoding="utf-8")[:2000]
+                except OSError:
+                    existing = "(could not read existing content)"
+                return _error_result(
+                    "ReadBeforeWrite",
+                    t("handler.skill_read_before_write", path=skill_pointer, existing=existing),
+                )
+            skill_capture = capture_skill_document(path, anima_dir)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -477,6 +502,18 @@ class FileToolsMixin:
                         path.write_text(content, encoding="utf-8")
                 else:
                     path.write_text(content, encoding="utf-8")
+            if skill_capture is not None and anima_dir is not None:
+                from core.skills.ledger import record_skill_change
+
+                record_skill_change(
+                    path,
+                    skill_capture,
+                    anima_dir=anima_dir,
+                    after_text=path.read_text(encoding="utf-8") if path.is_file() else None,
+                    after_exists=path.is_file(),
+                    actor=getattr(self, "_anima_name", anima_dir.name),
+                    route="write_file",
+                )
             logger.info("write_file path=%s", path_str)
             return f"Written to {path_str}"
         except Exception as e:
@@ -547,6 +584,22 @@ class FileToolsMixin:
             return _error_result(
                 "FileNotFound", f"File not found: {path_str}", suggestion="Use list_directory to find the correct path"
             )
+        anima_dir = getattr(self, "_anima_dir", None)
+        skill_capture = None
+        if anima_dir is not None:
+            from core.skills.ledger import capture_skill_document, skill_memory_pointer
+
+            skill_pointer = skill_memory_pointer(path, anima_dir)
+            if skill_pointer and skill_pointer not in self._read_paths:
+                try:
+                    existing = path.read_text(encoding="utf-8")[:2000]
+                except OSError:
+                    existing = "(could not read existing content)"
+                return _error_result(
+                    "ReadBeforeWrite",
+                    t("handler.skill_read_before_write", path=skill_pointer, existing=existing),
+                )
+            skill_capture = capture_skill_document(path, anima_dir)
         try:
             lock = self._state_file_lock if self._state_file_lock and self._is_state_file(path) else None
             if lock:
@@ -580,6 +633,18 @@ class FileToolsMixin:
                     matched_original = matches[0].group()
                     content = content.replace(matched_original, new, 1)
                     path.write_text(content, encoding="utf-8")
+                    if skill_capture is not None and anima_dir is not None:
+                        from core.skills.ledger import record_skill_change
+
+                        record_skill_change(
+                            path,
+                            skill_capture,
+                            anima_dir=anima_dir,
+                            after_text=path.read_text(encoding="utf-8"),
+                            after_exists=True,
+                            actor=getattr(self, "_anima_name", anima_dir.name),
+                            route="edit_file",
+                        )
                     logger.info("edit_file path=%s (fuzzy CJK-Latin match)", path_str)
                     return f"Edited {path_str}"
 
@@ -593,6 +658,18 @@ class FileToolsMixin:
                     )
                 content = content.replace(old, new, 1)
                 path.write_text(content, encoding="utf-8")
+                if skill_capture is not None and anima_dir is not None:
+                    from core.skills.ledger import record_skill_change
+
+                    record_skill_change(
+                        path,
+                        skill_capture,
+                        anima_dir=anima_dir,
+                        after_text=path.read_text(encoding="utf-8"),
+                        after_exists=True,
+                        actor=getattr(self, "_anima_name", anima_dir.name),
+                        route="edit_file",
+                    )
             finally:
                 if lock:
                     lock.release()

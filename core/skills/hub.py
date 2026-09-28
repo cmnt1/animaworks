@@ -133,6 +133,8 @@ class SkillHub:
                 )
 
             prepared = pending_destination(paths, skill_name)
+            destination_skill_md = destination / "SKILL.md"
+            before_capture = self._capture_skill_document(destination_skill_md)
             backup_path = None
             activated = False
             try:
@@ -153,6 +155,15 @@ class SkillHub:
                     source=bundle,
                     scan=scan,
                     installed_path=installed_path,
+                )
+                self._record_skill_change(
+                    paths,
+                    destination_skill_md,
+                    before_capture,
+                    after_text=destination_skill_md.read_text(encoding="utf-8"),
+                    after_exists=True,
+                    route="skill_hub.install",
+                    reason="replace existing skill" if before_capture[0] else "install skill",
                 )
             except Exception:
                 shutil.rmtree(prepared, ignore_errors=True)
@@ -198,6 +209,8 @@ class SkillHub:
             skill_dir = root / name
             if skill_dir.is_dir():
                 installed_path = paths.rel(skill_dir / "SKILL.md")
+                skill_md = skill_dir / "SKILL.md"
+                before_capture = self._capture_skill_document(skill_md)
                 removed = removed_destination(paths, name)
                 removed.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(skill_dir), str(removed))
@@ -208,6 +221,15 @@ class SkillHub:
                         shutil.move(str(removed), str(skill_dir))
                     raise
                 shutil.rmtree(removed, ignore_errors=True)
+                self._record_skill_change(
+                    paths,
+                    skill_md,
+                    before_capture,
+                    after_text=None,
+                    after_exists=False,
+                    route="skill_hub.remove",
+                    reason="remove skill",
+                )
                 return SkillHubResult(
                     status="removed",
                     skill_name=name,
@@ -243,6 +265,10 @@ class SkillHub:
         if decision is False:
             return self._blocked_result(name, paths.target, scan, decision, reason)
         destination = paths.active_skill_dir(name)
+        destination_skill_md = destination / "SKILL.md"
+        active_capture = self._capture_skill_document(destination_skill_md)
+        quarantine_skill_md = source_dir / "SKILL.md"
+        quarantine_capture = self._capture_skill_document(quarantine_skill_md)
         prepared = pending_destination(paths, name)
         backup_path = None
         activated = False
@@ -258,7 +284,26 @@ class SkillHub:
             if activated:
                 rollback_activation(destination, backup_path, paths)
             raise
+        active_text = destination_skill_md.read_text(encoding="utf-8")
         shutil.rmtree(source_dir, ignore_errors=True)
+        self._record_skill_change(
+            paths,
+            destination_skill_md,
+            active_capture,
+            after_text=active_text,
+            after_exists=True,
+            route="skill_hub.promote_in",
+            reason="promote approved quarantine skill",
+        )
+        self._record_skill_change(
+            paths,
+            quarantine_skill_md,
+            quarantine_capture,
+            after_text=None,
+            after_exists=False,
+            route="skill_hub.promote_out",
+            reason="promote approved quarantine skill",
+        )
         return SkillHubResult(
             status="promoted",
             skill_name=name,
@@ -324,6 +369,40 @@ class SkillHub:
                 rel_base=anima_dir,
             )
         raise ValueError("target must be 'personal' or 'common'")
+
+    def _capture_skill_document(self, path: Path) -> tuple[bool, str]:
+        exists = path.is_file()
+        return exists, path.read_text(encoding="utf-8") if exists else ""
+
+    def _record_skill_change(
+        self,
+        paths: _TargetPaths,
+        path: Path,
+        before: tuple[bool, str],
+        *,
+        after_text: str | None,
+        after_exists: bool,
+        route: str,
+        reason: str,
+    ) -> None:
+        from core.skills.ledger import SkillLedger
+
+        owner_dir = paths.rel_base if paths.target == "personal" else None
+        ledger = SkillLedger(
+            owner_dir,
+            data_dir=self.data_dir,
+            common_skills_dir=self.data_dir / "common_skills",
+        )
+        ledger.record_change(
+            path,
+            before_text=before[1],
+            after_text=after_text,
+            before_exists=before[0],
+            after_exists=after_exists,
+            actor=self.actor,
+            route=route,
+            reason=reason,
+        )
 
     def _install_staged_bundle(
         self,

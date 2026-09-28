@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -160,6 +161,40 @@ class TestReadBeforeWriteGuard:
         )
 
         assert "ReadBeforeWrite" in result or "read_memory_file" in result
+
+    def test_skill_overwrite_requires_read_in_same_session(self, handler, anima_dir):
+        skill_path = anima_dir / "skills" / "deploy" / "SKILL.md"
+        skill_path.parent.mkdir(parents=True)
+        skill_path.write_text("---\nname: deploy\n---\n\nOriginal skill body.\n", encoding="utf-8")
+
+        result = handler.handle(
+            "write_memory_file",
+            {"path": "skills/deploy/SKILL.md", "content": "---\nname: deploy\n---\n\nChanged body.\n"},
+        )
+
+        assert "ReadBeforeWrite" in result
+        assert "先に読み直してから書き込んで" in result
+        assert "Original skill body" in skill_path.read_text(encoding="utf-8")
+        assert not (anima_dir / "state" / "skill_ledger.jsonl").exists()
+
+    def test_skill_overwrite_succeeds_after_read_and_records_snapshot(self, handler, anima_dir):
+        skill_path = anima_dir / "skills" / "deploy" / "SKILL.md"
+        skill_path.parent.mkdir(parents=True)
+        original = "---\nname: deploy\n---\n\nOriginal skill body.\n"
+        skill_path.write_text(original, encoding="utf-8")
+        handler.handle("read_memory_file", {"path": "skills/deploy/SKILL.md"})
+
+        result = handler.handle(
+            "write_memory_file",
+            {"path": "skills/deploy/SKILL.md", "content": "---\nname: deploy\n---\n\nChanged body.\n"},
+        )
+
+        assert "Written" in result
+        assert "Changed body" in skill_path.read_text(encoding="utf-8")
+        ledger_path = anima_dir / "state" / "skill_ledger.jsonl"
+        entry = json.loads(ledger_path.read_text(encoding="utf-8").splitlines()[0])
+        assert entry["route"] == "write_memory_file"
+        assert (anima_dir / entry["snapshot_path"]).read_text(encoding="utf-8") == original
 
 
 class TestEpisodeOverwriteArchive:

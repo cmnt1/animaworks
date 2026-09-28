@@ -822,6 +822,10 @@ class MemoryToolsMixin:
         _was_existing = path.exists()
         mode = args.get("mode", "overwrite")
 
+        from core.skills.ledger import capture_skill_document, is_skill_document_path
+
+        _is_skill_document = is_skill_document_path(path, self._anima_dir)
+
         # ── Read-before-write guard ──
         _rbw_skip = mode == "append" or not _was_existing or rel.startswith(("episodes/", "state/", "shortterm/"))
         if not _rbw_skip and rel not in self._read_paths:
@@ -829,11 +833,13 @@ class MemoryToolsMixin:
                 _existing = path.read_text(encoding="utf-8")[:2000]
             except OSError:
                 _existing = "(could not read existing content)"
+            message_key = "handler.skill_read_before_write" if _is_skill_document else "handler.read_before_write"
             return _error_result(
                 "ReadBeforeWrite",
-                t("handler.read_before_write", path=rel, existing=_existing),
+                t(message_key, path=rel, existing=_existing),
             )
 
+        _skill_capture = capture_skill_document(path, self._anima_dir)
         content = args["content"]
         write_origin = self._resolve_write_origin() if rel.startswith("knowledge/") and rel.endswith(".md") else ""
 
@@ -1014,6 +1020,20 @@ class MemoryToolsMixin:
         finally:
             if lock:
                 lock.release()
+        if _skill_capture is not None:
+            from core.skills.ledger import record_skill_change
+
+            record_skill_change(
+                path,
+                _skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=path.read_text(encoding="utf-8") if path.is_file() else None,
+                after_exists=path.is_file(),
+                actor=self._anima_name,
+                route="write_memory_file",
+                reason=f"mode={mode}",
+            )
+
         logger.info(
             "write_memory_file path=%s mode=%s",
             args["path"],
@@ -1177,6 +1197,9 @@ class MemoryToolsMixin:
         )
         if err:
             return err
+        from core.skills.ledger import capture_skill_document
+
+        skill_capture = capture_skill_document(target, self._anima_dir)
         archive_dir.mkdir(parents=True, exist_ok=True)
         dest = archive_dir / target.name
 
@@ -1189,6 +1212,19 @@ class MemoryToolsMixin:
                 counter += 1
 
         shutil.move(str(target), str(dest))
+        if skill_capture is not None:
+            from core.skills.ledger import record_skill_change
+
+            record_skill_change(
+                target,
+                skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=None,
+                after_exists=False,
+                actor=self._anima_name,
+                route="archive_memory_file",
+                reason=reason,
+            )
         self._update_longterm_bm25_source(rel)
 
         logger.info("archive_memory_file: %s -> %s (reason: %s)", rel, dest.name, reason)

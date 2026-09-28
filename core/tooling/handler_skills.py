@@ -306,6 +306,23 @@ class SkillsToolsMixin:
             base_dir = self._anima_dir / "skills"
 
         skill_dir = base_dir / skill_name
+        skill_md_path = skill_dir / "SKILL.md"
+        from core.skills.ledger import capture_skill_document, skill_memory_pointer
+
+        skill_pointer = skill_memory_pointer(
+            skill_md_path, self._anima_dir, common_skills_dir=base_dir if location == "common" else None
+        )
+        if skill_md_path.is_file() and skill_pointer not in self._read_paths:
+            try:
+                existing = skill_md_path.read_text(encoding="utf-8")[:2000]
+            except OSError:
+                existing = "(could not read existing content)"
+            return t("handler.skill_read_before_write", path=skill_pointer or str(skill_md_path), existing=existing)
+        skill_capture = capture_skill_document(
+            skill_md_path,
+            self._anima_dir,
+            common_skills_dir=base_dir if location == "common" else None,
+        )
         result = create_skill_directory(
             skill_name=skill_name,
             description=description,
@@ -328,8 +345,24 @@ class SkillsToolsMixin:
             routing_examples=routing_examples,
         )
 
+        # Ledger creation/overwrite before security metadata is added.
+        if skill_capture is not None and skill_md_path.is_file():
+            from core.skills.ledger import record_skill_change
+
+            record_skill_change(
+                skill_md_path,
+                skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=skill_md_path.read_text(encoding="utf-8"),
+                after_exists=True,
+                actor=self._anima_name,
+                route="create_skill",
+                reason="skill creation tool",
+                common_skills_dir=base_dir if location == "common" else None,
+            )
+
         # Record create event in usage tracker
-        if (skill_dir / "SKILL.md").exists():
+        if skill_md_path.exists():
             try:
                 from core.skills.models import SkillUsageEventType
                 from core.skills.usage import SkillUsageTracker
@@ -346,7 +379,11 @@ class SkillsToolsMixin:
                 logger.debug("Failed to record skill create event", exc_info=True)
 
         # Run security scan on the newly created skill
-        scan_summary = self._scan_created_skill(skill_dir, trust_level)
+        scan_summary = self._scan_created_skill(
+            skill_dir,
+            trust_level,
+            common_skills_dir=base_dir if location == "common" else None,
+        )
         if scan_summary:
             result += f"\n\n{scan_summary}"
 
@@ -526,7 +563,13 @@ class SkillsToolsMixin:
         )
         return _json.dumps(payload, ensure_ascii=False, indent=2)
 
-    def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
+    def _scan_created_skill(
+        self,
+        skill_dir: Path,
+        trust_level: str | None,
+        *,
+        common_skills_dir: Path | None = None,
+    ) -> str:
         """Run security scan on a newly created skill and persist results."""
         from datetime import datetime
 
@@ -542,6 +585,13 @@ class SkillsToolsMixin:
         # Persist scan result into SKILL.md frontmatter
         skill_md_path = skill_dir / "SKILL.md"
         if skill_md_path.exists():
+            from core.skills.ledger import capture_skill_document, record_skill_change
+
+            skill_capture = capture_skill_document(
+                skill_md_path,
+                self._anima_dir,
+                common_skills_dir=common_skills_dir,
+            )
             text = skill_md_path.read_text(encoding="utf-8")
             meta, body = parse_frontmatter(text)
             meta["security"] = {
@@ -553,6 +603,17 @@ class SkillsToolsMixin:
             }
             frontmatter = yaml.dump(meta, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
             skill_md_path.write_text(f"---\n{frontmatter}\n---\n\n{body}\n", encoding="utf-8")
+            record_skill_change(
+                skill_md_path,
+                skill_capture,
+                anima_dir=self._anima_dir,
+                after_text=skill_md_path.read_text(encoding="utf-8"),
+                after_exists=True,
+                actor=self._anima_name,
+                route="create_skill.security_scan",
+                reason="persist scanner metadata",
+                common_skills_dir=common_skills_dir,
+            )
 
         # Build summary message
         verdict = scan_result.verdict

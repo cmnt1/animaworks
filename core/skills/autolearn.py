@@ -96,7 +96,17 @@ class AutonomousSkillLearner:
                 continue
             duplicate = self._duplicate_for(candidate.name, candidate.metadata, existing)
             if duplicate is not None:
-                skip = AutoSkillSkip(candidate.name, procedure_rel, "duplicate_skill", duplicate.name)
+                from core.skills.ledger import automatic_skill_edit_allowed
+
+                protected = duplicate.path is not None and not automatic_skill_edit_allowed(duplicate.path)
+                skip_reason = "human_or_pinned_skill" if protected else "duplicate_skill"
+                if protected:
+                    logger.info(
+                        "Autolearn skipped protected existing skill name=%s path=%s",
+                        duplicate.name,
+                        duplicate.path,
+                    )
+                skip = AutoSkillSkip(candidate.name, procedure_rel, skip_reason, duplicate.name)
                 self._record_skip(skip)
                 result.skipped.append(skip)
                 continue
