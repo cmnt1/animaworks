@@ -373,6 +373,8 @@ class CompactBackgroundRecallConfig(BaseModel):
     related_knowledge_max_tokens: int = Field(default=180, ge=0)
     episodes_max_items: int = Field(default=2, ge=0)
     episodes_max_tokens: int = Field(default=400, ge=0)
+    recent_activity_max_items: int = Field(default=5, ge=0)
+    recent_activity_max_tokens: int = Field(default=300, ge=0)
 
 
 _DEFAULT_COMPACT_BACKGROUND_RECALL: dict[str, CompactBackgroundRecallConfig] = {

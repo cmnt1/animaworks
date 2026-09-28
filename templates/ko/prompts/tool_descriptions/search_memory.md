@@ -1,4 +1,4 @@
-장기 기억(knowledge, episodes, procedures), activity_log (최근 활동 로그), 최근 도구 결과를 키워드로 검색한다.
+장기 기억(knowledge, episodes, procedures), activity_log, 최근 도구 결과를 키워드로 검색한다. activity_log는 로테이션된 로그를 포함한 전체 기간을 최신순으로 검색하며 time_range로 필터링할 수 있다(RAG 활동 검색 범위는 최근 3일로 유지).
 다음 상황에서 적극적으로 사용할 것:
 - 명령 실행·설정 변경 전에 관련 절차서와 과거 교훈을 확인
 - 보고·판단 전에 기존 지식으로 사실을 검증

@@ -13,6 +13,8 @@ Indexes recent activity entries and ranks them against a query using
 ``rank_bm25.BM25Okapi`` when available, with a token-overlap fallback.
 """
 
+import gzip
+import heapq
 import json
 import logging
 import math
@@ -1069,6 +1071,172 @@ def _activity_entry_time(date_str: str, entry: dict[str, Any]) -> datetime:
     )
 
 
+def _activity_log_search_files(anima_dir: Path) -> list[tuple[str, Path, bool]]:
+    """Return active and rotated activity JSONL files, newest file date first."""
+    base = anima_dir / "activity_log"
+    if not base.is_dir():
+        return []
+
+    paths: list[tuple[str, Path, bool]] = []
+    try:
+        candidates = base.rglob("*")
+        for path in candidates:
+            name = path.name.lower()
+            is_jsonl = name.endswith((".jsonl", ".jsonl.gz")) or (".jsonl." in name and name.endswith(".bak"))
+            if not is_jsonl or path.is_symlink() or not path.is_file():
+                continue
+            match = re.match(r"^(\d{4}-\d{2}-\d{2})(?:\.|$)", path.name)
+            filename_date_known = match is not None
+            if match:
+                file_date = match.group(1)
+            else:
+                file_date = datetime.fromtimestamp(path.stat().st_mtime, tz=get_app_timezone()).date().isoformat()
+            paths.append((file_date, path, filename_date_known))
+    except OSError:
+        logger.debug("Failed to enumerate activity_log search files under %s", base, exc_info=True)
+    paths.sort(key=lambda item: (item[0], str(item[1])), reverse=True)
+    return paths
+
+
+def _iter_activity_file_lines(path: Path):
+    """Stream rows from a JSONL file or compressed activity-log archive."""
+    opener = gzip.open if path.name.lower().endswith(".gz") else Path.open
+    with opener(path, "rb") as stream:
+        yield from stream
+
+
+def _activity_match_context(content: str, query_tokens: set[str], *, max_chars: int = 2000) -> str:
+    """Return matching source lines with one line of surrounding context."""
+    lines = content.splitlines()
+    matches = [index for index, line in enumerate(lines) if any(token in line.lower() for token in query_tokens)]
+    if matches:
+        included = {
+            context_index for index in matches for context_index in range(max(0, index - 1), min(len(lines), index + 2))
+        }
+        snippet = "\n".join(line for index, line in enumerate(lines) if index in included)
+    else:
+        snippet = content
+    if len(snippet) <= max_chars:
+        return snippet
+
+    lower = snippet.lower()
+    positions = [lower.find(token) for token in query_tokens if lower.find(token) >= 0]
+    center = min(positions) if positions else 0
+    start = max(0, center - max_chars // 2)
+    end = min(len(snippet), start + max_chars)
+    return ("…" if start else "") + snippet[start:end] + ("…" if end < len(snippet) else "")
+
+
+def _search_activity_log_full_history(
+    anima_dir: Path,
+    query: str,
+    *,
+    top_k: int,
+    offset: int,
+    time_start: str | None,
+    time_end: str | None,
+) -> list[dict[str, Any]]:
+    """Streaming keyword search across active and rotated activity logs."""
+    started = time.perf_counter()
+    query_tokens = set(tokenize(query))
+    if not query_tokens:
+        return []
+
+    start = _parse_search_time(time_start)
+    end = _parse_search_time(time_end)
+    if start is not None and end is not None and start > end:
+        start, end = end, start
+    keep_count = max(0, offset) + max(0, top_k)
+    if keep_count == 0:
+        return []
+
+    needles = tuple(token.encode("utf-8").lower() for token in query_tokens)
+    files = _activity_log_search_files(anima_dir)
+    heap: list[tuple[float, int, dict[str, Any]]] = []
+    scanned_lines = 0
+    matched_entries = 0
+    sequence = 0
+
+    file_index = 0
+    while file_index < len(files):
+        date_str = files[file_index][0]
+        group_end = file_index
+        while group_end < len(files) and files[group_end][0] == date_str:
+            group_end += 1
+
+        group_dates_known = True
+        for file_date, path, filename_date_known in files[file_index:group_end]:
+            group_dates_known = group_dates_known and filename_date_known
+            try:
+                for raw_line in _iter_activity_file_lines(path):
+                    scanned_lines += 1
+                    lowered = raw_line.lower()
+                    if not any(needle in lowered for needle in needles):
+                        continue
+                    try:
+                        entry = json.loads(raw_line)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        continue
+                    if not isinstance(entry, dict) or not _should_index_entry(entry):
+                        continue
+                    content = str(entry.get("content") or entry.get("summary") or "")
+                    if not content:
+                        continue
+                    content_tokens = set(tokenize(content))
+                    matched_tokens = query_tokens.intersection(content_tokens)
+                    if not matched_tokens:
+                        continue
+
+                    entry_time = _activity_entry_time(file_date, entry)
+                    if (start is not None and entry_time < start) or (end is not None and entry_time > end):
+                        continue
+                    matched_entries += 1
+                    etype = entry.get("type")
+                    entry_type = str(etype) if etype is not None else ""
+                    result = {
+                        "source_file": path.relative_to(anima_dir).as_posix(),
+                        "content": _activity_match_context(content, query_tokens),
+                        "score": len(matched_tokens) / len(query_tokens),
+                        "chunk_index": 0,
+                        "total_chunks": 1,
+                        "memory_type": "activity_log",
+                        "search_method": "fulltext",
+                        "ts": entry.get("ts"),
+                        "tool": _entry_tool_name(entry),
+                        "entry_type": entry_type,
+                    }
+                    sequence += 1
+                    key = (entry_time.timestamp(), sequence, result)
+                    if len(heap) < keep_count:
+                        heapq.heappush(heap, key)
+                    elif key[:2] > heap[0][:2]:
+                        heapq.heapreplace(heap, key)
+            except (OSError, EOFError, gzip.BadGzipFile, ValueError):
+                logger.debug("Failed to scan activity log %s", path, exc_info=True)
+
+        if group_dates_known and len(heap) >= keep_count:
+            try:
+                day_start = datetime.fromisoformat(date_str).replace(tzinfo=get_app_timezone()).astimezone(UTC)
+                if heap[0][0] >= day_start.timestamp():
+                    break
+            except ValueError:
+                pass
+        file_index = group_end
+
+    newest_first = sorted(heap, key=lambda item: item[:2], reverse=True)
+    results = [item[2] for item in newest_first[max(0, offset) : max(0, offset) + max(0, top_k)]]
+    logger.info(
+        "activity_log fulltext search anima=%s files=%d lines_scanned=%d matches_scanned=%d returned=%d elapsed=%.3fs",
+        anima_dir.name,
+        len(files),
+        scanned_lines,
+        matched_entries,
+        len(results),
+        time.perf_counter() - started,
+    )
+    return results
+
+
 def search_activity_log(
     anima_dir: Path,
     query: str,
@@ -1078,8 +1246,24 @@ def search_activity_log(
     offset: int = 0,
     time_start: str | None = None,
     time_end: str | None = None,
+    all_time: bool = False,
 ) -> list[dict[str, Any]]:
-    """BM25 search over recent ``activity_log`` JSONL entries."""
+    """BM25 search over recent logs, or full-history keyword search on request."""
+    if all_time:
+        try:
+            if not query.strip():
+                return []
+            return _search_activity_log_full_history(
+                anima_dir,
+                query,
+                top_k=top_k,
+                offset=offset,
+                time_start=time_start,
+                time_end=time_end,
+            )
+        except Exception as exc:
+            logger.debug("Full-history activity search failed: %s", exc, exc_info=True)
+            return []
     try:
         if not query.strip():
             return []

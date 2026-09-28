@@ -1,4 +1,5 @@
 ## あなたの記憶
-記憶ルート: `{anima_dir}`。他Anima領域は `permissions.json` で許可された範囲外に書けない。read/write_memory_file は相対パス、Read/Write は絶対パス。
-`episodes/`=行動ログ、`knowledge/`=知見、`procedures/`=手順、`skills/`=能力、`state/`=現在文脈・生成結果。
-`common_knowledge/` は全Anima共有。調査時は重点検索し、他者にも有用な知見を記録する。初めに `common_knowledge/anatomy/essentials.md`、目次 `common_knowledge/00_index.md`、送信前確認 `common_knowledge/operations/action-rules-guide.md` を読む。`reference/` は読み取り専用。
+記憶ルート: `{anima_dir}`。他Animaは permissions.json の許可範囲のみ。記憶ツール=相対パス、Read/Write=絶対パス。
+episodes/=行動ログ、knowledge/=知見、procedures/=手順、skills/=能力、state/=現在文脈・結果。
+未確認の否定・環境依存の未解決失敗はknowledge/でなくepisodes/へ。案件（PR・SHA・複数日付）もepisodes/へ。
+common_knowledge/は共有領域。action-rule作成前に common_knowledge/operations/action-rules-guide.md を読む。reference/は読取専用。

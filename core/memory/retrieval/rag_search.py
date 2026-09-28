@@ -515,6 +515,7 @@ class RAGMemorySearch:
                 offset=offset,
                 time_start=time_start,
                 time_end=time_end,
+                all_time=True,
             )
 
         if scope in (

@@ -39,6 +39,21 @@ _SEARCH_MAX_LINES = 600
 _SEARCH_CONTEXT_BASE = 128_000
 _SEARCH_MIN_RESULTS = 3
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_CASE_RECORD_PR_RE = re.compile(r"(?<![\w])#\s*\d{2,}\b")
+# Hex runs that mix digits and letters, so plain numbers (amounts, IDs) don't count.
+_CASE_RECORD_SHA_RE = re.compile(
+    r"(?<![0-9a-f])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![0-9a-f])", re.IGNORECASE
+)
+_CASE_RECORD_DATE_RE = re.compile(
+    r"(?<!\d)(?:19|20)\d{2}(?:-\d{1,2}-\d{1,2}|/\d{1,2}/\d{1,2}|年\d{1,2}月\d{1,2}日)(?!\d)"
+)
+
+
+def _looks_like_case_record(content: str) -> bool:
+    """Heuristically identify project-specific notes better stored as episodes."""
+    if _CASE_RECORD_PR_RE.search(content) or _CASE_RECORD_SHA_RE.search(content):
+        return True
+    return len(set(_CASE_RECORD_DATE_RE.findall(content))) >= 2
 
 
 def _source_is_in_project(source: str, project: str) -> bool:
@@ -1078,6 +1093,10 @@ class MemoryToolsMixin:
         result = f"Written to {args['path']}"
         if _similar_hint:
             result = f"{result}\n\n{_similar_hint}"
+
+        if rel.startswith("knowledge/") and _looks_like_case_record(content):
+            result = f"{result}\n\n{t('handler.case_record_episodes_hint')}"
+            logger.info("Knowledge write resembles a case record; suggested episodes destination: %s", rel)
 
         # Warn (but don't block) if episode filename is non-standard
         episode_warning = _validate_episode_path(args["path"])
