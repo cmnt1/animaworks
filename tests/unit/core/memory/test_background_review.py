@@ -327,3 +327,15 @@ def test_deferred_requests_are_recorded_and_consumed(tmp_path, monkeypatch):
     assert runtime.user_turn_delta == 1
     assert not br._requests_path(tmp_path).exists()
     assert not br.has_pending_background_review(tmp_path)
+
+
+def test_related_people_splits_batched_senders() -> None:
+    from types import SimpleNamespace
+
+    from core.memory.maintenance.background_review import _related_people
+
+    entries = [
+        SimpleNamespace(from_person="sumire, sakura", to_person="rin"),
+        SimpleNamespace(from_person="taka", to_person=""),
+    ]
+    assert _related_people(entries, "rin") == ["taka", "sumire", "sakura"]
