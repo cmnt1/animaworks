@@ -386,6 +386,21 @@ class ConsolidationConfig(BaseModel):
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
+    episode_summary_max_input_bytes: int = Field(
+        default=200 * 1024,
+        ge=1024,
+        description="Maximum UTF-8 prompt size for each daily episode-summary LLM call.",
+    )
+    episode_summary_backfill_days: int = Field(
+        default=7,
+        ge=1,
+        description="Look back this many local days for unprocessed daily episode activity.",
+    )
+    episode_summary_backfill_max_days_per_run: int = Field(
+        default=3,
+        ge=0,
+        description="Maximum older days to backfill during one daily consolidation (yesterday is separate).",
+    )
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)

@@ -126,14 +126,21 @@ class ConsolidationEngine:
         )
 
     @staticmethod
+    def local_day_window(target_date: date, reference: datetime | None = None) -> tuple[datetime, datetime]:
+        """Return local midnight bounds for *target_date*."""
+        now = reference or now_local()
+        timezone = now.tzinfo or get_app_timezone()
+        start = datetime.combine(target_date, time.min, tzinfo=timezone)
+        return start, start + timedelta(days=1)
+
+    @staticmethod
     def previous_local_day_window(reference: datetime | None = None) -> tuple[date, datetime, datetime]:
         """Return the previous local date and its inclusive/exclusive bounds."""
         now = reference or now_local()
         if now.tzinfo is None:
             now = now.replace(tzinfo=get_app_timezone())
         target_date = now.date() - timedelta(days=1)
-        start = datetime.combine(target_date, time.min, tzinfo=now.tzinfo)
-        end = start + timedelta(days=1)
+        start, end = ConsolidationEngine.local_day_window(target_date, now)
         return target_date, start, end
 
     def episode_path_for_date(self, target_date: date) -> Path:
@@ -324,10 +331,23 @@ class ConsolidationEngine:
         return any(tool.startswith(prefix) for prefix in ConsolidationEngine._EXCLUDED_TOOL_PREFIXES)
 
     @staticmethod
-    def _format_entry_full(entry: Any) -> str:
-        """Format an activity entry with full content for consolidation.
+    def _truncate_utf8(text: str, max_bytes: int) -> str:
+        """Truncate untrusted activity payload text without splitting UTF-8."""
+        if len(text.encode("utf-8")) <= max_bytes:
+            return text
+        marker = "\n... (truncated)"
+        marker_bytes = marker.encode("utf-8")
+        if max_bytes <= len(marker_bytes):
+            return marker_bytes[:max_bytes].decode("utf-8", errors="ignore")
+        head = text.encode("utf-8")[: max_bytes - len(marker_bytes)].decode("utf-8", errors="ignore")
+        return head + marker
 
-        This includes the actual content of tool results, messages, etc.
+    @staticmethod
+    def _format_entry_full(entry: Any, *, max_content_bytes: int = 64 * 1024) -> str:
+        """Format activity content for consolidation, clipping large raw payloads.
+
+        This includes the actual content of tool results, messages, etc., but
+        applies a byte cap before a pasted message or tool result reaches an LLM.
         """
         ts_short = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
         meta = entry.meta or {}
@@ -389,6 +409,7 @@ class ConsolidationEngine:
         else:
             text = "(no content)"
 
+        text = ConsolidationEngine._truncate_utf8(text, max_content_bytes)
         header = f"[{ts_short}] {label}{status_suffix}{ctx}"
 
         # If text is short, put on same line
@@ -447,6 +468,7 @@ class ConsolidationEngine:
         *,
         since: datetime | None = None,
         until: datetime | None = None,
+        max_input_bytes: int = 200 * 1024,
     ) -> list[str]:
         """Collect activity entries and split into budget-sized chunks.
 
@@ -471,7 +493,10 @@ class ConsolidationEngine:
             cfg = load_config()
             model = cfg.consolidation.llm_model
 
+        # Keep chunk boundaries stable so existing checkpoint hashes remain valid;
+        # oversized rendered prompts are split immediately before the LLM call.
         budget = self.compute_activity_budget(model)
+        entry_content_bytes = min(64 * 1024, max(256, max_input_bytes // 2))
 
         try:
             from core.memory.activity.logger import ActivityLogger
@@ -536,7 +561,7 @@ class ConsolidationEngine:
         # Format all entries — use date+hour key for cross-day correctness
         formatted_entries: list[tuple[str, str]] = []  # (date_hour_key, formatted_text)
         for e in included:
-            text = self._format_entry_full(e)
+            text = self._format_entry_full(e, max_content_bytes=entry_content_bytes)
             date_hour = e.ts[:13] if len(e.ts) >= 13 else "0000-00-00T00"
             formatted_entries.append((date_hour, text))
 

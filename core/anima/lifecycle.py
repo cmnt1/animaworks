@@ -16,6 +16,7 @@ import os
 import re
 import time
 from contextlib import nullcontext
+from datetime import date, timedelta
 from typing import Any
 
 from core.execution._sanitize import ORIGIN_SYSTEM
@@ -207,6 +208,108 @@ def _consolidation_model_config(base_model_config: Any, consolidation_model: str
 
 def _project_consolidation_was_interrupted(result: CycleResult) -> bool:
     return bool(result.truncated)
+
+
+def _split_episode_prompt_to_limit(
+    activity_chunk: str,
+    prompt_builder: Any,
+    max_input_bytes: int,
+) -> tuple[list[tuple[str, str]], str]:
+    """Split an activity chunk until each fully rendered prompt fits its byte cap."""
+    pending = [activity_chunk]
+    prompts: list[tuple[str, str]] = []
+    while pending:
+        part = pending.pop(0)
+        prompt = prompt_builder(part)
+        if len(prompt.encode("utf-8")) <= max_input_bytes:
+            prompts.append((part, prompt))
+            continue
+        if len(part) <= 1:
+            return [], "rendered prompt exceeds configured input byte limit"
+
+        midpoint = len(part) // 2
+        boundary = part.rfind("\n", max(1, midpoint // 2), midpoint)
+        split_at = boundary + 1 if boundary >= 0 else midpoint
+        if split_at <= 0 or split_at >= len(part):
+            split_at = midpoint
+        pending[0:0] = [part[:split_at], part[split_at:]]
+    return prompts, ""
+
+
+def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any) -> list[Any]:
+    """Build ordered one-shot model configs from existing anima fallback settings."""
+    from core.config.model_config import build_model_override_config
+    from core.config.model_mode import parse_fallback_entry
+
+    primary = _consolidation_model_config(base_model_config, model, cfg)
+    candidates = [primary]
+    entries: list[tuple[str, str | None]] = []
+    entries.extend((entry, None) for entry in getattr(base_model_config, "fallback_models", []) or [])
+    legacy_fallback = getattr(base_model_config, "fallback_model", None)
+    if legacy_fallback:
+        entries.append((legacy_fallback, None))
+    background_model = getattr(base_model_config, "background_model", None)
+    if background_model and background_model != model:
+        entries.append((background_model, getattr(base_model_config, "background_credential", None)))
+
+    seen = {(primary.model, primary.credential)}
+    for entry, credential_name in entries:
+        parsed = parse_fallback_entry(entry, cfg)
+        if parsed is None:
+            continue
+        mode, fallback_model = parsed
+        candidate = build_model_override_config(
+            primary,
+            mode,
+            fallback_model,
+            cfg,
+            credential_name=credential_name,
+        )
+        if candidate is None:
+            continue
+        key = (candidate.model, candidate.credential)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(candidate)
+    return candidates
+
+
+async def _complete_episode_prompt(prompt: str, model_configs: list[Any]) -> tuple[str | None, str]:
+    """Try the primary one-shot model followed by configured model fallbacks."""
+    from core.memory._llm_utils import one_shot_completion
+
+    failures: list[str] = []
+    for model_config in model_configs:
+        try:
+            result = await one_shot_completion(
+                prompt,
+                model=model_config.model,
+                credential=model_config.credential or "",
+                max_tokens=8192,
+            )
+        except Exception as exc:
+            failures.append(f"{model_config.model}:{type(exc).__name__}")
+            continue
+        if result and result.strip():
+            return result, ""
+        failures.append(f"{model_config.model}:empty response")
+    if len(model_configs) == 1:
+        model_config = model_configs[0]
+        try:
+            retry_result = await one_shot_completion(
+                prompt,
+                model=model_config.model,
+                credential=model_config.credential or "",
+                max_tokens=8192,
+            )
+        except Exception as exc:
+            failures.append(f"{model_config.model}:retry {type(exc).__name__}")
+        else:
+            if retry_result and retry_result.strip():
+                return retry_result, ""
+            failures.append(f"{model_config.model}:retry empty response")
+    reason = "; ".join(failures) or "no usable model configured"
+    return None, reason[:240].replace("\n", " ")
 
 
 class LifecycleMixin:
@@ -467,6 +570,199 @@ class LifecycleMixin:
         finally:
             self._notify_lock_released()
 
+    async def _run_daily_episode_summaries(
+        self,
+        engine: Any,
+        *,
+        cfg: Any,
+        model: str,
+        start_mono: float,
+    ) -> CycleResult:
+        """Summarize yesterday and a bounded set of recent unprocessed days."""
+        from core.config.models import ConsolidationConfig
+
+        consolidation_cfg = getattr(cfg, "consolidation", None)
+        defaults = ConsolidationConfig()
+        max_input_bytes = int(
+            getattr(consolidation_cfg, "episode_summary_max_input_bytes", defaults.episode_summary_max_input_bytes)
+        )
+        lookback_days = max(
+            1, int(getattr(consolidation_cfg, "episode_summary_backfill_days", defaults.episode_summary_backfill_days))
+        )
+        max_backfill_days = max(
+            0,
+            int(
+                getattr(
+                    consolidation_cfg,
+                    "episode_summary_backfill_max_days_per_run",
+                    defaults.episode_summary_backfill_max_days_per_run,
+                )
+            ),
+        )
+
+        target_date, _, _ = engine.previous_local_day_window(now_local())
+        reference = now_local()
+        dates = [target_date]
+        dates.extend(target_date - timedelta(days=offset) for offset in range(lookback_days - 1, 0, -1))
+        pending_by_date: dict[date, list[str]] = {}
+        for candidate_date in dates:
+            window_start, window_end = engine.local_day_window(candidate_date, reference)
+            chunks = engine.collect_activity_chunks(
+                hours=24,
+                model=model,
+                since=window_start,
+                until=window_end,
+                max_input_bytes=max_input_bytes,
+            )
+            pending = engine.unprocessed_activity_chunks(candidate_date, chunks)
+            if pending:
+                pending_by_date[candidate_date] = pending
+
+        selected_dates: list[date] = []
+        if target_date in pending_by_date:
+            selected_dates.append(target_date)
+        older_pending = [day for day in dates[1:] if day in pending_by_date]
+        selected_dates.extend(older_pending[:max_backfill_days])
+        if not selected_dates:
+            import time as _time
+
+            return CycleResult(
+                trigger="consolidation:daily",
+                action="skipped",
+                summary=t("anima.no_episodes_today"),
+                duration_ms=int((_time.monotonic() - start_mono) * 1000),
+            )
+        if older_pending:
+            logger.info(
+                "[%s] Episode backfill: pending_days=%d selected_days=%d max_older_days=%d",
+                self.name,
+                len(older_pending),
+                min(len(older_pending), max_backfill_days),
+                max_backfill_days,
+            )
+
+        source_model_config = self.memory.read_model_config()
+        model_configs = _episode_summary_model_configs(source_model_config, model, cfg)
+        episode_summaries: list[str] = []
+        for summary_date in selected_dates:
+            chunks = pending_by_date[summary_date]
+            existing_episode = engine.read_episode_for_date(summary_date)
+            existing_context = existing_episode.strip() or "(none)"
+            context_byte_limit = min(48_000, max(256, max_input_bytes // 4))
+            existing_context = engine._truncate_utf8(existing_context, context_byte_limit)
+
+            logger.info(
+                "[%s] Phase A: extracting episodes for %s from %d chunk(s) with model=%s",
+                self.name,
+                summary_date.isoformat(),
+                len(chunks),
+                model,
+            )
+            episode_parts: list[str] = []
+            completed_chunks: list[str] = []
+            failed_chunks = 0
+            failure_reason = ""
+
+            for chunk_index, chunk in enumerate(chunks):
+                time_range = f"{summary_date.isoformat()} chunk {chunk_index + 1}/{len(chunks)}"
+
+                def build_prompt(
+                    activity_chunk: str,
+                    time_range: str = time_range,
+                    existing_context: str = existing_context,
+                ) -> str:
+                    return load_prompt(
+                        "memory/episode_extraction",
+                        anima_name=self.name,
+                        time_range=time_range,
+                        activity_chunk=activity_chunk,
+                        existing_episode=existing_context,
+                    )
+
+                prompt_parts, split_error = _split_episode_prompt_to_limit(
+                    chunk,
+                    build_prompt,
+                    max_input_bytes,
+                )
+                if split_error:
+                    failed_chunks += 1
+                    failure_reason = split_error
+                    continue
+
+                chunk_summaries: list[str] = []
+                for _activity_part, prompt in prompt_parts:
+                    raw, reason = await _complete_episode_prompt(prompt, model_configs)
+                    if not raw:
+                        failure_reason = reason
+                        break
+                    sanitized = engine._sanitize_llm_output(raw)
+                    if not sanitized.strip():
+                        failure_reason = "empty sanitized summary"
+                        break
+                    chunk_summaries.append(sanitized)
+
+                if len(chunk_summaries) != len(prompt_parts):
+                    failed_chunks += 1
+                    continue
+                episode_parts.extend(chunk_summaries)
+                completed_chunks.append(chunk)
+
+            if episode_parts:
+                merged_episodes = engine.merge_timeline_parts(episode_parts)
+                episode_path = engine.write_consolidated_episode(summary_date, merged_episodes)
+                engine.record_consolidated_chunks(summary_date, completed_chunks)
+                facts_extracted = 0
+                facts_failed = 0
+                try:
+                    fact_outcome = await engine.extract_facts_from_text_outcome(
+                        merged_episodes,
+                        source_episode=f"episodes/{episode_path.name}",
+                        source_session_id="consolidation:daily",
+                    )
+                    facts_extracted = fact_outcome.facts_extracted
+                    facts_failed = fact_outcome.facts_failed
+                except Exception as exc:
+                    from core.memory.facts.observability import warn_rate_limited
+
+                    warn_rate_limited(
+                        logger,
+                        "fact_extraction.phase_a",
+                        "[%s] Phase A atomic fact extraction failed",
+                        self.name,
+                        exc_info=(type(exc), exc, exc.__traceback__),
+                    )
+                    facts_failed = 1
+                logger.info(
+                    "[%s] Phase A complete: date=%s wrote=%d chars to %s facts_extracted=%d facts_failed=%d",
+                    self.name,
+                    summary_date.isoformat(),
+                    len(merged_episodes),
+                    episode_path.name,
+                    facts_extracted,
+                    facts_failed,
+                )
+                episode_summaries.append(f"## {summary_date.isoformat()}\n\n{merged_episodes}")
+
+            if failed_chunks:
+                reason = failure_reason or "one or more chunk prompts failed"
+                logger.warning(
+                    "[%s] Episode summary failed date=%s failed_chunks=%d/%d reason=%s",
+                    self.name,
+                    summary_date.isoformat(),
+                    failed_chunks,
+                    len(chunks),
+                    reason[:240].replace("\n", " "),
+                )
+
+        import time as _time
+
+        return CycleResult(
+            trigger="consolidation:daily",
+            action="completed" if episode_summaries else "skipped",
+            summary=("\n\n".join(episode_summaries) if episode_summaries else t("anima.no_episodes_today")),
+            duration_ms=int((_time.monotonic() - start_mono) * 1000),
+        )
+
     async def _run_daily_consolidation(
         self,
         engine: Any,
@@ -483,142 +779,17 @@ class LifecycleMixin:
 
         cfg = load_config()
         consolidation_model = cfg.consolidation.llm_model
-        _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
-        consolidation_credential = _llm_cred if isinstance(_llm_cred, str) else ""
         start_mono = _time.monotonic()
         project = getattr(engine, "project", None)
 
         # ── Phase A: Episode extraction ─────────────────────────
-        target_date, window_start, window_end = engine.previous_local_day_window(now_local())
-        chunks = (
-            engine.collect_activity_chunks(
-                hours=24,
+        if project is None:
+            return await LifecycleMixin._run_daily_episode_summaries(
+                self,
+                engine,
+                cfg=cfg,
                 model=consolidation_model,
-                since=window_start,
-                until=window_end,
-            )
-            if project is None
-            else []
-        )
-        episode_parts: list[str] = []
-        completed_chunks: list[str] = []
-        if project is None:
-            chunks = engine.unprocessed_activity_chunks(target_date, chunks)
-
-        if chunks:
-            from core.memory._llm_utils import one_shot_completion
-
-            existing_episode = engine.read_episode_for_date(target_date)
-            existing_episode_context = existing_episode.strip() or "(none)"
-            if len(existing_episode_context) > 12_000:
-                existing_episode_context = existing_episode_context[:12_000] + "\n... (truncated)"
-
-            logger.info(
-                "[%s] Phase A: extracting episodes for %s from %d chunk(s) with model=%s",
-                self.name,
-                target_date.isoformat(),
-                len(chunks),
-                consolidation_model,
-            )
-
-            for i, chunk in enumerate(chunks):
-                time_range = f"{target_date.isoformat()} chunk {i + 1}/{len(chunks)}"
-                ep_prompt = load_prompt(
-                    "memory/episode_extraction",
-                    anima_name=self.name,
-                    time_range=time_range,
-                    activity_chunk=chunk,
-                    existing_episode=existing_episode_context,
-                )
-                raw = await one_shot_completion(
-                    ep_prompt,
-                    model=consolidation_model,
-                    credential=consolidation_credential,
-                    max_tokens=8192,
-                )
-
-                # Retry once when the chunk came back empty / None so a
-                # transient LLM hiccup doesn't silently drop a time window's
-                # activity from the episode. On a second failure, warn (was
-                # debug) so the gap is traceable.
-                if not raw:
-                    logger.warning(
-                        "[%s] Phase A chunk %d/%d returned empty; retrying once",
-                        self.name,
-                        i + 1,
-                        len(chunks),
-                    )
-                    raw = await one_shot_completion(
-                        ep_prompt,
-                        model=consolidation_model,
-                        credential=consolidation_credential,
-                        max_tokens=8192,
-                    )
-                    if not raw:
-                        logger.warning(
-                            "[%s] Phase A chunk %d/%d still empty after retry; "
-                            "activity for this window will be missing from the episode",
-                            self.name,
-                            i + 1,
-                            len(chunks),
-                        )
-
-                if raw:
-                    sanitized = engine._sanitize_llm_output(raw)
-                    if not sanitized.strip():
-                        logger.warning("[%s] Phase A produced no usable episode; input remains unprocessed", self.name)
-                        continue
-                    episode_parts.append(sanitized)
-                    completed_chunks.append(chunk)
-                    logger.debug(
-                        "[%s] Phase A chunk %d/%d: %d chars extracted",
-                        self.name,
-                        i + 1,
-                        len(chunks),
-                        len(episode_parts[-1]),
-                    )
-
-        # Merge and write episodes
-        if episode_parts:
-            merged_episodes = engine.merge_timeline_parts(episode_parts)
-            episode_path = engine.write_consolidated_episode(target_date, merged_episodes)
-            engine.record_consolidated_chunks(target_date, completed_chunks)
-            facts_extracted = 0
-            facts_failed = 0
-            try:
-                fact_outcome = await engine.extract_facts_from_text_outcome(
-                    merged_episodes,
-                    source_episode=f"episodes/{episode_path.name}",
-                    source_session_id="consolidation:daily",
-                )
-                facts_extracted = fact_outcome.facts_extracted
-                facts_failed = fact_outcome.facts_failed
-            except Exception as exc:
-                from core.memory.facts.observability import warn_rate_limited
-
-                warn_rate_limited(
-                    logger,
-                    "fact_extraction.phase_a",
-                    "[%s] Phase A atomic fact extraction failed",
-                    self.name,
-                    exc_info=(type(exc), exc, exc.__traceback__),
-                )
-                facts_failed = 1
-            logger.info(
-                "[%s] Phase A complete: wrote %d chars to %s facts_extracted=%d facts_failed=%d",
-                self.name,
-                len(merged_episodes),
-                episode_path.name,
-                facts_extracted,
-                facts_failed,
-            )
-
-        if project is None:
-            return CycleResult(
-                trigger="consolidation:daily",
-                action="completed" if episode_parts else "skipped",
-                summary=t("anima.no_episodes_today") if not episode_parts else merged_episodes,
-                duration_ms=int((_time.monotonic() - start_mono) * 1000),
+                start_mono=start_mono,
             )
 
         episodes = engine._collect_recent_episodes(hours=24)

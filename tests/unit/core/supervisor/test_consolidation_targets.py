@@ -241,6 +241,61 @@ def test_daily_gate_uses_only_activity_and_episode_thresholds(
     assert not hasattr(gate, "carryover_count")
 
 
+def test_daily_gate_runs_for_pending_episode_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import date, datetime, timedelta
+
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
+
+    class _BackfillGateEngine:
+        def __init__(self, *_args) -> None:
+            self.visited: list[date] = []
+
+        def _collect_recent_episodes(self, hours: int) -> list[dict]:
+            return []
+
+        @staticmethod
+        def previous_local_day_window():
+            yesterday = date(2026, 9, 27)
+            return yesterday, None, None
+
+        @staticmethod
+        def local_day_window(day: date):
+            return datetime.combine(day, datetime.min.time()), datetime.combine(
+                day + timedelta(days=1), datetime.min.time()
+            )
+
+        def collect_activity_chunks(self, *, since, **_kwargs):
+            day = since.date()
+            self.visited.append(day)
+            return ["missed episode"] if day == date(2026, 9, 25) else []
+
+        @staticmethod
+        def unprocessed_activity_chunks(_day, chunks):
+            return chunks
+
+        @staticmethod
+        def count_recent_activity_entries(**_kwargs) -> int:
+            return 0
+
+    engine = _BackfillGateEngine()
+    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", lambda *_args: engine)
+
+    gate = evaluate_daily_consolidation_gate(
+        tmp_path,
+        "fixture",
+        threshold=2,
+        backfill_days=4,
+        model="test-model",
+    )
+
+    assert gate.should_run
+    assert gate.pending_backfill_days == 1
+    assert len(engine.visited) == 4
+
+
 def test_consolidation_ipc_timeout_respects_max_and_weekly_override(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     cfg = SimpleNamespace(
