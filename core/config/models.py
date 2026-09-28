@@ -72,6 +72,7 @@ from core.config.schemas import (
     AnimaDefaults,
     AnimaModelConfig,
     AnimaWorksConfig,
+    BackgroundReviewConfig,
     BackgroundTaskConfig,
     BackgroundToolConfig,
     ChatworkToolConfig,

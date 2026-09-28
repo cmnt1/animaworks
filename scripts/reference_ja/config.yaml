@@ -10,6 +10,7 @@ model_max_tokens: モデル名パターンごとの既定出力トークン数�
 anima_defaults: 各 anima に適用するモデル・実行設定の既定値。
 animas: anima ごとのモデル設定上書き。
 consolidation: 記憶統合の動作とスケジュール。
+background_review: セッション後の非同期振り返りと人物像更新の設定。
 rag: 検索拡張生成と記憶検索の設定。
 gpu: GPU 利用とデバイス選択の設定。
 memory: 記憶保存・検索の共通設定。

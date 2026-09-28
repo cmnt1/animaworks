@@ -49,6 +49,14 @@ def _reset_config_caches_for_unit_tests(
 
 
 @pytest.fixture(autouse=True)
+def _disable_unsolicited_background_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent unrelated unit tests from launching background LLM calls."""
+    from core.memory.maintenance import background_review
+
+    monkeypatch.setattr(background_review, "_review_config", lambda _anima_dir: None)
+
+
+@pytest.fixture(autouse=True)
 def _disable_skill_dense_embeddings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

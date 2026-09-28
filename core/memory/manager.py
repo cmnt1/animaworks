@@ -595,6 +595,36 @@ class MemoryManager:
         """Facade: FrontmatterService.write_knowledge_with_meta."""
         self._frontmatter.write_knowledge_with_meta(path, content, metadata)
 
+    def index_knowledge_file(self, path: Path, *, origin: str = "") -> None:
+        """Refresh RAG and sparse indexes after a knowledge write."""
+        self._rag.index_file(path, "knowledge", origin=origin)
+
+    def read_peer_profile(self, name: str, *, max_chars: int | None = None) -> str:
+        """Read a peer profile through the host deny-root policy."""
+        from core.memory.peer_profiles import peer_profile_path
+
+        path = peer_profile_path(self.anima_dir, name)
+        if path is None:
+            return ""
+        content = self._read(path)
+        return content[:max_chars] if max_chars is not None else content
+
+    def write_peer_profile(self, name: str, content: str, *, max_chars: int = 1500) -> Path:
+        """Atomically replace a safe peer profile without adding it to RAG."""
+        from core.memory.peer_profiles import peer_profile_path
+
+        path = peer_profile_path(self.anima_dir, name)
+        if path is None:
+            raise ValueError(f"Invalid peer profile name: {name!r}")
+        resolved = self._resolve_host_read_path(path)
+        if resolved is None or not resolved.is_relative_to((self.anima_dir / "peers").resolve()):
+            raise ValueError(f"Peer profile path is not writable: {name!r}")
+        content = content[: max(0, max_chars)].strip()
+        if not content:
+            raise ValueError("Peer profile content is empty")
+        atomic_write_text(resolved, content.rstrip() + "\n")
+        return resolved
+
     def read_knowledge_content(self, path: Path) -> str:
         """Facade: FrontmatterService.read_knowledge_content."""
         from core.memory.frontmatter import split_frontmatter

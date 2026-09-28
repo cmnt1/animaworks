@@ -497,6 +497,12 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
         return False
 
     try:
+        try:
+            from core.memory.maintenance.background_review import request_background_review
+
+            request_background_review(anima.anima_dir, "auto_compact")
+        except Exception:
+            logger.warning("Could not queue idle-compaction review for %s", anima.name)
         compaction_meta: dict[str, Any] = {
             "mode": mode,
             "thread_id": thread_id,

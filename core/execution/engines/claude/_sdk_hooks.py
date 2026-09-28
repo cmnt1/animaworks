@@ -529,6 +529,12 @@ def _build_pre_compact_hook(
             trigger,
             anima_dir.name,
         )
+        try:
+            from core.memory.maintenance.background_review import request_background_review
+
+            request_background_review(anima_dir, "auto_compact")
+        except Exception:
+            logger.warning("Could not queue pre-compaction review for %s", anima_dir.name)
 
         if session_stats is not None:
             estimated_tokens = (

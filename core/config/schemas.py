@@ -46,6 +46,7 @@ class AnimaModelConfig(BaseModel):
     speciality: str | None = None
     model: str | None = None
     heartbeat_enabled: bool | None = None
+    background_review_enabled: bool | None = None
     token_budget_monthly: int | None = None
     aliases: list[str] = []
     """Alternative names (e.g. Japanese) that resolve to this anima's canonical name."""
@@ -394,6 +395,18 @@ class PrimingConfig(BaseModel):
             trigger: settings.model_copy(deep=True) for trigger, settings in _DEFAULT_COMPACT_BACKGROUND_RECALL.items()
         }
     )
+
+
+class BackgroundReviewConfig(BaseModel):
+    """Limits for asynchronous post-session memory review."""
+
+    enabled: bool = True
+    chat_every_user_turns: int = Field(default=10, ge=1)
+    min_interval_minutes: int = Field(default=10, ge=0)
+    max_per_day: int = Field(default=24, ge=1)
+    max_input_bytes: int = Field(default=60 * 1024, ge=2048)
+    max_writes: int = Field(default=3, ge=0)
+    peer_profile_max_chars: int = Field(default=1500, ge=1)
 
 
 class ConsolidationConfig(BaseModel):
@@ -1327,6 +1340,7 @@ class AnimaWorksConfig(BaseModel):
     anima_defaults: AnimaDefaults = AnimaDefaults()
     animas: dict[str, AnimaModelConfig] = {}
     consolidation: ConsolidationConfig = ConsolidationConfig()
+    background_review: BackgroundReviewConfig = BackgroundReviewConfig()
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
@@ -1379,6 +1393,7 @@ __all__ = [
     "AnimaDefaults",
     "AnimaModelConfig",
     "AnimaWorksConfig",
+    "BackgroundReviewConfig",
     "BackgroundTaskConfig",
     "BackgroundToolConfig",
     "ChatworkToolConfig",

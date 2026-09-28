@@ -39,6 +39,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _request_background_review(anima_dir: Path, trigger: str) -> None:
+    try:
+        from core.memory.maintenance.background_review import request_background_review
+
+        request_background_review(anima_dir, trigger)
+    except Exception:
+        logger.warning("Could not queue background review (%s)", trigger)
+
+
 class TaskExecError(RuntimeError):
     """Raised when a TaskExec LLM session encounters a non-recoverable error."""
 
@@ -1065,6 +1074,7 @@ class PendingTaskExecutor:
                 meta={**task_meta, "status": "cancelled"},
                 safe=True,
             )
+            _request_background_review(self._anima_dir, "task_end")
             raise
         except Exception as exc:
             error = str(exc).strip()[:200] or type(exc).__name__
@@ -1080,6 +1090,7 @@ class PendingTaskExecutor:
                 },
                 safe=True,
             )
+            _request_background_review(self._anima_dir, "task_end")
             raise
 
         status = {
@@ -1093,6 +1104,7 @@ class PendingTaskExecutor:
             ctx=trigger,
             meta={**task_meta, "status": status, "result": result[:200]},
         )
+        _request_background_review(self._anima_dir, "task_end")
         return result
 
     def _task_model_config_override(self, task_desc: dict[str, Any]) -> Any:
