@@ -1,61 +1,54 @@
 ---
 name: discord-tool
 description: >-
-  Discord integration tool for messaging, search, guild and channel listing, and reactions.
-  Use when: posting to Discord, listing channels, searching messages, or adding reactions in guilds.
+  Discord integration tool. Sends and receives messages, performs searches, lists guilds and channels, and manages reactions.
+  Use when: Use when: you need to send messages on Discord, list channels, search within a server, react to messages, or check threads.
 tags: [communication, discord, external]
 ---
 
+
 # Discord Tool
 
-External tool for Discord messaging, search, listing guilds and channels, and reactions.
+An external tool for sending and receiving Discord messages, searching, listing servers/channels, and managing reactions.
 
-## Invocation via Bash
+## How to Invoke
 
-Use **Bash** with `animaworks-tool discord <subcommand> [args]`:
+**Bash**: Run with `animaworks-tool discord <サブコマンド> [引数]`
 
-```bash
-animaworks-tool discord guilds
-animaworks-tool discord channels GUILD_ID
-animaworks-tool discord send CHANNEL_ID MESSAGE [--reply-to MESSAGE_ID]
-animaworks-tool discord messages CHANNEL_ID [-n 20]
-animaworks-tool discord search KEYWORD [-c CHANNEL_ID] [-n 50]
-```
+## List of Actions
 
-## Actions
-
-### guilds — List servers (guilds)
+### guilds — List Servers
 ```bash
 animaworks-tool discord guilds
 ```
 
-### channels — List channels
+### channels — List Channels
 ```bash
 animaworks-tool discord channels GUILD_ID
 ```
-- `GUILD_ID`: Snowflake ID of the target guild (server), **required**
+- `GUILD_ID`: Snowflake ID of the target guild (server) (required)
 
-### send — Send message
+### send — Send Message
 ```bash
 animaworks-tool discord send CHANNEL_ID MESSAGE [--reply-to MESSAGE_ID]
 ```
-- `CHANNEL_ID`: Snowflake ID of the target text channel
-- `--reply-to`: Optional. Message ID to reply to
+- `CHANNEL_ID`: Snowflake ID of the destination text channel
+- `--reply-to`: Optional. Reply-to message ID
 
-### messages — Fetch messages
+### messages — Fetch Messages
 ```bash
 animaworks-tool discord messages CHANNEL_ID [-n 20]
 ```
 
-### search — Search messages
+### search — Search Messages
 ```bash
 animaworks-tool discord search KEYWORD [-c CHANNEL_ID] [-n 50]
 ```
 
-### react — Add reaction (MCP only; not available via CLI)
-- Add an emoji reaction to a message. **MCP only**; the CLI does not support this action.
+### react — Add Reaction (MCP only, not available in CLI)
+- Adds an emoji reaction. **MCP only**. Not available in the CLI.
 
-## CLI usage (consolidated)
+## CLI Usage
 
 ```bash
 animaworks-tool discord guilds
@@ -67,8 +60,8 @@ animaworks-tool discord search KEYWORD [-c CHANNEL_ID] [-n 50]
 
 ## Notes
 
-- Discord Bot Token must be configured in credentials beforehand
-- Copy channel IDs with Developer Mode: right-click the channel → Copy ID
-- Messages are limited to 2000 characters
-- Guild, channel, and message IDs are numeric strings (Snowflake IDs)
-- The bot needs appropriate permissions: Send Messages, Read Message History, Add Reactions, View Channels
+- The Discord Bot Token must be pre-configured in credentials
+- To get a channel ID, right-click in Discord's developer mode and select "Copy ID"
+- Messages have a 2000-character limit
+- Guild IDs, channel IDs, and message IDs are all numeric strings (Snowflake IDs)
+- The bot needs the required permissions (Send Messages, Read Message History, Add Reactions, View Channels)

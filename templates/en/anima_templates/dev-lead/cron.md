@@ -1,26 +1,26 @@
-# Cron: Dev Lead (PdM)
+# Cron: Development Lead (PdM)
 
-## Morning stand-up
+## Morning Stand-up
 schedule: 0 9 * * *
 type: llm
-Review the team's status and decide today's task allocation.
-- Check for new issues and tasks
-- Understand each member's current workload
-- Assign tasks based on priority and each member's strengths
+Check the team's status and decide today's task allocation.
+- Review newly arrived issues and tasks
+- Understand each member's current work status
+- Assign tasks based on priority and members' areas of expertise
 - Record the situation in state/daily_plan.md
 
-## Full PR patrol
+## All PR Review
 schedule: */15 * * * *
 type: llm
-Review all open PRs and determine what is missing to get each one merged.
-- Check each PR's CI status, review status, and whether it has conflicts
-- Re-delegate or escalate any PR that has stalled
-- Only treat PRs that pass the quality gate (review complete and CI green) as merge candidates
+Review all open PRs and determine what is currently missing to reach merge.
+- Check each PR's CI status, review status, and whether there are conflicts
+- If a PR is stalled, re-delegate or escalate it to the person in charge
+- Only PRs that meet the quality gates (review complete and CI green) are merge candidates
 
-## Weekly progress review
+## Weekly Progress Review
 schedule: 0 17 * * 5
 type: llm
-Look back at the week's development results and extract lessons.
-- Evaluate the quality of completed tasks and record team improvement points
-- Detect technical debt and recurring problems, and plan countermeasures
-- Fold the results into knowledge/ and send a weekly report to your supervisor
+Reflect on this week's development results and extract lessons learned.
+- Evaluate the quality of completed tasks and record improvement points for the team
+- Detect technical debt and recurring issues, and plan countermeasures
+- Integrate the results into knowledge/ and send a weekly report to the supervisor

@@ -138,8 +138,12 @@ _HEADING_EXEMPT = {
     ],
 )
 def test_ko_markdown_has_heading(rel_path: str) -> None:
+    heading_prefixes = ("## ", "### ", "#### ", "##### ", "###### ")
+    ja_text = (_JA_DIR / rel_path).read_text(encoding="utf-8")
+    if not any(line.startswith(heading_prefixes) for line in ja_text.splitlines()):
+        pytest.skip("ja source has no ## headings")
     text = (_KO_DIR / rel_path).read_text(encoding="utf-8")
-    assert any(line.startswith(("## ", "### ", "#### ", "##### ", "###### ")) for line in text.splitlines()), (
+    assert any(line.startswith(heading_prefixes) for line in text.splitlines()), (
         f"{rel_path} has no ## or deeper headings"
     )
 

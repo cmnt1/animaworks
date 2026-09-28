@@ -1,5 +1,5 @@
-Report usefulness of a knowledge file.
-Always report after using knowledge from search_memory or Priming:
-- Accurate and helpful → success=true
-- Inaccurate, stale, or irrelevant → success=false + notes with issues
-Data feeds forgetting and quality. Unreported knowledge cannot be evaluated.
+Report the usefulness of knowledge files.
+After actually using knowledge obtained via search_memory or Priming, always report:
+- Knowledge was accurate and useful → success=true
+- Knowledge was inaccurate, outdated, or irrelevant → success=false + record the issue in notes
+Report data is used for active forgetting and maintaining knowledge quality. Unreported knowledge cannot be quality-assessed.

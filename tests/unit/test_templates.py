@@ -101,7 +101,7 @@ class TestActionRulesGuideTemplate:
             assert "trigger_tools" in content
             assert "read_memory_file(path=" in content
             assert "0.80" in content
-            assert "fail-open" in content
+            assert "fail-open" in content or "fail open" in content
             assert "slack_post" not in content
             for tool in required_tools:
                 assert f"`{tool}`" in content, f"{locale} action-rules-guide missing {tool}"

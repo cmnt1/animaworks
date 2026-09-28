@@ -1,2 +1,2 @@
-## In progress (current_state.md) — check before determining idle, then continue from where it stopped
+## In Progress (current_state.md) — Check before determining idle, and resume from where you left off
 {state}

@@ -1,56 +1,57 @@
 ---
 name: google-calendar-tool
 description: >-
-  Google Calendar integration tool for listing and creating events via OAuth2 Calendar API access.
-  Use when: checking upcoming events, creating appointments, or updating your schedule.
+  A Google Calendar integration tool. It retrieves and creates event lists via the Calendar API using OAuth2.
+  Use when: Use when: checking schedules, creating new events, modifying schedules, or needing calendar synchronization.
 tags: [calendar, google, schedule, external]
 ---
 
+
 # Google Calendar Tool
 
-External tool for Google Calendar event management via OAuth2 API access.
+An external tool that directly operates Google Calendar events via OAuth2.
 
-## Invocation via Bash
+## How to Invoke
 
-Use **Bash** with `animaworks-tool google_calendar <subcommand> [args]`. See Actions below for syntax.
+**Bash**: Run with `animaworks-tool google_calendar <サブコマンド> [引数]`
 
-## Actions
+## List of Actions
 
-### list — List upcoming events
-```json
-{"tool_name": "google_calendar", "action": "list", "args": {"max_results": 20, "days": 7, "calendar_id": "primary"}}
+### list — Retrieve Event List
+```bash
+animaworks-tool google_calendar list [-n 20] [-d 7] [--calendar-id primary]
 ```
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| max_results | integer | 20 | Maximum events to return |
-| days | integer | 7 | Number of days ahead to search |
+|-----------|-----|-----------|------|
+| max_results | integer | 20 | Maximum number of results to retrieve |
+| days | integer | 7 | How many days ahead to retrieve |
 | calendar_id | string | "primary" | Calendar ID |
 
-### add — Create new event
-```json
-{"tool_name": "google_calendar", "action": "add", "args": {"summary": "Meeting", "start": "2026-03-04T10:00:00Z", "end": "2026-03-04T11:00:00Z", "description": "Weekly standup", "location": "Room A"}}
+### add — Add Event
+```bash
+animaworks-tool google_calendar add "会議" --start 2026-03-04T10:00:00+09:00 --end 2026-03-04T11:00:00+09:00
 ```
 
 | Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+|-----------|-----|------|------|
 | summary | string | Yes | Event title |
-| start | string | Yes | Start time (ISO8601 or YYYY-MM-DD for all-day) |
-| end | string | Yes | End time (ISO8601 or YYYY-MM-DD for all-day) |
-| description | string | No | Event description |
-| location | string | No | Event location |
+| start | string | Yes | Start time (ISO8601 or YYYY-MM-DD) |
+| end | string | Yes | End time (ISO8601 or YYYY-MM-DD) |
+| description | string | No | Detailed description |
+| location | string | No | Location |
 | calendar_id | string | No | Calendar ID (default: primary) |
 | attendees | array | No | List of attendee email addresses |
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
 animaworks-tool google_calendar list [-n 20] [-d 7] [--calendar-id primary]
-animaworks-tool google_calendar add "Meeting" --start 2026-03-04T10:00:00Z --end 2026-03-04T11:00:00Z
+animaworks-tool google_calendar add "会議" --start 2026-03-04T10:00:00+09:00 --end 2026-03-04T11:00:00+09:00
 ```
 
 ## Notes
 
-- OAuth2 authentication flow required on first use
-- Place credentials.json at ~/.animaworks/credentials/google_calendar/
-- For all-day events, use YYYY-MM-DD format for start/end
+- OAuth2 authentication flow is required on first use
+- Place credentials.json in ~/.animaworks/credentials/google_calendar/
+- For all-day events, specify start/end in YYYY-MM-DD format

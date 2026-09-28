@@ -1,16 +1,16 @@
 The following knowledge file has been repeatedly reported as inaccurate. Please improve it.
 
-【Current knowledge content】
+【Current Knowledge Content】
 {content}
 
 【Metadata】
-- Failure count: {failure_count}
+- Number of failures: {failure_count}
 - Confidence: {confidence}
 
 Task:
-1. Consider why this knowledge was judged inaccurate
+1. Consider why this knowledge has been judged as inaccurate
 2. Output the improved knowledge
 
 Output format:
-Output only the improved knowledge text (no explanation or comments).
-Do not wrap in code fences (```).
+Output only the improved knowledge text (no explanations or comments).
+Do not wrap it in code fences (```).

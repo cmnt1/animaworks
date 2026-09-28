@@ -1,310 +1,477 @@
 ---
 name: animaworks-guide
 description: >-
-  animaworks CLI 완전 레퍼런스. 서버·Anima·모델·태스크·설정·RAG·에셋·외부 도구 호출 구문을 정리한다.
-  Use when: 서브커맨드 확인, 서버 시작·중지, Anima 생성·모델 변경·태스크·로그·설정·인덱스 조작이 필요할 때.
+  animaworks 명령어의 완전한 참조. 서버 조작·Anima 관리·모델·작업·설정·RAG·자산·외부 도구의 CLI 형식을 정리한다.
+  Use when: 서브커맨드 형식 확인, 서버 시작 종료, Anima 생성·모델 변경·작업 추가·로그·설정·인덱스 조작이 필요할 때.
 ---
 
-# AnimaWorks CLI 완전 레퍼런스
 
-AnimaWorks의 모든 조작은 `animaworks` 커맨드로 수행합니다.
-이 스킬은 모든 서브커맨드의 구문, 인수, 예시를 정리한 레퍼런스입니다.
+# AnimaWorks CLI 완전 참조
 
-운용 개념 및 규칙은 `common_knowledge/`를 참조하세요:
+AnimaWorks의 모든 조작은 `animaworks` 명령어로 수행한다.
+이 스킬은 모든 서브커맨드의 형식·인수·구체적인 예를 정리한 참조.
+
+운용의 사고방식이나 규칙은 `common_knowledge/` 및 `reference/`를 참조:
 - 메시징 규칙 → `communication/messaging-guide.md`
-- 태스크 관리 → `operations/task-management.md`
+- 작업 관리 → `operations/task-management.md`
 - 도구 체계 → `operations/tool-usage-overview.md`
 - 조직 구조 → `reference/organization/structure.md`
-- 모델 선택 및 설정 → `reference/operations/model-guide.md`
+- 모델 선택·설정 → `reference/operations/model-guide.md`
 
 ---
 
-## 서버 조작 (기본적으로 사용하지 않는 것을 권장)
+## 비권장·호환 별칭
 
 ```bash
-animaworks start                         # 서버 시작 (기본값: 0.0.0.0:18500)
-animaworks start --port 8080             # 포트 지정
-animaworks start --foreground            # 포그라운드 모드 (디버깅용)
-animaworks stop                          # 서버 중지
-animaworks restart                       # 서버 재시작
-animaworks status                        # 시스템 상태 확인 (프로세스, Anima 목록)
-animaworks reset                         # 런타임 디렉토리 삭제 + 재초기화
-animaworks reset --restart               # 리셋 후 서버 자동 시작
+# --local（deprecated: ProcessSupervisor をバイパスする直接実行。HTTP API 経由が推奨）
+animaworks chat {名前} "..." --local
+animaworks heartbeat {名前} --local
+```
+
+권장: `animaworks start`(또는 `serve`)로 서버를 시작하고, `--local`를 붙이지 않고 `chat` / `heartbeat`를 사용한다.
+
+`gateway` / `worker` 서브커맨드는 숨겨진 호환용(분산 아키텍처 폐지 후에는 사용하지 않음).
+
+---
+
+## 서버 조작(기본적으로 사용하지 않을 것)
+
+```bash
+animaworks start                         # サーバー起動（デフォルト: 0.0.0.0:18500）
+animaworks serve                         # start のエイリアス
+animaworks start --host 127.0.0.1        # バインドアドレス指定
+animaworks start --port 8080             # ポート指定
+animaworks start --foreground            # フォアグラウンド起動（-f、デバッグ用）
+animaworks stop                          # サーバー停止
+animaworks stop --force                  # 強制停止（SIGTERM後SIGKILL、孤立プロセスも終了）
+animaworks restart                       # サーバー再起動（--host / --port / -f / --force 可）
+animaworks restart --force               # 強制停止してから再起動
+animaworks status                        # システム状態確認（プロセス・Anima一覧）
+animaworks reset                         # ランタイムディレクトリ削除＋再初期化
+animaworks reset --restart               # リセット後サーバー自動起動
 ```
 
 ---
 
-## Anima 관리 (anima 서브커맨드)
+## Anima 관리(anima 서브커맨드)
 
-### 목록, 상태, 상세 정보
+### 목록·상태·상세 정보
 
 ```bash
-animaworks anima list                    # 전체 Anima 목록 (이름, 활성/비활성, 모델, supervisor)
-animaworks anima list --local            # API 미사용, 파일 시스템 직접 스캔
-animaworks anima status                  # 전체 Anima 프로세스 상태 (State, Model, PID, Uptime)
-animaworks anima status {name}           # 특정 Anima 프로세스 상태
-animaworks anima info {name}             # 설정 상세 (모델, 역할, credential, voice 등)
-animaworks anima info {name} --json      # JSON 출력
+animaworks anima list                    # 全Anima一覧（名前・有効/無効・モデル・supervisor）
+animaworks anima list --local            # API不使用・ファイルシステム直接スキャン
+animaworks anima status                  # 全Animaのプロセス状態（State・モデル・PID・Uptime）
+animaworks anima status {名前}           # 特定Animaのプロセス状態
+animaworks anima info {名前}             # 設定詳細（モデル・ロール・credential・voice等）
+animaworks anima info {名前} --json      # JSON出力
+animaworks anima permissions {名前}      # ツール許可を表示（load_permissions: JSON 優先、レガシーは permissions.md）
 ```
 
-`anima info` 출력 항목:
-- Anima 이름, Enabled, Role, Model, Execution Mode
-- Credential, Fallback Model, Max Turns, Max Chains
-- Context Threshold, Max Tokens, LLM Timeout
-- Thinking 설정, Supervisor, Mode S Auth
-- Voice 설정 (tts_provider, voice_id, speed, pitch)
+`anima info`의 출력 항목:
+- Anima 이름, Enabled, Role, Model, Execution Mode(내장 라벨은 S/C/D/G/X/A）
+- Credential, Fallback Model, Context Threshold, Max Tokens, Thinking / Thinking Effort, Supervisor, Mode S Auth
+- Voice 설정(tts_provider, voice_id, speed, pitch 등, status.json의 voice 사전을 열거)
 
 ### 생성
 
 ```bash
-# 캐릭터 시트(MD)에서 생성 (권장)
-animaworks anima create --from-md {file} [--role {role}] [--name {name}]
+# キャラクターシート（MD）から作成（推奨）
+animaworks anima create --from-md {ファイル} [--role {role}] [--name {名前}]
 
-# 템플릿에서 생성
-animaworks anima create --template {template_name} [--name {name}]
+# テンプレートから作成
+animaworks anima create --template {テンプレート名} [--name {名前}]
 
-# 빈 상태로 생성
-animaworks anima create --name {name}
+# ブランク作成
+animaworks anima create --name {名前}
 ```
 
-### 활성화, 비활성화, 삭제
+### 활성화·비활성화·삭제
 
 ```bash
-animaworks anima enable {name}           # 활성화 (일시 정지에서 복귀)
-animaworks anima disable {name}          # 비활성화 (일시 정지)
-animaworks anima delete {name}           # 삭제 (ZIP 아카이브 후)
-animaworks anima delete {name} --no-archive  # 아카이브 없이 삭제
-animaworks anima delete {name} --force   # 확인 없이 삭제
-animaworks anima restart {name}          # 프로세스 재시작
-animaworks anima audit {name}            # 부하의 최근 활동 포괄 감사 (기본값: 1일)
-animaworks anima audit {name} --days 7   # 최근 7일 감사
+animaworks anima enable {名前}           # 有効化（休養から復帰）
+animaworks anima disable {名前}          # 無効化（休養）
+animaworks anima delete {名前}           # 削除（ZIPアーカイブ後）
+animaworks anima delete {名前} --no-archive  # アーカイブなしで削除
+animaworks anima delete {名前} --force   # 確認なしで削除
+animaworks anima restart {名前}          # プロセス再起動
+```
+
+### 활동 감사(audit)
+
+대상 Anima의 `activity_log`을 읽는다(도움말 문구는 subordinate지만, 이름을 지정하면 임의의 Anima로 가능).
+
+```bash
+animaworks anima audit {名前}            # 活動監査（デフォルト: report モード・直近1日）
+animaworks anima audit {名前} --days 7   # 集計日数（最大30）
+animaworks anima audit --all             # 全Animaを対象（タイムラインをマージ）
+animaworks anima audit {名前} --since 09:00   # 当日 JST の時刻以降（指定時は --days より優先）
+animaworks anima audit {名前} --mode summary  # 統計サマリー（省略時は report＝時系列）
 ```
 
 ### 모델 변경
 
 ```bash
-animaworks anima set-model {name} {model_name}
-animaworks anima set-model {name} {model_name} --credential {credential_name}
-animaworks anima set-model --all {model_name}   # 전체 Anima 일괄 변경
+animaworks anima set-model {名前} {モデル名}
+animaworks anima set-model {名前} {モデル名} --credential {credential名}
+animaworks anima set-model --all {モデル名}   # 全Anima一括変更
 ```
 
-서버가 실행 중인 경우 `anima restart {name}`이 필요합니다.
+변경 후 서버가 시작 중이면 `anima restart {名前}`이 필요.
+
+### 백그라운드 모델(Heartbeat/Cron용)
+
+```bash
+animaworks anima set-background-model {名前} {モデル名}   # Heartbeat・Cron用モデルを設定
+animaworks anima set-background-model {名前} {モデル名} --credential {credential名}
+animaworks anima set-background-model {名前} --clear    # オーバーライド解除（メインモデルにフォールバック）
+animaworks anima set-background-model --all --clear     # 有効な全Animaの background を一括クリア
+animaworks anima set-background-model --all {モデル名}   # 有効な全Anima一括（モデルは位置引数でも可: `{モデル} --all`）
+```
+
+### 아웃바운드 제한
+
+```bash
+animaworks anima set-outbound-limit {名前} --per-hour 30 --per-day 100   # 送信レート制限
+animaworks anima set-outbound-limit {名前} --per-run 5                  # 1 runあたりの宛先数
+animaworks anima set-outbound-limit {名前} --clear                      # ロールデフォルトに戻す
+```
+
+### 이름 변경
+
+```bash
+animaworks anima rename {旧名前} {新名前}
+animaworks anima rename {旧名前} {新名前} --force   # 確認なしで実行
+```
 
 ### 역할 변경
 
 ```bash
-# 역할 변경 (템플릿 재적용 + 자동 restart)
-animaworks anima set-role {name} {role}
+# ロール変更（テンプレート再適用 + 自動restart）
+animaworks anima set-role {名前} {role}
 
-# status.json의 role 필드만 변경 (템플릿 미변경)
-animaworks anima set-role {name} {role} --status-only
+# status.jsonのroleフィールドのみ変更（テンプレートは触らない）
+animaworks anima set-role {名前} {role} --status-only
 
-# 파일 업데이트만, 재시작 없음
-animaworks anima set-role {name} {role} --no-restart
+# ファイル更新のみ・再起動しない
+animaworks anima set-role {名前} {role} --no-restart
 ```
 
-set-role로 자동 업데이트되는 파일:
-- `status.json` — role, model, max_turns를 역할 템플릿의 기본값으로 업데이트
-- `specialty_prompt.md` — 역할별 전문 가이드라인으로 교체
-- `permissions.json` — 역할별 도구 및 커맨드 허용 범위로 교체
+set-role로 자동 업데이트되는 파일(`--status-only` 외):
+- `status.json` — role 및 역할 `defaults.json` 유래의 model / context_threshold / conversation_history_threshold 등을 병합
+- `specialty_prompt.md` — 역할 템플릿에서 덮어쓰기
+- `permissions.json` — 역할 템플릿에서 덮어쓰기(기존의 `permissions.md`은 로드 시 JSON으로 이관될 수 있음)
 
 유효한 역할: `engineer`, `researcher`, `manager`, `writer`, `ops`, `general`
 
 ### 핫 리로드
 
 ```bash
-animaworks anima reload {name}           # status.json에서 모델 설정 재로드 (프로세스 재시작 없음)
-animaworks anima reload --all            # 전체 Anima 리로드
+animaworks anima reload {名前}           # status.json からモデル設定を再読み込み（プロセス再起動なし）
+animaworks anima reload --all            # 全Animaをリロード
 ```
 
 ---
 
-## 모델 정보 (models 서브커맨드)
+## 모델 정보(models 서브커맨드)
 
 ```bash
-animaworks models list                   # 알려진 모델 목록 (이름, 실행 모드, 컨텍스트 윈도우, 설명)
-animaworks models list --mode S          # 실행 모드로 필터 (S/A/B/C)
-animaworks models list --json            # JSON 출력
-animaworks models info {model_name}      # 특정 모델의 해석 정보 (실행 모드, 컨텍스트 윈도우, 임계값, 소스)
-animaworks models show                   # models.json의 현재 내용 표시
-animaworks models show --json            # 원시 JSON 출력
+animaworks models                        # サブコマンド一覧（help）
+animaworks models list                   # 組み込みカタログ（KNOWN_MODELS）: 名前・モード・コンテキスト・注記
+animaworks models list --mode S          # モードでフィルタ（CLI の choices は S / A / B / C のみ・大文字小文字可）
+animaworks models list --json            # JSON出力
+animaworks models info {モデル名}        # 任意モデル名の解決結果（実行モード・コンテキスト窓・閾値・ソース）
+animaworks models show                   # ~/.animaworks/models.json のパターン一覧
+animaworks models show --json            # models.json を生JSON出力
 ```
+
+`models list`에 없는 모델(예: `cursor/*`, `gemini/*`)은 `models info <名前>`와 `models.json`로 확인한다.
 
 상세 → `reference/operations/model-guide.md`
 
 ---
 
-## 채팅 및 메시징
+## 채팅·메시징
 
 ```bash
-# Anima와 채팅 (사람 → Anima)
-animaworks chat {name} "메시지"
-animaworks chat {name} "메시지" --from {sender_name}
-animaworks chat {name} "메시지" --local  # API 미사용, 직접 실행
+# Animaとチャット（人間→Anima）
+animaworks chat {名前} "メッセージ"
+animaworks chat {名前} "メッセージ" --from {送信者名}
+animaworks chat {名前} "メッセージ" --local  # deprecated（ヘルプ参照）
 
-# Anima 간 메시지 전송
-animaworks send {sender} {recipient} "메시지"
-animaworks send {sender} {recipient} "메시지" --intent report
-animaworks send {sender} {recipient} "메시지" --intent question
-animaworks send {sender} {recipient} "메시지" --reply-to {message_id}
-animaworks send {sender} {recipient} "메시지" --thread-id {thread_id}
+# Anima間メッセージ送信
+animaworks send {送信者} {受信者} "メッセージ"
+animaworks send {送信者} {受信者} "メッセージ" --intent report   # report / delegation / question または省略（空）
+animaworks send {送信者} {受信者} "メッセージ" --reply-to {メッセージID}
+animaworks send {送信者} {受信者} "メッセージ" --thread-id {スレッドID}
 
-# heartbeat 수동 트리거
-animaworks heartbeat {name}
-animaworks heartbeat {name} --local      # API 미사용, 직접 실행
+# ハートビート手動起動
+animaworks heartbeat {名前}
+animaworks heartbeat {名前} --local      # deprecated（ヘルプ参照）
 ```
 
 ---
 
-## Board (공유 채널)
+## Board(공유 채널)
 
 ```bash
-animaworks board read {channel}                         # 채널 메시지 읽기
-animaworks board read {channel} --limit 50              # 최대 건수 지정
-animaworks board read {channel} --human-only            # 사람의 메시지만
-animaworks board post {sender} {channel} "텍스트"       # 채널에 게시
-animaworks board dm-history {self} {peer}               # DM 히스토리 조회
-animaworks board dm-history {self} {peer} --limit 50    # 건수 지정
+animaworks board read {チャネル名}                      # チャネル読み取り（デフォルト --limit 20）
+animaworks board read {チャネル名} --limit 50           # 最大件数
+animaworks board read {チャネル名} --human-only         # 人間の投稿のみ
+animaworks board post {送信者} {チャネル名} "テキスト"  # チャネルへ投稿
+animaworks board dm-history {自分} {相手}               # DM履歴（デフォルト --limit 20）
+animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
 ```
 
 ---
 
-## 설정 관리 (config 서브커맨드)
+## 설정 관리(config 서브커맨드)
 
 ```bash
-animaworks config list                   # 전체 설정값 목록
-animaworks config list --section system  # 섹션으로 필터
-animaworks config list --show-secrets    # API 키 값 표시
-animaworks config get {key}              # 특정 설정값 조회 (도트 표기법: system.log_level)
-animaworks config get {key} --show-secrets
-animaworks config set {key} {value}      # 설정값 변경
-animaworks config export-sections        # 템플릿 파일로 내보내기
-animaworks config export-sections --dry-run
+animaworks config                        # ヘルプ表示（子コマンドまたは -i が無い場合）
+animaworks config -i                     # 対話式ウィザード（credential・Anima設定）
+animaworks config list                   # 全設定値の一覧表示
+animaworks config list --section system  # セクションでフィルタ（例: system, credentials）
+animaworks config list --show-secrets    # API keyを表示
+animaworks config get {キー}             # 特定の設定値取得（ドット記法: system.log_level）
+animaworks config get {キー} --show-secrets
+animaworks config set {キー} {値}        # 設定値を変更
+```
+
+**주의**: Anima의 모델·credential 등은 `status.json`이 SSoT. `animas.{名前}.model` 등의 직접 설정은 비권장. `animaworks anima set-model`을 사용할 것.
+
+---
+
+## 프로필(profile 서브커맨드·멀티테넌트)
+
+복수의 AnimaWorks 인스턴스(별도 데이터 디렉터리)를 관리한다.
+
+```bash
+animaworks profile list                  # 全プロファイル一覧（data_dir・port・状態）
+animaworks profile add {名前}             # プロファイル登録（data_dir: ~/.animaworks/{名前}）
+animaworks profile add {名前} --data-dir /path/to/data --port 18510
+animaworks profile remove {名前}         # 登録解除（データは残る）
+animaworks profile start {名前}          # そのプロファイルのサーバー起動
+animaworks profile stop {名前}           # そのプロファイルのサーバー停止
+animaworks profile stop {名前} --force   # 強制停止
+animaworks profile start-all             # 全プロファイルを起動
+animaworks profile stop-all              # 全プロファイルを停止
+animaworks profile stop-all --force      # 強制停止で全停止
 ```
 
 ---
 
-## 로그 조회 (logs)
+## 로그 열람(logs)
 
 ```bash
-animaworks logs {name}                   # 특정 Anima 로그 표시
-animaworks logs --all                    # 서버 + 전체 Anima 로그 표시
-animaworks logs {name} --lines 100       # 표시 행수 지정 (기본값: 50)
-animaworks logs {name} --date 20260301   # 특정 날짜 로그 표시
+animaworks logs {名前}                   # 特定Animaのログ表示
+animaworks logs --all                    # サーバー＋全Animaのログ表示
+animaworks logs {名前} --lines 100       # 表示行数指定（デフォルト: 50）
+animaworks logs {名前} --date 20260301   # 特定日のログ表示
 ```
 
 ---
 
-## 비용 확인 (cost)
+## 비용 확인(cost)
 
 ```bash
-animaworks cost                          # 전체 Anima 토큰 사용량 및 비용
-animaworks cost {name}                   # 특정 Anima 비용
-animaworks cost --today                  # 오늘만
-animaworks cost --days 7                 # 최근 7일 (기본값: 30일)
-animaworks cost --json                   # JSON 출력
+animaworks cost                          # 全Animaのトークン使用量・コスト
+animaworks cost {名前}                   # 特定Animaのコスト
+animaworks cost --today                  # 本日のみ
+animaworks cost --days 7                 # 直近7日（デフォルト: 30日）
+animaworks cost --json                   # JSON出力
 ```
 
 ---
 
-## 태스크 관리 (task 서브커맨드)
+## 작업 관리(task 서브커맨드)
+
+**전제**: 실행 전에 `ANIMAWORKS_ANIMA_DIR`을 대상 Anima의 디렉터리(예: `~/.animaworks/animas/{名前}`)에 설정할 것. 미설정이면 오류가 된다(Anima 자식 프로세스 내의 `animaworks-tool task`이나, 셸에서 변수를 부여한 `animaworks task`가 예상 용도).
 
 ```bash
-animaworks task list                     # 태스크 목록
-animaworks task list --status pending    # 상태로 필터 (pending/in_progress/done/cancelled)
-animaworks task add --assignee {name} --instruction "태스크 설명"
-animaworks task add --assignee {name} --instruction "설명" --source human
-animaworks task update --task-id {id} --status done
-animaworks task update --task-id {id} --status done --summary "완료 요약"
+animaworks task list                     # タスク一覧（JSON）
+animaworks task list --status pending    # ステータスでフィルタ（pending/in_progress/done/cancelled）
+animaworks task add --assignee {名前} --instruction "タスク内容"   # 既定 --source anima
+animaworks task add --assignee {名前} --instruction "内容" --source human
+animaworks task add ... --relay-chain alice,bob   # カンマ区切りリレー鎖（任意）
+animaworks task add ... --summary "1行要約"       # 省略時は instruction の先頭100文字
+animaworks task update --task-id {ID} --status done
+animaworks task update --task-id {ID} --status done --summary "完了サマリー"
 ```
 
 ---
 
 ## RAG 인덱스 관리
 
+의존: RAG 스택 미설치 시 `pip install 'animaworks[rag]'`이 필요(CLI가 오류를 표시하고 종료).
+
 ```bash
-animaworks index                         # 전체 Anima 인덱스 증분 업데이트
-animaworks index --anima {name}          # 특정 Anima만
-animaworks index --full                  # 전체 데이터 재인덱싱
-animaworks index --dry-run               # 변경 내용 확인만 (실행 안 함)
+animaworks index                         # 全Anima: knowledge/episodes/procedures/skills + state/conversation.json の要約
+                                         # + common_knowledge/common_skills（有効Animaごと）+ shared/users
+animaworks index --anima {名前}          # 当該Animaのみ（共有コレクション・shared/users はスキップ）
+animaworks index --anima {名前} --shared # 当該Animaのメモリに加え common_knowledge/common_skills も更新
+animaworks index --full                  # コレクション削除からの全再構築（埋め込みモデル変更・L2→cosine 移行時は必須）
+animaworks index --dry-run               # 確認のみ
+```
+
+- **conversation_summary**: `state/conversation.json`의 `compressed_summary`을 인덱스 대상에 포함(해당 파일이 있는 경우).
+- **L2 거리의 기존 컬렉션**: 서버 비가동으로 로컬 Chroma에 직접 접근하는 경우, `--full` 없이는 cosine 이행 경고가 나올 수 있음(메시지에 따라 `--full`를 실행).
+- **서버 시작 중**: `server.pid` 감지 시, CLI는 `ANIMAWORKS_VECTOR_URL` / `ANIMAWORKS_EMBED_URL`을 설정하여 HTTP 경유로 인덱스·임베딩을 수행하고, Chroma의 동시 접근 충돌을 피함.
+- **임베딩 모델**: `index_meta.json`의 기록과 설정이 다른 경우, `--full` 없이는 오류로 종료.
+
+---
+
+## 런타임 마이그레이션(migrate)
+
+```bash
+animaworks migrate                       # 未適用のマイグレーションを実行
+animaworks migrate --dry-run             # 変更プレビュー
+animaworks migrate --verbose             # ファイル単位の詳細
+animaworks migrate --list                # ステップ一覧と適用済みフラグ
+animaworks migrate --force               # 状態に関わらず再適用
+```
+
+실행 중인 서버가 있으면 경고가 나온다. `~/.animaworks/config.json`이 없으면 실패.
+
+---
+
+## 자산 조작
+
+### 자산 최적화
+
+```bash
+animaworks optimize-assets                              # assets/ を持つ全Anima（anim_*.glb ストリップ、avatar_chibi*.glb に Draco は既定で実行）
+animaworks optimize-assets --anima {名前}               # 特定Animaのみ（短縮形: -a {名前}）
+animaworks optimize-assets --dry-run                    # 確認のみ
+animaworks optimize-assets --all                        # 簡素化・テクスチャ処理・Draco 等をまとめて適用
+animaworks optimize-assets --simplify                   # メッシュ簡素化（既定比率 0.27 前後）
+animaworks optimize-assets --simplify 0.2              # 簡素化比率を数値で指定
+animaworks optimize-assets --texture-compress           # WebP 化（--texture-resize 省略時は 1024 相当の扱い）
+animaworks optimize-assets --texture-resize 512         # テクスチャ最大辺
+animaworks optimize-assets --skip-backup                # 実行前バックアップをスキップ
+```
+
+### 자산 재생성(Vibe Transfer)
+
+```bash
+animaworks remake-assets {名前} --style-from {参照Anima}   # 参照の fullbody を基準にスタイル転写
+# --steps: カンマ区切り。既定は全ステップ。候補:
+#   fullbody, bustup, icon, chibi, 3d, rigging, animations
+animaworks remake-assets {名前} --style-from {参照} --steps fullbody,icon
+animaworks remake-assets {名前} --style-from {参照} --prompt "..."   # prompt.txt の上書き
+animaworks remake-assets {名前} --style-from {参照} --vibe-strength 0.6
+animaworks remake-assets {名前} --style-from {参照} --vibe-info-extracted 0.8
+animaworks remake-assets {名前} --style-from {参照} --seed 42          # fullbody の再現性
+animaworks remake-assets {名前} --style-from {参照} --image-style anime|realistic
+animaworks remake-assets {名前} --style-from {参照} --dry-run
+animaworks remake-assets {名前} --style-from {参照} --no-backup
 ```
 
 ---
 
-## 에셋 조작
+## 외부 도구 실행(animaworks-tool)
 
-### 에셋 최적화
+Anima가 외부 서비스(Slack, Gmail, GitHub 등)를 사용하는 경우의 명령어.
 
-```bash
-animaworks optimize-assets                              # 전체 Anima 3D 에셋 최적화
-animaworks optimize-assets --anima {name}               # 특정 Anima만
-animaworks optimize-assets --dry-run                    # 확인만
-animaworks optimize-assets --simplify                   # 메시 단순화
-animaworks optimize-assets --texture-compress           # 텍스처 압축
-animaworks optimize-assets --texture-resize 512         # 텍스처 리사이즈
-```
-
-### 에셋 재생성
+첫 번째 인수가 등록된 도구 이름 또는 `submit`일 때, `animaworks`는 내부에서 `animaworks-tool`로 대체된다(예: `animaworks web_search query "..."`).
 
 ```bash
-animaworks remake-assets {name} --style-from {reference}   # 스타일 전이로 에셋 재생성
-animaworks remake-assets {name} --style-from {ref} --steps portrait,fullbody
-animaworks remake-assets {name} --style-from {ref} --dry-run
-animaworks remake-assets {name} --style-from {ref} --no-backup
+# ヘルプ表示
+animaworks-tool {ツール名} --help
+
+# 実行
+animaworks-tool {ツール名} {サブコマンド} [引数...]
+
+# バックグラウンド実行（長時間ツール向け）
+animaworks-tool submit {ツール名} {サブコマンド} [引数...]
 ```
 
----
-
-## 외부 도구 실행 (animaworks-tool)
-
-Anima가 외부 서비스(Slack, Gmail, GitHub 등)를 사용할 때의 커맨드입니다.
-
-```bash
-# 도움말 표시
-animaworks-tool {tool_name} --help
-
-# 실행
-animaworks-tool {tool_name} {subcommand} [args...]
-
-# 백그라운드 실행 (장시간 도구용)
-animaworks-tool submit {tool_name} {subcommand} [args...]
-```
-
-### 예시
+### 구체적인 예
 
 ```bash
 animaworks-tool web_search query "AnimaWorks framework"
-animaworks-tool slack send --channel "#general" --text "좋은 아침입니다"
+animaworks-tool slack send "#general" "おはようございます"   # gated: 明示的な許可が必要
 animaworks-tool github issues --repo owner/repo
 animaworks-tool submit image_gen pipeline "1girl, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 ```
 
-submit 상세 → `common_knowledge/operations/background-tasks.md`
+submit의 상세 → `common_knowledge/operations/background-tasks.md`
 
-### 백그라운드 태스크 확인 (Anima 내부 도구)
+**디렉터리 정리**
 
-submit으로 투입한 태스크의 진행 상황 확인에는 다음 내부 도구를 사용합니다:
-- `list_background_tasks` — 실행 중 및 완료된 태스크 목록
-- `check_background_task(task_id)` — 특정 태스크의 상태 및 결과 조회
+- **`state/background_tasks/`** — `submit` 유래의 비동기 작업 기술자(`pending` / `done` 등). `internal list-background-tasks` / `check-background-task`은 여기를 읽는다.
+- **`state/background_notifications/`** — 도구 완료 알림 등을 heartbeat가 흡수하는 용도(MCP·스케줄러 등이 쓰는 경로 있음). CLI의 `list-background-tasks`와는 별개.
 
-이들은 CLI 커맨드가 아닌 Anima가 대화 중 사용하는 MCP 도구입니다.
+### 자식 프로세스용 서브커맨드(internal / vault / supervisor)
+
+모두 **`ANIMAWORKS_ANIMA_DIR` 필수**(`task`와 동일). 최상위 `animaworks`에도 동일 이름의 서브커맨드가 등록되어 있음.
+
+**internal**
+
+```bash
+animaworks-tool internal archive-memory {相対パス}    # knowledge/ episodes/ procedures/ 以下のみ
+animaworks-tool internal check-permissions {ツール名} [アクション]
+# ※ permissions.json（external_tools の allow/deny と gated action）で判定。判定できないときは不許可として返る
+animaworks-tool internal create-skill {名前} [--content ...]   # 省略時は標準入力
+animaworks-tool internal manage-channel create|archive {チャネル名}
+animaworks-tool internal list-background-tasks
+animaworks-tool internal check-background-task {task_id}
+```
+
+**vault**(Anima 네임스페이스가 있는 KV)
+
+저장 위치는 「자신의 Anima 네임스페이스」와 「`shared` 섹션」의 2개. `shared`은 도구의 credential 해석(`get_credential`)이 읽는 곳으로, `--shared`를 붙여 쓴다. `get` / `list`은 미지정 시 자신의 네임스페이스 → `shared` 순서로 둘 다 본다.
+
+```bash
+animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
+animaworks-tool vault get {キー} --shared     # shared のみ
+animaworks-tool vault store {キー} {値}       # 自分の名前空間へ
+printf '%s' "{値}" | animaworks-tool vault store {キー} --shared   # shared へ（値は stdin 経由のみ）
+animaworks-tool vault list                    # {"namespace":..., "keys":[...], "shared":[...]}
+animaworks-tool vault list --shared           # shared のみ
+animaworks-tool vault delete {キー}           # 自分の名前空間から削除
+animaworks-tool vault delete {キー} --shared  # shared から削除
+```
+
+`delete`만은 캐스케이드하지 않음(`--shared` 없이 shared의 credential을 끌어들이지 않기 위해). 단회 사용 토큰처럼 「유효한 복제가 동시에 하나만 존재할 수 있는」 값은, 보관 위치를 한 곳으로 정해 분산시키지 않는다.
+
+**supervisor**(`ANIMAWORKS_ANIMA_DIR`의 Anima 이름을 기준으로, status.json의 supervisor 관계로 하위를 해결)
+
+```bash
+animaworks-tool supervisor org-dashboard
+animaworks-tool supervisor ping [--name {部下名}]    # 省略時は全配下
+animaworks-tool supervisor read-state {部下名}      # 位置引数（祖先関係チェックあり）
+animaworks-tool supervisor task-tracker [--status delegated]   # 既定 status=delegated（文字列でフィルタ）
+```
+
+### 백그라운드 작업 확인
+
+- 대화 중: MCP 도구 `list_background_tasks` / `check_background_task`
+- CLI: `animaworks-tool internal list-background-tasks` / `check-background-task {task_id}`(`ANIMAWORKS_ANIMA_DIR` 설정 하, `state/background_tasks/`)
 
 ---
 
-## 초기화 및 마이그레이션
+## 초기화·마이그레이션
 
 ```bash
-animaworks init                          # 런타임 디렉토리 초기화 (~/.animaworks/)
-animaworks init --force                  # 재초기화, 기존 설정 덮어쓰기
-animaworks init --skip-anima             # Anima 생성 건너뛰기
-animaworks migrate-cron                  # cron.md를 일본어 형식에서 표준 cron으로 변환
+animaworks init                          # ランタイムディレクトリ初期化（~/.animaworks/）
+animaworks init --force                  # 既存にテンプレート差分をマージ
+animaworks init --skip-anima             # インフラのみ初期化（Anima作成スキップ）
+animaworks init --template {名前}       # テンプレートからAnimaを非対話で作成
+animaworks init --from-md {PATH}         # MDファイルからAnimaを非対話で作成
+animaworks init --blank {名前}           # ブランクAnimaを非対話で作成
+animaworks init --from-md {PATH} --name {名前}  # 作成時の名前を上書き
+旧形式の cron.md はサーバ起動時と `animaworks migrate` で自動変換される。
 ```
+
+스키마 마이그레이션은 `animaworks migrate`(위)을 참조.
 
 ---
 
 ## 글로벌 옵션
 
 ```bash
-animaworks --gateway-url http://host:port {command}   # 서버 URL 지정
-animaworks --data-dir /path/to/data {command}         # 런타임 디렉토리 지정
+animaworks --gateway-url http://host:port {コマンド}   # API ベース URL（既定: http://localhost:18500）
+animaworks --data-dir /path/to/data {コマンド}         # ランタイムディレクトリ（~/.animaworks 相当）
 ```
+
+`--data-dir`은 서브커맨드 실행 전에 `ANIMAWORKS_DATA_DIR`로 반영된다.

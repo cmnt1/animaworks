@@ -1,8 +1,8 @@
-## Messaging
+## Message Sending
 
-**Recipients:** {animas_line}
+**Who can send to:** {animas_line}
 
-- `send_message(to, content, intent)` — intent: `report` | `question`. With intent → immediate, without → 30min check
-- `post_channel(channel, text)` — Board post. `@name` mention, `@all` everyone
-- `read_channel(channel)` / `read_dm_history(peer)` — read history
+- `send_message(to, content, intent)` — intent: `report` | `question`. With intent → immediate processing, without → 30-minute patrol
+- `post_channel(channel, text)` — Board post. `@名前` mention, `@all` everyone
+- `read_channel(channel)` / `read_dm_history(peer)` — history reference
 {board_channel_guidance}

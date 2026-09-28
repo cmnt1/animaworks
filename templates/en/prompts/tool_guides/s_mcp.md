@@ -1,4 +1,4 @@
-`[ACTION-RULE]` before sends/posts/notifications/memory writes: follow it; read named memory before retry. call_human, send_message, post_channel, write_memory_file, gmail_draft/send, chatwork_send, slack_send, discord_send.
-`send_message`: max 2 recipients/run, 1 each; intent required.
-Delegate via `delegate_task`; own work via Bash.
-Others (supervisor/vault/channel/background/external): `animaworks-tool <tool> <subcommand>`; help: `animaworks-tool --help`.
+If `[ACTION-RULE]` appears before sending, posting, notifying, or writing to memory, follow it. Read the specified `read_memory_file(path="...")` in the same session and execute after confirming. Targets: `call_human`, `send_message`, `post_channel`, `write_memory_file`, `gmail_draft/send`, `chatwork_send`, `slack_send`, `discord_send`.
+`send_message` allows a maximum of 2 destinations per run, 1 message each, with intent required.
+Delegation to subordinates is done via `delegate_task`; your own tasks are done directly with Bash.
+Others (supervisor, vault, channel, background, external tools) are handled via `animaworks-tool <tool> <subcommand>`. List: `animaworks-tool --help`.

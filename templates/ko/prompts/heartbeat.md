@@ -1,12 +1,12 @@
-하트비트입니다. 역할에 지정된 정기 확인을 수행하세요.
+하트비트입니다. 담당 정기 확인을 진행해 주세요.
 
 ## 확인 사항
 {checklist}
 
-미처리 요청, 이상 상황, 기한이 있는 작업에 필요한 조치를 선택하세요.
-- 자신의 실행은 `submit_tasks`, 위임은 `delegate_task`를 사용하세요. 추가 정보는 기존 작업 ID에 연결하고 중복을 만들지 마세요. 연락·승인은 `send_message` / `call_human`으로 하고 같은 내용을 모든 관리 계층에 전달하지 마세요.
-- 요청에 대응하거나 위임하거나, 대기 이유와 조건을 명시하세요.
-- `animaworks-tool task board`로 대장을 점검하고, 닫을지는 담당자가 현재 상황으로 판단하세요 (상세는 `read_memory_file(path="common_knowledge/operations/task-board-guide.md")`).
-- 미완료 실행 재개는 `submit_tasks`의 tasks에 `{{"task_id":"기존-ID","resume":true}}`를 지정하세요.
+처리되지 않은 요청·이상·마감일이 있는 작업에 필요한 대응을 선택하세요.
+- 실제 작업은 `submit_tasks`, 위임은 `delegate_task`. 기존 작업에 추가 정보는 기존 ID에 연결하고, 같은 내용의 작업을 새로 만들지 마세요. 사람에게 연락·승인은 `send_message` / `call_human`로 판단·대응이 필요한 상대에게 직접 보내고, 같은 내용을 전 계층으로 전송하지 마세요.
+- 받은 지침은 대응·위임·명시한 대기 사유 중 하나를 남기세요.
+- `animaworks-tool task board`로 자신의 장부를 정리하세요. 닫을지는 소유자가 현재 상황에서 판단하고, 작업 본문의 "취소 없음", "pending 유지" 등의 과거 지정보다 우선하세요. 스스로 진행할 수 없는 대기는 대기 사유와 해제 조건을 적어 `task cancel ID --reason 理由`(보류 장부가 있으면 거기에 1줄), 전제가 바뀌었거나 당분간 착수할 수 없는 것은 닫고 이후 확인은 하나의 집계 작업으로 모으고, 결론까지 끝난 것은 `task done ID --note 結果`. 위임한 쪽은 `--all`로 확인하고, 진행되지 않는 위임은 `task claim ID` → `task cancel`로 닫으세요.
+- 미완료 실행 알림은 완료된 작업·성과를 확인한 후 계속 여부를 판단하고, 계속은 `submit_tasks`의 tasks에 `{{"task_id":"既存ID","resume":true}}`(원래 입력은 저장됨). 필요 없으면 `update_task(status="cancelled", summary="理由")`.
 
-복구를 위한 순회나 전체 재제출은 불필요합니다. 필요한 절차·승인 조건은 참조해도 됩니다. 대응할 사항이 없으면 HEARTBEAT_OK만 반환하세요.
+수리 목적의 순회·일괄 재투입은 불필요합니다. 필요한 업무 절차·승인 조건은 참조하세요. 대응 사항이 없으면 HEARTBEAT_OK만 반환하세요.

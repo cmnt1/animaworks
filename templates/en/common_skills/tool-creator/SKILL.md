@@ -1,41 +1,51 @@
 ---
 name: tool-creator
 description: >-
-  Meta-skill for building AnimaWorks Python external tools: ExternalToolDispatcher, get_credential, and permissions.
-  Use when: adding a module under core/integrations, wrapping a Web API, or exposing commands via animaworks-tool.
+  A meta-skill for creating Python external tool modules for AnimaWorks.core/toolsHandles integration, get_credential, and permissions.
+  Use when: Use when: core/tools requires adding a new module, implementing a Web API wrapper, or developing a custom tool to be called from animaworks-tool.
 ---
+
 
 # tool-creator
 
-## Overview
+## 概要
 
-AnimaWorks tools are categorized into three types:
+AnimaWorksのツールは3種類に分かれる:
 
-| Type | Location | Discovery |
-|------|----------|-----------|
-| **Core tools** | `core/integrations/*.py` | `discover_core_tools()` → TOOL_MODULES (fixed at startup) |
-| **Shared tools** | `{data_dir}/common_tools/*.py` | discover_common_tools() |
-| **Personal tools** | `{anima_dir}/tools/*.py` | discover_personal_tools() |
+| 種類 | 配置先 | 発見方法 |
+|------|--------|----------|
+| **コアツール** | `core/integrations/*.py`（`_` 接頭辞のファイルは除外） | `discover_core_tools()` → `TOOL_MODULES`（パッケージ import） |
+| **共有ツール** | `{data_dir}/common_tools/*.py` | `discover_common_tools()` |
+| **個人ツール** | `{anima_dir}/tools/*.py` | `discover_personal_tools()` |
 
-`{data_dir}` is typically `~/.animaworks/`. Personal and shared tools are re-scanned by `ExternalToolDispatcher` via `refresh_tools` and can be hot-reloaded. ToolHandler checks the tool creation permission in permissions.json when writing to `tools/*.py` with `write_memory_file`.
+`{data_dir}` は通常 `~/.animaworks/`。
 
-Personal and shared tools are invoked via **Bash** with `animaworks-tool <tool> <subcommand> [args]`. Schema name format is `{tool_name}_{action}` (e.g., `my_tool` + `query` → `my_tool_query`).
+- **ディスパッチ**: `ExternalToolDispatcher` は `_DISPATCH_TABLE` を廃止し、各モジュールの `dispatch(name, args)`（またはスキーマ名と同名の関数）に統一している（`core/tooling/dispatch.py`）。
+- **マージ**: `AgentCore` 起動時の `_discover_personal_tools()` と `refresh_tools` はいずれも **共通→個人** の順でマージし、**個人が同名を上書き** する（`{**common, **personal}`）。マージ結果は `ExternalToolDispatcher` の `_personal_tools` に保持される（名前は historical だが **共通ツールも含む**）。
+- **コアとの衝突**: コア `TOOL_MODULES` と同名のファイルは、共通・個人の発見時に **スキップ** される（警告ログのみ）。
+- **ツールファイルの書き込み**: `write_memory_file` で `tools/*.py` に書くときは `permissions`（**`permissions.json` 優先**）の **tool_creation.personal** を満たす必要がある（`core/tooling/handler_memory.py`）。
+
+## Execution Path (How the LLM Calls It)
+
+| Mode | Typical Path |
+|--------|-----------|
+| **A (LiteLLM, etc.)** | Integrated tool **`use_tool(tool_name, action, args)`** → module's `dispatch` (`core/tooling/handler.py`). Details are designed so that each tool's skill is read via **`read_memory_file`** (`USE_TOOL` of `core/tooling/schemas/skill.py`). |
+| **S (Agent SDK)** | Via Claude Code's built-in **Bash** with `animaworks-tool <ツール> …`, or via MCP (only a curated subset is exposed to MCP; see "Adding Core Tools to the Repository" below). |
+| **Anthropic fallback, etc.** | `include_use_tool=False` configuration may exist in `build_tool_list` → externally, this assumes **Bash + animaworks-tool** or skills. |
+
+At startup, the merged map above is passed to `ToolHandler`, so common and personal tools placed **before process startup** are available from the beginning via `use_tool` / `ExternalToolDispatcher`. For **`.py` newly added during a session**, `use_tool` will not recognize the tool name unless a rescan is performed via `refresh_tools` (because the map is not updated).
 
 ## Procedure
 
-### Step 1: Design the Tool
+### Step 1: Tool Design
 
-1. Decide the tool name (snake_case, e.g., `my_api_tool`)
-2. Define the schema(s) (operations) to provide
-3. Define required parameters
+1. Decide the tool name (module name) (snake_case, e.g., `my_api_tool`). This becomes the first argument of `animaworks-tool my_api_tool …`.
+2. Decide the **actions** (subcommands). Schema names should generally follow **`{tool_name}_{action}`** (e.g., `myapi_query`). In `use_tool`, use `tool_name="myapi"`, `action="query"`.
+3. Define parameters using JSON Schema (`input_schema` or `parameters`).
 
-### Step 2: Create the Module File
+### Step 2: Creating the Module File
 
-Create a Python file following the template below.
-
-#### Single-Schema Tool (Simple)
-
-For file `my_tool.py`, `animaworks-tool my_tool action [args]` invokes it; schema name `my_tool_action` is passed to dispatch.
+#### Single-Action Example
 
 ```python
 from __future__ import annotations
@@ -43,25 +53,25 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger("animaworks.tools")
+logger = logging.getLogger(__name__)
 
 
 def get_tool_schemas() -> list[dict]:
-    """Return tool schema(s) (required)."""
+    """ツールスキーマを返す。個人・共有ツールでは必須推奨（スキーマ読み込み・ログ用）。"""
     return [
         {
             "name": "my_tool_action",
-            "description": "Description of what this tool does",
+            "description": "このツールが何をするかの説明",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "param1": {
                         "type": "string",
-                        "description": "Parameter description",
+                        "description": "パラメータの説明",
                     },
                     "param2": {
                         "type": "integer",
-                        "description": "Optional parameter",
+                        "description": "オプションパラメータ",
                         "default": 10,
                     },
                 },
@@ -72,8 +82,8 @@ def get_tool_schemas() -> list[dict]:
 
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
-    """Execute handling by schema name (recommended)."""
-    args.pop("anima_dir", None)  # Injected by framework; unused in this tool
+    """スキーマ名に応じた処理を実行する（推奨）。"""
+    args.pop("anima_dir", None)  # フレームワークから注入。必要なら Path(anima_dir) で利用
     if name == "my_tool_action":
         return _do_action(
             param1=args["param1"],
@@ -83,14 +93,14 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
 
 
 def _do_action(param1: str, param2: int = 10) -> dict[str, Any]:
-    """Actual logic implementation."""
-    # Implement here
     return {"result": f"Processed {param1} with {param2}"}
 ```
 
-#### Multi-Schema Tool (API Integration, etc.)
+When calling from `animaworks-tool`, **`cli_main` must be implemented** afterward (see the "`cli_main`" section below).
 
-Schema names use `{tool_name}_{action}` format. `animaworks-tool myapi query [args]` passes `myapi_query` to dispatch. File name: `myapi.py`.
+#### Multiple Actions + Authentication (API Integration)
+
+The resolution order for `get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` is: **`credentials.{credential_name}` of `config.json`** (`api_key` or `keys[key_name]`) → **the `shared` section of `vault.json`** (key name is the string passed as argument `env_var`) → **`shared/credentials.json` (legacy, key is `env_var`)** → **environment variable `env_var`** (`core/integrations/_base.py`).
 
 ```python
 from __future__ import annotations
@@ -98,30 +108,30 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-logger = logging.getLogger("animaworks.tools")
+logger = logging.getLogger(__name__)
 
 
 def get_tool_schemas() -> list[dict]:
     return [
         {
             "name": "myapi_query",
-            "description": "Send query to API and get results",
+            "description": "APIにクエリを送信して結果を取得する",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "limit": {"type": "integer", "description": "Max results", "default": 10},
+                    "query": {"type": "string", "description": "検索クエリ"},
+                    "limit": {"type": "integer", "description": "最大件数", "default": 10},
                 },
                 "required": ["query"],
             },
         },
         {
             "name": "myapi_post",
-            "description": "Send data to API",
+            "description": "APIにデータを送信する",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "data": {"type": "string", "description": "Data to send"},
+                    "data": {"type": "string", "description": "送信データ"},
                 },
                 "required": ["data"],
             },
@@ -130,180 +140,171 @@ def get_tool_schemas() -> list[dict]:
 
 
 class MyAPIClient:
-    """API client."""
-
     def __init__(self) -> None:
         from core.integrations._base import get_credential
+
         self._api_key = get_credential(
-            "myapi", "myapi_tool", env_var="MYAPI_KEY",
+            "myapi",
+            "myapi_tool",
+            env_var="MYAPI_KEY",
         )
 
     def query(self, query: str, limit: int = 10) -> list[dict]:
         import httpx
+
         resp = httpx.get(
             "https://api.example.com/search",
             params={"q": query, "limit": limit},
             headers={"Authorization": f"Bearer {self._api_key}"},
-            timeout=30,
+            timeout=30.0,
         )
         resp.raise_for_status()
         return resp.json()["results"]
 
     def post(self, data: str) -> dict:
         import httpx
+
         resp = httpx.post(
             "https://api.example.com/data",
             json={"data": data},
             headers={"Authorization": f"Bearer {self._api_key}"},
-            timeout=30,
+            timeout=30.0,
         )
         resp.raise_for_status()
         return resp.json()
 
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
-    args.pop("anima_dir", None)  # Injected by framework; unused in this tool
+    args.pop("anima_dir", None)
     client = MyAPIClient()
     if name == "myapi_query":
-        return client.query(
-            query=args["query"],
-            limit=args.get("limit", 10),
-        )
-    elif name == "myapi_post":
+        return client.query(query=args["query"], limit=args.get("limit", 10))
+    if name == "myapi_post":
         return client.post(data=args["data"])
     raise ValueError(f"Unknown tool: {name}")
 ```
 
-### Step 3: Save the File
+**Per-Anima authentication** (e.g., Chatwork): There is a pattern of taking the Anima name from `args.get("anima_dir")` and resolving an **Anima-specific key** like `CHATWORK_API_TOKEN__{anima_name}` via `resolve_env_style_credential(...)` (e.g., `resolve_identity` of `core/integrations/_chatwork_identity.py`; if not registered, raise an error without falling back). The same key naming can be used in custom tools.
 
-Save as a personal tool (path in `write_memory_file` is relative to anima_dir):
+#### `cli_main` (for animaworks-tool)
+
+For `animaworks-tool <tool_name> …`, whether core, common, or personal, **CLI execution is impossible without `cli_main` in the module** (`cli_dispatch` of `core/integrations/__init__.py`). A common pattern is to parse subcommands via `argparse` and call `dispatch(f"{tool}_{action}", args_dict)` internally. To generate usage from the schema, see also `auto_cli_guide` of `core/integrations/_base.py`.
+
+### Step 3: Saving the File
+
+Personal tools:
 
 ```
-write_memory_file(path="tools/my_tool.py", content=<code>)
+write_memory_file(path="tools/my_tool.py", content=<コード>)
 ```
 
-Writing to `tools/` requires **personal tool** permission in the "Tool creation" section of permissions.json.
+`tool_creation.personal` must be permitted.
 
-### Step 4: Enable the Tool
+### Step 4: Tool Activation (Hot Reload)
 
-After saving, call `refresh_tools` for hot reload:
+Only when adding or changing `tools/*.py` or `common_tools/*.py` **after** process startup:
 
 ```
 refresh_tools()
 ```
 
-The tool becomes available immediately without restarting the session. Personal tools do not need to be listed in permissions.json external_tools; once discovered by `refresh_tools`, they are callable via **Bash** with `animaworks-tool <tool> <subcommand>`.
+The file-based map of `ExternalToolDispatcher` within the same session is rescanned, and new module names are resolved from `use_tool` (usually unnecessary for files that existed before startup).
 
-### Step 5: Share (Optional)
-
-To let other Anima use it, share the tool:
+### Step 5: Sharing (Optional)
 
 ```
 share_tool(tool_name="my_tool")
 ```
 
-This copies it to `~/.animaworks/common_tools/` and makes it available to all Anima. Sharing requires **shared tool** permission in permissions.json.
+Copied to `~/.animaworks/common_tools/`. `tool_creation.shared` is required. Other Animas each need their own `refresh_tools` (or automatic discovery at restart).
 
-## Required Interface
+## Required Interfaces
 
-| Function | Required | Description |
-|----------|----------|-------------|
-| `get_tool_schemas()` | ✅ Required | Return list of tool schemas. Must include `name`, `description`, `input_schema` (or `parameters`) |
-| `dispatch(name, args)` | 🔵 Recommended | Dispatch by schema name. ExternalToolDispatcher prefers this. Remove `anima_dir` with `args.pop("anima_dir", None)` when passing args to other functions |
-| Function with same name as schema | 🟡 Alternative | Can be used instead of `dispatch()` |
-| `cli_main(argv)` | ⚪ Optional | For standalone execution via `animaworks-tool <tool_name>` |
-| `EXECUTION_PROFILE` | ⚪ Optional | For long-running tools. Enables background submission via `animaworks-tool submit` |
+| Function / Constant | Required | Description |
+|-------------|------|------|
+| `get_tool_schemas()` | **Strongly recommended** for personal and shared | For schema loading and guide generation. Even in core, some modules have empty lists (e.g., `web_search` is `[]`). **Important**: `ExternalToolDispatcher.dispatch` (the path that passes the schema name directly via `tool_use`) matches modules only for schemas included in the **`name` list of `get_tool_schemas()`** in core. Empty modules are not hit on the core side via that path. On the other hand, **`use_tool`** imports the module directly from `TOOL_MODULES` and calls `dispatch`, so **even with an empty schema list, execution is possible if `dispatch` exists**. Custom tools should be aware of both paths; defining the schema is usually safer. |
+| `dispatch(name, args)` | **Recommended** | `ExternalToolDispatcher._call_module` takes priority. |
+| Function with the same name as the schema name | Alternative | Used when `dispatch` is absent: `getattr(mod, name)(**args)`. |
+| `cli_main(argv)` | **Required for CLI use** | `animaworks-tool` entry. |
+| `EXECUTION_PROFILE` | Optional | `expected_seconds`, `background_eligible`; in core tools, **`gated: True`** can require an allowlist for send-type operations (`core/tooling/permissions.py`). |
 
-## Bash Invocation
+## Calls and Schema Names
 
-Anima invokes personal/shared tools via **Bash** with `animaworks-tool <tool> <subcommand>`:
+- **`use_tool`**: Passed to the module's `dispatch` (or same-name function) via `schema_name = f"{tool_name}_{action}"`. Permission determination: **core** — `tool_registry` (`tool_name` must be included in the result of `get_permitted_tools`); **file-based (common, personal)** — `tool_name` must exist in the merged `_personal_tools` (`_handle_use_tool` of `core/tooling/handler.py`).
+- **`animaworks-tool`**: If the first token is `submit`, it is submitted in the background (see below). **Core** imports from `TOOL_MODULES` and calls `cli_main`; **common and personal** load from the file and call `cli_main`. An unknown first argument may fall back to the main CLI (`animaworks`) (`_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS` of `core/integrations/__init__.py`).
+- **Gated subcommands (core only)**: If `"gated": True` exists for the corresponding action in `EXECUTION_PROFILE`, both CLI and dispatch are blocked unless **`{tool_name}_{action}`** (e.g., `gmail_send`) is included in the permission set of `permissions`. **File-based personal and shared tools** are not in `TOOL_MODULES`, so this gate mechanism does not apply to them.
 
-```bash
-animaworks-tool myapi query "search term" [--limit 10]
-```
+## Schema Normalization
 
-`schema_name = tool_name + "_" + action` is passed to `dispatch(name, args)`. In the example above, `name="myapi_query"`.
+`_normalise_schema` of `core/tooling/schemas/loader.py` receives `input_schema` / `parameters` and normalizes them to `parameters` in the internal representation.
 
-## Schema Definition Conventions
+## permissions (tool_creation, external tools)
 
-Both `input_schema` and `parameters` are supported and normalized (`core/tooling/schemas._normalise_schema`).
+- **Loading**: `load_permissions(anima_dir)` (`core/config/schemas.py`). **`permissions.json` takes priority**. Only when absent, parse `permissions.md` to generate JSON and migrate (`migrate_permissions_md_to_json`).
+- **Tool creation** (JSON example):
 
-```python
+```json
 {
-    "name": "tool_action_name",       # snake_case. Format: {tool_name}_{action}
-    "description": "1-2 sentence description",  # Used by LLM for tool selection
-    "input_schema": {                  # JSON Schema format (parameters also accepted)
-        "type": "object",
-        "properties": { ... },
-        "required": [ ... ],
-    },
+  "version": 1,
+  "tool_creation": {
+    "personal": true,
+    "shared": false
+  }
 }
 ```
 
-## Credential Retrieval (get_credential)
+The Markdown "Tool Creation" section (`個人ツール` / `共有ツール` lines) also becomes the same structure during migration.
 
-Obtain API keys etc. via `get_credential()`. Never hardcode.
+- **External tools (core)**: `external_tools` collects, via `get_permitted_tools`, the **module names of core `TOOL_MODULES`** and the **`{tool}_{action}`** strings for gate release (e.g., `gmail_send`). In `use_tool`, core tools use names in this set on the `tool_registry` side; **personal and shared tools** are executed even outside the core set if the name exists in **`_personal_tools` after startup merge or `refresh_tools`** (files with the same name as core are skipped during discovery, so no conflict).
+
+## EXECUTION_PROFILE
+
+- **`background_eligible: True`**: JSON is written to `state/background_tasks/pending/` via `animaworks-tool submit <tool> <subcommand> …`, and `PendingTaskExecutor` picks it up (`_handle_submit` of `core/integrations/__init__.py`). Profile references are performed only for **importable core modules** (file tools are less likely to be warning targets at submit time).
+- **`gated: True`**: For the corresponding core tool action, explicit permission for `tool_action` is required in permissions.
 
 ```python
-from core.integrations._base import get_credential
-
-api_key = get_credential(
-    credential_name="myapi",   # Key in config.json credentials
-    tool_name="myapi_tool",   # For error messages
-    key_name="api_key",       # Default. Can specify other keys in keys
-    env_var="MYAPI_KEY",      # Fallback environment variable
-)
+EXECUTION_PROFILE: dict[str, dict[str, object]] = {
+    "pipeline": {"expected_seconds": 1800, "background_eligible": True},
+    "send": {"expected_seconds": 15, "background_eligible": False, "gated": True},
+}
 ```
 
-**Resolution order**: config.json → vault.json (encrypted vault) → shared/credentials.json → environment variable. ToolConfigError if none found.
+## Adding Core Tools to the Repository
 
-## Tool Creation Permission in permissions.json
-
-Add the following to permissions.json for tool creation and sharing:
-
-```markdown
-## Tool creation
-- Personal tools: yes
-- Shared tools: yes
-```
-
-`OK`, `enabled`, or `true` are also valid instead of `yes`.
+1. Add `core/integrations/{name}.py` (files starting with `_` are excluded from scanning).
+2. `TOOL_MODULES` is automatically registered via `discover_core_tools()`. No manual list in `core/integrations/__init__.py` is needed.
+3. Only `_EXPOSED_TOOL_NAMES` of `core/mcp/server.py` is exposed to **Mode S (MCP)** (curated). As of 2026-03, examples include: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. **External service core tools like Slack / Gmail / `web_search` are not exposed to MCP** — they typically use the **`use_tool` / Bash (`animaworks-tool`) / skill** path.
+4. Add tests to `tests/`. If schemas or reference documents are auto-generated, also check the targets of `scripts/generate_reference.py`.
+5. For destructive operations, consider updating `gated: True` and the permissions-side description.
 
 ## Validation Checklist
 
-- [ ] Filename: snake_case, `.py` extension (e.g., `my_tool.py`)
-- [ ] `from __future__ import annotations` at top of file
-- [ ] `get_tool_schemas()` exists and returns a list
-- [ ] Schema names follow `{tool_name}_{action}` format (animaworks-tool integration)
-- [ ] Schema has `name`, `description`, `input_schema` (or `parameters`)
-- [ ] `dispatch()` or same-name function exists
-- [ ] `args.pop("anima_dir", None)` in dispatch when passing args to other functions
-- [ ] Handler exists for all schemas
-- [ ] Appropriate exceptions raised on error
-- [ ] Timeout set for external APIs
+- [ ] File name: snake_case, `.py`, no leading `_` (to be included in scanning)
+- [ ] Add `from __future__ import annotations` at the top (project convention)
+- [ ] `get_tool_schemas()` returns the correct schema name (personal, shared)
+- [ ] Process all schemas via `dispatch` or the schema-name function
+- [ ] If `anima_dir` is not used, avoid side effects with `args.pop("anima_dir", None)`
+- [ ] Implement `cli_main` and verify operation with `animaworks-tool`
+- [ ] Add `timeout=` for external HTTP
+- [ ] Authentication uses `get_credential` (or per-anima resolution of the same type as core)
+- [ ] Use `logging.getLogger(__name__)` for logging (recommended)
 
-## Security Guidelines
+## Security
 
-1. **Credentials**: Obtain via `get_credential()`. Never hardcode
+1. Do not embed secrets in code. Use `get_credential` / vault / config.
+2. Do not touch other Animas' directories.
+3. In core, design "write/send" operations with `gated` and permissions as a set.
 
-2. **Access control**: Do not access other Anima's directories
+## Reference Implementations
 
-3. **Timeout**: Always set timeout for external APIs (recommended: 30 seconds)
-
-4. **Logging**: Use `logging.getLogger("animaworks.tools")`
-
-5. **Dependencies**: Import external libraries inside functions (lazy import)
-
-## Mode S (MCP) exposure for core tools
-
-When adding a module under `core/integrations/`, only names listed in `core/mcp/server.py` `_EXPOSED_TOOL_NAMES` are exposed to Claude Code via MCP (curated subset). As of 2026-03, that set includes: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. External-service core tools such as Slack, Gmail, and `web_search` are **not** on the MCP list; they are reached via `use_tool`, Bash (`animaworks-tool`), or skills.
+- Thin entry + `_client` / `_cli` split: `core/integrations/chatwork.py`, `slack.py`, `discord.py`
+- Authentication and API: `core/integrations/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
+- Long-running and pipeline: `core/integrations/image_gen.py` (facade, `image/` subpackage + `EXECUTION_PROFILE`)
+- Search and local LLM: `core/integrations/web_search.py` (if `get_tool_schemas` is empty, it won't match in `ExternalToolDispatcher.dispatch`'s core path; `use_tool` is possible with `dispatch`), `x_search.py`, `local_llm.py`
+- Dispatcher and CLI entry: `core/tooling/dispatch.py`, `core/integrations/__init__.py` (`cli_dispatch` / `_handle_submit`)
 
 ## Notes
 
-- Tools are Python code, different from Skills (Markdown procedure documents)
-- Tool creation requires **personal tools: yes** in the "Tool creation" section of permissions.json
-- Sharing tools requires **shared tools: yes** permission
-- Created tools are discovered immediately on `refresh_tools` call (hot reload)
-- Personal tools do not need to be in permissions.json external_tools; once discovered, they are available via **Bash** with `animaworks-tool <tool> <subcommand>`
-- Schema names use `{tool_name}_{action}` format; keep them unique across tools
-- Personal or shared tools with the same name as core tools are shadowed and skipped (`core/integrations/__init__.py`)
+- Tools are executable Python. They are distinct from skills (Markdown).
+- Only tools added **after startup** require **`refresh_tools`** (files that existed before startup are already scanned at startup).
+- Personal and shared files with the same name as core files are not adopted.

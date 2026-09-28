@@ -1,1 +1,1 @@
-Read a file from your memory directory by relative path. Use when checking heartbeat.md or cron.md, reading procedure/skill details, or following Priming -> pointers to file contents.
+Read files in my memory directory using relative paths. Use when: checking the current contents of heartbeat.md or cron.md, reading the details of procedure documents (procedures/）) or skills (skills/）), or confirming the specific contents of files pointed to by the "->" pointer during Priming.
