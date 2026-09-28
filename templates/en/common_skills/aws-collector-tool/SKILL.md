@@ -1,37 +1,38 @@
 ---
 name: aws-collector-tool
 description: >-
-  AWS infrastructure collector. Fetches ECS status, CloudWatch logs, and metrics.
-  Use when: checking ECS health, inspecting CloudWatch error logs, pulling infra metrics, or monitoring AWS resources.
+  AWS infrastructure information collection tool. Retrieves ECS status, CloudWatch logs, and metrics.
+  Use when: Use when: checking ECS operation, investigating error logs in CloudWatch, retrieving metrics, or monitoring AWS resources.
 tags: [infrastructure, aws, monitoring, external]
 ---
 
+
 # AWS Collector Tool
 
-External tool for collecting AWS ECS status, CloudWatch logs, and metrics.
+An external tool that collects AWS ECS status, CloudWatch logs, and metrics.
 
-## Invocation via Bash
+## How to Invoke
 
-Use **Bash** with `animaworks-tool aws_collector <subcommand> [args]`. See Actions below for syntax.
+**Bash**: Run with `animaworks-tool aws_collector <サブコマンド> [引数]`
 
-## Actions
+## Available Actions
 
-### ecs_status — ECS service status
-```json
-{"tool_name": "aws_collector", "action": "ecs_status", "args": {"cluster": "cluster-name", "service": "service-name (optional)"}}
+### ecs_status — Check ECS Service Status
+```bash
+animaworks-tool aws_collector ecs-status [--cluster NAME] [--service NAME]
 ```
 
-### error_logs — CloudWatch error logs
-```json
-{"tool_name": "aws_collector", "action": "error_logs", "args": {"log_group": "log-group-name", "hours": 1, "patterns": "ERROR,Exception"}}
+### error_logs — Retrieve Error Logs
+```bash
+animaworks-tool aws_collector error-logs --log-group NAME [--hours 1] [--patterns "ERROR"]
 ```
 
-### metrics — CloudWatch metrics
-```json
-{"tool_name": "aws_collector", "action": "metrics", "args": {"cluster": "cluster-name", "service": "service-name", "metric": "CPUUtilization", "hours": 1}}
+### metrics — Retrieve Metrics
+```bash
+animaworks-tool aws_collector metrics --cluster NAME --service NAME [--metric CPUUtilization]
 ```
 
-## CLI Usage (S/C/D/G-mode)
+## CLI Usage
 
 ```bash
 animaworks-tool aws_collector ecs-status [--cluster NAME] [--service NAME]
@@ -41,5 +42,5 @@ animaworks-tool aws_collector metrics --cluster NAME --service NAME [--metric CP
 
 ## Notes
 
-- AWS credentials must be configured (environment variables or credentials file)
-- Use --region to specify AWS region
+- AWS authentication credentials (via environment variables or credentials file) are required
+- Region can be specified with --region

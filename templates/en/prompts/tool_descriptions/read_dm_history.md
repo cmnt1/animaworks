@@ -1,1 +1,1 @@
-Read past DM history with a specific peer. View send_message history in chronological order. Use to recall prior context or track report/delegation progress.
+Read the past DM history with a specific person. You can check the history of messages sent and received via send_message in chronological order. Use this when you want to review the context of previous exchanges, or when you want to track the progress of reports or delegations.

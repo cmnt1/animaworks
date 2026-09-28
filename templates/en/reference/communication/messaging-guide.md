@@ -1,139 +1,139 @@
-# Complete Messaging Guide
+# Complete Guide to Sending Messages
 
-Comprehensive guide for communicating with other Anima (team members).
+A comprehensive guide for communicating with other Anima (employees).
 Covers all procedures for sending, receiving, and managing message threads.
 
 ## send_message Tool — Parameter Reference
 
-Use the `send_message` tool for sending messages (recommended).
+Use the `send_message` tool to send messages (recommended).
 
 ### Parameter List
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `to` | string | MUST | Recipient. Resolution rules are under “Resolving `to` (unified outbound)” below. You can use Anima names, human aliases from `config.json`, `slack:USERID` / `chatwork:ROOMID`, or a bare Slack user ID (`U` followed by 8+ alphanumeric characters) |
+| `to` | string | MUST | Destination. Resolution rules are described in "Destination `to` Resolution" below. Anima names, human aliases in `config.json`, `slack:USERID` / `chatwork:ROOMID`, and Slack user IDs alone (`U` + 8 or more alphanumeric characters) are supported |
 | `content` | string | MUST | Message body |
-| `intent` | string | MUST | Message intent. Allowed values only: `report` (progress/result report), `question` (inquiry requiring a reply). Use the `delegate_task` tool for task delegation. Use Board (`post_channel`) for acknowledgments, thanks, and FYI |
-| `reply_to` | string | MAY | ID of the message being replied to (e.g. `20260215_093000_123456`) |
+| `intent` | string | MUST | Message intent. Allowed values: `report` (progress/result report), `question` (question or inquiry requiring a response) only. Use the `delegate_task` tool for task delegation. Use Board (post_channel) for acknowledgments, thanks, and FYI |
+| `reply_to` | string | MAY | ID of the message being replied to (e.g., `20260215_093000_123456`) |
 | `thread_id` | string | MAY | Thread ID. Specify when joining an existing thread |
 
 ### DM Limits (per run)
 
-- Maximum **2 recipients** per run
-- **No second message** to the same recipient (use Board for additional contact)
-- Use Board (`post_channel`) for communication to 3 or more people
+- Can send to a maximum of **2 people**
+- **A second send to the same destination is not allowed** (use Board for additional contact)
+- For communication to 3 or more people, use Board (post_channel)
 
-### Resolving `to` (unified outbound)
+### Destination `to` Resolution (Unified Outbound)
 
-Recipients for `send_message` are resolved by `core/outbound.resolve_recipient` in the following **priority order** (strongest against spelling/casing drift first).
+Destinations in `send_message` are resolved by `core/outbound.resolve_recipient` according to the following **priority order** (ordered from most to least tolerant of notation variations).
 
-- **Leading and trailing whitespace** on the recipient string is trimmed before resolution.
+- **Leading and trailing whitespace** in the destination string is trimmed before resolution.
 
 | Priority | Condition | Result |
 |----------|-----------|--------|
-| 1 | **Exact** match with an existing Anima directory name (case-sensitive) | Internal Inbox |
-| 2 | Key **matches** `external_messaging.user_aliases` in `config.json` (case-insensitive) | External (Slack or Chatwork). Uses `preferred_channel` first; if that side has no contact, falls back to the other configured channel |
-| 3 | Starts with `slack:` (case-insensitive for the prefix; e.g. `slack:U0123456789`, `Slack:u06…`) | After the colon, trim; **normalize** the user ID to **uppercase**, then Slack DM |
-| 4 | Starts with `chatwork:` (case-insensitive for the prefix) | Trim after the colon; Chatwork post to that room ID (room ID casing preserved) |
-| 5 | **Bare Slack user ID**: starts with `U`, then **8+** alphanumeric characters (matches `^U[A-Z0-9]{8,}$`) | Slack DM (when you want ID only, no prefix). **Too-short strings** (e.g. `U12345`) do not match here and fall through to lower rules |
-| 6 | **Case-insensitive** match with an existing Anima name | Internal Inbox (delivered under the canonical on-disk name) |
-| 7 | None of the above | Unknown recipient (`RecipientNotFoundError`; low-level messages may mention known Anima or alias names) |
+| 1 | **Exact match** with an existing Anima directory name (case-sensitive) | Internal Inbox |
+| 2 | **Match** with a key in `config.json`'s `external_messaging.user_aliases` (case-insensitive) | External (Slack or Chatwork). Prefers `preferred_channel`; if no contact there, falls back to the other configured channel |
+| 3 | Starts with `slack:` (case-insensitive; e.g., `slack:U0123456789`, `Slack:u06…`) | Trim after the colon, normalize the user ID to **uppercase**, then send via Slack DM |
+| 4 | Starts with `chatwork:` (prefix is case-insensitive) | Post to Chatwork with the room ID after trimming the colon (room ID case is preserved) |
+| 5 | **Slack user ID format** alone: starts with `U` followed by **8 or more** alphanumeric characters (matches regex `^U[A-Z0-9]{8,}$` overall) | Slack DM (for specifying only the ID without a prefix). **Strings that are too short** (e.g., `U12345`) do not match at this stage and proceed to lower rules |
+| 6 | **Case-insensitive match** with an existing Anima name | Internal Inbox (delivered under the official name on disk) |
+| 7 | None of the above | Unknown destination (`RecipientNotFoundError`. At the low level, known Anima names or alias names may be included in the message) |
 
-**Conflict between Anima name and alias**: If a string matches both a `user_aliases` key and an **exact** existing Anima directory name, **priority 1** always wins and delivery goes to the **internal Inbox** (the alias is not used).
+**Conflict between Anima names and aliases**: If a string is the same as a key in `user_aliases` but **exactly matches an existing Anima directory name**, priority **1** always takes precedence and it is delivered to the internal Inbox (the alias is not used).
 
-#### When `send_message` recipient resolution fails
+#### When the `send_message` Tool Fails to Resolve a Destination
 
-Even when `resolve_recipient` fails, the tool result does not return the raw exception. **Guidance** tailored to the session type is returned instead (`core/tooling/handler_comms.py`).
+Even if `resolve_recipient` fails, the full exception text is not returned directly in the tool result. Instead, **guidance** is returned according to the session type (`core/tooling/handler_comms.py`).
 
-- **Human chat** (`chat`): Explains that `send_message` cannot target that recipient, that **replying in plain text reaches the human user**, and that `send_message` is for other Anima.
-- **Non-chat** (heartbeat, cron, etc.): Explains that **`call_human`** should be used to reach humans, and `send_message` is for other Anima.
+- **During a chat with a human** (`chat`): Indicates that `send_message` cannot be sent to that destination, that **replying directly in text will reach the human user**, and that `send_message` should be used for other Anima.
+- **Outside a chat** (heartbeat, cron, etc.): Indicates that **`call_human`** should be used to contact a human, and that `send_message` should be used for other Anima.
 
-So low-level text like “Known animas: …” often does not appear to tool users. To fix configuration or aliases, check `external_messaging` in `config.json`.
+Therefore, low-level wording like "Known animas: …" often does not appear to tool users. To fix configuration or aliases, check `external_messaging` in `config.json`.
 
-#### Human aliases and `preferred_channel`
+#### Human Aliases and `preferred_channel`
 
-Each entry in `external_messaging.user_aliases` should set `slack_user_id` and/or `chatwork_room_id`. When `external_messaging.preferred_channel` is `slack`, Slack is chosen if a Slack ID exists; if the Slack ID is empty but Chatwork is set, delivery falls back to Chatwork (and vice versa when `preferred_channel` is `chatwork`). An alias with **neither** ID set fails resolution with an error.
+Each entry in `external_messaging.user_aliases` can have `slack_user_id` and/or `chatwork_room_id` configured. When `external_messaging.preferred_channel` is `slack`, Slack is chosen if a Slack ID exists. If the Slack ID is empty and only Chatwork exists, it falls back to Chatwork (and vice versa when `preferred_channel` is `chatwork`). An alias with **neither ID** results in an error during resolution.
 
-#### Delivery after external routing (overview)
+#### Delivery After Reaching an External Channel (Overview)
 
-When resolved to an external route, `send_message` sends via API from `core/outbound.send_external` without going through the internal Messenger.
+When resolved to an external route, `send_message` is sent via API from `core/outbound.send_external` without going through the internal Messenger.
 
-- **Try order**: First send on the resolved `channel` (`slack` or `chatwork`); on failure, follow `_build_channel_order` — if the peer has **both** Slack and Chatwork IDs, the other channel is tried in turn.
-- **Slack**: Token used by `core/outbound._send_via_slack` is **`SLACK_BOT_TOKEN__{sending_anima_name}`** from Vault / shared credentials when present. Body is formatted with `md_to_slack_mrkdwn`. If `core/integrations._anima_icon_url` resolves an icon URL, it is passed to `post_message`.
-  - **`[Sender name]` prefix on the body**: Only when there is **no** per-Anima bot token, the body is prefixed with `[{sending_anima_name}] ` so the DM shows who sent it. **When a token exists**, no such prefix is added; sender is shown via `username` (Anima name) and `icon_url`.
-- **Chatwork**: Post to the room via the sending Anima's own identity token (`CHATWORK_API_TOKEN__<anima_name>`). If a sending Anima name is known, prefix the body with `[Sender name] ` and format with `md_to_chatwork`.
+- **Attempt order**: First send via the resolved `channel` (`slack` or `chatwork`); on exception, follow `_build_channel_order` and, if the recipient has **both** a Slack ID and a Chatwork room ID, also try the other channel in sequence.
+- **Slack**: The token used by `core/outbound._send_via_slack` is **`SLACK_BOT_TOKEN__{送信元Anima名}`** from Vault/shared credentials (if available). The body is formatted for Slack by `md_to_slack_mrkdwn`. If an icon URL can be resolved via `core/integrations._anima_icon_url`, it is passed to `post_message`.
+  - **`[送信者名]` prefix at the start of the body**: Only when **no Anima-specific bot token exists**, `[{送信元Anima名}] ` is prepended to the body (to indicate in the DM who the message is from). **When a token exists**, no prefix is added; the sender is represented by `username` (Anima name) and `icon_url`.
+- **Chatwork**: Posts to the room via the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). If the sending Anima name exists, `[送信者名] ` is prepended to the body, and it is formatted by `md_to_chatwork`.
 
 ### Basic Send Example
 
 ```
-send_message(to="alice", content="Review complete. Three items to fix.", intent="report")
+send_message(to="alice", content="レビュー完了しました。修正点は3箇所です。", intent="report")
 ```
 
-### Reply Example
+### Reply Send Example
 
-Link your reply using the received message's `id` and `thread_id`:
+Use the received message's `id` and `thread_id` to link the reply:
 
 ```
 send_message(
     to="alice",
-    content="Understood. I'll respond by 3pm.",
+    content="了解しました。15時までに対応します。",
     intent="report",
     reply_to="20260215_093000_123456",
     thread_id="20260215_090000_000000"
 )
 ```
 
-Aliases registered in `user_aliases` (e.g. `user`) can be used with `send_message` like internal Anima (routed to external channels):
+Aliases registered in `user_aliases` (e.g., `user`) can be sent to via `send_message` just like internal Anima (routed to the external channel).
 
 ```
-send_message(to="user", content="Follow-up is done.", intent="report")
+send_message(to="user", content="対応完了しました。", intent="report")
 ```
 
-### When to Use Each intent
+### Intent Usage
 
-| intent | Use case | Example |
-|--------|----------|---------|
-| `report` | Progress or result report | Task completion report, status update to supervisor |
-| `question` | Question requiring a reply | Clarification, consultation requiring a decision |
+| intent | Use | Example |
+|--------|-----|---------|
+| `report` | Progress or result report | Task completion report, status report to supervisor |
+| `question` | Question requiring a response | Clarifying uncertainties, asking for a decision |
 
-**Note**: Acknowledgments, thanks, and FYI (e.g. “Understood”, “Thank you”) cannot be sent via DM. Use Board (`post_channel`).
+**Note**: Acknowledgments, thanks, and FYI such as "Understood" or "Thank you" cannot be sent via DM. Use Board (post_channel).
 
-### Board vs DM Usage
+### Board vs. DM Usage
 
-| Use case | Tool | Example |
-|----------|------|---------|
-| Progress/result report | send_message (intent=report) | Task completion report to supervisor |
-| Task delegation | delegate_task | Assign one durable task to a direct subordinate; inspect progress with task_tracker |
-| Question/inquiry | send_message (intent=question) | Clarification request |
-| Acknowledgment/thanks/FYI | post_channel (Board) | “Understood”, “Shared” |
-| Communication to 3+ people | post_channel (Board) | Team-wide announcement |
-| Second message to same recipient | post_channel (Board) | Sharing additional information |
+| Use | Tool | Example |
+|-----|------|---------|
+| Progress or result report | send_message (intent=report) | Task completion report to supervisor |
+| Task delegation | delegate_task | Delegate one persistent task to a direct subordinate. Check progress via task_tracker |
+| Question or inquiry | send_message (intent=question) | Clarifying uncertainties |
+| Acknowledgment, thanks, FYI | post_channel (Board) | "Understood" or "Shared" |
+| Communication to 3 or more people | post_channel (Board) | Announcement to the whole team |
+| Second message to the same destination | post_channel (Board) | Sharing additional information |
 
 ## Thread Management
 
 ### Starting a New Thread
 
-Omitting `thread_id` lets the system automatically set the message ID as the thread ID.
+If `thread_id` is omitted, the system automatically sets the message ID as the thread ID.
 Do not specify `thread_id` when starting a new topic.
 
 ```
-send_message(to="bob", content="I'd like to discuss the new project.", intent="question")
-# → thread_id is auto-generated (same as message ID)
+send_message(to="bob", content="新しいプロジェクトの件で相談があります。", intent="question")
+# → thread_id は自動生成される（メッセージIDと同じ値）
 ```
 
-### Replying in an Existing Thread
+### Replying to an Existing Thread
 
-When replying to a received message, MUST specify both `reply_to` and `thread_id`.
+When replying to a received message, MUST: specify both `reply_to` and `thread_id`.
 
 ```
-# Received message:
+# 受信メッセージ:
 #   id: "20260215_093000_123456"
 #   thread_id: "20260215_090000_000000"
-#   content: "Please review"
+#   content: "レビューお願いします"
 
 send_message(
     to="alice",
-    content="Review complete.",
+    content="レビュー完了しました。",
     intent="report",
     reply_to="20260215_093000_123456",
     thread_id="20260215_090000_000000"
@@ -142,327 +142,325 @@ send_message(
 
 ### Thread Management Rules
 
-- MUST: Keep using the same `thread_id` for the same topic
-- MUST: Set the original message's `id` to `reply_to` when replying
-- SHOULD NOT: Mix different topics in an existing thread. Start a new thread for new topics
-- MAY: Omit `thread_id` if unknown (treated as a new thread)
+- MUST: Keep using the same `thread_id` for conversations on the same topic
+- MUST: When replying, set the original message's `id` as `reply_to`
+- SHOULD NOT: Do not mix a different topic into an existing thread. Start a new thread for a new topic
+- MAY: If `thread_id` is unknown, it may be omitted (treated as a new thread)
 
 ## Sending Messages via CLI
 
-For when tools are unavailable or sending via Bash.
+Methods for when the tool is unavailable or when sending via Bash.
 
 ### Basic Syntax
 
 ```bash
-animaworks send {sender_name} {recipient} "message content" [--intent report|question] [--reply-to ID] [--thread-id ID]
+animaworks send {送信者名} {宛先} "メッセージ内容" [--intent report|question] [--reply-to ID] [--thread-id ID]
 ```
 
-### Examples
+### Concrete Examples
 
 ```bash
-# Basic send (intent optional; CLI allows sending without it)
-animaworks send bob alice "Work complete. Please confirm." --intent report
+# 基本送信（intent は省略可、CLI 経由では空でも送信可能）
+animaworks send bob alice "作業完了しました。確認をお願いします。" --intent report
 
-# Thread reply
-animaworks send bob alice "Understood" --intent report --reply-to 20260215_093000_123456 --thread-id 20260215_090000_000000
+# スレッド返信
+animaworks send bob alice "了解しました" --intent report --reply-to 20260215_093000_123456 --thread-id 20260215_090000_000000
 ```
 
 ### Notes
 
-- MUST: Wrap message content in double quotes
-- SHOULD: Prefer the `send_message` tool when available (more reliable than CLI)
-- Escape `"` in messages: `\"`
+- MUST: Enclose message content in double quotes
+- SHOULD: Prefer the send_message tool when available (more reliable than CLI)
+- If the message contains `"`, escaping is required: `\"`
 
-## Checking Received Messages
+## How to Check Received Messages
 
-### Auto Delivery
+### Automatic Delivery
 
-When you receive a message, the system automatically notifies you of unread messages at heartbeat or conversation start.
+When a message is received, the system automatically notifies unread messages at heartbeat or conversation start.
 Manual checking is usually unnecessary.
 
-### Received Message Structure
+### Structure of Received Messages
 
-Received messages include the following fields:
+Received messages include the following information:
 
 | Field | Description | Example |
 |-------|-------------|---------|
 | `id` | Unique message identifier | `20260215_093000_123456` |
 | `thread_id` | Thread identifier | `20260215_090000_000000` |
-| `reply_to` | Parent message ID | `20260215_085500_789012` |
+| `reply_to` | Reply-to message ID | `20260215_085500_789012` |
 | `from_person` | Sender name | `alice` |
-| `to_person` | Recipient name (you) | `bob` |
+| `to_person` | Recipient name (self) | `bob` |
 | `type` | Message type | `message` (normal), `board_mention` (Board mention), `ack` (read receipt) |
-| `content` | Message body | `Please review` |
+| `content` | Message body | `レビューお願いします` |
 | `intent` | Sender's intent | `report`, `question` |
-| `timestamp` | Sent time | `2026-02-15T09:30:00` |
+| `timestamp` | Send timestamp | `2026-02-15T09:30:00` |
 
-### Reply Obligation
+### Reply Obligations
 
-- MUST: Reply to the sender when you receive an unread message
-- MUST: Always respond to questions and requests
-- SHOULD: Include next actions, not only “Understood”
+- MUST: When receiving unread messages, reply to the sender
+- MUST: Always respond to questions or requests
+- SHOULD: In addition to "Understood," also communicate the next action
 
 ## Receiving Messages from External Platforms
 
 ### The Server Receives Automatically
 
-Messages from external platforms like Slack and Chatwork are **received continuously by the AnimaWorks server and automatically delivered to the target Anima's Inbox**. Animas do not need to maintain WebSocket connections or poll APIs themselves.
+Messages from external platforms such as Slack or Chatwork are **continuously received by the AnimaWorks server and automatically delivered to the target Anima's Inbox**. The Anima itself does not need to maintain a WebSocket connection or poll APIs.
 
-The server receives messages via the following methods (configured by administrators):
+The server receives messages via the following methods (configured by the administrator):
 
 - **Socket Mode**: Real-time reception via Slack WebSocket
 - **Webhook**: Reception via Slack Events API / Chatwork Webhook
 
-Regardless of the method, messages are delivered to the Inbox in the same format.
+In either method, messages are delivered to the Inbox in the same format.
 
 ### Identifying External Messages
 
-Messages from external platforms differ from inter-Anima messages in the following ways:
+Messages arriving from external platforms differ from normal Anima-to-Anima messages in the following ways:
 
-| Field | Inter-Anima DM | External Message |
-|-------|---------------|-----------------|
+| Field | Anima-to-Anima DM | External Message |
+|-------|-------------------|------------------|
 | `source` | `"anima"` | `"slack"`, `"chatwork"`, etc. |
-| `from_person` | Anima name (e.g. `alice`) | `"slack:U12345..."` format |
+| `from_person` | Anima name (e.g., `alice`) | `"slack:U12345..."` format |
 
-### When External Messages Arrive
+### Cases where external messages arrive
 
-1. **Human DMs**: When a human sends a message to an Anima via Slack/Chatwork
-2. **`call_human` replies**: When a human replies in the Slack thread of a `call_human` notification (details: `communication/call-human-guide.md`)
-3. **Channel mentions**: When a message is posted in a Slack channel targeting an Anima
+1. **DM from a human**: When a human sends a message to Anima via Slack/Chatwork
+2. **Reply to call_human**: When a human replies in the Slack thread of a notification sent via `call_human` (details: `communication/call-human-guide.md`)
+3. **Mention via channel**: When a message addressed to Anima is posted in a Slack channel
 
-### Slack Messages: Immediate vs Deferred Processing
+### Immediate and deferred processing of Slack messages
 
-Slack messages are automatically classified for immediate processing or waiting until the next heartbeat:
+Messages from Slack are automatically classified as either immediately processed or waiting until the periodic heartbeat, depending on their content:
 
 | Condition | Processing timing | Reason |
-|-----------|-------------------|--------|
-| **@mention** (bot was mentioned) | **Immediate** | `intent="question"` is auto-assigned; processed immediately as actionable inbox work |
-| **DM** (direct message to the bot) | **Immediate** | DMs are to the bot, so `intent="question"` is auto-assigned |
-| **Channel message without mention** | **Next heartbeat** | `intent` is empty, so no immediate trigger; handled as unread on the scheduled heartbeat |
+|------|-------------|------|
+| **With @mention** (Bot is mentioned) | **Immediate processing** | `intent="question"` is automatically attached and processed immediately in the inbox as actionable |
+| **DM** (direct message to the Bot) | **Immediate processing** | Since a DM is addressed to the Bot, `intent="question"` is automatically attached |
+| **Channel message without mention** | **Processed at the next heartbeat** | Since `intent` is empty, it is not triggered immediately, and is processed as unread during periodic checks |
 
-This avoids waking Anima for every channel message; they respond quickly only when explicitly addressed via @mention or DM.
+This means Anima does not activate for casual conversation in channels, but responds quickly only when explicitly called via @mention or DM.
 
-### Responding to External Messages
+### Responding to external messages
 
-When you receive an external message:
+When an external message is received:
 
-- For **`call_human` replies**: Respond via chat or `call_human`
-- For **human DMs**: Reply via chat (Web UI), `send_message` to a registered human alias, or if you know the Slack user ID use `to="slack:U0123456789"` (or bare ID when the implementation accepts that form) — **`send_message` replies are possible** when they satisfy “Resolving `to`” above
-- For **unknown senders**: Check the message `source` and `from_person`, and report to your supervisor if needed
+- If it is a reply to `call_human`: respond with a chat response or via `call_human`
+- If it is a DM from a human: reply via chat (Web UI), send via `send_message` to a registered human alias, or if the sender's Slack user ID is known, **a reply via `send_message` is possible** using `to="slack:U0123456789"` (or the ID alone, if the implementation accepts that format) (provided the above "resolution of destination `to`" is satisfied)
+- If the sender is unknown: check the message's `source` and `from_person`, and report to the supervisor as needed
 
-## Message Body Best Practices
+## Best practices for message content
 
-### Writing Good Messages
+### How to write good messages
 
-1. **Lead with the conclusion**: Let the recipient grasp the point in the first line
-2. **Be specific**: Avoid vague wording; state numbers, deadlines, and scope clearly
-3. **State actions explicitly**: Be clear about what you want the recipient to do
-4. **State if a reply is needed**: When a response is required, say so (e.g. “Please reply with results”)
+1. **Put the conclusion first**: Make sure the recipient can grasp the key point from the first line
+2. **Be specific**: Avoid vague expressions; clearly state numbers, deadlines, and targets
+3. **State the action clearly**: Make it clear what you want the recipient to do
+4. **Indicate whether a reply is needed**: If a reply is required, write "Please reply"
 
-### Good vs Bad Examples
+### Good and bad examples
 
-**Bad:**
-
+**Bad example:**
 ```
-Please check the data thing.
-```
-
-**Good:**
-
-```
-Please validate January 2026 sales data.
-File: /shared/data/sales_202601.csv
-Checks: missing values and amount field outliers
-Deadline: today by 3pm
-Please reply with results.
+データの件、確認しておいてください。
 ```
 
-### Conveying Long Content
-
-- SHOULD: If the body exceeds 500 characters, write the content to a file and include only the file path and summary in the message
-- MUST: Place files in paths accessible to the recipient when referencing them
-
+**Good example:**
 ```
-Created deploy procedure document.
-File: ~/.animaworks/shared/docs/deploy-procedure-v2.md
-
-Summary: Added 3 staging environment confirmation steps (see section 4.2).
-Please review. Please reply with feedback.
+売上データ（2026年1月分）のバリデーションチェックをお願いします。
+対象ファイル: /shared/data/sales_202601.csv
+確認観点: 欠損値の有無と金額フィールドの異常値
+期限: 本日15時まで
+結果は返答をお願いします。
 ```
 
-## Common Failures and Fixes
+### How to convey long content
 
-### Wrong `intent`
+- SHOULD: If the message body exceeds 500 characters, write the content to a file and include only the file path and a summary in the message
+- MUST: When referencing a file, place it at a path accessible to the recipient
 
-**Symptom**: `Error: DM intent must be 'report' or 'question' only. Use Board (post_channel tool) for acknowledgments, thanks, or FYI.`
+```
+デプロイ手順書を作成しました。
+ファイル: ~/.animaworks/shared/docs/deploy-procedure-v2.md
 
-**Cause**: Omitted `intent`, or tried to send acknowledgment/thanks/FYI via DM
+要約: ステージング環境での確認ステップを3つ追加しました（セクション4.2参照）。
+レビューをお願いします。返答をお願いします。
+```
 
-**Fix**: Always set `intent` to `report` or `question` for DMs. Use `delegate_task` for task delegation. Use Board (`post_channel`) for acknowledgments, thanks, and FYI
+## Common failures and countermeasures
 
-**Symptom**: `Error: intent='delegation' has been deprecated. Use the delegate_task tool to assign tasks to subordinates. send_message only supports 'report' and 'question' intents.`
+### Incorrect intent specification
 
-**Cause**: Legacy `send_message(..., intent="delegation")`
+**Symptom**: Displays `Error: DMのintentは 'report', 'question' のみ許可されています`
 
-**Fix**: Task delegation must use **`delegate_task` only**. `send_message` `intent` is `report` / `question` only
+**Cause**: `intent` was omitted, or an acknowledgment, thanks, or FYI was sent via DM
 
-### Wrong recipient
+**Countermeasure**: In DMs, always specify `report` or `question` in `intent`. Use `delegate_task` for task delegation. Use the Board (post_channel) for acknowledgments, thanks, and FYI
 
-**Symptom**: Unknown-recipient error, or message reaches the wrong party
+**Symptom**: Displays something like `intent='delegation' は廃止されました`
 
-**Cause**: `to` does not match resolution rules (Anima name spelling, alias not in `user_aliases`, Slack/Chatwork IDs not set, etc.)
+**Cause**: Using the legacy `send_message(..., intent="delegation")`
 
-**Fix**:
+**Countermeasure**: Use only **`delegate_task`** for task delegation. The `intent` of `send_message` is only for `report` / `question`
 
-- For fastest delivery to an Anima, use the **same spelling as the directory name** (including case). If only casing differs, priority 6 still matches internal delivery
-- If an **alias has the same name as an Anima**, an **exact** match to an Anima directory name **always** prefers internal delivery (if that is wrong, rename the Anima or change the alias)
-- For humans, register aliases with `slack_user_id` / `chatwork_room_id` in `external_messaging.user_aliases` and verify `preferred_channel`
-- If you know a Slack user ID, use `slack:USERID` or bare ID (`U` + **8+** alphanumerics) as `to`. **Short IDs** (e.g. `U12345`) are not accepted as Slack form and may be treated as unknown
-- If the tool only returns hints like “reply directly in chat” or “use call_human”, see “When `send_message` recipient resolution fails” above and check `external_messaging` in `config.json` and session type
-- If unsure, check org info with e.g. `search_memory(query="members", scope="knowledge")`
+### Incorrect destination name
+
+**Symptom**: A destination-not-found error occurs, or the message reaches an unintended recipient
+
+**Cause**: `to` does not match the resolution rules (misspelling of the Anima name, `user_aliases` not registered, Slack/Chatwork ID not set, etc.)
+
+**Countermeasure**:
+
+- Specify the Anima name you want to reach fastest using **the same notation as the directory name** (including capitalization). Even with different notation, if only capitalization differs, it will match internal delivery under rule 6
+- If there is an **alias with the same name as an Anima name**, the internal destination always takes priority when a **fully matching Anima directory name** exists (if the opposite is intended, the Anima name must be renamed or the alias name changed)
+- For humans, set the alias and `slack_user_id` / `chatwork_room_id` in `external_messaging.user_aliases`, and check `preferred_channel`
+- If a known Slack user ID is available, use `slack:USERID` or the ID alone (**8 or more alphanumeric characters** after `U`) as `to`. **Short IDs** (e.g., `U12345`) are not recognized as Slack format and may be treated as destination-not-found
+- If the tool only returns hints such as "reply directly in chat" or "use call_human", refer to "when the `send_message` tool fails to resolve the destination" above, and check the `external_messaging` of `config.json` and the session type
+- If unclear, check organizational information via `search_memory(query="メンバー", scope="knowledge")` or similar
 
 ### Broken thread
 
-**Symptom**: Reply not visible in conversation flow on the recipient side
+**Symptom**: You replied, but the recipient cannot see the conversation flow
 
-**Cause**: Forgot to specify `reply_to` or `thread_id`
+**Cause**: `reply_to` or `thread_id` was not specified
 
-**Fix**: When replying, MUST set the original message's `id` to `reply_to` and the same `thread_id` as in the received message
+**Countermeasure**: When replying, MUST: set the original message's `id` in `reply_to`, and set `thread_id` as-is in `thread_id`
 
 ### Message too long
 
-**Symptom**: Recipient cannot grasp the point
+**Symptom**: The recipient cannot grasp the key points
 
-**Fix**: Put the conclusion first; move details to a file. Use the message body as summary + file reference
+**Countermeasure**: Put the conclusion at the beginning and separate details into a file. Use a summary plus file reference format for the message body
 
-### Second send to same recipient
+### Sending a second time to the same destination
 
-**Symptom**: `Error: Message already sent to {to} in this run. Use Board for additional communication.`
+**Symptom**: Displays `Error: このrunで既に {to} にメッセージを送信済みです`
 
-**Cause**: Called `send_message` more than once to the same recipient in one run
+**Cause**: Called send_message twice to the same destination in a single run
 
-**Fix**: Use Board (`post_channel`) for additional contact, or send in the next run (e.g. heartbeat)
+**Countermeasure**: Use the Board (post_channel) for additional communication, or send in the next run (heartbeat, etc.)
 
-### Sending to 3+ people
+### Sending to three or more people
 
-**Symptom**: `Error: Maximum {limit} DM recipients per run. Use Board (post_channel tool) for {limit}+ recipients.` (default `limit` is 2)
+**Symptom**: Displays `Error: 1回のrunでDMを送れるのは最大2人までです`
 
-**Fix**: Use Board (`post_channel`) for communication to 3 or more people
+**Countermeasure**: Use the Board (post_channel) for communication to three or more people
 
 ### Forgetting to reply
 
-**Symptom**: Recipient cannot track status; follow-up inquiry arrives
+**Symptom**: The recipient cannot track the status and sends a follow-up inquiry
 
-**Fix**: MUST reply to received messages. Even when you cannot act immediately, reply with e.g. “Acknowledged. I will respond by XX.”
+**Countermeasure**: MUST: Always reply to received messages. Even if you cannot respond immediately, reply with "I've confirmed it. I will respond by XX o'clock"
 
-## Sending Limits
+## Send limits
 
 System-wide rate limits apply to message sending.
-Excessive sending can cause loops and failures; understand and follow these limits.
+Excessive sending can cause loops or failures, so understand the following limits and act accordingly.
 
-### Global Sending Limits (activity_log based)
+### Global send limits (activity_log based)
 
-| Limit | Default | Applies to |
-|-------|---------|------------|
-| Per hour | 30 messages | DM (`message_sent`) count |
-| Per day | 100 messages | DM (`message_sent`) count |
+| Limit | Default value | Target |
+|------|-------------|------|
+| Per-hour cap | 30 messages/hour | Counts DMs (message_sent) |
+| Per-day cap | 100 messages/day | Counts DMs (message_sent) |
 
-Sending fails when limits are reached. `ack`, `error`, and `system_alert` types are not subject to limits.
-Values can be changed in `config.json` via `heartbeat.max_messages_per_hour` / `heartbeat.max_messages_per_day`.
+When the limit is reached, sending results in an error. `ack`, `error`, and `system_alert` type messages are not subject to the limit.
+Values can be changed via `heartbeat.max_messages_per_hour` / `heartbeat.max_messages_per_day` in `config.json`.
 
-### Per-Run Limits
+### Limits per run
 
-- **DM**: Maximum 2 recipients; 1 message per recipient
-- **Board**: 1 post per channel per session (with cooldown)
+- **DM**: Up to 2 people maximum, one message per destination
+- **Board**: One post per channel (with cooldown)
 
-### Cascade detection (round-trip limit between two parties)
+### Cascade detection (back-and-forth limit between two parties)
 
-Too many round-trips with the same party in a short time blocks sending.
-Controlled by `heartbeat.depth_window_s` (time window) and `heartbeat.max_depth` (max depth) in `config.json`.
+If there are too many back-and-forth exchanges with the same party in a short time, sending is blocked.
+This is controlled by `heartbeat.depth_window_s` (time window) and `heartbeat.max_depth` (maximum depth) in `config.json`.
 
-### When Limits Are Reached
+### What to do when limits are reached
 
-1. Limits are computed from an `activity_log` sliding window
-2. Hourly limit reached: Record send content in `current_state.md` and send in the next session
-3. Daily limit reached: Send only essential messages; wait until the next day
-4. Urgent contact needed: Use `call_human` (not subject to rate limits)
+1. Limits are calculated using a sliding window in the activity_log
+2. If the hourly limit is reached: record the content to send in current_state.md and send it in the next session
+3. If the daily limit is reached: narrow down to only essential messages and wait until the next day
+4. For urgent communication, use `call_human` (not subject to rate limits)
 
-### Best Practices to Conserve Sending
+### Best practices for conserving sends
 
-- Combine multiple report items into one message
-- Post acknowledgments, thanks, and FYI to Board (save DM quota)
-- Consolidate regular info sharing into Board channel posts
+- Consolidate multiple report items into a single message
+- Post acknowledgments, thanks, and FYI to the Board (saving DM quota)
+- Consolidate regular information sharing into Board channel posts
 
-## One-Round Rule
+## One-round rule
 
-For DMs (`send_message`), **one topic per round-trip** is the principle.
+DM (`send_message`) exchanges follow the principle of **one round per topic**.
 
 ### Rules
 
-- MUST: Complete one topic in a single send–reply round
-- MUST: If more than 3 round-trips are needed, move to a Board channel
-- SHOULD: Include all needed information in the first message so follow-up questions are unnecessary
+- MUST: Complete one topic in a single round of sending and replying
+- MUST: If three or more rounds are needed, move to a Board channel
+- SHOULD: Include all necessary information in the first message so no additional questions are needed
 
-### Why the One-Round Rule
+### Why the one-round rule is needed
 
-- More DM round-trips make hitting rate limits more likely
-- Two-party message loops are throttled by **cascade detection** (sending is blocked when max depth is exceeded within the configured time window)
-- Board posts can be read by other members and reduce duplicated information
+- More DM back-and-forth makes it easier to hit rate limits
+- Message loops between two parties are suppressed by **cascade detection** (sending is blocked if the maximum depth is exceeded within a configurable time window)
+- Board posts are visible to other members and prevent duplication of information
 
 ### Exceptions
 
-- Urgent blocker reports are exempt from count limits
+- Urgent blocker reports are not subject to the count limit
 
-## Communication Path Rules
+## Communication path rules
 
-Message recipients follow org structure:
+Message destinations follow the organizational structure:
 
-| Situation | Recipient | Example |
-|-----------|-----------|---------|
-| Important progress or issue report | Supervisor | `send_message(to="manager", content="Task A complete", intent="report")` |
-| Task instruction or delegation | Subordinate | `delegate_task(name="worker", instruction="Please create the report", deadline="1d")` |
-| Peer coordination | Peer (same supervisor) | `send_message(to="peer", content="Please review", intent="question")` |
-| Contact to another department | Via your supervisor | `send_message(to="manager", content="Need someone in dev (X) to check…", intent="question")` |
+| Situation | Destination | Example |
+|------|------|-----|
+| Reporting important progress or problems | Supervisor | `send_message(to="manager", content="タスクA完了", intent="report")` |
+| Task instructions or delegation | Subordinate | `delegate_task(name="worker", instruction="レポート作成をお願い")` |
+| Coordination with colleagues | Colleague (same supervisor) | `send_message(to="peer", content="レビューお願い", intent="question")` |
+| Contacting other departments | Via your own supervisor | `send_message(to="manager", content="開発部のXさんに確認してほしい件が...", intent="question")` |
 
-- MUST: Do not contact other department members directly. Go through your supervisor or theirs
-- MAY: Communicate directly with peers (members with the same supervisor)
+- MUST: Do not contact members of other departments directly. Go through your own supervisor or the other party's supervisor
+- MAY: You may communicate directly with colleagues (members who share the same supervisor)
 
-## Blocker Reports (MUST)
+## Blocker reporting (MUST)
 
-When any of the following occurs during task execution, report immediately to the requester via `send_message`.
-Do not leave work idle in a “waiting” state without reporting.
+If any of the following situations occurs during task execution, immediately report to the requester via `send_message`.
+Do not leave the task in a "waiting" state.
 
-- File/directory not found
-- Access denied (insufficient permissions)
-- Prerequisites not met
-- Technical issue interrupting work
-- Instructions unclear; you cannot decide
+- A file/directory cannot be found
+- Access is denied due to insufficient permissions
+- Prerequisites are not met
+- Work was interrupted due to a technical issue
+- Instructions are unclear and a decision cannot be made
 
-**Report to**: Requester (`send_message`)  
-**Severe blocker** (delay of 30+ minutes expected): Also notify humans with `call_human`
+Report to: Requester (send_message)
+For major blockers (when a delay of 30 minutes or more is expected): Also notify a human via `call_human`
 
-### Blocker Report Example
+### Example of a blocker report
 
 ```
 send_message(
     to="manager",
-    content="""[BLOCKER] Data aggregation task
+    content="""【ブロッカー報告】データ集計タスク
 
-Status: Specified file /shared/data/sales_202601.csv does not exist.
-Impact: Cannot start aggregation.
-Action needed: Please confirm the file path or place the file.""",
+状況: 指定されたファイル /shared/data/sales_202601.csv が存在しません。
+影響: 集計作業を開始できません。
+必要なアクション: ファイルパスの確認、またはファイルの配置をお願いします。""",
     intent="report"
 )
 ```
 
-## Required Elements for Request Messages (MUST)
+## Required elements of a request message (MUST)
 
-When requesting work from another Anima, always include these five elements:
+When requesting a task from another Anima, always include the following five elements:
 
 1. **Purpose** (why this work is needed)
-2. **Scope** (file paths, resources)
-3. **Expected outcome** (definition of done)
+2. **Target** (file path, resource)
+3. **Expected outcome** (what constitutes completion)
 4. **Deadline**
 5. **Whether a completion report is required**
 
-Messages missing these elements force the recipient to ask for clarification, causing inefficient round-trips.
+Messages lacking these elements require the recipient to reply for confirmation, creating inefficient back-and-forth.

@@ -1,35 +1,35 @@
 ## Runtime Data Directory
 
-All runtime data is stored under `{data_dir}/`.
+All runtime data is stored in `{data_dir}/`.
 
 ```
 {data_dir}/
-├── company/          # Company vision and policy (read-only)
-├── animas/          # All Anima data
-│   ├── {anima_name}/    # ← You
-│   └── ...               # Other Anima
-├── prompts/          # Prompt templates (character design guide, etc.)
-├── vault.json        # Shared credential vault
-├── shared/           # Shared area across Anima
-│   ├── channels/     # Board channels (general.jsonl, ops.jsonl, etc.)
-│   ├── credentials.json  # Legacy compatibility fallback
-│   ├── inbox/        # Message inbox
-│   └── users/        # Shared user memory (per-user subdirectories)
-├── common_skills/    # Shared skills (read-only)
-└── tmp/              # Working directory
-    └── attachments/  # Message attachments
+├── company/          # 会社のビジョン・方針（読み取り専用）
+├── animas/          # 全社員のデータ
+│   ├── {anima_name}/    # ← あなた自身
+│   └── ...               # 他の社員
+├── prompts/          # プロンプトテンプレート（キャラクター設計ガイド等）
+├── vault.json        # 共有クレデンシャル保管庫
+├── shared/           # 社員間の共有領域
+│   ├── channels/     # Board共有チャネル（general.jsonl, ops.jsonl 等）
+│   ├── credentials.json  # レガシー互換用フォールバック
+│   ├── inbox/        # メッセージ受信箱
+│   └── users/        # 共有ユーザー記憶（ユーザーごとのサブディレクトリ）
+├── common_skills/    # 全社員共通スキル（読み取り専用）
+└── tmp/              # 作業用ディレクトリ
+    └── attachments/  # メッセージ添付ファイル
 ```
 
-## Access Rules
+## Activity Scope Rules
 
-1. **Your own directory** (`{data_dir}/animas/{anima_name}/`): Full read/write access
-2. **Shared area** (`{data_dir}/shared/`): Read/write. Used for messaging and shared user memory
-3. **Common skills** (`{data_dir}/common_skills/`): Only top-level members (no supervisor) can write. Others read-only. Skills available to all
-4. **Company info** (`{data_dir}/company/`): Only top-level members can write
-5. **Prompts** (`{data_dir}/prompts/`): Read-only. Templates such as character design guide
-6. **Other Anima directories**: Access only as explicitly permitted in permissions.json
-7. **Descendants' directories** (supervisors only — same permissions for children, grandchildren, great-grandchildren, etc.):
-   - **Management files**: `injection.md`, `cron.md`, `heartbeat.md`, `status.json` are **read/write** (for organizational role assignments and configuration changes)
-   - **State files**: `activity_log/` and `state/current_state.md` are **read-only**. Inspect subordinate tasks through authorized task tools; canonical task storage is host-owned and must not be directly edited.
-   - **identity.md**: **read-only** (write-protected)
-8. **Peers' activity_log**: You may read `activity_log/` of peers who share the same supervisor (for verification). Writing is not allowed
+1. **Your own directory** (`{data_dir}/animas/{anima_name}/`): Read and write freely
+2. **Shared area** (`{data_dir}/shared/`): Read and write. Used for sending and receiving messages and sharing user memories
+3. **Common skills** (`{data_dir}/common_skills/`): Only top-level members (supervisor not set) can write. Other members have read-only access. Skills available to everyone
+4. **Company information** (`{data_dir}/company/`): Only top-level members can write
+5. **Prompts** (`{data_dir}/prompts/`): Read-only. Templates such as character design guides
+6. **Other employees' directories**: Only accessible within the scope specified in permissions.json
+7. **Subordinate directories** (supervisor only. Same permissions for all subordinates: children, grandchildren, great-grandchildren, etc.):
+   - **Management files**: `injection.md`, `cron.md`, `heartbeat.md`, `status.json` are **readable and writable** (necessary for organization operations: personnel orders and configuration changes)
+   - **Status reference**: `activity_log/` and `state/current_state.md` are **read-only**. Check subordinate tasks using authorized task tools. The master copy is managed by the host; direct editing is prohibited.
+   - **identity.md**: **Read-only** (write-protected)
+8. **Colleagues' activity_log**: `activity_log/` of colleagues with the same supervisor is readable (for validation). Writing is not allowed.

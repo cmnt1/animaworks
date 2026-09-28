@@ -1,8 +1,8 @@
-# Reporting and Escalation Guide
+# Reporting and Escalation Methods
 
-> **Required**: Before reporting or escalating, verify the mandatory items in `communication/message-quality-protocol.md`.
+> **Required**: Before reporting or escalating, check the required items in `communication/message-quality-protocol.md`.
 
-Reporting to your supervisor is the lifeblood of organizational operations.
+Reporting to your supervisor is the lifeline of organizational operations.
 Reporting at the right time and in the right format supports early problem detection and rapid decision-making.
 
 ## Tool Usage
@@ -22,369 +22,369 @@ Use the `send_message` tool for reporting. Observe the following constraints:
 - **Recipients**: see “Recipient resolution” below (Anima name, human alias, direct `slack:` / `chatwork:`, etc.)
 - **Note**: During a chat session with a human, `send_message` cannot target the human; reply with plain text directly
 
-### Recipient resolution and external delivery (`core/messaging/outbound.py`)
+### Recipient Resolution and External Delivery (`core/messaging/outbound.py`)
 
-The `to` field of `send_message` is resolved to an internal inbox or external delivery (Slack / Chatwork) in the following **priority order**. An empty string cannot be resolved and results in an error.
+The `to` of `send_message` is resolved to an internal inbox or external (Slack / Chatwork) using the following **priority order**. An empty string cannot be resolved and results in an error.
 
-1. **Exact match** with a known Anima name (case-sensitive) → internal inbox. Known names are directory names directly under `~/.animaworks/animas/`
-2. **Match** with a key in `external_messaging.user_aliases` in `config.json` (aliases are **case-insensitive**) → external delivery. When `external_messaging.preferred_channel` (`slack` / `chatwork`) is `slack`, use Slack if `slack_user_id` is set, otherwise Chatwork if `chatwork_room_id` is set. When `preferred_channel` is `chatwork`, prefer `chatwork_room_id`, otherwise Slack if `slack_user_id` is set. An alias with **neither ID** is an error (configure contact details in `external_messaging.user_aliases`)
-3. **`slack:USERID`** (starts with `slack:`, remainder is a Slack user ID) → Slack DM directly (USERID is **normalized to uppercase** in the implementation)
-4. **`chatwork:ROOMID`** (starts with `chatwork:`; only leading/trailing whitespace is stripped from ROOMID) → Chatwork room directly
-5. **Slack user ID alone** (`U` + **8 or more** alphanumeric characters; case is accepted at match time, e.g. `U0123456789`) → Slack DM directly
-6. **Case-insensitive match** with a known Anima name → internal (normalized to the canonical name on disk)
-7. If none apply → unknown-recipient error (hint wording in the tool layer may differ during chat execution vs otherwise)
+1. **Exact match with a known Anima name** (case-sensitive) → internal inbox. Known names are listed as directory names directly under `~/.animaworks/animas/`
+2. **Match with a key in `external_messaging.user_aliases` of `config.json`** (aliases are **case-insensitive**) → external delivery. If `slack` is set for `external_messaging.preferred_channel` (`slack` / `chatwork`), use Slack if `slack_user_id` exists, otherwise Chatwork if `chatwork_room_id` exists. If `chatwork` is set for `preferred_channel`, prioritize `chatwork_room_id`; if absent, use Slack if `slack_user_id` exists. Aliases with **neither ID** result in an error (set contact information in `external_messaging.user_aliases`)
+3. **`slack:USERID`** (starts with `slack:`, followed by a Slack user ID) → direct Slack DM (USERID is **normalized to uppercase** in implementation)
+4. **`chatwork:ROOMID`** (starts with `chatwork:`, ROOMID portion has only leading/trailing whitespace removed) → direct Chatwork room
+5. **Slack user ID alone** (`U` + alphanumeric **8 or more characters**, case-insensitive matching allowed. Example: `U0123456789`) → direct Slack DM
+6. **Case-insensitive match with a known Anima name** → internal (normalized to the canonical name on disk)
+7. If none apply → unknown recipient error (the tool layer may switch hint wording depending on whether a chat is running)
 
-**External-facing settings** (`external_messaging` in `config.json`):
+**External configuration** (`external_messaging` of `config.json`):
 
 | Field | Role |
-|-------|------|
-| `preferred_channel` | Default channel for alias targets (`slack` / `chatwork`) |
-| `user_aliases` | Alias name → `{ "slack_user_id": "...", "chatwork_room_id": "..." }` (**at least one** required) |
+|-----------|------|
+| `preferred_channel` | Default channel for alias delivery (`slack` / `chatwork`) |
+| `user_aliases` | Alias name → `{ "slack_user_id": "...", "chatwork_room_id": "..." }` (**at least one** is required) |
 
 **External send behavior** (`send_external`):
 
-- Try the **resolved channel first**; on failure, try **the other channel** (a second attempt exists only when both Slack and Chatwork destination IDs are present, e.g. for aliases. Direct `slack:` / `chatwork:` targets usually use that channel only)
-- If delivery cannot proceed (e.g. external channel not configured), the tool result may return JSON such as `NoChannelConfigured` or `DeliveryFailed`
-- Body text is converted from **Markdown to Slack mrkdwn / Chatwork**-appropriate format
-- **Slack**: If `SLACK_BOT_TOKEN__{anima_name}` (Vault or shared credentials) exists for the Anima, send with the bot token and apply display name (Anima name) and **icon URL** (from Anima assets). **If there is no bot token**, prepend `[SenderAnimaName] ` to the body before sending
-- **Chatwork**: Uses the sending Anima's own identity token (`CHATWORK_API_TOKEN__<anima_name>`). Via `send_message`, the body is prefixed with `[AnimaName] `
+- Attempt order: **send to the resolved channel first**, then try **the other channel** on failure (the second attempt only exists when both Slack and Chatwork destination IDs are available, such as with aliases. Direct specification of `slack:` / `chatwork:` typically targets only that channel)
+- If sending to an external channel fails (e.g., the channel is not configured), the tool result may return `NoChannelConfigured` or `DeliveryFailed` as JSON
+- The body is converted from **Markdown to Slack mrkdwn / Chatwork format**
+- **Slack**: If a `SLACK_BOT_TOKEN__{anima名}` associated with the Anima name (from Vault or shared credentials) exists, send with the Bot token, attaching the display name (Anima name) and **icon URL** (derived from Anima assets). **If no Bot token exists**, prepend `[送信者Anima名] ` to the message body
+- **Chatwork**: Uses the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). When sent via `send_message`, a `[Anima名] ` prefix is added to the message body
 
-**Send limits (implementation-based)**:
+**Send limits (based on implementation)**:
 
-- **Global (time window)**: `send_message` to internal Animas (via `Messenger.send`) and **`post_channel` share the same send counters**. Judged from `activity_log` sliding windows for the last hour and 24 hours using `dm_sent` / `message_sent` / `channel_post`. Limits use **`max_outbound_per_hour` / `max_outbound_per_day`** in `status.json` if set; otherwise **role defaults** (e.g. `general`: 15/hour, 50/day; `manager`: 60/hour, 300/day). When exceeded, sends are blocked; follow tool guidance to stash content in `current_state.md` etc. and send in a later session
-- **Same pair (internal Anima DM only)**: Within `heartbeat.depth_window_s` (default 600 seconds = 10 minutes), up to `heartbeat.max_depth` (default 6 turns). When exceeded, sends to that peer are blocked (wait until the next window)
+- **Global (time window)**: `send_message` to internal Animas (via `Messenger.send`) and **`post_channel` share the same send count**. Determined by `dm_sent` / `message_sent` / `channel_post` in the last 1 hour and 24 hours on `activity_log`. The limit is **`max_outbound_per_hour` / `max_outbound_per_day` of `status.json`** if set; otherwise, **role-specific defaults** apply (example: `general` is 15/hour and 50/day, `manager` is 60/hour and 300/day). When exceeded, sending is blocked; follow the tool result to save the content to `current_state.md` etc. and send it in the next session
+- **Same pair (internal Anima DM only)**: Within the `heartbeat.depth_window_s` window (default 600 seconds = 10 minutes), up to `heartbeat.max_depth` (default 6 turns). When exceeded, sending to the other party is blocked (wait until the next window)
 
-## When to Report
+## Reporting Timing
 
-### Immediate Reports (MUST)
+### Situations Requiring Immediate Reporting (MUST)
 
-As soon as you recognize any of the following, report to your supervisor immediately:
+In the following situations, report to your supervisor immediately upon recognition:
 
 | Situation | Reason | Example |
-|-----------|--------|---------|
-| Task completed | Supervisor needs to decide next actions | Deploy done, report finished |
-| Error or outage | Enable early response | API down, data inconsistency detected |
-| Decision needed | Escalate decisions outside your authority | Policy change proposal, request for more resources |
-| Deadline slip is certain | Supervisor needs to adjust schedule | Blocker, work stopped |
-| Security concern | Immediate action required | Signs of unauthorized access, suspected credential leak |
+|------|------|-----|
+| Task completion | So the supervisor can decide on next actions | Deployment complete, report creation complete |
+| Error or failure occurrence | For early response | API outage, detection of data inconsistency |
+| When a decision is needed | To seek decisions outside your authority | Proposing policy changes, requesting additional resources |
+| When a deadline will definitely be missed | So the supervisor can adjust the schedule | Work halted due to a blocker |
+| Security concerns | Because immediate action is required | Signs of unauthorized access, suspected credential leakage |
 
-### Routine Reports (SHOULD)
+### Situations Requiring Regular Reporting (SHOULD)
 
 | Situation | Frequency | Content |
-|-----------|-----------|---------|
-| Daily summary | Daily (end of business day) | Today’s results, tomorrow’s plan |
-| Weekly reflection | Weekly (Friday) | Week’s results, issues, next week’s plan |
-| Long-running task progress | As appropriate (guide: every 2–3 days) | Progress %, remaining work, blockers |
+|------|------|------|
+| Daily summary | Every day (at end of work) | Day's achievements and next day's plans |
+| Weekly review | Every week (Friday) | Week's achievements, challenges, and next week's plans |
+| Progress updates on long-term tasks | As appropriate (guideline: every 2-3 days) | Progress rate, remaining work, presence of blockers |
 
-### When Not to Report
+### Situations Where Reporting Is Not Needed
 
-- Memory writes and housekeeping (internal work)
-- Routine work with no anomalies (equivalent to `HEARTBEAT_OK` on heartbeat)
-- Tasks where the supervisor explicitly said reporting is not needed
+- Memory writes and organization (internal work)
+- Routine work with no anomalies (equivalent to `HEARTBEAT_OK` via heartbeat)
+- Work that the supervisor has explicitly instructed does not require reporting
 
-## Report Format
+## Basic Report Format
 
 ### SCANA Format
 
-Structure reports with these five elements. You do not need every item; pick based on context.
+Reports consist of the following five items. Not all items need to be included; select as appropriate for the situation.
 
 | Item | English | Description | MUST/MAY |
-|------|---------|-------------|----------|
-| Situation | Situation | What is happening now | MUST |
-| Cause | Cause | Why (if known) | MAY |
-| Action taken | Action taken | What you did | SHOULD |
-| Next steps | Next steps | What you will do / what you need decided | MUST |
-| Appendix | Appendix | Related logs, file paths, numbers | MAY |
+|------|------|------|----------|
+| Situation | Situation | What is currently happening | MUST |
+| Cause | Cause | Why it happened (if known) | MAY |
+| Action taken | Action taken | What actions you have taken | SHOULD |
+| Next steps | Next steps | What you will do next / what decision you need | MUST |
+| Appendix | Appendix | Related logs, file paths, numerical values | MAY |
 
 ### Thread Continuation When Replying
 
-When replying to a message from your supervisor, set `reply_to` (message ID being replied to) and `thread_id` (thread ID) to preserve context. ID format is `YYYYMMDD_HHMMSS_ffffff` (e.g. `20260215_093000_123456`).
+When replying to a message from your supervisor, specify `reply_to` (the reply target message ID) and `thread_id` (the thread ID) to maintain conversation context. The ID format is `YYYYMMDD_HHMMSS_ffffff` (example: `20260215_093000_123456`).
 
 ```
 send_message(
     to="manager",
-    content="Understood. I will address this by 3pm.",
+    content="承知しました。15時までに対応します。",
     intent="report",
     reply_to="20260215_093000_123456",
     thread_id="20260215_090000_000000"
 )
 ```
 
-### Format Example
+### Format Usage Example
 
 ```
 send_message(
     to="manager",
-    content="""[Completed] Monthly sales data aggregation
+    content="""【完了報告】売上データ月次集計
 
-Situation: January 2026 sales data aggregation is complete.
-Action taken: Aggregated by department and category; computed month-over-month comparison.
-Next steps: No action required on your side. Please review the report.
-Appendix: /shared/reports/sales_summary_202601.md""",
+状況: 2026年1月の売上データ集計が完了しました。
+対処: 部門別・カテゴリ別に集計し、前月比も算出しました。
+次のステップ: 特にアクション不要です。レポートをご確認ください。
+付加情報: /shared/reports/sales_summary_202601.md""",
     intent="report"
 )
 ```
 
-## Report Templates by Type
+## Templates by Report Type
 
 ### Completion Report
 
-When a task has completed successfully.
+A report when a task has completed successfully.
 
 ```
 send_message(
     to="manager",
-    content="""[Completed] {task_name}
+    content="""【完了報告】{タスク名}
 
-Situation: {task_name} is complete.
-Deliverable: {file path or result summary}
-Duration: {time spent}
-Notes: {if any}""",
+状況: {タスク名}が完了しました。
+成果物: {ファイルパスまたは結果の要約}
+所要時間: {かかった時間}
+備考: {特記事項があれば}""",
     intent="report"
 )
 ```
 
-**Example:**
+**Concrete example:**
 
 ```
 send_message(
     to="manager",
-    content="""[Completed] API spec v2.1 update
+    content="""【完了報告】API仕様書のv2.1更新
 
-Situation: Applied v2.1 changes to the API specification.
-Deliverable: /shared/docs/api-spec.md (diff: sections 3.2, 4.1 updated)
-Duration: ~45 minutes
-Notes: Added three pagination examples.""",
+状況: API仕様書にv2.1の変更点を反映しました。
+成果物: /shared/docs/api-spec.md（差分: セクション3.2, 4.1を更新）
+所要時間: 約45分
+備考: ページネーションの例を3パターン追加しました。""",
     intent="report"
 )
 ```
 
 ### Error Report
 
-When an error or outage occurs.
+A report when a failure or error has occurred.
 
 ```
 send_message(
     to="manager",
-    content="""[Error] {what happened}
+    content="""【エラー報告】{何が起きたか}
 
-Situation: {description of current state}
-Cause: {cause, to the extent known}
-Impact: {what is stopped, who is affected}
-Action taken: {what you tried and the outcome}
-Next steps: {proposed follow-up / decisions needed}""",
+状況: {現在の状態の説明}
+原因: {判明している範囲での原因}
+影響範囲: {何が止まっているか、誰に影響しているか}
+対処: {自分が試した対策とその結果}
+次のステップ: {今後の対応案 / 判断が必要なこと}""",
     intent="report"
 )
 ```
 
-**Example:**
+**Concrete example:**
 
 ```
 send_message(
     to="manager",
-    content="""[Error] Scheduled batch job failure
+    content="""【エラー報告】定期バッチ処理の失敗
 
-Situation: The 9:00 AM data sync batch has failed three times in a row.
-Cause: External API response timeout (exceeds 30s). Provider-side outage is likely.
-Impact: Data since this morning is unsynced. Dashboard numbers are stuck as of yesterday.
-Action taken: Extended timeout to 60s and retried — same failure. Checked provider status page — no maintenance notice.
-Next steps: We need to contact the API provider. Please advise.""",
+状況: 毎朝9:00のデータ同期バッチが3回連続で失敗しています。
+原因: 外部APIのレスポンスタイムアウト（30秒超過）。API側の障害の可能性が高い。
+影響範囲: 今朝以降のデータが未同期。ダッシュボードの数値が昨日時点で止まっている。
+対処: タイムアウトを60秒に延長して再実行 → 同様に失敗。API提供元のステータスページを確認 → メンテナンス情報なし。
+次のステップ: API提供元への問い合わせが必要です。ご判断をお願いします。""",
     intent="report"
 )
 ```
 
-### Decision Request (decision escalation)
+### Decision Request (Escalation of Decision-Making)
 
-When a decision is outside your authority.
+A report when a decision cannot be made within your own authority.
 
 ```
 send_message(
     to="manager",
-    content="""[Decision needed] {what needs deciding}
+    content="""【判断依頼】{何について判断が必要か}
 
-Situation: {current situation}
-Options:
-A. {option A} — Pros: {benefits} / Cons: {drawbacks}
-B. {option B} — Pros: {benefits} / Cons: {drawbacks}
-My recommendation: {A or B} (reason: {why})
+状況: {現在の状況}
+選択肢:
+A. {選択肢Aの内容} — メリット: {利点} / デメリット: {欠点}
+B. {選択肢Bの内容} — メリット: {利点} / デメリット: {欠点}
+私の推奨: {A or B}（理由: {なぜ}）
 
-Please advise.""",
+ご判断をお願いします。""",
     intent="report"
 )
 ```
 
-**Example:**
+**Concrete example:**
 
 ```
 send_message(
     to="manager",
-    content="""[Decision needed] Log retention change
+    content="""【判断依頼】ログ保存期間の変更
 
-Situation: Disk usage is at 85% and is expected to exceed 90% within a week.
-Options:
-A. Shorten log retention from 90 to 30 days — Pros: ~50 GB freed immediately / Cons: investigation using old logs becomes impossible
-B. Add storage (500 GB) — Pros: keep logs / Cons: higher monthly cost (~$50/month)
-C. Move old logs to archive storage — Pros: retain logs and control cost / Cons: ~2 days to implement
-My recommendation: C (good balance of cost and data retention)
+状況: ディスク使用量が85%に達しており、1週間以内に90%を超える見込みです。
+選択肢:
+A. ログ保存期間を90日→30日に短縮 — メリット: 即座に50GB削減 / デメリット: 古いログでの調査が不可能に
+B. ストレージを追加（500GB） — メリット: ログを維持できる / デメリット: 月額コスト増（約$50/月）
+C. 古いログをアーカイブストレージに移動 — メリット: ログ維持+コスト抑制 / デメリット: 実装に2日必要
+私の推奨: C（コストとデータ保全のバランスが良い）
 
-Please advise.""",
+ご判断をお願いします。""",
     intent="report"
 )
 ```
 
 ### Progress Report
 
-Mid-task update for long-running work.
+An interim report on a long-term task.
 
 ```
 send_message(
     to="manager",
-    content="""[Progress] {task_name}
+    content="""【途中経過】{タスク名}
 
-Progress: {completed work / overall %}
-Remaining: {not yet done}
-Blockers: {if any; otherwise "none"}
-Outlook: {whether you will meet the deadline}""",
+進捗: {完了した作業 / 全体に対する進捗率}
+残作業: {まだ終わっていないこと}
+ブロッカー: {あれば記載。なければ「なし」}
+見込み: {期限に間に合うか}""",
     intent="report"
 )
 ```
 
-**Example:**
+**Concrete example:**
 
 ```
 send_message(
     to="manager",
-    content="""[Progress] User notification feature implementation
+    content="""【途中経過】ユーザー通知機能の実装
 
-Progress: Phase 1 (design) complete; Phase 2 (implementation) ~70% complete
-  - Email notification: done
-  - Slack notification: done
-  - In-app notification: in progress (~1 day left)
-Remaining: In-app notification implementation + test code
-Blockers: None
-Outlook: Will meet the 2/20 deadline.""",
+進捗: Phase 1（設計）完了、Phase 2（実装）の70%が完了
+  - メール通知: 完了
+  - Slack通知: 完了
+  - アプリ内通知: 実装中（残り1日程度）
+残作業: アプリ内通知の実装 + テストコード作成
+ブロッカー: なし
+見込み: 期限（2/20）に間に合います。""",
     intent="report"
 )
 ```
 
 ## Daily Summary Format
 
-End-of-day recap sent to your supervisor.
+The daily summary is a review of the day sent to your supervisor at the end of work.
 
 ### Template
 
 ```
 send_message(
     to="manager",
-    content="""[Daily Summary] 2026-02-15
+    content="""【日次サマリー】2026-02-15
 
-■ Completed
-- {completed task 1}
-- {completed task 2}
+■ 完了したこと
+- {完了タスク1}
+- {完了タスク2}
 
-■ In progress
-- {task in progress} (progress: {XX}%, outlook: {deadline})
+■ 進行中
+- {進行中タスク1}（進捗: {XX%}、見込み: {期限}）
 
-■ Issues / concerns
-- {if any}
+■ 課題・懸念
+- {あれば記載}
 
-■ Tomorrow
-- {plan 1}
-- {plan 2}""",
+■ 明日の予定
+- {予定1}
+- {予定2}""",
     intent="report"
 )
 ```
 
-### Example
+### Concrete Example
 
 ```
 send_message(
     to="manager",
-    content="""[Daily Summary] 2026-02-15
+    content="""【日次サマリー】2026-02-15
 
-■ Completed
-- API spec v2.1 update (/shared/docs/api-spec.md)
-- Fixed timezone handling bug in log monitoring script
+■ 完了したこと
+- API仕様書のv2.1更新（/shared/docs/api-spec.md）
+- ログ監視スクリプトのバグ修正（タイムゾーン処理）
 
-■ In progress
-- User notification feature implementation (progress: 70%, target completion 2/20)
+■ 進行中
+- ユーザー通知機能の実装（進捗: 70%、見込み: 2/20完了予定）
 
-■ Issues / concerns
-- External API responses appear slower (no impact so far; continuing to monitor)
+■ 課題・懸念
+- 外部APIのレスポンスが遅くなっている兆候あり（現時点では影響なし、引き続き監視）
 
-■ Tomorrow
-- Finish in-app notification implementation
-- Start writing test code""",
+■ 明日の予定
+- アプリ内通知の実装完了
+- テストコード作成着手""",
     intent="report"
 )
 ```
 
-## Urgent vs Routine Reports
+## Determining Urgent vs. Normal Reports
 
-### Urgent Report (immediate, MUST)
+### Urgent Report (Immediate, MUST)
 
 If any of the following apply, report immediately even if it means interrupting other work:
 
-- **Service outage**: User-visible failure or degradation
-- **Data loss or corruption**: Risk of unrecoverable state
-- **Security incident**: Unauthorized access, suspected information leak
-- **Deadline miss confirmed**: A committed deadline will definitely not be met
+- **Service outage**: A failure affecting users
+- **Data loss or corruption**: Potential for an unrecoverable state
+- **Security incident**: Suspected unauthorized access or information leakage
+- **Confirmed deadline miss**: Certain that an already committed deadline will not be met
 
-MUST: Prefix urgent messages with `[URGENT]` at the beginning.
-For service outage, data loss, or security incidents that need immediate human action, also use `call_human`.
+Urgent report messages MUST: prefix with "【緊急】" at the beginning.
+If human immediate response is needed (service outage, data loss, security incident, etc.), also use `call_human`.
 
 ```
 send_message(
     to="manager",
-    content="""[URGENT] Production database latency
+    content="""【緊急】本番データベースの応答遅延
 
-Situation: Production DB response time is ~10× normal (avg 300ms → 3000ms).
-Impact: Web UI page loads take 10+ seconds.
-In progress: Started identifying slow queries. Will follow up within 10 minutes.""",
+状況: 本番DBの応答時間が通常の10倍（平均300ms→3000ms）に悪化。
+影響: Web UIのページ読み込みが10秒以上かかる状態。
+対処中: スロークエリの特定を開始。10分以内に続報します。""",
     intent="report"
 )
 ```
 
-### Routine Report (next heartbeat or daily summary)
+### Normal Report (At the Next Heartbeat or Daily Summary)
 
-Lower urgency; may be batched:
+The following are low urgency and can be reported together:
 
-- Mid-task progress when the plan is on track
-- Minor issues you have already resolved yourself
-- Improvement ideas and proposals
+- Progress on tasks proceeding as planned
+- Minor issues already resolved by yourself
+- Improvement suggestions or ideas
 
 ## Escalation Decision Flowchart
 
-Steps to decide whether and how to escalate:
+Procedure for deciding whether a report should be escalated:
 
 ```
-1. Can you resolve this within your authority?
-   → Yes: Handle it, then report the outcome
-   → No: Go to step 2
+1. 自分の権限内で解決可能か？
+   → Yes: 自分で対処し、完了後に結果を報告
+   → No: ステップ2へ
 
-2. Is it urgent? (service impact, data loss risk)
-   → Yes: Escalate immediately as [URGENT]
-   → No: Go to step 3
+2. 緊急性はあるか？（サービス影響・データ損失リスク）
+   → Yes: 【緊急】として即座にエスカレーション
+   → No: ステップ3へ
 
-3. Can you lay out decision options?
-   → Yes: Report as [Decision needed] with options and a recommendation
-   → No: Report the situation as-is and ask for direction
+3. 判断の選択肢を整理できるか？
+   → Yes: 選択肢と推奨を添えて【判断依頼】として報告
+   → No: 状況をありのまま報告し、上司の指示を仰ぐ
 ```
 
-## Report Guidelines
+## Reporting Precautions
 
-### Do (MUST/SHOULD)
+### Things to Do (MUST/SHOULD）
 
-- MUST: In `send_message`, set `intent` to **`"report"`** (reports and progress) or **`"question"`** (questions). **`"delegation"`** is invalid (use `delegate_task` for delegation)
-- MUST: Separate fact from speculation. Label speculation with phrases like “likely” or “probably”
-- MUST: State impact clearly—**what** is affected and **who** is affected
-- SHOULD: Include what you tried and the outcome so your supervisor does not repeat the same steps
-- SHOULD: Propose next actions yourself; do not only wait for instructions
+- MUST: Specify **`"report"` (report, progress) or `"question"` (question)** for `intent` of `send_message`. `"delegation"` is not allowed (use `delegate_task` for delegation)
+- MUST: Distinguish between facts and speculation. Add "likely" or "probably" for speculation
+- MUST: Clearly state the scope of impact. What is affected and who is affected
+- SHOULD: Include the countermeasures you tried and their results. This avoids the supervisor proposing the same countermeasures
+- SHOULD: Propose next actions yourself. Do not just wait for instructions
 
-### Avoid
+### Things to Avoid
 
-- Long narrative before the conclusion (lead with the conclusion)
-- Reports that only say “something went wrong” with no concrete detail
-- Packing several unrelated topics into one message (split by topic)
-- Hiding problems or downplaying severity (communicate the situation accurately)
-- More than one `send_message` to the same recipient in the same run (one message only; use Board for extra contact). You also cannot DM more people than `max_recipients_per_run` allows in one run
+- Writing a long background before getting to the conclusion (write the conclusion first)
+- Reporting "a problem occurred" without any specific information
+- Combining multiple different topics into one message (separate by topic)
+- Hiding problems or making them seem minor (convey the accurate situation)
+- Sending send_message to the same recipient more than once in the same run (limit to one message; use Board for additional communication). Also, DMs cannot be sent to more than `max_recipients_per_run` people

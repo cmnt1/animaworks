@@ -1,27 +1,27 @@
-# Gmail Tool Credential Setup Guide
+# Gmail Tool Authentication Configuration Guide
 
 ## Overview
 
-To use the Gmail tool, you need both `gmail` allowed in `permissions.json` AND an OAuth token file (`token.json`) placed at the correct runtime path.
+To use the Gmail tool, in addition to the permission granted in `permissions.json`, you need to place an OAuth token file (`token.json`) in the runtime environment.
 
 ## Prerequisites
 
-1. `permissions.json` must allow `gmail` (external_tools.allow_all or in allow list)
+1. `gmail` must be permitted in `permissions.json` (included in external_tools.allow_all or allow)
 2. `~/.animaworks/credentials/gmail/token.json` must exist
 
-**Important**: Permission alone is not enough. The token.json file is required.
+**Important**: Being permitted in permissions.json alone is not sufficient. token.json is required.
 
 ## Authentication Flow (GmailClient._get_credentials)
 
-GmailClient searches for credentials in this order:
+GmailClient searches for authentication credentials in the following order:
 
 1. **MCP token** — `~/.mcp-cache/workspace-mcp/token.json` (for MCP-GSuite integration)
 2. **Saved token** — `~/.animaworks/credentials/gmail/token.json`
-3. **New OAuth flow** — Uses credentials.json or env vars `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` (requires browser authentication)
+3. **New OAuth flow** — Uses credentials.json or environment variables `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` (requires browser authentication)
 
-Normal operation uses step 2 with `token.json`.
+Normally, step 2 with `token.json` is used for operation.
 
-## token.json Format
+## Format of token.json
 
 JSON format output by `google.oauth2.credentials.Credentials.to_json()`:
 
@@ -40,11 +40,11 @@ JSON format output by `google.oauth2.credentials.Credentials.to_json()`:
 }
 ```
 
-**Note**: `client_id` and `client_secret` are embedded in the JSON. These values are used for token refresh, so they don't need to match `credentials.json` or environment variables (the JSON values take priority).
+**Note**: `client_id` and `client_secret` are included in the JSON. These values are used during token refresh, so they do not need to match `credentials.json` or environment variable values (the values in the JSON take precedence).
 
 ## Common Issues
 
-### Symptom: Gmail tool throws an error
+### Symptom: Gmail tool returns an error
 
 ```
 ValueError: No OAuth credentials found. Place credentials.json or set GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET.
@@ -54,13 +54,13 @@ ValueError: No OAuth credentials found. Place credentials.json or set GMAIL_CLIE
 
 `~/.animaworks/credentials/gmail/token.json` does not exist.
 
-### Resolution
+### Resolution Steps
 
-1. Ask an administrator to generate token.json
-2. Token generation requires converting an existing OAuth token (e.g., pickle format) or running a browser-based OAuth flow
-3. You cannot run the OAuth flow yourself (browser interaction required)
+1. Ask the administrator to generate token.json
+2. Generating token.json requires conversion from an existing OAuth token (such as pickle format) or browser authentication
+3. You cannot run the OAuth flow yourself (because browser interaction is required)
 
-### Converting from token.pickle (Admin Only)
+### Conversion Procedure from token.pickle (for Administrators)
 
 If an existing pickle-format token is available:
 
@@ -69,18 +69,18 @@ import pickle
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
-# 1. Load pickle
+# 1. pickle読み込み
 with open("path/to/token.pickle", "rb") as f:
     creds = pickle.load(f)
 
-# 2. Set client_secret if not embedded
+# 2. client_secretが含まれていない場合は設定
 if not creds.client_secret:
-    creds._client_secret = "matching_client_secret"
+    creds._client_secret = "対応するclient_secret"
 
-# 3. Refresh
+# 3. リフレッシュ
 creds.refresh(Request())
 
-# 4. Save as JSON
+# 4. JSON形式で保存
 import os
 target = os.path.expanduser("~/.animaworks/credentials/gmail/token.json")
 os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -88,15 +88,15 @@ with open(target, "w") as f:
     f.write(creds.to_json())
 ```
 
-### client_id Mismatch
+### client_id Mismatch Issue
 
-The `client_id` in token.json must match the OAuth client that originally generated the token. Using a token with a different client_id will cause authentication errors during refresh.
+The `client_id` included in token.json must match the ID of the OAuth client that originally generated the token. Using a token generated with a different client ID will cause an authentication error during refresh.
 
 ## Related Files
 
 | Path | Description |
-|------|-------------|
-| `~/.animaworks/credentials/gmail/token.json` | OAuth token (required) |
-| `~/.animaworks/credentials/gmail/credentials.json` | OAuth client info (new flow only) |
-| `~/.animaworks/shared/credentials.json` | Env var settings (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`) |
+|------|------|
+| `~/.animaworks/credentials/gmail/token.json` | OAuth authentication token (required) |
+| `~/.animaworks/credentials/gmail/credentials.json` | OAuth client information (only for new flow) |
+| `~/.animaworks/shared/credentials.json` | Environment variable configuration (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`) |
 | `core/integrations/gmail.py` | Gmail tool implementation |

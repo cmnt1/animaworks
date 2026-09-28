@@ -1,200 +1,202 @@
 # Memory System Guide
 
-A reference for how Anima memory works, its types, and how to use each.
-Consult it when you need to confirm how to search, write, and organize memories.
+A reference for how Anima's memory works, its types, and how to use them appropriately.
+Use this to check how to search, write, and organize memories.
 
-## Memory Overview
+## Overview of Memory
 
-Your memory is composed of multiple types that correspond to the human brain’s memory model:
+Your memory consists of multiple types that correspond to the memory model of the human brain:
 
-| Memory type | Directory | Human analogy | Content |
-|-------------|-----------|---------------|---------|
+| Memory Type | Directory | Human Equivalent | Content |
+|-----------|------------|------------|------|
 | **Short-term memory** | `shortterm/` | Working memory | Context of recent conversations |
-| **Episodic memory** | `episodes/` | Experiential memory | What you did and when |
-| **Semantic memory** | `knowledge/` | Knowledge | What you’ve learned, know-how |
-| **Procedural memory** | `procedures/` | Procedural / “muscle” memory | Step-by-step how-to |
-| **Skills** | `skills/` | Specialties | Executable procedure guides |
+| **Episodic memory** | `episodes/` | Memory of experiences | What was done and when |
+| **Semantic memory** | `knowledge/` | Knowledge | Things learned and know-how |
+| **Procedural memory** | `procedures/` | Body-learned procedures | Step-by-step instructions on how to do things |
+| **Skills** | `skills/` | Special talents and expertise | Executable procedure documents |
 
-Additionally, memories shared across all Animas:
+Additionally, there is memory shared across all Anima instances:
 
-| Shared memory | Path | Content |
-|---------------|------|---------|
-| **Common knowledge** | `common_knowledge/` | Framework reference (this file included) |
-| **Common skills** | `common_skills/` | Skills available to every Anima |
-| **Organization shared knowledge** | `shared/common_knowledge/` | Knowledge accumulated during org operations |
-| **User profiles** | `shared/users/` | Cross-Anima user information |
-
----
-
-## Short-Term Memory (`shortterm/`)
-
-**Holds context from recent conversations and sessions.** Corresponds to human working memory.
-
-- Split by session kind: `shortterm/chat/` and `shortterm/heartbeat/` (optional per-`thread_id` subdirectories when needed)
-- Each directory has `session_state.json` / `session_state.md` and `archive/`
-- When context window usage exceeds the threshold, older portions are automatically externalized
-- Used for context continuity across sessions
-
-You do not need to manipulate short-term memory yourself; the framework manages it automatically.
+| Shared Memory | Path | Content |
+|---------|------|------|
+| **Shared knowledge** | `common_knowledge/` | Framework reference (including this file itself) |
+| **Common skills** | `common_skills/` | Skills available to all Anima instances |
+| **Organization shared knowledge** | `shared/common_knowledge/` | Knowledge accumulated by the organization during operations |
+| **User profile** | `shared/users/` | Cross-Anima user information |
 
 ---
 
-## Episodic Memory (`episodes/`)
+## Short-term Memory (shortterm/）
 
-**Daily logs of “what you did and when.”** Corresponds to human experiential memory.
+Holds **the context of recent conversations and sessions**. Equivalent to human working memory.
 
-- Automatically recorded in per-date files (e.g. `2026-03-09.md`)
-- Used to recall “what was I doing last week?” or “have I handled this issue before?”
-- In daily / weekly **Consolidation** (memory integration), the Anima’s own tool loop performs summarization, knowledge extraction, etc. (see below)
+- Separated by session type via `shortterm/chat/` and `shortterm/heartbeat/` (with subdirectories per `thread_id` as needed)
+- Each session-type directory contains `session_state.json` / `session_state.md` and `archive/` (completed or replaced entries are moved to `archive/`)
+- When context window usage exceeds a threshold, older portions are automatically externalized
+- For streaming execution, checkpoints recording tool completion positions (for reconnection and retry) are also managed at the same level
+- Used to maintain context across sessions
+- During daily housekeeping, archives related to short-term memory have a retention limit (adjustable via configuration)
 
-### Writing memories
+You do not need to manipulate short-term memory directly. The framework manages it automatically.
+
+---
+
+## Episodic Memory (episodes/）
+
+**Daily log of "what was done and when"**. Equivalent to human experiential memory.
+
+- Automatically recorded in date-based files (e.g., `2026-03-09.md`). **Date-prefix plus suffix** patterns like `2026-03-09_topic.md` are also handled for splitting within the same day
+- Consolidation's episode collection reads files matching the above pattern within a recent 24-hour window and splits entries by headings in the `## HH:MM — タイトル` format. Files without headings are treated as a single entry based on modification time (mtime)
+- Used to recall "what was I doing last week" or "have I handled this issue before"
+- Daily and weekly Consolidation (memory consolidation) performs summarization and knowledge extraction through Anima's own tool loop (described later)
+
+### Writing Memories
 
 ```
 write_memory_file(path="episodes/2026-03-09.md", content="...")
 ```
 
-### Searching memories
+### Searching Memories
 
 ```
-search_memory(query="Slack API connection test", scope="episodes")
+search_memory(query="Slack API接続テスト", scope="episodes")
 ```
 
 ---
 
-## Semantic Memory (`knowledge/`)
+## Semantic Memory (knowledge/）
 
-**Learned knowledge, know-how, and patterns.** Corresponds to what a human “knows.”
+**Learned knowledge, know-how, and patterns**. Equivalent to what humans "know".
 
 - Lessons and patterns extracted from episodes
-- Technical notes, response policies, decision criteria
-- Accumulated automatically via Consolidation; you can also write proactively
-- Legacy files are migrated to YAML front matter on first run (`knowledge/.migrated` marker)
-- **Reconsolidation**: knowledge with `failure_count >= 2` and `confidence < 0.6` in front matter can be revised by the LLM through the knowledge path of `ReconsolidationEngine`
+- Technical notes, response strategies, decision criteria
+- Accumulated automatically through Consolidation, and can also be written actively by you
+- Legacy-format files are migrated to YAML frontmatter format on first access (`knowledge/.migrated` marker)
+- **Reconsolidation**: knowledge with frontmatter `failure_count >= 2` and `confidence < 0.6` can be revised by the LLM, just like procedures (knowledge path `ReconsolidationEngine`)
 
 Examples:
+- "Slack API rate limit is 1req/sec」 for Tier 1"
+- "This client tends to contact us frequently on Mondays"
+- "Pre-deployment checklist"
 
-- “Slack API rate limit on Tier 1 is 1 req/sec”
-- “This client tends to send many messages on Mondays”
-- “Pre-deployment checklist”
-
-### Writing memories
+### Writing Memories
 
 ```
 write_memory_file(path="knowledge/slack-api-notes.md", content="...")
 ```
 
-### Searching memories
+### Searching Memories
 
 ```
-search_memory(query="Slack API rate limit", scope="knowledge")
+search_memory(query="Slack API レート制限", scope="knowledge")
 ```
 
 ---
 
-## Procedural Memory (`procedures/`)
+## Procedural Memory (procedures/）
 
-**Step-by-step “how to do it” guides.** Corresponds to procedures the body “knows by heart.”
+**Step-by-step procedure documents for "how to do things"**. Equivalent to "body-learned procedures" in humans.
 
-- Problem-solving steps, routine workflows
-- May be auto-generated from events such as `issue_resolved` (with metadata like confidence 0.4)
-- **Not as fully protected as skills**: based on metadata, items can enter the forgetting pipeline (procedure-specific rules below)
-- **Reconsolidation**: when front matter has `failure_count >= 2` and `confidence < 0.6`, the LLM can revise the procedure. The revised file resets counters, increments version, and archives the old version
-- Version history lives under `archive/`; older versions are pruned after a cap
+- Problem-solving procedures, routine workflow steps
+- May be automatically generated from events such as `issue_resolved` (with metadata like confidence 0.4)
+- **Not as fully protected as skills**: can be subject to the forgetting pipeline based on metadata (see the procedure-specific rules below)
+- **Reconsolidation**: when frontmatter has **`failure_count >= 2` and `confidence < 0.6`**, the LLM revises the procedure document. After revision, the counter is reset, the version number is updated, and the old version is moved to `archive/` (implementation: `ReconsolidationEngine`)
+- Version history remains in `archive/`, and old versions are pruned once they exceed a certain count (linked to the forgetting engine's procedure archive retention limit)
 
 Examples:
+- "SSL certificate renewal procedure"
+- "New Anima onboarding procedure"
+- "Production incident escalation procedure"
 
-- “SSL certificate renewal procedure”
-- “New Anima onboarding procedure”
-- “Production incident escalation procedure”
-
-### Writing memories
+### Writing Memories
 
 ```
 write_memory_file(path="procedures/ssl-renewal.md", content="...")
 ```
 
-### Searching memories
+### Searching Memories
 
 ```
-search_memory(query="SSL certificate renewal", scope="procedures")
-```
-
----
-
-## Skills (`skills/`)
-
-**Executable procedure guides and tool usage guides.** Corresponds to “specialties.”
-
-- Personal skills (`skills/`) and common skills (`common_skills/`)
-- Required skills are found through active skill context, the Skill Router, Skill Hub, or `read_memory_file(path="...")`
-- You do not need to read every skill body up front. First use names, descriptions, or pointers; read the full text only when details are needed
-- Proven `procedures/` may be promoted into probation or quarantine skills
-- **In the vector store, skills are always outside the forgetting scope** (`skills` / `shared_users` types are protected)
-
-### Inspecting a skill
-
-```
-read_memory_file(path="skills/newstaff/SKILL.md")  # Full skill text
-```
-
-### Creating a skill
-
-```
-create_skill(skill_name="deploy-procedure", description="Production deploy procedure", body="...")
+search_memory(query="SSL証明書 更新", scope="procedures")
 ```
 
 ---
 
-## Automatic memory processes
+## Skills (skills/）
 
-The default `compact` profile recalls sender information, pending tasks, explicit resident pointers, recent outbound activity and pending human notifications. Related knowledge is searched for chat/task requests and questions, but not routine heartbeat/cron/report events. Broad activity, episode and graph expansion are available with the opt-in `full` profile or explicit search. `priming.max_tokens` defaults to 2,000; notifications and mandatory resident rules are preserved independently. Per-Anima `status.json: priming_profile` overrides the global profile without changing model routing.
+**Executable procedure documents and tool usage guides**. Equivalent to "special talents".
 
-Search when past instructions, customer facts or unfinished work are needed; no ritual search or success report is required for every response. Skills and procedure bodies are read on demand. Only explicitly resident knowledge is included automatically; `[IMPORTANT]` does not by itself mean always resident.
+- Includes personal skills (`skills/`) and common skills (`common_skills/`)
+- Required skills are read via active skill context, Skill Router, Skill Hub, or `read_memory_file(path="...")`
+- You do not need to read the full skill body every time. First look at the name, description, and pointers; read the body only when needed
+- Proven `procedures/` may be promoted as probation skills or quarantine skills
+- **Always exempt from forgetting in the vector store** (`skills` / `shared_users` types are protected)
 
-Before side effects, applicable `[ACTION-RULE]` checks, permission boundaries, approval and duplicate-action prevention still apply. Read indicated rules if an action is stopped. Untrusted search results remain separate from trusted context.
+### Checking Skills
 
-Daily consolidation only generates episodes and does not rewrite knowledge (except for project archive consolidation). Raw activity and memory originals are retained. Weekly/monthly mutation, distillation, downscaling, self-correction, automatic skill learning and fact extraction are default off; indexing, repair and reading existing facts remain available. Optional maintenance must preserve entity detail, provenance and safety rules. A skipped/no-change run is normal, not a reason to retry.
+```
+read_memory_file(path="skills/newstaff/SKILL.md")  # スキルの全文を取得
+```
 
-Curator promotions/retirements are proposals by default; security blocking can still quarantine a skill immediately. Operator-controlled explicit changes remain possible. Outcome counts are diagnostic evidence, not proof of task quality.
+### Creating Skills
+
+```
+create_skill(skill_name="deploy-procedure", description="本番デプロイ手順", body="...")
+```
 
 ---
 
-## Choosing memory tools
+## Automatic Memory Processes
 
-| Goal | Tool | Example |
-|------|------|---------|
-| Keyword search | `search_memory` | `search_memory(query="API configuration", scope="all")` |
-| Read a file | `read_memory_file` | `read_memory_file(path="knowledge/api-notes.md")` |
-| Write memory | `write_memory_file` | `write_memory_file(path="knowledge/new-insight.md", content="...")` |
-| Tidy obsolete memory | `archive_memory_file` | `archive_memory_file(path="knowledge/outdated.md")` |
+The default `compact` recalls sender information, incomplete tasks, explicitly stated resident pointers, recent send history, and human-facing unread notifications. It searches relevant knowledge for conversation and task requests or questions, but does not search during normal heartbeat, cron, or report events. Broad activity history, episodes, and graph expansion are available via optional `full` or explicit search. `priming.max_tokens` defaults to 2,000, with notifications and mandatory resident rules held separately. Per-Anima `status.json: priming_profile` can override without changing model routing.
 
-### Choosing `scope`
+Search when past instructions, customer information, or ongoing work is needed. There is no need to search ritualistically for every response or report success after each use. Skill and procedure bodies are read when needed. Only explicitly stated memories are auto-resident; `[IMPORTANT]` alone does not designate residency.
+
+For actions with side effects, `[ACTION-RULE]`, permissions, approvals, and duplicate execution prevention continue to apply. If shutdown has occurred, read the specified rules. Untrusted search results are separated from trusted context.
+
+Daily consolidation only generates episodes and does not rewrite knowledge (except for project archive consolidation). Activity source records and memory originals are retained. Weekly and monthly changes, distillation, deactivation, self-correction, automatic skill learning, and automatic fact generation are also disabled by default. Indexing, repair, and reading of existing facts are maintained. Optional maintenance preserves customer-specific details, sources, and safety rules. Skipping or making no changes is normal and is not a reason for retry.
+
+Curator promotion and retirement are proposals only by default. Safety blocks can be isolated immediately, and operator manual operations are also possible. Usage result counts are diagnostic material and do not prove work quality.
+
+---
+
+## Choosing Between Memory Tools
+
+| What you want to do | Tool | Example |
+|------------|--------|-----|
+| Search memories by keyword | `search_memory` | `search_memory(query="API設定", scope="all")` |
+| Read a specific file | `read_memory_file` | `read_memory_file(path="knowledge/api-notes.md")` |
+| Write a memory | `write_memory_file` | `write_memory_file(path="knowledge/new-insight.md", content="...")` |
+| Organize unneeded memories | `archive_memory_file` | `archive_memory_file(path="knowledge/outdated.md")` |
+
+### Choosing a scope (search range)
 
 | scope | Search target | When to use |
-|-------|---------------|-------------|
-| `knowledge` | Knowledge, know-how | “Do I know anything about this?” |
-| `episodes` | Past action logs | “Have I done this before?” |
-| `procedures` | Procedure docs | “What are the steps for this task?” |
-| `common_knowledge` | Shared reference | “What does the framework spec say?” |
-| `skills` | Skills and common skills (vector search) | “Is there a skill for this task?” |
-| `activity_log` | Recent action logs (tool results, messages, etc.) | “What was in the email I just read?” “The search results from earlier” |
-| `all` | All of the above (vector search + activity_log BM25 fused via RRF) | Broad search across all memory types |
+|-------|---------|----------|
+| `knowledge` | Knowledge and know-how | "Do I know anything about this?" |
+| `episodes` | Past activity logs | "Have I done this before?" |
+| `procedures` | Procedure documents | "What are the steps for this task?" |
+| `common_knowledge` | Shared references | "What are the framework specifications?" |
+| `skills` | Skills and common skills (vector search) | "What skills can I use for this task?" |
+| `activity_log` | Recent activity logs (tool results, messages, etc.) | "Content of the email I just read" or "the search results from earlier" |
+| `all` | All of the above (vector search + activity_log BM25 integrated via RRF) | When you want to search broadly |
 
 ---
 
-## How RAG (vector search) works
+## How RAG (Vector Search) Works
 
-Memory search uses RAG (Retrieval-Augmented Generation):
+RAG (Retrieval-Augmented Generation) is used for memory search:
 
-1. **Indexing**: `knowledge/`, `episodes/`, `procedures/`, shared `common_knowledge/`, etc. are chunked, embedded, and stored in a vector store (default Chroma, persistent per-Anima directory). Summaries in `state/conversation.json` may also be indexed.
-2. **Embedding model**: `rag.embedding_model` in `config.json` (default `intfloat/multilingual-e5-small`). Child processes normally use the vector worker to delegate vector ops and embedding generation.
-3. **Search**: The query is embedded; ranking combines similarity with **time decay**, reference frequency, etc. `rag.min_retrieval_score` in `config.json` can floor results.
-4. **Graph spreading**: `rag.enable_spreading_activation` (default true) and `rag.spreading_memory_types` control **spreading activation** on the knowledge graph.
-5. **Incremental updates**: Re-index changed files and run **full index rebuilds** after daily / weekly / monthly cycles to stay consistent.
-6. **Repair**: If ChromaDB or vector search becomes inconsistent, RAG repair can quarantine `vectordb` and rebuild the index from memory files.
+1. **Indexing**: `knowledge/`, `episodes/`, `procedures/`, and shared `common_knowledge/` are chunked and stored in a vector store (default: Chroma, in a per-Anima persistent directory) via embeddings. File hashes are kept in `index_meta.json`, and **only changed files** are updated incrementally.
+2. **Separate conversation summary collection**: Reads **`compressed_summary`** from `state/conversation.json`, chunks by **`### `** headings, and places them in a **dedicated collection** (`memory_type: conversation_summary` / metadata `source: conversation_gist`). This is separate from the normal knowledge index, allowing compressed notes from long chats to be included in search results.
+3. **`.ragignore`**: Writing glob-style patterns in `.ragignore` directly under the data directory (`~/.animaworks/`) excludes matching paths from indexing (comment lines `#` allowed).
+4. **Embedding model**: `rag.embedding_model` in `config.json` (default when unset: `intfloat/multilingual-e5-small`). The vector DB (ChromaDB) is owned by each Anima's root process; other processes deliver to root via the server's internal API (`/api/internal/vector`). Embedding and reranking are computed in one place on the server.
+5. **Search**: The query is vectorized and ranked by combining similarity with **time decay** and reference frequency. The lower bound for results can be set via `rag.min_retrieval_score` in `config.json`. The same lower bound is applied for Priming and tool-based searches.
+6. **Graph diffusion**: `rag.enable_spreading_activation` (default true) and `rag.spreading_memory_types` in `config.json` control **spreading activation** via the knowledge graph.
+7. **Incremental updates and rebuilds**: In addition to re-indexing on file changes, **index rebuilds** run after daily, weekly, and monthly lifecycles to maintain consistency. If RAG inconsistency is detected, repair can isolate `vectordb` and rebuild.
 
-RAG is used automatically when you call `search_memory`. You need not think about internals, but **tips for better retrieval**:
-
-- Use concrete keywords in queries
-- When writing memories, use clear titles and bodies
-- Keep related information in the same file
+RAG is used automatically when `search_memory` is called. You do not need to be aware of the mechanism, but
+**tips for improving search accuracy**:
+- Use queries with specific keywords
+- When writing memories, make titles and content clear (file names affect keyword priority in Priming)
+- Group related information into the same file

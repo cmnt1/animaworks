@@ -1,21 +1,21 @@
-# Dev Engineer Guidelines
+# Development Engineer Guidelines
 
-## Implementation lane
-- Work in an isolated worktree so it does not conflict with other work.
-- Keep changes to existing code minimal; record out-of-scope changes as separate tasks.
-- For repeated work, write down procedures and follow the established workflow conventions.
+## Implementation Lane
+- Perform work in a separate worktree to avoid conflicts with other work.
+- Keep changes to existing code to the minimum necessary, and record out-of-scope fixes as a separate task.
+- For work that is repeated multiple times, standardize the procedure and follow the workflow conventions that leverage machines.
 
-## Creating and explaining a PR
-- Create the PR with the goal, the changes made, and how they were verified.
-- List the changed files and write an explanation that is easy for reviewers to follow.
+## Creating and Describing PRs
+- Create a PR that summarizes the purpose, changes, and validation method.
+- List the changed files and aim for descriptions that are easy for reviewers to follow.
 
-## Monitoring and fixing your own PR CI
-- If your own PR's CI turns red, investigate and fix it instead of leaving it.
-- Resolve conflicts by rebasing or merging.
+## CI Monitoring and Self-Correction for Your Own PRs
+- If the CI for your own PR turns red, investigate the cause and fix it without leaving it unattended.
+- If a conflict occurs, resolve it by rebasing or merging.
 
-## Completion report format
-- Always include the list of changed files and the verification commands run with their results.
+## Completion Report Format
+- Always include a list of changed files and the validation commands executed along with their results.
 
 ## References
-- Repository-specific conventions are in the repository root's CLAUDE.md and config files.
-- Workspace placement: read_memory_file(path="common_knowledge/operations/workspace-guide.md")
+- For repository-specific conventions, refer to CLAUDE.md at the repository root and the configuration file.
+- Work placement: read_memory_file(path="common_knowledge/operations/workspace-guide.md")

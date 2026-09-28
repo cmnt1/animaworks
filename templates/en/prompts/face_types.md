@@ -1,73 +1,95 @@
 # Face Type Catalog
 
-Canonical appearance vocabulary for Animas. Pick **exactly one** when hiring or redesigning.
-This exists to stop everyone collapsing into "cool beauty."
+The authoritative source for Anima's appearance. When adopting or redesigning, **choose exactly one from here**.
+This is vocabulary to prevent easy convergence on "cool type" or "beauty type."
 
-Org rules:
-- **At most 2 cool-type characters per organization**
-- Do not reuse the same face type on 3 or more people
-- Do not default to black/navy hair + narrow eyes + neutral face + suit
+Organization rules:
+- **Maximum of 2 cool-type characters per organization**
+- Do not use the same face type for 3 or more characters
+- Do not default to the combination of black hair, navy hair, sharp eyes, and a straight face
 
-Put each type's Danbooru tags into `assets/prompt.txt`.
+Each type's Danbooru tags must be placed in `assets/prompt.txt`.
 
 ---
 
-## Genki
+## Energetic Type
 
-Sun. Big eyes, open smile, optional thicker brows, blush.
+Sunshine. Large eyes, laughing with an open mouth. Eyebrows may be thick. Cheeks are flushed.
+- Eyes: Round and large. Strong highlights
+- Mouth: Open smile. Teeth may be visible
 - Tags: `round eyes, large eyes, open mouth, smile, happy, cheerful, blush`
 
-## Cute
+## Cute Type
 
-Approachable. Small face, soft cheeks, frequent smile, no aggression.
+Approachable. Small face, soft cheeks, smiles often. No aggression.
+- Eyes: Big round eyes
+- Mouth: Small. A gentle smile
 - Tags: `round eyes, cute face, soft cheeks, small mouth, smile, friendly expression`
 
-## Airhead
+## Airheaded Type
 
-Vacant-cute. Droopy eyes. Looks half-asleep until she grins.
+Vaguely cute. Droopy eyes. Hard to tell if awake or sleepy, but when smiling, suddenly brightens up.
+- Eyes: Droopy. Tends to be half-lidded
+- Mouth: Vacant, or a loose smile
 - Tags: `tareme, droopy eyes, sleepy eyes, soft features, gentle expression, youthful face`
 
-## Gyaru
+## Gyaru Type
 
-Trendy and flashy. Fun, not mean-girl.
+Flashy and trendy. Makeup look, not pretension but fun. Can work in accounting or legal.
+- Eyes: Slightly upturned, long lashes
+- Mouth: A smirk, or an open laugh
 - Tags: `tsurime, long eyelashes, trendy, gyaru, smug smile, fashionable`
 
-## Hot-blooded
+## Hot-Blooded Type
 
-Competitive. Strong brows. Energy shows even when smiling.
+Competitive. Thick eyebrows. Clear eyes. Even when smiling, determination shows.
+- Eyes: Large upturned eyes, or strong round eyes
+- Mouth: A grin showing teeth, or a determined straight face
 - Tags: `determined eyes, thick eyebrows, energetic, fierce smile, confident`
 
-## Ojou
+## Young Lady Type
 
-Graceful and enjoying it. Stage princess, not icy aristocrat.
+Elegant but enjoying herself. Not a cold aristocrat, but a lady on stage.
+- Eyes: Neat double eyelids, may be slightly droopy or upturned
+- Mouth: Refined smile. Sometimes narrows eyes happily
 - Tags: `elegant, refined features, graceful, gentle smile, noble, princess-like`
 
-## Onee-san
+## Onee-san Type
 
-Adult warmth. Allure without intimidation.
+Mature. Nurturing. May have allure but does not intimidate.
+- Eyes: Somewhat long and narrow but soft
+- Mouth: Gentle smile, or a meaningful smirk
 - Tags: `mature face, gentle smile, onee-san, warm expression, alluring`
 
-## Little devil
+## Little Devil Type
 
-Mischief. Playful gaze. Not scary.
+Mischievous. Gaze wanders. Not scary.
+- Eyes: Narrow or round, suits winks and sidelong glances
+- Mouth: A smirk. Fangs are fine
 - Tags: `mischievous, sly smile, fang, wink, playful eyes`
 
-## Beauty
+## Beauty Type
 
-Balanced pretty. Default is a smile, never a blank stare.
+Balanced beauty. Do not make expressionless. A smile is the default.
+- Eyes: Refined. Not too sharp
+- Mouth: Add a smile
 - Tags: `beautiful, balanced features, soft smile, attractive`
 
-## Cool
+## Cool Type
 
-Narrow eyes, thin lips, low expression. **Max 2 per org.**
-Use only when quiet authority is required.
+Sharp eyes, thin lips, few expressions. **Maximum of 2 per organization.**
+Use only when quiet authority is needed, such as for a commander.
+- Eyes: Sharp. Not too large
+- Mouth: Closed, or a very faint smile
 - Tags: `narrow eyes, cool beauty, refined features, thin lips, calm expression`
 
 ---
 
-## Forbidden default pack
+## Default Sets You Must Not Choose
 
-Do not pick this because the job is serious:
+The following must not be chosen just because "the role is serious."
 
-- Face: cool + hair: black/navy + expression: serious + outfit: suit
-- Writing `beautiful, elegant, serious expression` with no face type
+- Face type: Cool type + Hair: black/navy + Expression: straight face + Clothes: suit
+- Writing only `beautiful, elegant, serious expression` in the prompt without filling in the face type
+
+Use when:

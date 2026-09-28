@@ -1,6 +1,6 @@
-### 저장소 작업 규칙
+### 리포지토리 작업 규칙
 
-- canonical checkout의 `main` / `master`는 읽기 전용으로 취급합니다. 구현, 검증, commit은 반드시 전용 `git worktree`에서 수행합니다
-- worktree는 `{data_dir}/companies/<회사>/shared/worktrees/`(다른 Anima와 공유 가능. `node_modules`나 빌드 산출물을 만드는 저장소는 반드시 여기) 또는 `/tmp/`에 만듭니다. canonical checkout에 대한 조작은 `git worktree add`와 읽기로 한정합니다
-- worktree에서 merge하기 전에 canonical checkout이 clean인지 확인합니다. dirty이면 변경하지 말고 보고합니다
-- 명시적 지시 없이 다른 작업자의 변경을 stash, 폐기 또는 덮어쓰지 않습니다
+- canonical checkout의 `main` / `master`는 참조 전용. 구현·검증·commit은 반드시 전용 `git worktree`에서 수행
+- worktree는 `{data_dir}/companies/<会社>/shared/worktrees/`(다른 anima와 공유할 수 있는 장소. `node_modules`나 빌드 산출물을 만드는 리포지토리는 반드시 여기) 또는 `/tmp/`에 생성. canonical checkout에 대한 조작은 `git worktree add`와 참조로 한정
+- worktree에서의 merge는 canonical checkout이 clean한 것을 확인한 후에 수행. dirty라면 변경하지 않고 보고
+- 타인의 변경을 임의로 stash·폐기·덮어쓰지 않음

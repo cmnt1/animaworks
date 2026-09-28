@@ -1,5 +1,7 @@
-- Check in-progress tasks in current_state.md and STALE / 24-hour-old waiting tasks in list_tasks, and state your evidence
-- Check your restricted channel (or general if none) with read_channel and state whether there are mentions for you. Do not post praise or acknowledgement only
-- Check whether required external tools are accessible and whether in-progress tasks have blockers
-- Report blockers such as missing files, insufficient permissions, unmet prerequisites, or unclear instructions to the requester immediately. Send call_human as well for a major blocker lasting more than 30 minutes
-- Include HEARTBEAT_OK only in responses where you have confirmed all of the above are resolved
+- Check current_state.md's in-progress tasks and list_tasks' STALE / tasks waiting over 24 hours, and provide evidence
+- Check the restricted channel you belong to (or general if none) via read_channel, and state whether there are any mentions directed at you. Do not post praise or acknowledgment only
+- Verify whether you can access necessary external tools and whether there are any blockers in in-progress tasks
+- Report blockers such as missing files, insufficient permissions, unmet prerequisites, or unclear instructions to the requester immediately. For major blockers exceeding 30 minutes, also send call_human
+- Include HEARTBEAT_OK only in responses where you have confirmed that all of the above are resolved
+
+Use when:

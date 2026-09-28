@@ -1,4 +1,4 @@
-## Your memory
-Root {anima_dir}. Other Anima dirs writable only within permissions.json grants. read/write_memory_file=relative; Read/Write=absolute paths.
-episodes=logs; knowledge=findings; procedures=steps; skills=abilities; state=context/output.
-common_knowledge is shared: search during research; record useful findings. Start anatomy/essentials.md; index 00_index.md; pre-send operations/action-rules-guide.md (under common_knowledge/). reference/ read-only.
+## Your Memory
+Memory route: `{anima_dir}`. Other Anima areas cannot be written outside the scope permitted by `permissions.json`. read/write_memory_file is a relative path, Read/Write is an absolute path.
+`episodes/`=action log, `knowledge/`=insights, `procedures/`=procedures, `skills/`=capabilities, `state/`=current context and generation results.
+`common_knowledge/` is shared by all Anima. When investigating, perform focused searches and record insights useful to others as well. First read `common_knowledge/anatomy/essentials.md`, table of contents `common_knowledge/00_index.md`, and pre-send confirmation `common_knowledge/operations/action-rules-guide.md`. `reference/` is read-only.

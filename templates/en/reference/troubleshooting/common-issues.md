@@ -1,34 +1,34 @@
-# Common Issues and Troubleshooting
+# Common Problems and How to Handle Them
 
-Reference for problems commonly encountered during work and how to address them.
-Each issue is documented in the format: **Symptoms → Causes → Steps**.
+This is a reference summarizing common problems you may encounter during work and the steps to resolve them.
+Each problem is documented in the format "Symptom → Cause → Resolution Steps."
 
-When stuck, read this document first and follow the steps for the relevant section.
-If that does not resolve the issue, see `troubleshooting/escalation-flowchart.md` and escalate appropriately.
+When you're stuck, first read this documentation and follow the steps for the relevant item.
+If the issue is not resolved here, refer to `troubleshooting/escalation-flowchart.md` and escalate appropriately.
 
 ---
 
-## Messages Not Received
+## Messages Not Being Delivered
 
 ### Symptoms
 
-- No reply to a message you thought you sent
-- The recipient says they never received it
-- You ran `send_message` but the recipient does not react
+- No reply to a message you sent
+- The other party says they didn't receive your message
+- You executed `send_message`, but the other party didn't respond
 
 ### Causes
 
-1. Incorrect recipient specification (canonical Anima name, user alias, `slack:` / `chatwork:` prefixes, etc.) or a value that does not match the resolution order
-2. Server is stopped
-3. Recipient is between Heartbeat intervals (message stays unread until the next run)
-4. Send failed with an error (global send limits, conversation depth limits, per-session DM limits, `RecipientResolutionError`, etc.)
-5. `intent` missing or invalid. For DMs, only `report` / `question`. For task delegation use `delegate_task` (attaching `intent="delegation"` to `send_message` returns a deprecation message)
-6. Per-session DM limits exceeded (**one message per recipient per session**. **Maximum distinct recipients** per session is `max_recipients_per_run` from `status.json` according to `role` — see table below. Override per Anima with the same field in `status.json`)
+1. Incorrect destination specification (Anima official name, user alias, `slack:` / `chatwork:` prefix, etc.) or a specification that doesn't match the resolution order
+2. The server is down
+3. The other party is between heartbeat intervals (messages remain unread until the next startup)
+4. The send process failed with an error (global send limit, conversation depth limit, in-session DM limit, `RecipientResolutionError`, etc.)
+5. `intent` is unspecified or invalid. For DMs, only `report` / `question` are allowed. For task delegation, use `delegate_task` (attaching `intent="delegation"` to `send_message` returns a deprecation message)
+6. In-session DM limit exceeded (**only 1 message per session to the same destination**. **The maximum number of different destinations** is `max_recipients_per_run` according to `role` in `status.json` — see table below. Individual overrides are available via the same-named field in `status.json`)
 
 **`max_recipients_per_run` by role (`core/config/schemas.py` `ROLE_OUTBOUND_DEFAULTS`)**
 
-| role | Max distinct recipients per session (one message each) |
-|------|--------------------------------------------------------|
+| role | Maximum destinations per session (1 message each) |
+|------|--------------------------------------|
 | manager | 10 |
 | engineer | 5 |
 | writer | 3 |
@@ -36,112 +36,112 @@ If that does not resolve the issue, see `troubleshooting/escalation-flowchart.md
 | ops | 2 |
 | general | 2 |
 
-### Steps
+### Resolution Steps
 
-1. **Verify recipient name and address format**
-   - Confirm the `send_message` `to` parameter resolves to the intended party
-   - Resolution order in `core/messaging/outbound.py` `resolve_recipient` is roughly:
-     1. **Exact** match with a known Anima name (case-sensitive) → internal
-     2. **Alias** from `config.json` `external_messaging.user_aliases` (case-insensitive) → external (`preferred_channel`)
-     3. `slack:USERID` / `chatwork:ROOMID` → external direct
-     4. Bare Slack user ID (`U` + 8+ alphanumeric) → Slack direct
-     5. **Case-insensitive** match with a known Anima name → internal
-     6. Otherwise → resolution fails
-   - For reliable internal delivery, use the **canonical name** from `~/.animaworks/animas/<name>/` or `reference/organization/structure.md`
-   - How to verify:
+1. **Verify the recipient name and destination format**
+   - Confirm that the `to` parameter in `send_message` resolves to the intended recipient
+   - The resolution order in the implementation (`core/messaging/outbound.py` `resolve_recipient`) is roughly as follows:
+     1. **Exact match** with a known Anima name (case-sensitive) → internal
+     2. **Alias** in `config.json` `external_messaging.user_aliases` (case-insensitive) → external (preferred_channel)
+     3. `slack:USERID` / `chatwork:ROOMID` → direct external
+     4. Bare Slack user ID (`U` + 8 or more alphanumeric characters) → direct Slack
+     5. **Case-insensitive match** with a known Anima name → internal
+     6. Anything else → resolution failure
+   - To reliably reach an internal Anima, use the **official name** on `~/.animaworks/animas/<名前>/` or `reference/organization/structure.md`
+   - How to check:
      ```
-     search_memory(query="organization", scope="common_knowledge")
+     search_memory(query="組織", scope="common_knowledge")
      ```
-     Or `read_memory_file(path="reference/organization/structure.md")` to list all Anima names in the org
-   - **Note**: While chatting with a human, you cannot use `send_message`; reply in plain text and the human receives it. To contact a human outside chat (e.g. during Heartbeat), use `call_human`
+     Or check all Anima names in the organization via `read_memory_file(path="reference/organization/structure.md")`
+   - **Note**: In chat, `send_message` cannot be used for human recipients. Reply directly with text to reach a human. Outside chat (e.g., heartbeat), use `call_human` to contact a human
 
-2. **Check server status**
-   - If you are running, the server should normally be up
-   - If still uncertain, report to your supervisor that messages are not being received
+2. **Check the server status**
+   - Since you are running, the server should be operational
+   - If still concerned, report to your supervisor that "messages are not being delivered"
 
-3. **Wait for the recipient**
-   - Recipients check Inbox on Heartbeat intervals (e.g. every 30 minutes)
-   - No immediate reply is normal; processing happens on the next Heartbeat
-   - If urgent, report to your supervisor that you need urgent contact and request a manual trigger
+3. **Wait for the other party's response**
+   - The other party checks their inbox at heartbeat intervals (e.g., every 30 minutes)
+   - Even if there's no immediate reply, it will be processed at the next heartbeat
+   - For urgent matters, report to your supervisor that you "need to make urgent contact" and request a manual startup
 
-4. **If send failed**
+4. **If a send error occurred**
    - Record the error message
-   - Note the situation in `state/current_state.md`
+   - Document the situation in `state/current_state.md`
    - Report to your supervisor
 
-### Examples
+### Specific Examples
 
 ```
-# Wrong name
+# 名前を間違えていた場合
 send_message(to="Aoi", content="...", intent="report")   # OK
-send_message(to="aoi", content="...", intent="report")  # May error if the name differs
+send_message(to="aoi", content="...", intent="report")  # 名前が異なればエラーになる可能性あり
 
-# DM requires intent (report / question only). Delegation: delegate_task
-# Max distinct recipients per session depends on role (e.g. general: up to 2, engineer: up to 5). One send per recipient
+# DM は intent 必須（report / question のみ）。委譲は delegate_task
+# 1セッションあたりの「別宛先」数はロールにより異なる（例: general は最大2人、engineer は5人まで）。同一宛先へは1回のみ
 send_message(
     to="aoi",
-    content="Understood. Starting work.",
-    intent="report",           # Required: report / question
-    reply_to="msg-abc123",     # Optional: original message ID
-    thread_id="thread-xyz789"  # Optional: thread ID
+    content="了解しました。作業を開始します。",
+    intent="report",           # 必須: report / question
+    reply_to="msg-abc123",     # 任意: 元メッセージのID
+    thread_id="thread-xyz789"  # 任意: スレッドID
 )
 
-# DM for acknowledgment, thanks, or FYI only is not allowed → use post_channel (Board)
+# 確認・お礼・お知らせのみのDMは不可 → post_channel（Board）を使用
 ```
 
 ---
 
-## Cannot Proceed With a Task
+## Unable to Proceed with a Task
 
-There is no "waiting for conditions" or "blocked" state (`blocked` has been retired). You always have exactly three options: proceed, close, or ask.
+There is no such state as "waiting for conditions to be met" or "blocked" (`blocked` has been deprecated). You can only choose from three options: proceed, close, or consult.
 
 ### Symptoms
 
-- You try to proceed but lack required information or permissions
-- Waiting for another Anima to finish work
-- External services return errors
+- You tried to proceed with work but lack the necessary information or permissions
+- You are waiting for another Anima to complete their work
+- An external service returns an error
 
 ### Causes
 
-1. Dependency task not completed
-2. Insufficient permissions (operation not allowed in `permissions.json`. Even with `permissions.md` only, first `load_permissions` generates JSON and renames MD to `.bak`)
-3. Missing required information
-4. External service outage
+1. A dependent task is incomplete
+2. Insufficient permissions (an operation not allowed in `permissions.json`. Even in an environment with only `permissions.md`, JSON is generated on the first `load_permissions`, and the MD is moved to `.bak`)
+3. Necessary information is missing
+4. An external service outage
 
-### Steps
+### Resolution Steps
 
-1. **Do not repeat the same action**
+1. **Don't repeat the same operation**
    - Identify specifically what is missing
-   - Organize: **whose** work, **what** work, and **by when** it is needed
+   - Clarify "whose," "what work," and "by when" is needed
 
-2. **Decide if you can resolve it yourself**
-   - Consider whether another approach avoids the problem
-   - Search memory for similar past issues:
+2. **Determine whether you can resolve it yourself**
+   - Consider whether a different approach can work around the issue
+   - Search your memory to see if a similar problem occurred in the past:
      ```
-     search_memory(query="the error or keyword", scope="episodes")
-     search_memory(query="workaround", scope="knowledge")
+     search_memory(query="エラー内容やキーワード", scope="episodes")
+     search_memory(query="回避", scope="knowledge")
      ```
 
-3. **Report to the requester if unresolved** (see `troubleshooting/escalation-flowchart.md`). Include:
+3. **If you can't resolve it, report to the requester** (see `troubleshooting/escalation-flowchart.md`). Include the following in your report:
    - What you tried to do
-   - What is missing or what you are waiting on
-   - What you already tried, and your recommendation
+   - What is missing or what you are waiting for
+   - What you attempted yourself and your recommendation
    ```
    send_message(
-       to="supervisor_name",
-       content="[Progress Report]\nTask: XXX implementation\nFact: YYY API permission missing\nTried: Checked permissions.json; no matching setting\nRecommendation: Please add API permission",
+       to="上司の名前",
+       content="【進捗報告】\nタスク: XXXの実装\n事実: YYYのAPI権限が不足\n試行: permissions.jsonを確認したが該当設定なし\n推奨: API権限の追加をお願いします",
        intent="report"
    )
    ```
 
-4. **Decide what to do with the task**
-   - If you may return to it, leave it alone (it stays `pending`; it also reverts there automatically if the session ends undeclared)
-   - If it's no longer needed, `update_task(status="cancelled", summary="reason")`
+4. **Decide how to handle the task**
+   - If there's a chance you'll continue, you don't need to do anything (the task remains in `pending`. Even if the session ends without a declaration, it automatically returns to `pending`)
+   - If it's no longer needed, set it to `update_task(status="cancelled", summary="理由")`
 
-5. **Look for work you can still do in the meantime**
-   - Persistent task queue: if tools are available, use `list_tasks` or `Bash: animaworks-tool task list`
-   - Use `list_tasks(detail=true)` to inspect pending work, dependencies, and attention reasons; do not duplicate or manually resubmit existing work
-   - Start another task
+5. **Check whether there's other work you can do while waiting**
+   - Persistent task queue: check via `list_tasks` if the tool is available, or `Bash: animaworks-tool task list`
+   - Check `list_tasks(detail=true)` for unstarted tasks, dependencies, and reasons requiring action. Do not duplicate existing tasks or manually re-submit them
+   - Start working on a different task
 
 ---
 
@@ -149,88 +149,88 @@ There is no "waiting for conditions" or "blocked" state (`blocked` has been reti
 
 ### Symptoms
 
-- Cannot recall past work
-- A procedure should exist but you cannot find it
-- Search returns no relevant hits
+- You can't recall something you did in the past
+- A procedure document should exist but can't be found
+- Searches return no relevant results
 
 ### Causes
 
-1. Search keywords are not appropriate
-2. Search scope (`scope`) is too narrow
-3. Not yet written to memory (first time doing the task)
-4. Wrong file path
+1. The search keywords are not appropriate
+2. The search scope is too narrow
+3. It hasn't been written to memory yet (first-time work)
+4. The file path is incorrect
 
-### Steps
+### Resolution Steps
 
-1. **Broaden scope and search again**
-   - First try the `all` scope:
+1. **Widen the scope and search again**
+   - First, search broadly with the `all` scope:
      ```
-     search_memory(query="your keyword", scope="all")
+     search_memory(query="検索したいキーワード", scope="all")
      ```
-   - If there are too many results, narrow scope:
+   - If there are too many results, narrow the scope:
      ```
-     search_memory(query="Slack setup", scope="procedures")    # Procedures only
-     search_memory(query="Slack incident", scope="episodes")   # Past events only
-     search_memory(query="Slack", scope="knowledge")           # Learned knowledge only
+     search_memory(query="Slack設定", scope="procedures")    # Limited to procedure documents
+     search_memory(query="Slack障害", scope="episodes")      # Limited to past events
+     search_memory(query="Slack", scope="knowledge")         # Limited to learned knowledge
      ```
 
 2. **Try different keywords**
-   - Synonyms and related terms (e.g. “send”, “message”, “notify”, “contact”)
-   - English keywords (e.g. `"slack"`, `"message"`, `"send"`)
-   - Partial matches (e.g. “Chatwork” → `chatwork`, “チャットワーク”)
+   - Try synonyms and related terms (e.g., "送信", "メッセージ", "通知", "連絡")
+   - Also try English keywords (e.g., "slack", "message", "send")
+   - Be aware of partial matches (e.g., "Chatwork" → "chatwork", "チャットワーク")
 
-3. **Search common knowledge**
-   - If not in personal memory, it may exist in shared knowledge:
+3. **Search shared knowledge**
+   - If it's not in your personal memory, it may exist in shared knowledge:
      ```
-     search_memory(query="your keyword", scope="common_knowledge")
+     search_memory(query="検索キーワード", scope="common_knowledge")
      ```
-   - Check the index:
+   - Check the table of contents of shared knowledge:
      ```
      read_memory_file(path="common_knowledge/00_index.md")
      ```
 
-4. **Inspect directories directly**
-   - In Mode S (Claude Agent SDK), the built-in `Glob` can list under the Anima directory. In Mode A and similar, open known paths with `read_memory_file` or cast a wide net with `search_memory`
+4. **Check the directory directly**
+   - In Mode S (Claude Agent SDK) and similar, the built-in `Glob` can list the contents under the Anima directory. In Mode A and similar, open a known path with `read_memory_file`, or search broadly with `search_memory`
    - If you know the file name, read it directly:
      ```
      read_memory_file(path="procedures/slack-setup.md")
      read_memory_file(path="knowledge/xxx-findings.md")
      ```
 
-5. **If memory truly does not exist**
-   - The task may be a first-time effort
-   - Check `common_knowledge/` for related guides
-   - Ask your supervisor or peers for know-how
-   - After completing the work, you **MUST** record it as memory (for next time)
-   - Old or duplicate memories can be moved (not deleted) to `archive/` with `archive_memory_file(path="...", reason="...")` (`reason` is required)
+5. **If the memory doesn't exist**
+   - It may be a first-time task
+   - Check whether shared knowledge (`common_knowledge/`) has a relevant guide
+   - Ask your supervisor or colleagues if they have any insights
+   - After completing the work, record it in memory as required (for next time)
+   - Old or duplicate memories can be moved to archive/ using `archive_memory_file(path="...", reason="...")` (a move, not a deletion. `reason` is required)
 
-### Search Scope Reference
+### Search Scope List
 
-| scope | Searches | Use for |
-|-------|----------|---------|
-| `knowledge` | Learned knowledge, know-how | Approach, technical notes |
-| `episodes` | Past action logs | Fact-checking “what happened when” |
-| `procedures` | Procedures | “How to” steps |
-| `common_knowledge` | Knowledge shared across all Anima | Org rules, system guides |
+| scope | Search target | Use case |
+|-------|---------|------|
+| `knowledge` | Learned knowledge and know-how | Response policies, technical notes |
+| `episodes` | Past action logs | Fact-checking "what was done when" |
+| `procedures` | Procedure documents | Checking "how to do" procedures |
+| `common_knowledge` | Knowledge shared by all Animas | Organization rules, system guides |
 | `skills` | Skills and common skills (vector search) | Discovering and searching skills |
-| `activity_log` | Unified activity timeline (tool results, messages, etc.) | “What did I just read?” recent actions |
-| `all` | All of the above (vector search + activity_log BM25 fused via RRF) | Keyword existence, broad search |
+| `activity_log` | Recent action logs (tool execution results, messages, etc.) | Fact-checking recent items like "the email I just read" or "the search result from earlier" |
+| `all` | All of the above (vector search + activity_log BM25 integrated via RRF) | Checking whether a keyword exists, broad searches |
 
 ---
 
-## Permission Denied
+## No Permission
 
 ### Symptoms
 
-- Errors such as “no permission” or “Permission denied” when running a tool
-- Cannot read or write files you expected to access
-- Command execution rejected
+- Running a tool returned an error like "権限がありません" or "Permission denied"
+- You tried to read or write a file but couldn't access it
+- You tried to run a command but it was rejected
 
 ### Causes
 
-1. Operation not allowed in `permissions.json` (with `permissions.md` only, `load_permissions` normalizes to JSON on load; invalid JSON may fall back to permissive defaults with a warning)
-2. External tool category not enabled in the registry (`check_permissions` → `available_but_not_enabled`)
-3. File path outside allowed scope (writes to protected files, outside `file_roots`, etc.). **Global** denials also come from `permissions.global.json` and framework-side patterns
+1. An operation not allowed in `permissions.json` (if only `permissions.md` is present, `load_permissions` is normalized to JSON-equivalent on read. Invalid JSON may be warned and fall back to open defaults)
+2. The external tool category is not enabled in the registry (`available_but_not_enabled` in `check_permissions`)
+3. The file path is outside the allowed range (writing to protected files, outside `file_roots`, etc.). Additionally, **global** denials exist in both `permissions.global.json` and framework-side patterns
 
 ### Steps
 
@@ -265,136 +265,136 @@ There is no "waiting for conditions" or "blocked" state (`blocked` has been reti
 
 ---
 
-## Tools Don't Work
+## Tools Not Usable
 
 ### Symptoms
 
-- “Tool not found” or similar when invoking a tool
-- External tools (Slack, Gmail, etc.) unavailable
+- You called a tool but got an error like "ツールが見つかりません"
+- External tools (Slack, Gmail, etc.) are unavailable
 
-### Causes
+### Cause
 
-1. The tool is not allowed in `permissions.json` (or MD-derived settings after normalization), or a gated action is not explicitly permitted
-2. Skill file not found
-3. External service credentials not configured
+1. The tool is not permitted in `permissions.json` (or MD-derived configuration normalized at load time), or gated actions are not explicitly permitted
+2. The skill file is not found
+3. External service authentication credentials are not configured
 
-### Steps
+### Resolution Steps
 
-1. **Confirm how to use the tool via skills**
-   - Use `read_memory_file` with the path from the system prompt skill catalog (e.g. `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`) to load the full procedure
-   - In B-mode, when external tools are allowed, you can call them with `Bash: animaworks-tool <tool> <subcommand>`
+1. **Check how to use the tool in the skill**
+   - Specify the path shown in the skill catalog of the system prompt with `read_memory_file` (e.g., `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`) and retrieve the full procedure
+   - If external tools are permitted in B-mode, they can be called with `Bash: animaworks-tool <ツール> <サブコマンド>`
 
 2. **Check permissions**
    ```
    check_permissions()
    ```
-   - `external_tools.enabled`: external tool categories on this Anima’s registry (what actually reaches the session)
-   - `external_tools.available_but_not_enabled`: implemented in the framework but not on this Anima’s registry — cross-check with `permissions.json` allowances, gated actions, and execution mode
+   - `external_tools.enabled`: External tool categories registered in this Anima's tool registry (those actually passed to the session)
+   - `external_tools.available_but_not_enabled`: Categories implemented in the framework but not in this Anima's registry. Check together with `permissions.json` for permissions, gated actions, and execution mode
 
-3. **If still unavailable**
-   - Verify the tool/action is allowed in `permissions.json` and credentials exist (e.g. `shared/credentials.json`)
-   - If it still fails, ask your supervisor, stating **why** the tool is needed
+3. **If unavailable**
+   - Check with `permissions.json` whether the relevant tool/action is permitted and whether authentication credentials (e.g., `shared/credentials.json`) exist
+   - If still not possible, request from the supervisor (state clearly "why this tool is needed")
 
-4. **MCP-integrated modes (S/C/D/G: Claude Agent SDK / Codex CLI / Cursor Agent / Gemini CLI)**
-   - Built-in tools are available without a prefix (e.g. `send_message`). If missing, restart the process
-   - External tools: load CLI usage from the skill file with `read_memory_file`, then run `animaworks-tool <tool> <subcommand>` via **Bash** (the agent’s Bash tool)
-   - Long-running tools (image generation, local LLM, etc.): use `animaworks-tool submit` for async execution
+4. **For MCP integration mode (S/C/D/G: Claude Agent SDK / Codex CLI / Cursor Agent / Gemini CLI)**
+   - Built-in tools are available without a prefix (e.g., `send_message`). If not found, a process restart is required
+   - For external tools, read the skill body with `read_memory_file` to check CLI usage, and execute `animaworks-tool <ツール> <サブコマンド>` via **Bash** (using the agent's Bash tool)
+   - Long-running tools (image generation, local LLM, etc.) are executed asynchronously with `animaworks-tool submit`
 
-5. **D-mode (Cursor Agent) — common issues**
-   - **CLI not found**: Confirm `cursor-agent` is installed on the host
-   - **Auth error**: Run `agent login` in a terminal
-   - **Fallback**: If unresolved, set `execution_mode` to `A` or switch the model to a LiteLLM (Mode A) path
+5. **Common issues specific to D-mode (Cursor Agent)**
+   - **CLI not found**: Check whether the `cursor-agent` CLI is installed on the host
+   - **Authentication error**: Run `agent login` in the terminal to log in
+   - **Fallback**: If unresolved, set `execution_mode` to `A`, or switch the model to LiteLLM (Mode A) for operation
 
-6. **G-mode (Gemini CLI) — common issues**
-   - **CLI not found**: Confirm the `gemini` CLI is installed on the host
-   - **Auth error**: Run `gemini auth login` or set env var `GEMINI_API_KEY`
-   - **Fallback**: If unresolved, set `execution_mode` to `A` or switch to LiteLLM (Mode A). The `gemini/` prefix may be remapped to `google/` for the Google provider
+6. **Common issues specific to G-mode (Gemini CLI)**
+   - **CLI not found**: Check whether the `gemini` CLI is installed on the host
+   - **Authentication error**: Run `gemini auth login` or set the environment variable `GEMINI_API_KEY`
+   - **Fallback**: If unresolved, set `execution_mode` to `A`, or switch the model to LiteLLM (Mode A). The `gemini/` prefix may be remapped to `google/` for Google providers
 
-7. **A-mode (LiteLLM)**
-   - External tools: confirm usage with `read_memory_file` on the skill path, then run `animaworks-tool <tool> <subcommand>` via **Bash**
+7. **For A-mode (LiteLLM)**
+   - For external tools, read the skill body with `read_memory_file` to check usage, and execute `animaworks-tool <ツール> <サブコマンド>` via **Bash**
 
 8. **If the tool returns an error**
    - Record the error message accurately
-   - For auth errors, report to your supervisor (credential setup is an admin responsibility)
-   - For transient timeouts or rate limits, wait briefly and retry (retry count and spacing depend on the tool implementation and server settings)
-   - If it does not improve, report the facts and what you tried to the requester
+   - If it is an authentication error, report to the supervisor (credential configuration is the administrator's responsibility)
+   - If it is a temporary timeout or rate limit, wait briefly and retry (the number and interval depend on the tool implementation and server configuration)
+   - If it does not improve, report the facts and what was tried to the requester
 
-See `operations/tool-usage-overview.md` for the full tool picture.
+See `operations/tool-usage-overview.md` for the overall tool architecture.
 
 ---
 
-## Context Too Long
+## Context has become too long
 
 ### Symptoms
 
-- Session has been running a long time
-- Responses are slowing down
-- System notice that you are near the context limit
+- The session has been running for a long time
+- Responses have become slower
+- A notification from the system indicates "approaching the context limit"
 
-### Causes
+### Cause
 
-- Long work or many tool calls consuming the context window
-- Large amounts of file content loaded
+- The context window has been consumed by long-running work or numerous tool calls
+- Large amounts of file content were read
 
-### Steps
+### Resolution Steps
 
-1. **Save work state to short-term memory** (MUST)
-   - Write current state under `shortterm/` (for chat sessions use `shortterm/chat/`):
+1. **Save the work state to short-term memory** (MUST)
+   - Write the current work state to `shortterm/` (or `shortterm/chat/` during chat sessions):
    ```
    write_memory_file(
        path="shortterm/chat/session_state.md",
-       content="## Work State\n\n### Task in progress\n- XXX implementation (50% done)\n\n### Next steps\n1. Finish YYY\n2. Test ZZZ\n\n### Important interim results\n- AAA findings: BBB\n- CCC setting: DDD",
+       content="## 作業状態\n\n### 実行中のタスク\n- XXXの実装（50%完了）\n\n### 次のステップ\n1. YYYを完了する\n2. ZZZをテストする\n\n### 重要な中間結果\n- AAAの調査結果: BBB\n- CCCの設定値: DDD",
        mode="overwrite"
    )
    ```
-   - For Heartbeat sessions use `shortterm/heartbeat/session_state.md`
+   - Use `shortterm/heartbeat/session_state.md` during heartbeat sessions
 
 2. **Update `state/current_state.md`** (MUST)
    ```
    write_memory_file(
        path="state/current_state.md",
-       content="## Current Task\n\nXXX implementation\n\n### Progress\n- 50% done\n- Resume from YYY next time\n\n### Notes\n- Important findings here",
+       content="## 現在のタスク\n\nXXXの実装\n\n### 進捗\n- 50%完了\n- 次回はYYYから再開\n\n### メモ\n- 重要な発見事項をここに記載",
        mode="overwrite"
    )
    ```
 
-3. **Persist important learnings** (SHOULD)
-   - Save insights under `knowledge/`:
+3. **Save important insights to persistent memory** (SHOULD)
+   - Save insights gained during work to `knowledge/`:
    ```
    write_memory_file(
        path="knowledge/xxx-findings.md",
-       content="# Findings on XXX\n\n## Discoveries\n...",
+       content="# XXXに関する知見\n\n## 発見事項\n...",
        mode="overwrite"
    )
    ```
 
-4. **Wait for session continuation**
-   - The system starts a new session automatically
-   - The new session includes `shortterm/chat/` (or `shortterm/heartbeat/`) in context
-   - Re-read `state/current_state.md` and resume
+4. **Wait for the session to continue**
+   - The system will automatically start a new session
+   - In the new session, the contents of `shortterm/chat/` (or `shortterm/heartbeat/`) are included in the context
+   - Re-read `state/current_state.md` to resume work
 
-### Prevention
+### Preventive Measures
 
-- Avoid reading entire large files; search for only what you need
-- Update `state/current_state.md` regularly during long work
-- Write interim results to memory often
+- For large files, do not read the entire file; search only the necessary parts
+- For long tasks, update `state/current_state.md` regularly
+- Write intermediate results to memory frequently
 
 ---
 
-## Message Sending Limited
+## Message sending was restricted
 
 ### Symptoms
 
-- `send_message` or `post_channel` returns an error
-- `GlobalOutboundLimitExceeded: Hourly send limit (N messages) reached...` or the 24-hour variant
-- `GlobalOutboundLimitExceeded: Sending blocked because activity log could not be read` (`core/messaging/cascade_limiter.py` — when the sender’s `activity_log` cannot be read)
-- `ConversationDepthExceeded: Conversation with {recipient} reached 6 turns in 10 minutes...`
+- An error was returned when executing `send_message` or `post_channel`
+- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` or a 24-hour version of the same type of message was displayed
+- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` was displayed (`core/messaging/cascade_limiter.py` — when the sender's `activity_log` cannot be read)
+- `ConversationDepthExceeded: {相手}との会話が10分間に6ターンに達しました...` was displayed
 
-### Causes
+### Cause
 
-- **Role-based global limits**: Counts `dm_sent` / `message_sent` / `channel_post` from `activity_log` for 1-hour and 24-hour windows (`ConversationDepthLimiter.check_global_outbound`). Override per Anima with `max_outbound_per_hour` / `max_outbound_per_day` in `status.json`; if unset, use role defaults from `ROLE_OUTBOUND_DEFAULTS`
+- **Per-role global limit**: `dm_sent` / `message_sent` / `channel_post` are aggregated from activity_log and judged by the 1-hour and 24-hour counts (`ConversationDepthLimiter.check_global_outbound`). The limit can be individually overridden with `max_outbound_per_hour` / `max_outbound_per_day` in `status.json`; if not set, the default in `role` (`ROLE_OUTBOUND_DEFAULTS`) is used
 
-**Default hourly / 24-hour limits by role (code defaults)**
+**Per-role 1-hour / 24-hour limits (code defaults)**
 
 | role | 1 hour | 24 hours |
 |------|--------|----------|
@@ -405,116 +405,116 @@ See `operations/tool-usage-overview.md` for the full tool picture.
 | ops | 20 | 80 |
 | general | 15 | 50 |
 
-- Repeated post to the same channel inside the cooldown window (`heartbeat.channel_post_cooldown_s` in `config.json`, default 300 seconds)
-- Two-party back-and-forth exceeded depth limits (`Messenger.send` → `ConversationDepthLimiter.check_depth`. **Internal Anima DMs only**. `heartbeat.depth_window_s` / `heartbeat.max_depth`, defaults **600 seconds** and **max 6 turns**. Copy may say “10 minutes / 6 turns”)
-- Activity log read error (disk, permissions, corruption, etc.) → sends blocked on the safe side
+- Consecutive posts to the same channel were within the cooldown period (`config.json` `heartbeat.channel_post_cooldown_s`, default 300 seconds)
+- The back-and-forth between two parties exceeded the depth limit (`ConversationDepthLimiter.check_depth` within `Messenger.send`. **Only DMs addressed to internal Anima** are subject. `heartbeat.depth_window_s` / `heartbeat.max_depth`, default **600 seconds** and **maximum 6 turns**. The wording is "10 minutes, 6 turns")
+- Activity log read error (disk, permission, corruption, etc.) → sending is blocked on the safe side
 
-### Steps
+### Resolution Steps
 
-1. **Read the error**: Identify hourly limit, 24-hour limit, depth limit, or activity_log failure
-2. **Review send history**: Check for unnecessary sends
-3. **Wait**: Until the next hour for hourly limits, next day for 24-hour limits, or until the depth window clears (the message may include an approximate “next send allowed” time)
-4. **Record intended content**: When at a cap, as the message instructs, skip `send_message` this turn; write to `state/current_state.md` and send in a later session
-5. **If activity_log failed**: Ask an admin to check logs, disk, and that Anima’s `activity_log/` (blocking depends on the sender’s log read)
-6. **Urgent human contact**: `call_human` is exempt from these global limits
-7. **Batch and move to Board**: Combine multiple reports into one message; when depth limits bite, move to Board (`post_channel`)
+1. **Check the error message**: Identify whether it is a time limit, 24-hour limit, depth limit, or activity_log failure
+2. **Review the sending history**: Check whether there were any unnecessary sends
+3. **Wait**: For time limits, wait until the next 1-hour window (the message may include "next available send time (approximate)"), for 24-hour limits, wait until the next day, and for depth limits, wait until the window opens
+4. **Record the content to send**: When the limit is reached, follow the message instructions; do not use `send_message` in this turn, write to `state/current_state.md` instead, and send in the next session
+5. **For activity_log failure**: Ask the administrator to check the log, disk, and `activity_log/` of the relevant Anima (the block depends on the sender's log reading)
+6. **Emergency contact**: `call_human` is not subject to these global limits
+7. **Consolidate sends**: Combine multiple reports into one message. If the depth limit is reached, move to the Board (`post_channel`)
 
 See `communication/sending-limits.md` for details.
 
 ---
 
-## Command Blocked
+## Command was blocked
 
 ### Symptoms
 
-- “PermissionDenied”, “Command blocked”, or similar when running a command
-- Only certain commands fail
+- An error such as "PermissionDenied" or "Command blocked" was returned when trying to execute a command
+- Only specific commands cannot be executed
 
-### Causes
+### Cause
 
-1. Command matches framework / `permissions.global.json` global deny patterns (e.g. `rm -rf /`, etc.)
-2. Command listed under `commands.deny` in `permissions.json`
+1. Commands matching the global deny patterns of the framework or `permissions.global.json` (e.g., `rm -rf /`, etc.)
+2. Commands listed in `commands.deny` of `permissions.json`
 
-### Steps
+### Resolution Steps
 
-1. **Check your permissions**
+1. **Check your own permissions**
    ```
    check_permissions()
    ```
-   - `restrictions` lists denied commands. Also read `read_memory_file(path="permissions.json")` directly (legacy: `permissions.md`)
+   - Denied commands are listed in `restrictions`. Also check the configuration directly with `read_memory_file(path="permissions.json")` (in legacy environments, `permissions.md`)
 
 2. **Consider alternatives**
-   - See if an equivalent operation is possible with allowed tools
-   - Example: If `rm -rf` is blocked, deleting individual files may still be allowed
+   - Consider whether the same operation as the blocked command can be achieved with permitted tools
+   - Example: If `rm -rf` is blocked, deleting individual files may still be permitted
 
-3. **If a permission change is needed**
-   - Ask your supervisor to unblock
-   - Clearly explain **why** the command is needed
+3. **If permission changes are needed**
+   - Request the supervisor to unblock
+   - When requesting, clearly state "why this command is needed"
 
 ---
 
-## Prompt Shortened
+## Prompt was shortened
 
 ### Symptoms
 
-- System prompt feels thinner than usual; Priming (auto-recall) is nearly empty
-- After a long conversation or a large user message, the prompt seems rebuilt before the reply
+- The system prompt is thinner than usual, and Priming (automatic recall) is nearly empty
+- After long conversations or large user messages, there is behavior as if the prompt was rebuilt before responding
 
-### Causes
+### Cause
 
-There are two major layers.
+There are two main layers.
 
-**1. Priming (auto-recall) tier** — `resolve_prompt_tier(context_window)` in `core/prompt/builder.py` chooses the tier from the estimated context window. Resolution order is `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json` (SSoT)** → deprecated `config.json` `model_context_windows` → in-code fallbacks such as `MODEL_CONTEXT_WINDOWS` → default 128k.
+**1. Priming (automatic recall) tiers** — `resolve_prompt_tier(context_window)` of `core/prompt/builder.py` determines the tier from the estimated context window. The window resolution order is `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json` (SSoT)** → deprecated `config.json` `model_context_windows` → code fallback such as `MODEL_CONTEXT_WINDOWS` → default 128k.
 
 | Tier | Condition (`context_window`) | Priming handling (`core/agent/priming.py`) |
-|------|------------------------------|---------------------------------------------|
-| full | **≥ 128_000** | All six channels formatted with `format_priming_section` and included as-is |
-| standard | **≥ 32_000 and < 128_000** | Same fetch as above; **if formatted text exceeds 4000 characters, keep first 4000 + ellipsis marker** |
-| light | **≥ 16_000 and < 32_000** | **Sender profile (Channel A) only** (with i18n header). Other channels dropped |
-| minimal | **< 16_000** | **Entire Priming skipped** (empty string) |
+|------|--------------------------|---------------------------------------------|
+| full | **≥ 128_000** | Format 6 channels with `format_priming_section` and include as-is |
+| standard | **≥ 32_000 and < 128_000** | Retrieve as above, but **if the formatted text exceeds 4000 characters, use the first 4000 characters + an ellipsis marker** |
+| light | **≥ 16_000 and < 32_000** | **Sender profile (Channel A) only** (with i18n header). Other channels are discarded |
+| minimal | **< 16_000** | **Skip Priming entirely** (empty string) |
 
-Heartbeat/cron query text is built from recent `[REFLECTION]` blocks in `activity_log` (not the full long template).
+The query text for heartbeat/cron is text collected from activity_log for the most recent `[REFLECTION]` (not the full long template).
 
-**2. System prompt body shrink** — `core/agent/priming.py` `_fit_prompt_to_context_window`: when estimated system + user tokens plus tool schema overhead exceed **~80%** of the context window, `build_system_prompt` is rebuilt with system budget stepped **75% → 50% → 25%**. At the **≤25%** step, **Priming and human-notification blocks are cleared** before fitting. If it still does not fit, the system prompt is **hard-truncated by bytes**.
+**2. System prompt body contraction** — `core/agent/priming.py` `_fit_prompt_to_context_window`: When the estimated tokens for system + user plus tool schema overhead exceed **approximately 80% of the context window**, `build_system_prompt` is rebuilt by gradually reducing the **system budget from 75% → 50% → 25%**. At the **25% or below stage**, the **Priming block and the human notification block are emptied** before applying. If it still does not fit, the system prompt is **hard-truncated at the byte level**.
 
-### Steps
+### Resolution Steps
 
-1. **Fetch missing context explicitly**: Use `search_memory` / `read_memory_file` for org, procedures, and common knowledge (especially under `minimal` / `light`, Priming is weak)
-2. **Persist state on disk**: Keep summaries in `state/current_state.md` and `shortterm/` so work can resume after a session break
-3. **Talk to supervisor / admin**: If production feels tight, revisit `context_window` in `models.json` or change models
+1. **Explicitly retrieve missing context**: Read organization, procedures, and shared knowledge with `search_memory` / `read_memory_file` (especially in `minimal` / `light` where Priming is weak)
+2. **Leave work state on disk**: Write a summary to `state/current_state.md` or `shortterm/` so work can be resumed even if the session is interrupted
+3. **Consult the supervisor or administrator**: If it is too tight in actual operation, consider `context_window` of `models.json` or a model change
 
 ---
 
-## Other Common Issues
+## Other common problems
 
-### File Not Found
+### File not found
 
-- **Cause**: Wrong path or file does not exist
-- **Fix**: In Mode S use `Glob`; otherwise use `search_memory` or `read_memory_file` on known paths
-- **Note**: `read_memory_file` accepts paths relative to the Anima directory (e.g. `knowledge/xxx.md`) plus `common_knowledge/`, `reference/`, and `common_skills/` prefixes for shared trees. The agent built-in `Read` resolves paths under different rules
+- **Cause**: Incorrect path specification, file does not exist
+- **Resolution**: In Mode S, use `Glob`; otherwise, use `search_memory` or `read_memory_file` on known paths
+- **Note**: `read_memory_file` can read shared directories with `common_knowledge/`, `reference/`, and `common_skills/` prefixes in addition to Anima-directory-relative paths (e.g., `knowledge/xxx.md`). For `Read` (agent built-in), paths are determined by different rules
 
-### Cannot Use Inbox with read_channel
+### read_channel cannot specify inbox
 
-- **Cause**: `read_channel` is for Board shared channels. Inbox is not a channel
-- **Fix**: Inbox messages are handled automatically by the system. Passing `inbox` or `inbox/` to `read_channel` errors
+- **Cause**: `read_channel` is for shared channels on the Board. Inbox is not a channel
+- **Resolution**: Inbox messages are processed automatically by the system. Specifying `inbox` or `inbox/` in `read_channel` will result in an error
 
-### Command Timeout
+### Command times out
 
-- **Cause**: Processing exceeded `timeout`
-- **Fix**: Increase the `timeout` parameter for Bash runs (default: 30 seconds)
-- **Note**: Set timeouts appropriately for long-running commands
+- **Cause**: Processing time exceeded `timeout`
+- **Fix**: Increase the `timeout` parameter for Bash runtime (default: 30 seconds)
+- **Note**: Set an appropriate timeout value for long-running commands
 
-### Recipient Anima Does Not Exist
+### The other party's Anima does not exist
 
-- **Cause**: Wrong Anima name, or that Anima has not been created
-- **Fix**: Confirm with your supervisor. Org structure: `reference/organization/structure.md`
+- **Cause**: Incorrect Anima name, or that Anima has not been created yet
+- **Fix**: Check with your supervisor. Refer to `reference/organization/structure.md` for the organization structure
 
-### SEGV After venv Rebuild
+### Frequent SEGV after rebuilding venv
 
-- **Cause**: When chromadb, torch, or sentence-transformers receive a major version bump, existing vectordb (HNSW segments) may become incompatible, causing SEGV on read. ChromaDB 1.5.x Rust bindings crash with SEGV instead of raising a Python exception on corrupt indexes (chromadb #6852, #6949, #6979)
-- **Fix**: Always rebuild vectordb after rebuilding the venv
-  1. Stop the server
-  2. Delete `~/.animaworks/vectordb/` and each `~/.animaworks/animas/*/vectordb/` (back up first if desired)
+- **Cause**: When major versions of ChromaDB or PyTorch are upgraded, they become incompatible with existing vectordb (HNSW segments), causing SEGV (Segmentation Fault) during reads. ChromaDB 1.5.x's Rust bindings have a known issue where they trigger SEGV instead of a Python exception for corrupted indexes (chromadb #6852, #6949, #6979)
+- **Fix**: After rebuilding venv, always fully rebuild vectordb as well
+  1. Shut down the server
+  2. Delete `~/.animaworks/vectordb/` and each `~/.animaworks/animas/*/vectordb/` (or back them up first, then delete)
   3. Delete `~/.animaworks/index_meta.json`
-  4. Start the server (auto re-indexing runs on startup)
-- **Prevention**: After package updates, check if chromadb, torch, or sentence-transformers versions changed. If so, rebuild vectordb
+  4. Start the server (it will be automatically re-indexed at startup)
+- **Prevention**: When updating packages, check for version changes in chromadb, torch, and sentence-transformers; if there are changes, rebuild vectordb

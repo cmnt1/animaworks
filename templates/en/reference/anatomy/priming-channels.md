@@ -1,34 +1,28 @@
-# Priming Channels Technical Reference
+# Priming Channel Technical Reference
 
-The default `compact` profile gathers sender context, canonical task context, explicit `always_prime` guardrails, and bounded related recall when relevant. It skips recent-activity, episode, and graph channels before retrieval. The channel inventory below describes the opt-in `full` profile; it is not a promise that every channel runs on every trigger. Recall has its own token budget, separate from the framework prompt target.
+The default `compact` retrieves the sender, task, and resident knowledge, and searches for related knowledge only when conditions are met. The opt-in `full` also retrieves recent activity and episodes. Channel configuration is selected via `priming.profile`, and not all channels run on every trigger.
 
-Detailed specification of all channels executed by PrimingEngine.
-Includes budget, search sources, filtering, and dynamic adjustment.
+`PrimingEngine` specifies the channels and budget that are retrieved. C0 (important_knowledge) is an auxiliary block within Channel C's knowledge pipeline.
 
-Parallel retrieval uses **six channels** (A / B / C / E / F / G). Channel C0 (important_knowledge) is an auxiliary block inside the same pipeline as Channel C. Distilled Knowledge is no longer a separate priming channel.
+## Channel List
 
----
-
-## Channel Overview
-
-| Channel | Budget (tokens) | Source | trust |
-|---------|---------------------|--------|-------|
-| A: sender_profile | 500 | `shared/users/{sender}/index.md` | medium |
-| B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
-| C: related_knowledge | 1200 | RAG vector search (knowledge + common_knowledge) | medium / untrusted |
-| C0: important_knowledge | 300 | Chunks tagged with `[IMPORTANT]` | medium |
-| E: pending_tasks | 500 | TaskStore + accepted task results | trusted |
-| F: episodes | 400 | RAG vector search (episodes/) | medium |
-| G: graph_context | 500 | MemoryBackend community context + recent facts | medium |
+| Channel | Source | trust |
+|---------|--------|-------|
+| A: sender_profile | `shared/users/{sender}/index.md` | medium |
+| B: recent_activity | `activity_log/` + shared channels | trusted |
+| C: related_knowledge | RAG vector search (knowledge + common_knowledge) | medium / untrusted |
+| C0: important_knowledge | `[IMPORTANT]` tagged chunks | medium |
+| E: pending_tasks | TaskStore + task results | trusted |
+| F: episodes | RAG vector search (episodes/） | medium |
 
 Additional injection:
 
-| Item | Budget | Source | trust |
-|------|-----------|--------|-------|
-| Recent outbound | No limit (max 3 items) | activity_log (last 2 hours, `channel_post` / `message_sent`) | trusted |
-| Pending human notifications | 500 | `human_notify` events (last 24 hours) | trusted |
+| Item | Source | trust |
+|------|--------|-------|
+| Recent outbound | activity_log (up to 3 items, `channel_post` / `message_sent`) | trusted |
+| Pending human notifications | `human_notify` events | trusted |
 
-Skill and procedure bodies are not injected by Priming. Use paths shown in the system prompt skill catalog (e.g. `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`) and load them with `read_memory_file`.
+Skill and procedure bodies are not injected during Priming. Paths shown in the system prompt's skill catalog (e.g., `skills/foo/SKILL.md`, `common_skills/bar/SKILL.md`, `procedures/baz.md`) are loaded via `read_memory_file`.
 
 ---
 
@@ -36,27 +30,26 @@ Skill and procedure bodies are not injected by Priming. Use paths shown in the s
 
 Injects the sender's user profile.
 
-- **Source**: Direct read of `shared/users/{sender}/index.md`
-- **Budget**: 500 tokens
-- **When sender unknown**: Skipped
+- **Source**: Read `shared/users/{sender}/index.md` directly
+- **Limit**: `min(400, max_tokens // 4)`
+- **When sender is unknown**: Skip
 
 ---
 
 ## Channel B: recent_activity
 
-Injects the recent activity timeline.
+Injects a recent activity timeline.
 
 - **Source**: `activity_log/{date}.jsonl` + latest posts from shared channels
-- **Budget**: 1300 tokens
 
-**Priming vs. explicit search:** Channel B injects a **budget-limited**, automatic timeline from `activity_log/`. That is separate from on-demand recall: use `search_memory(query="...", scope="activity_log")` when you need to **query** recent actions (tool results, messages, etc.) beyond what Priming surfaced.
+**Difference between Priming injection and explicit search**: Channel B is retrieved via the `full` profile. For broadly searching past action logs by keyword, use `search_memory(scope="activity_log")`. Injection and tool search are separate paths.
 
-### Trigger-based Filtering
+### Trigger-specific filtering
 
 | Trigger | Excluded event types |
 |---------|----------------------|
-| `heartbeat` / `cron:*` | `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_end`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
-| `chat` | `cron_executed` |
+| `heartbeat` / `cron` / `inbox` / `task` | `tool_use`, `tool_result`, `heartbeat_start`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
+| Others | `tool_use`, `tool_result`, `memory_write`, `cron_executed`, `heartbeat_start`, `heartbeat_end`, `heartbeat_reflection`, `inbox_processing_start`, `inbox_processing_end` |
 
 ---
 
@@ -64,47 +57,43 @@ Injects the recent activity timeline.
 
 Injects related knowledge via RAG vector search.
 
-- **Budget**: 1200 tokens
 - **Search method**: Dual-query (message context + keywords only)
-- **Search target**: Personal `knowledge/` + `shared_common_knowledge` collection
-- **Min score**: `config.json` `rag.min_retrieval_score` (default 0.3)
+- **Search targets**: Personal `knowledge/` + `shared_common_knowledge` collections
+- **Minimum score**: `config.json` of `rag.min_retrieval_score` (default 0.3)
 
-### trust Separation
+### trust separation
 
-Search results are separated by trust level based on chunk `origin`:
+Search results are separated by trust level based on the chunk's `origin`:
 
-| trust | Target | Processing |
+| trust | Target | Handling |
 |-------|------|------|
-| `medium` | Personal knowledge, common_knowledge | Consumes budget preferentially |
-| `untrusted` | From external platforms (`origin_chain` contains `external_platform`) | Injected with remaining budget. Tagged with `origin=ORIGIN_EXTERNAL_PLATFORM` |
+| `medium` | Personal knowledge, common_knowledge | Consumes budget with priority |
+| `untrusted` | From external platforms (includes `external_platform` in `origin_chain`) | Injected with remaining budget. Tagged with `origin=ORIGIN_EXTERNAL_PLATFORM` |
 
 ---
 
 ## Channel C0: important_knowledge
 
-Always injects summary pointers for chunks tagged with `[IMPORTANT]`.
+Injects summary pointers for `[IMPORTANT]` tagged chunks.
 
-- **Budget**: 300 tokens
-- **Target**: Chunks tagged with `[IMPORTANT]` in `knowledge/`
-- **Injection format**: Summary pointers only (not full text). Details fetched via `read_memory_file`
-- **Purpose**: Reliable recall of important business rules and decision criteria
+- **Target**: `[IMPORTANT]` tagged chunks within `knowledge/`
+- **Injection format**: Summary pointers. Details are retrieved via `read_memory_file`
+- **Purpose**: Recall of important business rules and decision criteria
 
 ---
 
 ## Channel E: pending_tasks
 
-Injects task queue summary.
+Injects a summary of the task queue.
 
-- **Budget**: 500 tokens
+- **Limit**: `min(500, max_tokens // 3)`
 - **Source**: `TaskQueueManager.format_for_priming()`
-- **Content**:
+- **Contents**:
   - List and summary of `pending` / `in_progress` tasks
-  - 🔴 HIGH marker for `source: human` tasks
+  - 🔴 HIGH marker for human-created tasks
   - ⚠️ STALE marker for tasks with no update for 30+ minutes
-  - 🔴 OVERDUE marker for overdue tasks
-  - Progress of active parallel tasks (submit_tasks batches)
+  - Status of delegated tasks
   - Completed task results from `task_results/`
-  - Failed tasks with `status: failed` + `meta.executor == "taskexec"`
 
 ---
 
@@ -112,46 +101,22 @@ Injects task queue summary.
 
 Injects related episodes via RAG vector search.
 
-- **Budget**: 400 tokens
-- **Search target**: `episodes/` collection (ChromaDB)
-- **Min score**: Same as Channel C (`rag.min_retrieval_score`)
+- **Search target**: `episodes/` collection
+- **Minimum score**: Shared with Channel C (`rag.min_retrieval_score`)
 
 ---
 
-## Channel G: graph_context
+## Budget and Profile
 
-Injects graph/community context and recent facts from the configured memory backend.
+The `priming.profile` of `config.json` specifies `compact` or `full` (default: `compact`). If `priming_profile` is specified in the per-Anima `status.json`, that configuration takes priority. `priming.max_tokens` is the recall token budget (default: 2000), and `priming.channel_timeout_seconds` is the per-channel retrieval timeout (default: 60 seconds).
 
-- **Budget**: 500 tokens
-- **Source**: `MemoryBackend.get_priming_context()`
-- **When backend unavailable**: Skipped
-
----
-
-## Dynamic Budget Adjustment
-
-Enabled by `config.json` `priming.dynamic_budget: true` (default).
-
-### Budget by Message Type
-
-| Message type | Budget | Config key |
-|----------------|-----------|---------|
-| greeting | 500 | `priming.budget_greeting` |
-| question | 2000 | `priming.budget_question` |
-| request | 3000 | `priming.budget_request` |
-| heartbeat (fallback) | 200 | `priming.budget_heartbeat` |
-
-### Heartbeat Budget Calculation
-
-```
-heartbeat_budget = max(budget_heartbeat, context_window × heartbeat_context_pct)
-```
-
-- `heartbeat_context_pct`: Default 0.05 (5% of context window)
-- Example: context_window=200000 → `max(200, 200000 × 0.05)` = 10000
+- `compact` retrieves A (sender), E (tasks), C0 (resident knowledge), recent outbound, and pending human notifications. C (related knowledge) is retrieved on chat/task triggers, or when there is an question/request/delegation intent and a message exists. B (recent activity), F (episodes), and G (parallel task display) are not retrieved.
+- `full` retrieves A / B / C0 / C / E / F plus recent outbound and human notifications.
+- The limit for A is `min(400, max_tokens // 4)`, and the limit for E is `min(500, max_tokens // 3)`. Recent outbound is up to 3 items and 250 tokens. Channel items from `full` and related knowledge from `compact` fit within the remaining space of `max_tokens`.
+- Pending human notifications are handled separately from the recall budget.
 
 ---
 
 ## Hebbian LTP (Long-Term Potentiation)
 
-Chunks retrieved and displayed by Priming receive lightweight retrieval accounting via `record_access(kind="retrieved")`. Explicit `read_memory_file` / outcome-report use records full `used` accounting, which is what forgetting protection relies on.
+Chunks searched and displayed during Priming have a lightweight search record updated via `record_access(kind="retrieved")`. Explicit use through `read_memory_file` or outcome reports is recorded as `used`, and forgetting protection is based on this explicit use.

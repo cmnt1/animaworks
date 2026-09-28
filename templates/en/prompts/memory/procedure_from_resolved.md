@@ -1,22 +1,22 @@
-Create a reusable procedure document from the following problem-resolution records.
+From the problem-solving records below, create a reusable procedure document.
 
-【Resolution Records】
+【Resolution Record】
 {resolution_text}
 
-【Existing Procedures (avoid duplicates)】
+【Existing Procedure Document (To Avoid Duplication)】
 {existing_procedures}
 
 【Output Format】
-Output one procedure in the following format. Write "(none)" if nothing applies.
+Output a single procedure document in the following format. If not applicable, write "(none)".
 
-## Procedure Extraction
-- Filename: procedures/zzz.md
-  description: One concrete line that clearly states the procedure's purpose
+## procedure extraction
+- File name: procedures/zzz.md
+  description: A specific one-liner that makes the purpose of the procedure clear at a glance
   tags: tag1, tag2
-  Content: (Procedure body in Markdown format. Include concrete commands, parameters, and configuration values)
+  Content: (Write the body of the procedure in Markdown format. Include specific commands, parameters, and configuration values.)
 
 【Rules】
-- Do not omit concrete commands, parameters, or configuration values
-- Clearly state what was wrong and what is correct
-- Even when the procedure is vague, record any known correct values (service names, regions, etc.)
+- Do not omit specific commands, parameters, or configuration values
+- Clearly state "what is wrong and what is correct"
+- Even if the procedure is ambiguous, record the known correct values (service names, regions, etc.)
 - Do not wrap in code fences (```)
