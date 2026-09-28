@@ -1,3 +1,3 @@
-## ⚠️ Previous Background Failure Information
+## ⚠️ Previous background session failure
 
-The previous autonomous session was interrupted. Please review the information below and prioritize processing any incomplete tasks.
+The previous autonomous session was interrupted. Please check the information below and prioritize incomplete tasks.

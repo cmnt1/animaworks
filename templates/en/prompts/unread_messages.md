@@ -1,5 +1,5 @@
 ## Unread Messages
 
-Only respond to what requires a response.
+Respond only to the ones that need a response.
 
 {summary}

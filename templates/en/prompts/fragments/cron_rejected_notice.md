@@ -1,5 +1,5 @@
-# Registration failure for cron.md
+# cron.md registration failures
 
-The following job has not been registered. Please correct the status of cron.md or the cron guard according to the reason.
+The following jobs are not registered. Follow each reason to fix cron.md or the cron guard state.
 
 {rejected_jobs}

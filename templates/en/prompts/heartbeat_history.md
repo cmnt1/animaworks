@@ -1,5 +1,5 @@
 ## Recent Heartbeat Results
 
-Check whether the previous plan was executed, and avoid repeating the same content. If a "plan" is displayed, confirm whether that item is completed, in progress, or not yet started.
+Check whether previous plans were executed and avoid repeating the same content. When "Plan" items are shown, verify if each is completed, in progress, or not started.
 
 {history}

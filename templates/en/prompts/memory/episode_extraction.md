@@ -1,8 +1,8 @@
-# Episode Extraction from Activity Logs
+# Episode Extraction from Activity Log
 
-Organize your ({anima_name}) action records into a structured timeline.
+{anima_name}, organize your activity records into a structured timeline.
 
-## Target Period: {time_range}
+## Target period: {time_range}
 
 ## Existing Episode Content
 
@@ -16,23 +16,23 @@ Organize your ({anima_name}) action records into a structured timeline.
 
 ## Output Format
 
-Output in the following Markdown format. Separate sections by time period with "## HH:MM — Title" and record events in bullet lists.
+Use the following Markdown format. Separate sections by time period using `## HH:MM — Title` headers, with bullet points for events.
 
 ```
-## HH:MM — セクションタイトル
+## HH:MM — Section Title
 
-- HH:MM 出来事の要約
-  - 詳細・結果・関連情報
-- HH:MM 次の出来事
+- HH:MM Event summary
+  - Details, results, related information
+- HH:MM Next event
 ```
 
 ## Rules
 
-1. **Group by time period**: Combine related activities into time blocks of about 30 minutes to 2 hours
-2. **Preserve specific information**: Keep details such as key points from email bodies, summaries of command execution results, file changes, and message content for later reference as knowledge
-3. **Eliminate redundant repetition**: Keep only one copy of identical `current_state.md` dumps or duplicate REFLECTION entries
-4. **Tool execution results**: Record a summary of results on success, or the error content on failure
-5. **Communication content**: Record key points of sent and received messages (from whom to whom, about what)
-6. **Do not add speculation**: Record only facts present in the action log. Do not make inferences or interpretations
-7. **Use existing content for deduplication**: If existing episode content is present, absorb duplicate information into the timeline and do not write the same fact twice
-8. **Use only Markdown `##` headers**: Do not use `#` or `###`
+1. **Group by time period**: Cluster related activities into 30-minute to 2-hour blocks
+2. **Preserve specific information**: Keep key details from email bodies, command outputs, file changes, and message contents that could serve as future knowledge references
+3. **Eliminate redundant repetition**: Deduplicate repeated `current_state.md` dumps or duplicate REFLECTION blocks — keep only one instance
+4. **Tool execution results**: Record result summaries for successes and error details for failures
+5. **Communication content**: Record the key points of sent/received messages (who, to whom, about what)
+6. **No speculation**: Record only facts from the activity log. Do not add inferences or interpretations
+7. **Use existing content for deduplication**: If existing episode content is provided, absorb overlapping details into the timeline and avoid repeating the same facts twice
+8. **Use only `##` markdown headers**: Do not use `#` or `###`

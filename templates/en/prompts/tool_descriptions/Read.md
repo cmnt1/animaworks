@@ -1,1 +1,1 @@
-Read the file with line numbers. Large files can be partially read using offset (1-based) and limit. Output is in 'N|content' format.
+Read a file with line numbers. For large files, use offset and limit to read specific sections. Output lines are numbered in 'N|content' format.

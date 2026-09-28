@@ -1,1 +1,1 @@
-셸 명령을 실행한다（permissions.json 및 permissions.global.json의 허용 설정에 따른다）.
+셸 명령어를 실행한다(permissions.md의 허용 목록 내).

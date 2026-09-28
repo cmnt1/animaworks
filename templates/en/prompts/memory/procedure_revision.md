@@ -1,19 +1,19 @@
-The following procedure has failed repeatedly. Please improve it.
+The following procedure has repeatedly failed. Please improve it.
 
-【Procedure Description】
+【Procedure description】
 {description}
 
-【Current Procedure】
+【Current procedure】
 {content}
 
 【Metadata】
-- Number of failures: {failure_count}
+- Failure count: {failure_count}
 - Confidence: {confidence}
 
 Task:
-1. Consider why this procedure is failing
-2. Output the improved procedure
+1. Analyze why this procedure is failing
+2. Output an improved procedure
 
 Output format:
-Output only the improved procedure text (no explanations or comments).
-Do not wrap it in code fences (```).
+Output only the improved procedure text (no explanation or comments).
+Do not wrap in code fences (```).

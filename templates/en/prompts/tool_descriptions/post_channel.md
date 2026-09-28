@@ -1,1 +1,1 @@
-Post a message to the Board channel. For regular work reports and completion reports, first post to the department/team channel you belong to. Use general for company-wide sharing, and ops for cross-departmental operations and infrastructure sharing. Use send_message for one-on-one communication.
+Post a message to a Board channel. Routine work reports and completion updates should go to your team/department channel first. Use general for org-wide sharing and ops for cross-team operations or infrastructure. Use send_message for 1:1 communication.
