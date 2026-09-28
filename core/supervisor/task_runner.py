@@ -923,6 +923,9 @@ async def main() -> int:
     args = parse_args()
     socket_path, identity = _required_environment(args)
     _setup_logging(args.anima)
+    from core.memory.maintenance.background_review import enable_deferred_requests
+
+    enable_deferred_requests()
     try:
         from core.config.global_permissions import GlobalPermissionsCache
         from core.paths import get_global_permissions_path

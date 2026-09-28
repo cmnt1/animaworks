@@ -309,3 +309,21 @@ def test_memory_manager_atomically_writes_safe_peer_profiles(tmp_path: Path) -> 
 def test_peer_name_normalization_rejects_traversal() -> None:
     assert review.normalize_peer_name("Alice Smith") == "alice_smith"
     assert review.normalize_peer_name("../outside") == ""
+
+
+def test_deferred_requests_are_recorded_and_consumed(tmp_path, monkeypatch):
+    """Disposable runners persist requests; the resident worker picks them up."""
+    from core.memory.maintenance import background_review as br
+
+    monkeypatch.setattr(br, "_DEFERRED_REQUESTS", True)
+    br.request_background_review(tmp_path, "task_end")
+    br.request_background_review(tmp_path, "", user_turn=True)
+    assert br.has_pending_background_review(tmp_path)
+    assert not br._RUNTIMES.get(tmp_path.resolve())
+
+    runtime = br._ReviewRuntime()
+    br._consume_deferred_requests(tmp_path, runtime)
+    assert runtime.pending_triggers == ["task_end"]
+    assert runtime.user_turn_delta == 1
+    assert not br._requests_path(tmp_path).exists()
+    assert not br.has_pending_background_review(tmp_path)

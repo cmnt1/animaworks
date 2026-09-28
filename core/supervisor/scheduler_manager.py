@@ -159,6 +159,7 @@ class SchedulerManager:
             self._setup_cron_tasks()
             self._setup_cron_health_check()
             self._setup_activity_schedule()
+            self._setup_background_review_drain()
             self.scheduler.start()
 
             # Apply the correct activity level for the current time on startup
@@ -301,6 +302,29 @@ class SchedulerManager:
             if _time_in_range(entry.start, entry.end, now_hhmm):
                 return entry.level
         return None
+
+    def _setup_background_review_drain(self) -> None:
+        """Drain review requests recorded by disposable task runners."""
+        if not self.scheduler:
+            return
+        self.scheduler.add_job(
+            self._background_review_tick,
+            CronTrigger(minute="*/5"),
+            id=f"{self._anima_name}_background_review_drain",
+            name=f"{self._anima_name} background review drain",
+            replace_existing=True,
+            misfire_grace_time=120,
+            max_instances=1,
+        )
+
+    async def _background_review_tick(self) -> None:
+        from core.memory.maintenance.background_review import (
+            has_pending_background_review,
+            request_background_review,
+        )
+
+        if has_pending_background_review(self._anima_dir):
+            request_background_review(self._anima_dir, "")
 
     def _setup_activity_schedule(self) -> None:
         """Register a 1-minute job that checks activity_schedule boundaries."""
@@ -1031,6 +1055,7 @@ class SchedulerManager:
         self._setup_cron_tasks()
         self._setup_cron_health_check()
         self._setup_activity_schedule()
+        self._setup_background_review_drain()
         self._record_schedule_mtimes()
 
         new_jobs = [j.id for j in self.scheduler.get_jobs()]

@@ -23,6 +23,7 @@ from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.memory.background_review")
 _STATE_FILENAME = "background_review.json"
+_REQUESTS_FILENAME = "background_review_requests.jsonl"
 _MAX_KNOWLEDGE_NAMES = 100
 _MAX_RELATED_PEERS = 10
 
@@ -39,10 +40,68 @@ class _ReviewRuntime:
 
 _RUNTIMES: dict[Path, _ReviewRuntime] = {}
 
+# Disposable task runners exit right after their job, which would cancel an
+# in-process review. They only record the request; the resident worker drains it.
+_DEFERRED_REQUESTS = False
+
+
+def enable_deferred_requests() -> None:
+    """Record review requests to disk instead of running them in this process."""
+    global _DEFERRED_REQUESTS
+    _DEFERRED_REQUESTS = True
+
+
+def _requests_path(anima_dir: Path) -> Path:
+    return Path(anima_dir) / "state" / _REQUESTS_FILENAME
+
+
+def _append_deferred_request(anima_dir: Path, trigger: str, *, user_turn: bool) -> None:
+    path = _requests_path(anima_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps({"trigger": str(trigger)[:80], "user_turn": user_turn}, ensure_ascii=False)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+
+def _consume_deferred_requests(anima_dir: Path, runtime: _ReviewRuntime) -> None:
+    path = _requests_path(anima_dir)
+    if not path.is_file():
+        return
+    claimed = path.with_name(f"{path.name}.{id(runtime)}.claimed")
+    try:
+        path.replace(claimed)
+        lines = claimed.read_text(encoding="utf-8").splitlines()
+        claimed.unlink()
+    except OSError:
+        logger.warning("Failed to consume deferred background review requests for %s", anima_dir.name)
+        return
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("user_turn"):
+            runtime.user_turn_delta += 1
+        elif item.get("trigger"):
+            runtime.pending_triggers.append(str(item["trigger"])[:80])
+
+
+def has_pending_background_review(anima_dir: Path) -> bool:
+    """True when a deferred request or a persisted pending trigger awaits a review."""
+    if _requests_path(anima_dir).is_file():
+        return True
+    return bool(_load_state(_state_path(anima_dir)).get("pending_triggers"))
+
 
 def request_background_review(anima_dir: Path, trigger: str, *, user_turn: bool = False) -> None:
     """Queue a review without awaiting it or blocking the caller."""
     try:
+        if _DEFERRED_REQUESTS:
+            if trigger or user_turn:
+                _append_deferred_request(Path(anima_dir), trigger, user_turn=user_turn)
+            return
         path = Path(anima_dir).resolve()
         runtime = _RUNTIMES.get(path)
         if runtime is None:
@@ -135,6 +194,7 @@ async def _drain_reviews(anima_dir: Path, runtime: _ReviewRuntime) -> None:
                 runtime.user_turn_delta = 0
                 return
 
+            _consume_deferred_requests(anima_dir, runtime)
             incoming = runtime.pending_triggers[:]
             runtime.pending_triggers.clear()
             user_turn_delta = runtime.user_turn_delta
