@@ -242,8 +242,10 @@ class TestCliDispatchFallback:
             cli_dispatch()
         assert captured_argv == ["animaworks", "start"]
 
-    def test_tool_takes_priority_over_fallback(self):
+    def test_tool_takes_priority_over_fallback(self, monkeypatch: pytest.MonkeyPatch):
         """Core tools are dispatched before fallback check."""
+        # Outside an anima process there is no permission context to gate on.
+        monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
         mock_module = MagicMock()
         mock_module.cli_main = MagicMock()
         with patch.object(sys, "argv", ["animaworks-tool", "slack", "send"]):
