@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import inspect
+import time
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -94,7 +95,8 @@ class TestRunInboxCall:
     @pytest.mark.asyncio
     async def test_success_resets_failure_retry_until(self) -> None:
         limiter = _make_limiter([_make_message(intent="question")])
-        limiter._failure_retry_until = 9999.0
+        # An expired retry window (in the past on any host's monotonic clock).
+        limiter._failure_retry_until = time.monotonic() - 1.0
         with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until == 0
