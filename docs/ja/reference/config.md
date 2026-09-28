@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 6c9fd4c95d22c198b47315e6b5f9d9e148324150490f641f89bc1a7ea1a86385 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 52cc0840b7de75fbbbda753db55de6982a6ccaf44b72618510ef416b544d9629 -->
 
 # 設定リファレンス
 
@@ -60,6 +60,7 @@
 | `animas.speciality` | `str \| None` | `null` | — |
 | `animas.model` | `str \| None` | `null` | — |
 | `animas.heartbeat_enabled` | `bool \| None` | `null` | — |
+| `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
 | `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | 記憶統合の動作とスケジュール。 |
@@ -72,6 +73,9 @@
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
 | `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
+| `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | Maximum UTF-8 prompt size for each daily episode-summary LLM call. |
+| `consolidation.episode_summary_backfill_days` | `int` | `7` | Look back this many local days for unprocessed daily episode activity. |
+| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `3` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
 | `consolidation.ipc_timeout_per_episode_seconds` | `float` | `120.0` | — |
@@ -87,6 +91,14 @@
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
+| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | セッション後の非同期振り返りと人物像更新の設定。 |
+| `background_review.enabled` | `bool` | `true` | — |
+| `background_review.chat_every_user_turns` | `int` | `10` | — |
+| `background_review.min_interval_minutes` | `int` | `10` | — |
+| `background_review.max_per_day` | `int` | `24` | — |
+| `background_review.max_input_bytes` | `int` | `61440` | — |
+| `background_review.max_writes` | `int` | `3` | — |
+| `background_review.peer_profile_max_chars` | `int` | `1500` | — |
 | `rag` | `RAGConfig` | `{RAGConfig}` | 検索拡張生成と記憶検索の設定。 |
 | `rag.enabled` | `bool` | `true` | — |
 | `rag.embedding_model` | `str` | `"intfloat/multilingual-e5-small"` | — |
@@ -184,6 +196,12 @@
 | `priming.profile` | `Literal['compact', 'full']` | `"compact"` | 起動時コンテキストに使用するプロファイル。compact は要点を優先し、full は広い情報を読み込みます。 |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
+| `priming.compact_background_recall_enabled` | `bool` | `true` | — |
+| `priming.compact_background_recall` | `dict[str, CompactBackgroundRecallConfig]` | `…` | — |
+| `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
+| `priming.compact_background_recall.related_knowledge_max_tokens` | `int` | `180` | — |
+| `priming.compact_background_recall.episodes_max_items` | `int` | `2` | — |
+| `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 画像生成プロバイダーと既定パラメーター。 |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |

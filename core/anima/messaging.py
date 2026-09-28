@@ -50,6 +50,15 @@ from core.time_utils import now_local, today_local
 logger = logging.getLogger("animaworks.anima")
 
 
+def _record_chat_user_turn(owner: Any) -> None:
+    try:
+        from core.memory.maintenance.background_review import request_background_review
+
+        request_background_review(owner.anima_dir, "", user_turn=True)
+    except Exception:
+        logger.warning("Could not queue chat background review for %s", getattr(owner, "name", "unknown"))
+
+
 def _chat_fallback_reason_from_exception(exc: Exception) -> FailoverReason | None:
     """Return a chat-retry reason for a classified provider exception."""
     reason, hint = classify_llm_error(exc)
@@ -407,6 +416,7 @@ async def _inject_chat_message(
         meta={"from_type": "human", "thread_id": thread_id, "steer": True},
         origin=ORIGIN_HUMAN,
     )
+    _record_chat_user_turn(owner)
     return True
 
 
@@ -890,6 +900,7 @@ class MessagingMixin:
                     meta={"from_type": "human", "thread_id": thread_id},
                     origin=ORIGIN_HUMAN,
                 )
+                _record_chat_user_turn(self)
 
                 if source and source in EXTERNAL_PLATFORM_SOURCES:
                     _ctx = t("anima.platform_context", source=source)
@@ -1229,6 +1240,7 @@ class MessagingMixin:
                     meta={"from_type": "human", "thread_id": thread_id},
                     origin=ORIGIN_HUMAN,
                 )
+                _record_chat_user_turn(self)
 
                 if source and source in EXTERNAL_PLATFORM_SOURCES:
                     _ctx = t("anima.platform_context", source=source)

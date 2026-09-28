@@ -12,6 +12,7 @@ from core.config.models import (
     AnimaDefaults,
     AnimaModelConfig,
     AnimaWorksConfig,
+    BackgroundReviewConfig,
     CredentialConfig,
     CronGuardConfig,
     FactEdgeTypeConfig,

@@ -37,6 +37,15 @@ from core.time_utils import now_iso, now_local
 logger = logging.getLogger("animaworks.agent")
 
 
+def _request_background_review(anima_dir: Path, trigger: str) -> None:
+    try:
+        from core.memory.maintenance.background_review import request_background_review
+
+        request_background_review(anima_dir, trigger)
+    except Exception:
+        logger.warning("Could not queue background review (%s)", trigger)
+
+
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
 
 
@@ -180,6 +189,7 @@ class CycleMixin:
             state.session_id,
             thread_id,
         )
+        _request_background_review(self.anima_dir, "auto_compact")
         await _compact_mode_s_shared(
             self.anima_dir,
             self.anima_dir.name,
@@ -737,7 +747,10 @@ class CycleMixin:
             tool_call_count=len(tool_records),
         )
 
+        compaction_review_requested = False
         if result.force_chain and not tracker.threshold_exceeded:
+            _request_background_review(self.anima_dir, "auto_compact")
+            compaction_review_requested = True
             tracker.force_threshold()
             logger.info("Context auto-compact: forcing threshold_exceeded for session handoff")
 
@@ -747,6 +760,8 @@ class CycleMixin:
         total_turns = reported_turns if isinstance(reported_turns, int) else 0
 
         if uses_chat_session and tracker.threshold_exceeded:
+            if not compaction_review_requested:
+                _request_background_review(self.anima_dir, "auto_compact")
             logger.info(
                 "Session context at %.1f%% — saving shortterm for next message",
                 tracker.usage_ratio * 100,
@@ -1375,6 +1390,7 @@ class CycleMixin:
                 and task_compaction_count < active_model_config.task_compaction_max
             ):
                 task_compaction_count += 1
+                _request_background_review(self.anima_dir, "auto_compact")
                 session_id = getattr(result_message, "session_id", None) or chunk.get("session_id")
                 compacted = False
                 compact_fn = getattr(active_executor, "compact_session_by_id", None)
@@ -1493,11 +1509,16 @@ class CycleMixin:
         total_turns = result_message.num_turns if result_message else 0
 
         # Session chaining — force_chain from mid-session auto-compact.
+        compaction_review_requested = False
         if _stream_force_chain and not tracker.threshold_exceeded:
+            _request_background_review(self.anima_dir, "auto_compact")
+            compaction_review_requested = True
             tracker.force_threshold()
             logger.info("Context auto-compact (stream): forcing threshold_exceeded")
 
         if tracker.threshold_exceeded and uses_chat_session:
+            if not compaction_review_requested:
+                _request_background_review(self.anima_dir, "auto_compact")
             # Defer continuation until the next message rather than chaining mid-response.
             logger.info(
                 "Session context at %.1f%% — saving shortterm, will resume on next message (stream)",

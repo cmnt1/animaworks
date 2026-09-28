@@ -10,6 +10,11 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "priming.peer_notes_header": {
+        "ja": "## この人についてのメモ",
+        "en": "## Notes about this person",
+        "ko": "## 이 사람에 대한 메모",
+    },
     "rag.rebuild_symlink_input": {
         "ja": "再構築の入力にシンボリックリンクは使用できません: {path}",
         "en": "A symlink is not a safe rebuild input: {path}",

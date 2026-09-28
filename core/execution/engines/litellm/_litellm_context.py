@@ -427,6 +427,13 @@ class ContextMixin:
         if ctx_window < _COMPACT_MIN_CONTEXT_WINDOW:
             return False
 
+        try:
+            from core.memory.maintenance.background_review import request_background_review
+
+            request_background_review(self._anima_dir, "auto_compact")
+        except Exception:
+            logger.warning("Could not queue LiteLLM pre-compaction review")
+
         # Keep the most recent messages verbatim; a tool result must not be
         # orphaned from its assistant tool_calls message, so advance the split
         # past any leading tool messages.
