@@ -49,6 +49,7 @@ logger = logging.getLogger("animaworks.priming")
 _BUDGET_SENDER_PROFILE = 400
 _BUDGET_PENDING_TASKS = 500
 _BUDGET_RECENT_OUTBOUND = 250
+_COMPACT_BACKGROUND_TRIGGERS = frozenset({"heartbeat", "inbox", "cron"})
 
 
 class PrimingEngine:
@@ -380,8 +381,9 @@ class PrimingEngine:
     ) -> PrimingResult:
         """Retrieve only event-relevant sources; preserve notifications independently.
 
-        Resident pointers are explicit opt-ins. General activity, graph and
-        episode expansion belong to explicit search or the opt-in full profile.
+        Resident pointers are explicit opt-ins. Background triggers may also
+        receive small, configured knowledge and episode recall; broader activity
+        and graph expansion remain outside the compact profile.
         """
         started = time.perf_counter()
         calls = [
@@ -393,11 +395,44 @@ class PrimingEngine:
         ]
         # Use event/intent contracts, not a new text classifier or model list.
         related = channel in {"chat", "task"} or intent in {"question", "request", "delegation"}
-        if include_related and related and message.strip():
+        background_settings = self._compact_background_recall_settings(channel)
+        has_query = bool(message.strip())
+        if (
+            include_related
+            and has_query
+            and (
+                related
+                or (
+                    background_settings is not None
+                    and (
+                        background_settings.related_knowledge_max_items > 0
+                        and background_settings.related_knowledge_max_tokens > 0
+                    )
+                )
+            )
+        ):
             calls.append(
                 (
                     "C",
                     self._channel_c_related_knowledge(
+                        self._extract_keywords(message),
+                        message=message,
+                        recent_human_messages=recent_human_messages,
+                        trigger=channel,
+                    ),
+                )
+            )
+        if (
+            include_related
+            and has_query
+            and background_settings is not None
+            and background_settings.episodes_max_items > 0
+            and background_settings.episodes_max_tokens > 0
+        ):
+            calls.append(
+                (
+                    "F",
+                    self._channel_f_episodes(
                         self._extract_keywords(message),
                         message=message,
                         recent_human_messages=recent_human_messages,
@@ -415,10 +450,18 @@ class PrimingEngine:
             value = results.get(name, "")
             return value if isinstance(value, str) else ""
 
-        def bounded(value: str, budget: int) -> str:
+        def bounded_items(value: str, budget: int, max_items: int | None = None) -> tuple[str, int]:
             if isinstance(value, ItemizedMemory):
-                return render_items(select_within_budget(value.items, budget), "")
-            return truncate_head(value, budget)
+                items = sorted(value.items, key=lambda item: (item.rank, item.updated), reverse=True)
+                if max_items is not None:
+                    items = items[:max_items]
+                selected = select_within_budget(items, budget)
+                return render_items(selected, ""), len(selected)
+            text = truncate_head(value, budget)
+            return text, int(bool(text.strip()))
+
+        def bounded(value: str, budget: int) -> str:
+            return bounded_items(value, budget)[0]
 
         result = PrimingResult(
             sender_profile=truncate_head(content("A"), min(_BUDGET_SENDER_PROFILE, token_budget // 4)),
@@ -432,10 +475,34 @@ class PrimingEngine:
         related_value = results.get("C")
         if isinstance(related_value, tuple):
             remaining = max(0, token_budget - result.estimated_tokens())
+            is_background_recall = background_settings is not None
+            related_max_items = background_settings.related_knowledge_max_items if is_background_recall else None
+            related_max_tokens = background_settings.related_knowledge_max_tokens if is_background_recall else remaining
+            related_budget = min(remaining, related_max_tokens)
             trusted, untrusted = related_value
-            result.related_knowledge += ("\n" if result.related_knowledge else "") + bounded(trusted, remaining)
+            trusted_text, trusted_count = bounded_items(trusted, related_budget, related_max_items)
+            result.related_knowledge += ("\n" if result.related_knowledge else "") + trusted_text
             remaining = max(0, token_budget - result.estimated_tokens())
-            result.related_knowledge_untrusted = bounded(untrusted, remaining)
+            if is_background_recall:
+                related_budget = min(
+                    max(0, related_max_tokens - estimate_tokens(trusted_text)),
+                    remaining,
+                )
+                remaining_items = max(0, related_max_items - trusted_count)
+            else:
+                related_budget = remaining
+                remaining_items = None
+            untrusted_text, _ = bounded_items(untrusted, related_budget, remaining_items)
+            result.related_knowledge_untrusted = untrusted_text
+
+        episodes_value = results.get("F")
+        if isinstance(episodes_value, str) and background_settings is not None:
+            remaining = max(0, token_budget - result.estimated_tokens())
+            result.episodes = bounded_items(
+                episodes_value,
+                min(remaining, background_settings.episodes_max_tokens),
+                background_settings.episodes_max_items,
+            )[0]
         logger.info(
             "Priming compact: channels=%s related_searches=%d elapsed=%.3fs tokens=%d",
             ",".join(results),
@@ -444,6 +511,27 @@ class PrimingEngine:
             result.estimated_tokens(),
         )
         return result
+
+    def _compact_background_recall_settings(self, channel: str):
+        """Return configured compact recall limits for a background trigger."""
+        if channel not in _COMPACT_BACKGROUND_TRIGGERS:
+            return None
+
+        from core.config.schemas import PrimingConfig
+
+        defaults = PrimingConfig()
+        try:
+            from core.config.models import load_config
+
+            priming = load_config().priming
+        except Exception:
+            logger.debug("Failed to load compact background recall config; using defaults", exc_info=True)
+            priming = defaults
+
+        if not bool(getattr(priming, "compact_background_recall_enabled", True)):
+            return None
+        settings_by_trigger = getattr(priming, "compact_background_recall", defaults.compact_background_recall)
+        return settings_by_trigger.get(channel, defaults.compact_background_recall[channel])
 
     # ── Channel wrappers (delegate to modules; tests may patch these) ────
 

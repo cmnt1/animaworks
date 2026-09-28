@@ -598,7 +598,19 @@ def _build_group3(
         # Explicit source contracts survive recall trimming. Never infer safety
         # importance from arbitrary memory prose or split a trust-boundary block.
         protected, recall = [], []
-        for item in _split_content_items(priming_section):
+        priming_items = _split_content_items(priming_section)
+        has_pending_task_block = any(
+            re.match(r'<priming\b[^>]*\bsource="pending_tasks"', item) for item in priming_items
+        )
+        pending_tasks_header = t("priming.pending_tasks_header").strip()
+        for item in priming_items:
+            if item.strip() == pending_tasks_header:
+                # The formatter emits this heading immediately before the
+                # protected payload. Keep them together so allocation cannot
+                # leave a heading in the optional recall section by itself.
+                if has_pending_task_block:
+                    protected.append(item)
+                continue
             if re.match(
                 r'<priming\b[^>]*\bsource="(?:resident_knowledge|pending_tasks|recent_outbound|action_rule)"', item
             ):

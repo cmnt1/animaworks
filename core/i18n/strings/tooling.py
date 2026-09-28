@@ -88,6 +88,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "{error}. Check available-models for the current list",
         "ko": "{error}. 현재 목록은 available-models에서 확인하세요",
     },
+    "tooling.skill_state_change_proposed_pending_approval": {
+        "ja": "変更案を記録しましたが、まだ適用されていません。人間の承認待ちです（スキル: {skill_name}、状態: {state}）。",
+        "en": "The change was recorded as a proposal only and has not been applied. It is pending human approval (skill: {skill_name}, state: {state}).",
+        "ko": "변경안을 제안으로만 기록했으며 아직 적용되지 않았습니다. 사람의 승인을 기다리고 있습니다 (스킬: {skill_name}, 상태: {state}).",
+    },
+    "tooling.skill_state_change_duplicate_pending_approval": {
+        "ja": "同じスキル・状態の未承認提案が既にあります。今回の要求は重複として扱い、適用していません。人間の承認待ちです（スキル: {skill_name}、状態: {state}）。",
+        "en": "An unapproved proposal for the same skill and state already exists. This request is a duplicate and has not been applied. It is pending human approval (skill: {skill_name}, state: {state}).",
+        "ko": "같은 스킬·상태에 대한 미승인 제안이 이미 있습니다. 이번 요청은 중복으로 처리되어 적용되지 않았습니다. 사람의 승인을 기다리고 있습니다 (스킬: {skill_name}, 상태: {state}).",
+    },
     "tool_guide.host_tools.s": {
         "ja": "ホストの組込みツール: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",
         "en": "Host built-in tools: Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch",

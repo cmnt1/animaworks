@@ -462,20 +462,69 @@ class SkillsToolsMixin:
             # Security quarantine remains immediate. Routine curation records
             # proposals; a host-side explicit action can accept them later.
             apply_change = state == "blocked" or load_config().consolidation.curator_auto_apply_enabled
-            operation = curator.change_state if apply_change else curator.propose_state_change
-            event = operation(
-                skill_name,
-                state,
-                reason=reason,
-                actor=self._anima_name,
-                absorbed_into=absorbed_target or None,
-            )
+            duplicate = False
+            if not apply_change:
+                latest_lifecycle_event = next(
+                    (
+                        existing
+                        for existing in reversed(curator.replay_state().events)
+                        if existing.skill_name == skill_name
+                        and existing.event_type in {"state_change_proposed", "state_changed"}
+                    ),
+                    None,
+                )
+                existing_state = (
+                    getattr(latest_lifecycle_event.to_state, "value", latest_lifecycle_event.to_state)
+                    if latest_lifecycle_event is not None
+                    else None
+                )
+                if (
+                    latest_lifecycle_event is not None
+                    and latest_lifecycle_event.event_type == "state_change_proposed"
+                    and existing_state == state
+                ):
+                    event = latest_lifecycle_event
+                    duplicate = True
+                else:
+                    event = curator.propose_state_change(
+                        skill_name,
+                        state,
+                        reason=reason,
+                        actor=self._anima_name,
+                        absorbed_into=absorbed_target or None,
+                    )
+            else:
+                event = curator.change_state(
+                    skill_name,
+                    state,
+                    reason=reason,
+                    actor=self._anima_name,
+                    absorbed_into=absorbed_target or None,
+                )
         except ValueError as exc:
             return _error_result("InvalidArguments", str(exc))
         except Exception as exc:
             logger.exception("skill lifecycle change failed")
             return _error_result("CuratorFailed", str(exc))
-        return event.model_dump_json(indent=2)
+        if apply_change:
+            return event.model_dump_json(indent=2)
+
+        payload = event.model_dump(mode="json")
+        payload.update(
+            {
+                "applied": False,
+                "status": "proposed_pending_approval",
+                "duplicate": duplicate,
+                "message": t(
+                    "tooling.skill_state_change_duplicate_pending_approval"
+                    if duplicate
+                    else "tooling.skill_state_change_proposed_pending_approval",
+                    skill_name=skill_name,
+                    state=state,
+                ),
+            }
+        )
+        return _json.dumps(payload, ensure_ascii=False, indent=2)
 
     def _scan_created_skill(self, skill_dir: Path, trust_level: str | None) -> str:
         """Run security scan on a newly created skill and persist results."""

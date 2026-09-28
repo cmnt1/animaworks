@@ -366,12 +366,32 @@ class PromptConfig(BaseModel):
     skill_catalog_max_items: int = Field(default=3, ge=1)
 
 
+class CompactBackgroundRecallConfig(BaseModel):
+    """Per-trigger limits for compact-profile background memory recall."""
+
+    related_knowledge_max_items: int = Field(default=3, ge=0)
+    related_knowledge_max_tokens: int = Field(default=180, ge=0)
+    episodes_max_items: int = Field(default=2, ge=0)
+    episodes_max_tokens: int = Field(default=400, ge=0)
+
+
+_DEFAULT_COMPACT_BACKGROUND_RECALL: dict[str, CompactBackgroundRecallConfig] = {
+    trigger: CompactBackgroundRecallConfig() for trigger in ("heartbeat", "inbox", "cron")
+}
+
+
 class PrimingConfig(BaseModel):
     """Configuration for priming layer (automatic memory retrieval)."""
 
     profile: Literal["compact", "full"] = "compact"
     max_tokens: int = Field(default=2000, ge=200)
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
+    compact_background_recall_enabled: bool = True
+    compact_background_recall: dict[str, CompactBackgroundRecallConfig] = Field(
+        default_factory=lambda: {
+            trigger: settings.model_copy(deep=True) for trigger, settings in _DEFAULT_COMPACT_BACKGROUND_RECALL.items()
+        }
+    )
 
 
 class ConsolidationConfig(BaseModel):
@@ -1361,6 +1381,7 @@ __all__ = [
     "BackgroundToolConfig",
     "ChatworkToolConfig",
     "ConsolidationConfig",
+    "CompactBackgroundRecallConfig",
     "CronGuardConfig",
     "CredentialConfig",
     "DEFAULT_ANIMA_MODEL",
