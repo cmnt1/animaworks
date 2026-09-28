@@ -97,6 +97,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `speciality` | `str | None` | None |  |
 | `model` | `str | None` | None |  |
 | `heartbeat_enabled` | `bool | None` | None |  |
+| `background_review_enabled` | `bool | None` | None |  |
 | `token_budget_monthly` | `int | None` | None |  |
 | `aliases` | `list[str]` | `[]` |  |
 
@@ -149,6 +150,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `anima_defaults` | Anima設定デフォルト値 |
 | `animas` | Anima別設定オーバーライド |
 | `consolidation` | 記憶統合設定 |
+| `background_review` |  |
 | `rag` | RAG（検索拡張生成）設定 |
 | `gpu` |  |
 | `memory` |  |

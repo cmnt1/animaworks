@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 1fdb79891da2041ba65751e1023640afbf760b376c5ab2696ffb5b90641b7db4 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: d379782b2dd2152537c75e1aa6c8456e88ce7f02fdae4272037bca0060d027ca -->
 
 # API リファレンス
 
@@ -145,9 +145,11 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/task-board-action` | 内部 | Run a lease-guarded task board write for a sandboxed anima CLI. | `server/routes/internal.py:internal_task_board_action` |
 | GET | `/api/internal/tasks` | 内部 | Read a task snapshot for workers without direct database access. | `server/routes/internal.py:internal_tasks` |
 | POST | `/api/internal/update-task` | 内部 | Persist a task update outside sandbox EROFS constraints. | `server/routes/internal.py:internal_update_task` |
+| POST | `/api/internal/vector/count` | 内部 | — | `server/routes/internal.py:vector_count` |
 | POST | `/api/internal/vector/create-collection` | 内部 | — | `server/routes/internal.py:vector_create_collection` |
 | POST | `/api/internal/vector/delete-collection` | 内部 | — | `server/routes/internal.py:vector_delete_collection` |
 | POST | `/api/internal/vector/delete-documents` | 内部 | — | `server/routes/internal.py:vector_delete_documents` |
+| POST | `/api/internal/vector/get-all` | 内部 | — | `server/routes/internal.py:vector_get_all` |
 | POST | `/api/internal/vector/get-by-ids` | 内部 | — | `server/routes/internal.py:vector_get_by_ids` |
 | POST | `/api/internal/vector/get-by-metadata` | 内部 | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | 内部 | — | `server/routes/internal.py:vector_list_collections` |

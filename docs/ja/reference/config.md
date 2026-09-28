@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 52cc0840b7de75fbbbda753db55de6982a6ccaf44b72618510ef416b544d9629 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 73fb0303b4f6b9ed37ee08c869892c27d41cdd86709f3c89f54245f987561353 -->
 
 # 設定リファレンス
 
@@ -202,6 +202,8 @@
 | `priming.compact_background_recall.related_knowledge_max_tokens` | `int` | `180` | — |
 | `priming.compact_background_recall.episodes_max_items` | `int` | `2` | — |
 | `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
+| `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
+| `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 画像生成プロバイダーと既定パラメーター。 |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |

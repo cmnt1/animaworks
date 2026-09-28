@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 9fb4f45f0aca9d946dfb5311810700b0de0b50b720d1b27c291973c23f0d284f -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: adb5ad1ec662d57e404f205cb581ef61b71e91183cb48225548788a88e037be6 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -995,7 +995,9 @@ Start the server (alias for start)
 
 Install and manage Skill Hub imports
 
-`usage: animaworks skills [-h] {install,list,inspect,remove,quarantine} ...`
+`usage: animaworks skills [-h]
+                         {install,list,inspect,remove,ledger,rollback,quarantine}
+                         ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
@@ -1035,6 +1037,17 @@ Install a skill from a local path, URL, or GitHub source
 | --force | flag | false | — | Accepted for compatibility; import policy still applies |
 | --quarantine | flag | false | — | Install into quarantine instead of active catalog |
 | --trust-level | option | "community" | community, untrusted | Trust level to apply to active installs |
+
+## `skills ledger`
+
+List skill content changes
+
+`usage: animaworks skills ledger [-h] [--anima ANIMA] [skill_name]`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| skill_name | positional | — | — | Filter by skill name |
+| --anima | option | — | — | Filter personal history to one Anima |
 
 ## `skills list`
 
@@ -1104,6 +1117,17 @@ Remove an installed or quarantined skill
 | skill_name | positional | — | — | Skill name |
 | --target | option | "personal" | personal, common | Install target |
 | --anima | option | — | — | Anima name for personal target |
+
+## `skills rollback`
+
+Rollback one skill content change by ledger ID
+
+`usage: animaworks skills rollback [-h] --anima ANIMA id`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| id | positional | — | — | Ledger entry ID |
+| --anima | option | — | — | Anima context/owner for the rollback |
 
 ## `start`
 

@@ -451,14 +451,24 @@ class TestConversationSummaryKeywordSearch:
 def test_consolidation_uses_2phase_pipeline() -> None:
     """Verify daily consolidation uses Phase A + Phase B pipeline."""
     import core.anima.digital_anima as anima_module
+    import core.anima.lifecycle as lifecycle_module
 
     source = inspect.getsource(
         anima_module.DigitalAnima._run_daily_consolidation,
     )
-
-    assert "collect_activity_chunks" in source, (
-        "_run_daily_consolidation should use collect_activity_chunks for Phase A episode extraction"
+    assert "_run_daily_episode_summaries" in source, (
+        "_run_daily_consolidation should delegate Phase A to _run_daily_episode_summaries"
     )
-    assert "one_shot_completion" in source, (
-        "_run_daily_consolidation should use one_shot_completion for Phase A (no tool loop)"
+
+    phase_a_source = inspect.getsource(
+        anima_module.DigitalAnima._run_daily_episode_summaries,
+    )
+    assert "collect_activity_chunks" in phase_a_source, (
+        "Phase A episode extraction should use collect_activity_chunks"
+    )
+    assert "_complete_episode_prompt" in phase_a_source, (
+        "Phase A episode extraction should complete prompts via _complete_episode_prompt"
+    )
+    assert "one_shot_completion" in inspect.getsource(lifecycle_module._complete_episode_prompt), (
+        "Phase A should use one_shot_completion (no tool loop)"
     )
