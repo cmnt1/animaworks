@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/operations/company.md -->
-<!-- i18n: source-sha256=eef72adf793e641fbc9faf0bde9b9e5891bbced2bf077b33fbf3241b6cfa3c10 generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=eef72adf793e641fbc9faf0bde9b9e5891bbced2bf077b33fbf3241b6cfa3c10 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 > 확인된 커밋: 581e20f1
 

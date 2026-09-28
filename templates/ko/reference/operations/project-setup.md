@@ -88,15 +88,16 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 <!-- AUTO-GENERATED:START config_fields -->
 ### 설정 항목 참조(자동 생성)
 
-#### Anima 설정 (per-anima overrides)
+#### Anima 설정 (Anima별 재정의)
 
-| 필드 | 타입 | 기본값 | 설명 |
+| 필드 | 유형 | 기본값 | 설명 |
 |-----------|-----|----------|------|
 | `supervisor` | `str | None` | None |  |
 | `company` | `str | None` | None |  |
 | `speciality` | `str | None` | None |  |
 | `model` | `str | None` | None |  |
 | `heartbeat_enabled` | `bool | None` | None |  |
+| `background_review_enabled` | `bool | None` | None |  |
 | `token_budget_monthly` | `int | None` | None |  |
 | `aliases` | `list[str]` | `[]` |  |
 
@@ -134,28 +135,29 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig 최상위
+#### AnimaWorksConfig 최상위 레벨
 
 | 섹션 | 설명 |
 |-----------|------|
 | `version` | 설정 파일 버전 |
 | `setup_complete` | 설정 완료 플래그 |
 | `locale` | 로케일 설정 |
-| `system` | 시스템 설정(모드, 로그 레벨) |
+| `system` | 시스템 설정 (모드, 로그 레벨) |
 | `credentials` | API 인증 정보 |
-| `model_modes` | 모델명→실행 모드 매핑 |
+| `model_modes` | 모델 이름 → 실행 모드 매핑 |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
 | `anima_defaults` | Anima 설정 기본값 |
-| `animas` | Anima별 설정 오버라이드 |
+| `animas` | Anima별 설정 재정의 |
 | `consolidation` | 기억 통합 설정 |
-| `rag` | RAG(검색 확장 생성) 설정 |
+| `background_review` |  |
+| `rag` | RAG (검색 확장 생성) 설정 |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | 프라이밍(자동 기억 회상) 설정 |
+| `priming` | 프라이밍 (자동 기억 회상) 설정 |
 | `image_gen` | 이미지 생성 설정 |
 | `human_notification` |  |
 | `interaction` |  |

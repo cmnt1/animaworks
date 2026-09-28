@@ -232,36 +232,36 @@ There is no such state as "waiting for conditions to be met" or "blocked" (`bloc
 2. The external tool category is not enabled in the registry (`available_but_not_enabled` in `check_permissions`)
 3. The file path is outside the allowed range (writing to protected files, outside `file_roots`, etc.). Additionally, **global** denials exist in both `permissions.global.json` and framework-side patterns
 
-### Steps
+### Troubleshooting Steps
 
 1. **Check your permissions**
    ```
    check_permissions()
    ```
-   - Returns JSON. Review `internal_tools`, `external_tools.enabled` / `available_but_not_enabled`, `file_access` (read/write), and `restrictions` (command deny lists, etc.)
-   - Raw settings: `read_memory_file(path="permissions.json")` if present, otherwise `permissions.md`
-   - The permission text injected into the system prompt is formatted at runtime from JSON
+   - Returned as JSON. Check `internal_tools`・`external_tools.enabled` / `available_but_not_enabled`・`file_access` (read/write）・`restrictions`（ command deny, etc.)
+   - Raw configuration can be checked with `read_memory_file(path="permissions.json")` (or `permissions.md` if it does not exist)
+   - The permission explanation injected into the system prompt is text formatted by the runtime from JSON
 
-2. **Confirm the operation is allowed**
-   - Under your `anima_dir`, read/write is generally allowed (except protected files such as `identity.md`). Reading supervisors’/peers’ `activity_log` or subordinates’ `state/` depends on role and appears under `check_permissions` → `file_access`
-   - Shell commands: follow `commands` (allow/deny) in `permissions.json`. Globally dangerous patterns are also blocked by the framework
+2. **Check whether the operation is allowed**
+   - You can generally read and write within your own `anima_dir` (excluding protected files such as `identity.md`). Depending on your role, read access to supervisors’ and coworkers’ `activity_log` and subordinates’ `state/` is reflected in `check_permissions`’s `file_access`
+   - Shell commands: `permissions.json`’s `commands` (follow allow/deny）; global dangerous patterns are also blocked by the framework)
 
-3. **If you need additional permission**
+3. **What to do when you need permission**
    - Reconsider whether the operation is truly necessary
-   - See if an alternative within allowed scope works
-   - If not, ask your supervisor to add permission:
+   - Consider whether another approach (an operation within the permitted scope) could work instead
+   - If there is no alternative, ask your supervisor for additional permissions:
    ```
    send_message(
-       to="supervisor_name",
-       content="[Permission Request]\nPurpose: XXX work\nNeeded: Read /path/to/dir\nReason: Need to reference YYY",
+       to="上司の名前",
+       content="【権限追加依頼】\n目的: XXXの作業のため\n必要な権限: /path/to/dir の読み取り\n理由: YYYの情報を参照する必要があるため",
        intent="question"
    )
    ```
 
-4. **Never do the following**
+4. **Things you must never do**
    - Try to bypass permission checks
-   - Run disallowed commands through other means
-   - Attempt to use another Anima’s permissions
+   - Try to execute a disallowed command by another method
+   - Try to use another Anima’s permissions
 
 ---
 

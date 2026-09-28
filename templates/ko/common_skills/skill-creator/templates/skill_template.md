@@ -1,9 +1,10 @@
 ---
 name: {{skill_name}}
 description: >-
-  {{1행: 기능 요약}}
-  Use when: {{쉼표로 구분한 이용 시나리오}}
+  {{첫 번째 줄: 기능에 대한 간결한 설명}}
+  Use when: {{사용 사례를 쉼표로 구분}}
 ---
+
 
 # {{skill_name}}
 

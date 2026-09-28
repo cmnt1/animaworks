@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=ff300dfafc29db6520e29384e6190f16bd7d3ce5d52f1d07ee52c58b31176b9a generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=5d34f82b44e18d77e54f60048602e456b6eda90bb6be0f3b87ccedb51d3464e3 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # 설정 참조
 
@@ -21,9 +21,9 @@
 | `credentials.api_key` | `str` | `""` | — |
 | `credentials.keys` | `dict[str, str]` | `{}` | — |
 | `credentials.base_url` | `str \| None` | `null` | — |
-| `model_modes` | `dict[str, str]` | `{}` | 모델 이름 패턴과 실행 모드의 대응. |
+| `model_modes` | `dict[str, str]` | `{}` | 모델명 패턴과 실행 모드의 대응. |
 | `model_context_windows` | `dict[str, int]` | `{}` | 모델별 컨텍스트 길이의 호환 설정. models.json 사용을 권장. |
-| `model_max_tokens` | `dict[str, int]` | `{}` | 모델 이름 패턴별 기본 출력 토큰 수. |
+| `model_max_tokens` | `dict[str, int]` | `{}` | 모델명 패턴별 기본 출력 토큰 수. |
 | `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | 각 anima에 적용하는 모델·실행 설정의 기본값. |
 | `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
@@ -60,6 +60,7 @@
 | `animas.speciality` | `str \| None` | `null` | — |
 | `animas.model` | `str \| None` | `null` | — |
 | `animas.heartbeat_enabled` | `bool \| None` | `null` | — |
+| `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
 | `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | 기억 통합의 동작과 스케줄. |
@@ -72,6 +73,9 @@
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
 | `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
+| `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | Maximum UTF-8 prompt size for each daily episode-summary LLM call. |
+| `consolidation.episode_summary_backfill_days` | `int` | `7` | Look back this many local days for unprocessed daily episode activity. |
+| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `3` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
 | `consolidation.ipc_timeout_per_episode_seconds` | `float` | `120.0` | — |
@@ -87,6 +91,14 @@
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
+| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | 세션 후 비동기 회고와 인물상 업데이트 설정. |
+| `background_review.enabled` | `bool` | `true` | — |
+| `background_review.chat_every_user_turns` | `int` | `10` | — |
+| `background_review.min_interval_minutes` | `int` | `10` | — |
+| `background_review.max_per_day` | `int` | `24` | — |
+| `background_review.max_input_bytes` | `int` | `61440` | — |
+| `background_review.max_writes` | `int` | `3` | — |
+| `background_review.peer_profile_max_chars` | `int` | `1500` | — |
 | `rag` | `RAGConfig` | `{RAGConfig}` | 검색 확장 생성과 기억 검색의 설정. |
 | `rag.enabled` | `bool` | `true` | — |
 | `rag.embedding_model` | `str` | `"intfloat/multilingual-e5-small"` | — |
@@ -184,6 +196,14 @@
 | `priming.profile` | `Literal['compact', 'full']` | `"compact"` | 시작 시 컨텍스트에 사용하는 프로필. compact는 요점을 우선하고, full은 넓은 정보를 로드합니다. |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
+| `priming.compact_background_recall_enabled` | `bool` | `true` | — |
+| `priming.compact_background_recall` | `dict[str, CompactBackgroundRecallConfig]` | `…` | — |
+| `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
+| `priming.compact_background_recall.related_knowledge_max_tokens` | `int` | `180` | — |
+| `priming.compact_background_recall.episodes_max_items` | `int` | `2` | — |
+| `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
+| `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
+| `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 프로바이더와 기본 파라미터. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
@@ -251,9 +271,9 @@
 | `llm_rate_guard.max_block_seconds` | `int` | `600` | — |
 | `llm_rate_guard.quota_block_seconds` | `int` | `1800` | — |
 | `llm_rate_guard.max_quota_block_seconds` | `int` | `14400` | — |
-| `mcp` | `MCPConfig` | `{MCPConfig}` | MCP 서버 연결과 도구 공개의 설정. |
+| `mcp` | `MCPConfig` | `{MCPConfig}` | MCP 서버 연결과 도구 공개 설정. |
 | `mcp.trigger_scoped_tools` | `bool` | `true` | — |
-| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | Slack 등 외부 메시징 연계. |
+| `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | Slack 등 외부 메시징 연동. |
 | `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
 | `external_messaging.user_aliases` | `dict[str, UserAliasConfig]` | `{}` | alias → contact info |
 | `external_messaging.user_aliases.slack_user_id` | `str` | `""` | — |
@@ -306,7 +326,7 @@
 | `external_messaging.zoom.meeting_mapping` | `dict[str, str]` | `{}` | meeting_id → anima_name |
 | `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | flush interval for buffered transcript |
 | `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | max chars per chunk (flush on whichever comes first) |
-| `external_tasks` | `ExternalTasksConfig` | `{ExternalTasksConfig}` | 외부 작업 시스템과의 연계. |
+| `external_tasks` | `ExternalTasksConfig` | `{ExternalTasksConfig}` | 외부 작업 시스템과의 연동. |
 | `external_tasks.enabled` | `bool` | `true` | — |
 | `external_tasks.interval_minutes` | `int` | `5` | — |
 | `external_tasks.sources` | `ExternalTasksSourcesConfig` | `{ExternalTasksSourcesConfig}` | — |
@@ -447,7 +467,7 @@
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 | `workspaces` | `dict[str, str]` | `{}` | 이름 있는 workspace 경로의 대응. |
 | `github_identities` | `dict[str, str]` | `{}` | 회사 slug와 GitHub 계정의 대응. |
-| `channel_company_defaults` | `dict[str, str]` | `{}` | 채널 이름에 대한 기본 회사 속성. |
+| `channel_company_defaults` | `dict[str, str]` | `{}` | 채널명에 대한 기본 회사 속성. |
 | `activity_level` | `int` | `100` | 전체 활동 빈도를 조정하는 배율. |
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | 시간대별 활동 빈도. |
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=726bdca8f0f75f90cdda2433ae9dcda2f29a046bdf5f3fde901295d9bf35d6ba generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=8dfafb774697bcfebed1629917b28172f870c16d4c6445eee1a618b53cb61db7 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # API Reference
 
@@ -145,16 +145,18 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | POST | `/api/internal/task-board-action` | Internal | Run a lease-guarded task board write for a sandboxed anima CLI. | `server/routes/internal.py:internal_task_board_action` |
 | GET | `/api/internal/tasks` | Internal | Read a task snapshot for workers without direct database access. | `server/routes/internal.py:internal_tasks` |
 | POST | `/api/internal/update-task` | Internal | Persist a task update outside sandbox EROFS constraints. | `server/routes/internal.py:internal_update_task` |
+| POST | `/api/internal/vector/count` | Internal | — | `server/routes/internal.py:vector_count` |
 | POST | `/api/internal/vector/create-collection` | Internal | — | `server/routes/internal.py:vector_create_collection` |
 | POST | `/api/internal/vector/delete-collection` | Internal | — | `server/routes/internal.py:vector_delete_collection` |
 | POST | `/api/internal/vector/delete-documents` | Internal | — | `server/routes/internal.py:vector_delete_documents` |
+| POST | `/api/internal/vector/get-all` | Internal | — | `server/routes/internal.py:vector_get_all` |
 | POST | `/api/internal/vector/get-by-ids` | Internal | — | `server/routes/internal.py:vector_get_by_ids` |
 | POST | `/api/internal/vector/get-by-metadata` | Internal | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | Internal | — | `server/routes/internal.py:vector_list_collections` |
 | POST | `/api/internal/vector/query` | Internal | Execute vector search for internal services. | `server/routes/internal.py:vector_query` |
 | POST | `/api/internal/vector/update-metadata` | Internal | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | Internal | — | `server/routes/internal.py:vector_upsert` |
-| GET | `/api/messages/{message_id}` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
+| GET | `/api/messages/{message_id}` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
 
 ## `server/routes/logs_routes.py`
 

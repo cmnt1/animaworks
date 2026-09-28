@@ -5,22 +5,22 @@
 Reporting to your supervisor is the lifeline of organizational operations.
 Reporting at the right time and in the right format supports early problem detection and rapid decision-making.
 
-## Tool Usage
+## Choosing the Right Tool
 
-Use the `send_message` tool for reporting. Observe the following constraints:
+Use the `send_message` tool for reports. Observe the following constraints.
 
 | Tool | Purpose | Notes |
-|------|---------|-------|
-| `send_message` | One-to-one reports and questions to supervisor or colleagues | Reports, progress, and decision requests use `intent="report"`; questions use `intent="question"`. Anima names, aliases, `slack:` / `chatwork:` (see below), etc. |
-| `post_channel` | Team-wide announcements (Board) | Acknowledgments, thanks, and FYI use Board. One post per channel per run; reposts require cooldown (`heartbeat.channel_post_cooldown_s`, default 300 seconds) |
-| `call_human` | Urgent notification to humans | Service outage, security incidents, etc. |
+|--------|------|------|
+| `send_message` | One-on-one reports or questions to a supervisor or colleague | Use `intent="report"` for reports, progress updates, and requests for decisions; use `intent="question"` for questions. Anima names, aliases, `slack:`/`chatwork:`, etc. (see below) |
+| `post_channel` | Announcements to the whole team (Board) | Use Board for acknowledgments, thanks, and FYI messages. Posting is limited to once per channel per run; reposting requires a cooldown (`heartbeat.channel_post_cooldown_s`, 300 seconds by default) |
+| `call_human` | Urgent notifications to humans | For service shutdowns, security incidents, etc. |
 
 **send_message constraints**:
-- `intent` is **required**; values must be **`report` or `question` only** (use `report` for reports and progress, `question` for questions). **`delegation` is not allowed** with `send_message` (the tool rejects it). For task delegation, use `delegate_task`
-- Number of distinct recipients per run is limited by **`max_recipients_per_run`** (overridable in `status.json`; if unset, role defaults apply—e.g. `general` is 2). At most one message per recipient. For three or more recipients, use Board
-- Use Board (`post_channel`) for additional follow-up
-- **Recipients**: see “Recipient resolution” below (Anima name, human alias, direct `slack:` / `chatwork:`, etc.)
-- **Note**: During a chat session with a human, `send_message` cannot target the human; reply with plain text directly
+- `intent` is required, and its value must be **`report` or `question` only** (`report` for reports and progress updates; `question` for questions). **`delegation` cannot be used with `send_message`** (the tool will reject it). Use `delegate_task` to delegate tasks.
+- The maximum number of recipients per run is **`max_recipients_per_run`** (can be overridden with `status.json`; if not set, the role default applies. Example: `general` is 2). Send only one message to each recipient. Use Board to communicate with three or more people.
+- Use Board (post_channel) for additional communication.
+- For **recipients**, see “Resolving recipients” below (directly specifying Anima names, human aliases, `slack:` / `chatwork:`, etc.).
+- **Note**: You cannot use send_message to message humans during a chat session. Reply directly with text.
 
 ### Recipient Resolution and External Delivery (`core/messaging/outbound.py`)
 

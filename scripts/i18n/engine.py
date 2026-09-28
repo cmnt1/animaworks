@@ -60,9 +60,12 @@ class EngineClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": float(self.definition.get("temperature", 0.0)),
-            "max_tokens": int(self.definition.get("max_output_tokens", 16000)),
         }
+        # Azure reasoning deployments reject max_tokens and non-default temperatures.
+        token_field = "max_completion_tokens" if self.kind == "azure_openai" else "max_tokens"
+        payload[token_field] = int(self.definition.get("max_output_tokens", 16000))
+        if "temperature" in self.definition:
+            payload["temperature"] = float(self.definition["temperature"])
         try:
             import httpx
 

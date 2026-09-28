@@ -90,16 +90,16 @@ Limits applied within a single session (heartbeat, conversation, task execution,
 
 ## Conversation Depth Limit (Two-Party DM)
 
-When exchanges between two parties exceed `max_depth` within `depth_window_s`, **`Messenger.send` to internal Anima** is blocked (`check_depth`, using activity_log `dm_sent`/`dm_received` and aliases `message_sent`/`message_received`).
+When a two-party exchange exceeds `max_depth` within `depth_window_s`, `Messenger.send` addressed to an **internal Anima** is blocked (`check_depth`. See the `dm_sent`/`dm_received` in activity_log and its alias, `message_sent`/`message_received`).
 
-| Setting | Default | Config Key | Description |
-|---------|---------|------------|-------------|
-| Depth window | 600s (10 min) | `heartbeat.depth_window_s` | Sliding window |
-| Max depth | 6 turns | `heartbeat.max_depth` | 6 turns ≈ 3 round-trips; send blocked above this |
+| Configuration | Default value | Configuration key | Description |
+|------|-------------|----------|------|
+| Depth window | 600 seconds (10 minutes) | `heartbeat.depth_window_s` | Sliding window |
+| Maximum depth | 6 turns | `heartbeat.max_depth` | 6 turns = 3 round trips expected. Sends are blocked if exceeded |
 
-User-facing text comes from `core/i18n` `messenger.depth_exceeded` (Japanese currently uses a fixed “6 turns in 10 minutes” string; actual thresholds follow the settings above).
+The displayed message is `messenger.depth_exceeded` in `core/i18n` (currently, the Japanese text is fixed as “6 turns in 10 minutes.” The actual threshold follows the configuration above).
 
-If activity log reads fail, depth check is **fail-closed** (send blocked).
+If reading the log fails, the depth check is **fail-closed** (sending is blocked).
 
 ## Message-Triggered Heartbeat Suppression (Inbox)
 

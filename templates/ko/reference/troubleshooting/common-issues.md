@@ -232,24 +232,24 @@ send_message(
 2. 외부 도구의 카테고리가 레지스트리에 미활성화(`check_permissions` 의 `available_but_not_enabled`)
 3. 파일 경로가 허용 범위 밖(보호 파일에 쓰기, `file_roots` 밖 등). 추가로 **글로벌** 거부는 `permissions.global.json` 와 프레임워크 측 패턴이 있음
 
-### 対処手順
+### 대응 절차
 
-1. **自分の権限を確認する**
+1. **자신의 권한을 확인한다**
    ```
    check_permissions()
    ```
-   - JSON で返る。`internal_tools`・`external_tools.enabled` / `available_but_not_enabled`・`file_access`（read/write）・`restrictions`（コマンド deny 等）を確認する
-   - 生の設定は `read_memory_file(path="permissions.json")`（存在しない場合は `permissions.md`）で確認可能
-   - システムプロンプトに注入される権限説明は、ランタイムが JSON から整形したテキストになる
+   - JSON으로 반환된다. `internal_tools`・`external_tools.enabled` / `available_but_not_enabled`・`file_access`(read/write）・`restrictions`（ 명령 거부 등)을 확인한다
+   - 원본 설정은 `read_memory_file(path="permissions.json")`(존재하지 않는 경우 `permissions.md`)에서 확인할 수 있다
+   - 시스템 프롬프트에 주입되는 권한 설명은 런타임이 JSON을 바탕으로 정리한 텍스트가 된다
 
-2. **許可されている操作か確認する**
-   - 自分の `anima_dir` 内は原則読み書き可能（`identity.md` 等の保護ファイルは除く）。上司・同僚の `activity_log` や配下の `state/` 読み取りはロール次第で `check_permissions` の `file_access` に反映される
-   - シェルコマンド: `permissions.json` の `commands`（allow/deny）に従う。グローバル危険パターンはフレームワーク側でもブロックされる
+2. **허용된 작업인지 확인한다**
+   - 자신의 `anima_dir` 내에서는 원칙적으로 읽기와 쓰기가 가능하다(`identity.md` 등 보호 파일은 제외). 상급자·동료의 `activity_log` 및 하위 `state/` 읽기는 역할에 따라 `check_permissions`의 `file_access`에 반영된다
+   - 셸 명령: `permissions.json`의 `commands`(allow/deny）을 따른다. 전역 위험 패턴은 프레임워크 측에서도 차단된다
 
-3. **権限が必要な場合の対応**
-   - その操作が本当に必要か再検討する
-   - 別のアプローチ（許可された範囲内の操作）で代替できないか考える
-   - 代替不可能な場合は上司に権限追加を依頼する:
+3. **권한이 필요한 경우의 대응**
+   - 해당 작업이 정말 필요한지 다시 검토한다
+   - 다른 접근 방식(허용된 범위 내의 작업)으로 대체할 수 없는지 생각한다
+   - 대체할 수 없는 경우 상급자에게 권한 추가를 요청한다:
    ```
    send_message(
        to="上司の名前",
@@ -258,10 +258,10 @@ send_message(
    )
    ```
 
-4. **絶対にやってはいけないこと**
-   - 権限チェックを回避しようとすること
-   - 許可されていないコマンドを別の方法で実行しようとすること
-   - 他のAnimaの権限を利用しようとすること
+4. **절대 해서는 안 되는 일**
+   - 권한 검사를 우회하려고 하는 것
+   - 허용되지 않은 명령을 다른 방법으로 실행하려고 하는 것
+   - 다른 Anima의 권한을 이용하려고 하는 것
 
 ---
 

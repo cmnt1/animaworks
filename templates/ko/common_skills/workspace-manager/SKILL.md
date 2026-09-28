@@ -6,16 +6,17 @@ description: >-
 tags: [workspace, directory, project, management]
 ---
 
+
 # 워크스페이스 관리
 
 Anima가 작업하는 프로젝트 디렉토리(워크스페이스)를 관리하는 스킬입니다.
 
 ## 개념
 
-Anima는 평소 "자신의 집" (~/.animaworks/animas/{name}/)에 있습니다.
-프로젝트 작업을 할 때는 "직장"(워크스페이스)으로 이동하여 작업합니다.
+Anima는 평소 “자기 집”(~/.animaworks/animas/{name}/）에 있다.
+프로젝트 작업을 할 때는 “일터”(작업 공간)로 나가 작업한다.
 
-워크스페이스는 조직 공유 레지스트리(config.json의 workspaces 섹션)에 등록하고, 에일리어스#해시로 참조합니다.
+작업 공간은 조직 공유 레지스트리(config.json의 workspaces 섹션)에 등록하고 별칭#해시로 참조한다.
 
 ## 에일리어스와 해시
 

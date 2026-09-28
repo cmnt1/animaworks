@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=ff300dfafc29db6520e29384e6190f16bd7d3ce5d52f1d07ee52c58b31176b9a generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=5d34f82b44e18d77e54f60048602e456b6eda90bb6be0f3b87ccedb51d3464e3 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # Configuration Reference
 
@@ -60,6 +60,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `animas.speciality` | `str \| None` | `null` | — |
 | `animas.model` | `str \| None` | `null` | — |
 | `animas.heartbeat_enabled` | `bool \| None` | `null` | — |
+| `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
 | `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | Consolidation behavior and schedule. |
@@ -72,6 +73,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.min_episodes_threshold` | `int` | `1` | — |
 | `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
+| `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | Maximum UTF-8 prompt size for each daily episode-summary LLM call. |
+| `consolidation.episode_summary_backfill_days` | `int` | `7` | Look back this many local days for unprocessed daily episode activity. |
+| `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `3` | Maximum older days to backfill during one daily consolidation (yesterday is separate). |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
 | `consolidation.ipc_timeout_per_episode_seconds` | `float` | `120.0` | — |
@@ -87,6 +91,14 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
+| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | Settings for post-session asynchronous reflection and persona updates. |
+| `background_review.enabled` | `bool` | `true` | — |
+| `background_review.chat_every_user_turns` | `int` | `10` | — |
+| `background_review.min_interval_minutes` | `int` | `10` | — |
+| `background_review.max_per_day` | `int` | `24` | — |
+| `background_review.max_input_bytes` | `int` | `61440` | — |
+| `background_review.max_writes` | `int` | `3` | — |
+| `background_review.peer_profile_max_chars` | `int` | `1500` | — |
 | `rag` | `RAGConfig` | `{RAGConfig}` | Settings for retrieval-augmented generation and memory search. |
 | `rag.enabled` | `bool` | `true` | — |
 | `rag.embedding_model` | `str` | `"intfloat/multilingual-e5-small"` | — |
@@ -149,7 +161,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `memory.fact_edge_types` | `list[FactEdgeTypeConfig]` | `[]` | — |
 | `memory.fact_edge_types.name` | `str` | `"—"` | Upper snake case semantic edge type name |
 | `memory.fact_edge_types.description` | `str` | `"—"` | Short explanation shown in extraction prompts |
-| `skills` | `SkillsConfig` | `{SkillsConfig}` | Skill loading and management settings. |
+| `skills` | `SkillsConfig` | `{SkillsConfig}` | Settings for skill loading and management. |
 | `skills.promotion` | `SkillPromotionConfig` | `{SkillPromotionConfig}` | — |
 | `skills.promotion.success_count_threshold` | `int` | `3` | — |
 | `skills.promotion.confidence_threshold` | `float` | `0.8` | — |
@@ -168,7 +180,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `skills.external_roots.enabled` | `bool` | `true` | — |
 | `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Chatwork tool permission settings. |
 | `chatwork_tool.grants` | `dict[str, dict[str, str]]` | `{}` | — |
-| `prompt` | `PromptConfig` | `{PromptConfig}` | System prompt and prompt construction settings. |
+| `prompt` | `PromptConfig` | `{PromptConfig}` | Settings for system prompts and prompt construction. |
 | `prompt.injection_size_warning_chars` | `int` | `2000` | — |
 | `prompt.identity_business_exclude_headings` | `list[str]` | `["外見","基本プロフィール","Appearance","Basic Profile"]` | — |
 | `prompt.system_prompt_target_tokens` | `int` | `6000` | — |
@@ -181,9 +193,17 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `prompt.skill_catalog_router_dense_weight` | `float` | `8.0` | — |
 | `prompt.skill_catalog_max_items` | `int` | `3` | — |
 | `priming` | `PrimingConfig` | `{PrimingConfig}` | Settings for information loaded at anima startup. |
-| `priming.profile` | `Literal['compact', 'full']` | `"compact"` | Profile used for startup context. compact prioritizes key points, full loads broader information. |
+| `priming.profile` | `Literal['compact', 'full']` | `"compact"` | Profile used for startup context. compact prioritizes key points; full loads broader information. |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
+| `priming.compact_background_recall_enabled` | `bool` | `true` | — |
+| `priming.compact_background_recall` | `dict[str, CompactBackgroundRecallConfig]` | `…` | — |
+| `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
+| `priming.compact_background_recall.related_knowledge_max_tokens` | `int` | `180` | — |
+| `priming.compact_background_recall.episodes_max_items` | `int` | `2` | — |
+| `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
+| `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
+| `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation provider and default parameters. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
@@ -339,7 +359,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
-| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Operation and activity log storage settings. |
+| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for saving operation and activity logs. |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
 | `activity_log.rotation_mode` | `Literal['size', 'time', 'both']` | `"size"` | — |
 | `activity_log.max_size_mb` | `int` | `1024` | per-anima total, default 1GB |
@@ -348,7 +368,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `activity_log.rotation_time` | `str` | `"05:00"` | Execution time (configured TZ) |
 | `logging` | `LoggingConfig` | `{LoggingConfig}` | Log level, output destination, and sensitive information masking. |
 | `logging.redaction_enabled` | `bool` | `true` | Mask secrets in log output; disable for raw-log debugging. |
-| `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | Periodic heartbeat execution settings. |
+| `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | Settings for periodic heartbeat execution. |
 | `heartbeat.interval_minutes` | `int` | `30` | — |
 | `heartbeat.current_state_max_chars` | `int` | `8000` | Max chars for current_state.md before trim; 0 = disabled |
 | `heartbeat.current_state_cleanup_chars` | `int` | `2000` | Soft cleanup threshold for current_state.md; 0 = 80% of current_state_max_chars |
@@ -453,7 +473,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |
 | `activity_schedule.end` | `str` | `"—"` | End time in HH:MM format (may wrap past midnight) |
 | `activity_schedule.level` | `int` | `"—"` | Activity level percentage for this period |
-| `icon_url_template` | `str` | `""` | Anima icon URL template. |
+| `icon_url_template` | `str` | `""` | Template for anima icon URLs. |
 | `ui` | `UIConfig` | `{UIConfig}` | Web UI display settings. |
 | `ui.theme` | `str` | `"default"` | — |
 | `ui.demo_mode` | `bool` | `false` | — |

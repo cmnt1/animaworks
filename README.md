@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=ebdfb709d98a0ad5490cf073d9c3e29774738eb4a952fb786529414e2ca765c1 generated=2026-09-28 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=ebdfb709d98a0ad5490cf073d9c3e29774738eb4a952fb786529414e2ca765c1 generated=2026-09-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -331,23 +331,23 @@ Three principles support this:
 <details>
 <summary><strong>API key reference</strong></summary>
 
-#### LLMプロバイダ
+#### LLM Providers
 
-| キー | サービス | モード | 取得先 |
+| Key | Service | Mode | Where to get |
 |-----|---------|------|--------|
 | `ANTHROPIC_API_KEY` | Anthropic API | S / A | [console.anthropic.com](https://console.anthropic.com/) |
-| `OPENAI_API_KEY` | OpenAI | A / C（Codex Login 時は省略可） | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `OPENAI_API_KEY` | OpenAI | A / C (optional when using Codex Login) | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `GOOGLE_API_KEY` | Google AI (Gemini) | A | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 
-**OpenAI Codex（Mode C）** は `OPENAI_API_KEY` を使う方法に加えて、ローカルの **Codex Login**（`codex login`）も利用できます。セットアップウィザードや Settings で選択してください。
+**OpenAI Codex (Mode C)** can also use local **Codex Login** (`codex login`), in addition to using `OPENAI_API_KEY`. Select it in the setup wizard or Settings.
 
-**Grok Build（Mode X）** は Grok Build CLI ラッパー（ACP stdio）経由で `grok/*` モデルを利用します。事前に `grok` CLI をインストールし、`grok login` を実行してください。
+**Grok Build (Mode X)** uses the `grok/*` model via the Grok Build CLI wrapper (ACP stdio). Install the `grok` CLI beforehand and run `grok login`.
 
-**Azure OpenAI**、**Vertex AI (Gemini)**、**AWS Bedrock**、**vLLM** は `config.json` の `credentials` セクションで設定します。詳細は[アーキテクチャ](docs/en/architecture/index.md)を参照してください。
+Configure **Azure OpenAI**, **Vertex AI (Gemini)**, **AWS Bedrock**, and **vLLM** in the `credentials` section of `config.json`. See [Architecture](docs/en/architecture/index.md) for details.
 
-**Ollama** 等のローカルモデルはAPIキー不要です。`OLLAMA_SERVERS`（デフォルト: `http://localhost:11434`）で接続先を指定します。
+Local models such as **Ollama** do not require an API key. Specify the endpoint in `OLLAMA_SERVERS` (default: `http://localhost:11434`).
 
-認証情報は `config.json` の `credentials` → vault → 共有credentialsファイル → 環境変数の順で解決されるため、多くのキーは暗号化vault（`animaworks vault`）にも置けます。
+Credentials are resolved in this order: `config.json`’s `credentials` → vault → shared credentials file → environment variables. As a result, many keys can also be stored in the encrypted vault (`animaworks vault`).
 
 #### Image generation (optional)
 

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/overview.md -->
-<!-- i18n: source-sha256=b2c22dd9823637ef5314ee8000da5cf5fe2dd07ffd716e6adcbd304c92cced4a generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=b2c22dd9823637ef5314ee8000da5cf5fe2dd07ffd716e6adcbd304c92cced4a generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 > 확인된 커밋: b304b7dc
 

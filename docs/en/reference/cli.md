@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=d62bbf4b1679f7dcd504dae77057698c0bf3b7d00c814d636a5b11305c469d40 generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=92b56543103c512cc42f576f51d3e9dc48a56d9fd976fa97bbe6d048019e75ba generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # CLI Reference: `animaworks`
 
@@ -814,7 +814,7 @@ Register a new profile
 
 `usage: animaworks profile add [-h] [--data-dir DATA_DIR] [--port PORT] name`
 
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | name | positional | — | — | Profile name |
 | --data-dir | option | — | — | Data directory (default: ~/.animaworks/<name>) |
@@ -995,7 +995,9 @@ Start the server (alias for start)
 
 Install and manage Skill Hub imports
 
-`usage: animaworks skills [-h] {install,list,inspect,remove,quarantine} ...`
+`usage: animaworks skills [-h]
+                         {install,list,inspect,remove,ledger,rollback,quarantine}
+                         ...`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
@@ -1035,6 +1037,17 @@ Install a skill from a local path, URL, or GitHub source
 | --force | flag | false | — | Accepted for compatibility; import policy still applies |
 | --quarantine | flag | false | — | Install into quarantine instead of active catalog |
 | --trust-level | option | "community" | community, untrusted | Trust level to apply to active installs |
+
+## `skills ledger`
+
+List skill content changes
+
+`usage: animaworks skills ledger [-h] [--anima ANIMA] [skill_name]`
+
+| Name | Type | Default | Choices | Description |
+|---|---|---|---|---|
+| skill_name | positional | — | — | Filter by skill name |
+| --anima | option | — | — | Filter personal history to one Anima |
 
 ## `skills list`
 
@@ -1104,6 +1117,17 @@ Remove an installed or quarantined skill
 | skill_name | positional | — | — | Skill name |
 | --target | option | "personal" | personal, common | Install target |
 | --anima | option | — | — | Anima name for personal target |
+
+## `skills rollback`
+
+Rollback one skill content change by ledger ID
+
+`usage: animaworks skills rollback [-h] --anima ANIMA id`
+
+| Name | Type | Default | Choices | Description |
+|---|---|---|---|---|
+| id | positional | — | — | Ledger entry ID |
+| --anima | option | — | — | Anima context/owner for the rollback |
 
 ## `start`
 

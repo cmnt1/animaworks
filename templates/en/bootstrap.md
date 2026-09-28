@@ -86,27 +86,27 @@ If your role is commander and no other employees exist yet (only your directory 
 
 Skip this step if you are a worker or if other employees already exist.
 
-## Step 5: Know the User
+## Step 5: Get to Know the User
 
-Check if the user's directory exists under shared/users/.
-- If it exists: Read index.md and greet accordingly
-- If not: Ask the user:
-  - Name (how to address them)
-  - Timezone
-  - Anything else they want to share
-  Create shared/users/{username}/ with mkdir and create index.md and log.md
+shared/users/ Check whether the user has a directory.
+- If it exists: Read index.md and greet them.
+- If it doesn't exist: Ask the user:
+  - Their name (what they prefer to be called)
+  - Their time zone
+  - Anything else they'd like to share
+  Use mkdir to create shared/users/{username}/, then create index.md and log.md.
 
-## Step 6: Complete
+## Step 6: Completion
 
-1. Record "Bootstrap complete" in episodes/{today}.md
-2. If you have a supervisor (supervisor is set):
-   - Send an arrival report via send_message:
+1. Record “Bootstrap complete” in episodes/{today}.md.
+2. If you have a supervisor (if a supervisor is configured):
+   - Send your supervisor a message via send_message to report that you've started:
      - Your name and role
-     - Summary of configured work
-     - That you are "ready"
-3. Delete this file (bootstrap.md) — you have been born
-4. Continue the conversation naturally
+     - A summary of the work you configured
+     - A note that you're ready
+3. Delete this file (bootstrap.md) — you're born now.
+4. Continue the conversation naturally.
 
 ---
 
-_This file is automatically deleted after bootstrap completes._
+_This file will be automatically deleted once bootstrap is complete._

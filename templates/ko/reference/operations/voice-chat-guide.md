@@ -106,12 +106,12 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 #### voice_id 지정 방법
 
 | 프로바이더 | voice_id 형식 | 확인 방법 |
-|-----------|---------------|----------|
-| VOICEVOX | 화자 ID (숫자 문자열), 예: `"3"` = 즌다몬 | `curl http://localhost:50021/speakers`로 목록 확인 |
-| Style-BERT-VITS2 | `model_id:speaker_id` 또는 `model_id:speaker_id:style`. 예: `0:0` | `curl http://localhost:5000/models/info`로 목록 확인 |
-| ElevenLabs | voice_id 문자열 | ElevenLabs 대시보드 또는 API로 확인 |
+|-----------|----------------|---------|
+| VOICEVOX | 화자 ID(숫자 문자열) 예: `"3"` = 즌다몬 | `curl http://localhost:50021/speakers` 에서 목록 확인 |
+| Style-BERT-VITS2 | `model_id:speaker_id` 또는 `model_id:speaker_id:style`. 예: `0:0` | `curl http://localhost:5000/models/info` 에서 목록 확인 |
+| ElevenLabs | voice_id 문자열 | ElevenLabs 대시보드 또는 API에서 확인 |
 
-미설정이거나 `voice_id`가 비어 있으면 프로바이더의 기본 목소리가 사용됩니다.
+설정이 없거나 `voice_id` 이 비어 있는 경우, 프로바이더의 기본 음성이 사용된다.
 
 ---
 
@@ -237,12 +237,12 @@ UI의 토글로 전환 가능합니다.
 - `stt_refine_enabled: false`를 확인 (LLM 후처리는 레이턴시 증가)
 - VOICEVOX/SBV2를 GPU 모드로 기동
 
-### voice_id가 잘못되어 오디오가 나오지 않음
+### voice_id가 올바르지 않아 음성이 나오지 않음
 
-- 지정한 `voice_id`가 프로바이더에 존재하는지 확인
-- 잘못된 경우 프로바이더의 기본 목소리로 폴백 + 경고 로그
-- VOICEVOX: `curl http://localhost:50021/speakers | jq`로 유효한 ID 확인
-- SBV2: `curl http://localhost:5000/models/info`로 모델 목록을 확인하고 `model_id:speaker_id` 형식으로 지정
+- 지정한 `voice_id` 이 프로바이더에 존재하는지 확인
+- 올바르지 않은 경우 프로바이더의 기본 음성으로 대체 + 경고 로그
+- VOICEVOX: `curl http://localhost:50021/speakers | jq` 에서 유효한 ID 확인
+- SBV2: `curl http://localhost:5000/models/info` 에서 모델 목록을 확인하고, `model_id:speaker_id` 형식으로 지정
 
 ---
 

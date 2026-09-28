@@ -92,6 +92,17 @@ def test_protection_round_trip_preserves_code_placeholders_urls_and_frontmatter(
     assert "```python\nvalue = '{task_id}'\n```\n" in protected_body.values.values()
 
 
+def test_protection_folds_sentinels_nested_by_a_later_pattern() -> None:
+    # The path pattern spans placeholders that an earlier pass already replaced.
+    source = "履歴は {animas_dir}/{name}/activity_log/{date}.jsonl で確認する。\n"
+    protected = protect_text(source)
+
+    visible = set(re.findall(r"⟦P\d+⟧", protected.text))
+    assert visible == set(protected.values)
+    assert not any(re.search(r"⟦P\d+⟧", value) for value in protected.values.values())
+    assert protected.restore(protected.text) == source
+
+
 def test_splitter_ignores_hash_lines_inside_fenced_code() -> None:
     from scripts.i18n.segment import split_markdown
 
@@ -338,6 +349,32 @@ def test_language_ratio_excludes_source_shared_japanese_for_korean() -> None:
         "「手順」의 대로 조작합니다.\n"
     )
     validate_translation(source, translated, "ko")
+
+
+def test_url_check_stops_at_backticks_and_japanese_text() -> None:
+    source = "# 接続\nOllama（`http://localhost:11434`）で接続先を指定します。\n"
+    translated = "# Connection\nSpecify the endpoint with Ollama (`http://localhost:11434`).\n"
+    validate_translation(source, translated, "en")
+
+
+def test_template_frontmatter_that_is_not_yaml_is_accepted() -> None:
+    source = "---\nname: {{skill_name}}\ndescription: >-\n  {{機能の説明}}\n---\n"
+    translated = "---\nname: {{skill_name}}\ndescription: >-\n  {{capability summary}}\n---\n"
+    validate_translation(source, translated, "en", frontmatter=True)
+
+
+def test_language_ratio_accepts_chinese_han_characters() -> None:
+    # Simplified Chinese shares Han characters with Japanese; only kana marks
+    # an untranslated section.
+    source = "# 記憶の仕組み\n" + "これは記憶システムの長い説明文です。" * 8 + "\n"
+    translated = "# 记忆机制\n" + "这是关于记忆系统的详细说明文字。" * 8 + "\n"
+    validate_translation(source, translated, "zh")
+
+
+def test_language_ratio_rejects_untranslated_chinese_section() -> None:
+    source = "# 見出し\n" + "これは長い文章です。" * 10 + "\n"
+    with pytest.raises(ValidationError):
+        validate_translation(source, source, "zh")
 
 
 def test_language_ratio_rejects_korean_output_without_hangul() -> None:

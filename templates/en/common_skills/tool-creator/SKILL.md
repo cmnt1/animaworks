@@ -8,22 +8,22 @@ description: >-
 
 # tool-creator
 
-## 概要
+## Overview
 
-AnimaWorksのツールは3種類に分かれる:
+AnimaWorks tools are divided into three types:
 
-| 種類 | 配置先 | 発見方法 |
+| Type | Location | Discovery method |
 |------|--------|----------|
-| **コアツール** | `core/integrations/*.py`（`_` 接頭辞のファイルは除外） | `discover_core_tools()` → `TOOL_MODULES`（パッケージ import） |
-| **共有ツール** | `{data_dir}/common_tools/*.py` | `discover_common_tools()` |
-| **個人ツール** | `{anima_dir}/tools/*.py` | `discover_personal_tools()` |
+| **Core tools** | `core/integrations/*.py` (files with the `_` prefix are excluded) | `discover_core_tools()` → `TOOL_MODULES` (package import) |
+| **Shared tools** | `{data_dir}/common_tools/*.py` | `discover_common_tools()` |
+| **Personal tools** | `{anima_dir}/tools/*.py` | `discover_personal_tools()` |
 
-`{data_dir}` は通常 `~/.animaworks/`。
+`{data_dir}` is usually `~/.animaworks/`.
 
-- **ディスパッチ**: `ExternalToolDispatcher` は `_DISPATCH_TABLE` を廃止し、各モジュールの `dispatch(name, args)`（またはスキーマ名と同名の関数）に統一している（`core/tooling/dispatch.py`）。
-- **マージ**: `AgentCore` 起動時の `_discover_personal_tools()` と `refresh_tools` はいずれも **共通→個人** の順でマージし、**個人が同名を上書き** する（`{**common, **personal}`）。マージ結果は `ExternalToolDispatcher` の `_personal_tools` に保持される（名前は historical だが **共通ツールも含む**）。
-- **コアとの衝突**: コア `TOOL_MODULES` と同名のファイルは、共通・個人の発見時に **スキップ** される（警告ログのみ）。
-- **ツールファイルの書き込み**: `write_memory_file` で `tools/*.py` に書くときは `permissions`（**`permissions.json` 優先**）の **tool_creation.personal** を満たす必要がある（`core/tooling/handler_memory.py`）。
+- **Dispatch**: `ExternalToolDispatcher` has deprecated `_DISPATCH_TABLE` and standardized on `dispatch(name, args)` in each module (or a function with the same name as the schema) (`core/tooling/dispatch.py`).
+- **Merging**: At startup, both `_discover_personal_tools()` and `refresh_tools` for `AgentCore` merge in the order **shared → personal**, with **personal tools overriding entries with the same name** (`{**common, **personal}`). The merged result is held in `_personal_tools` of `ExternalToolDispatcher` (the name is historical, but it **also includes shared tools**).
+- **Core conflicts**: Files with the same name as core `TOOL_MODULES` are **skipped** when discovering shared and personal tools (warning log only).
+- **Writing tool files**: When writing to `tools/*.py` via `write_memory_file`, the **tool_creation.personal** requirement of `permissions` (**`permissions.json` takes precedence**) must be met (`core/tooling/handler_memory.py`).
 
 ## Execution Path (How the LLM Calls It)
 

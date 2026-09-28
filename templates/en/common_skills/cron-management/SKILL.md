@@ -1,8 +1,8 @@
 ---
 name: cron-management
 description: >-
-  cron.mdを正しいフォーマットで読み書きするスキル。定時タスクの追加・更新・削除手順を提供する。
-  Use when: cron.mdの編集、cron式の追加、LLM型・コマンド型タスクの追加・削除、定時ジョブのメンテナンスが必要なとき。
+  cron.mdA skill for reading and writing in the correct format. Provides procedures for adding, updating, and deleting scheduled tasks.
+  Use when: cron.mdwhen you need to edit, add cron expressions, add or delete LLM-type or command-type tasks, or maintain scheduled jobs.
 ---
 
 

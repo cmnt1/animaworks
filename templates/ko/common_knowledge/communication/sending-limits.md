@@ -88,18 +88,18 @@ animaworks anima set-outbound-limit <名前> --clear   # ロールデフォル�
 
 최근 2시간 이내의 `channel_post` / `message_sent`（최대 3건）을 `collect_recent_outbound` 가 정리하여 시스템 프롬프트에 주입한다（`core/memory/priming/outbound.py`）.
 
-## 会話深度制限（2者間 DM）
+## 대화 깊이 제한(2자 간 DM)
 
-2者間のやり取りが `depth_window_s` 内で `max_depth` を超えると、**内部 Anima 宛て**の `Messenger.send` がブロックされる（`check_depth`。activity_log の `dm_sent`/`dm_received` とエイリアスである `message_sent`/`message_received` を参照）。
+2자 간 상호작용이 `depth_window_s` 내에서 `max_depth`을 초과하면 **내부 Anima 대상** `Messenger.send`이 차단됩니다(`check_depth`. activity_log의 `dm_sent`/`dm_received` 및 별칭인 `message_sent`/`message_received` 참조).
 
-| 設定 | デフォルト値 | 設定キー | 説明 |
+| 설정 | 기본값 | 설정 키 | 설명 |
 |------|-------------|----------|------|
-| 深度ウィンドウ | 600秒（10分） | `heartbeat.depth_window_s` | スライディングウィンドウ |
-| 最大深度 | 6ターン | `heartbeat.max_depth` | 6ターン = 3往復想定。超過で送信ブロック |
+| 깊이 윈도우 | 600초(10분) | `heartbeat.depth_window_s` | 슬라이딩 윈도우 |
+| 최대 깊이 | 6턴 | `heartbeat.max_depth` | 6턴 = 3회 왕복을 가정. 초과 시 전송 차단 |
 
-表示文言は `core/i18n` の `messenger.depth_exceeded`（日本語は現状「10分間に6ターン」の固定表記。実際の閾値は上記設定に従う）。
+표시 문구는 `core/i18n`의 `messenger.depth_exceeded`입니다(일본어는 현재 ‘10분간 6턴’으로 고정 표기. 실제 임계값은 위 설정을 따릅니다).
 
-ログ読み取りに失敗した場合は深度チェックは **fail-closed**（送信不可）。
+로그 읽기에 실패하면 깊이 검사는 **fail-closed** 방식으로 처리됩니다(전송 불가).
 
 ## 메시지 시작 heartbeat의 억제（인박스）
 

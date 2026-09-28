@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/index.md -->
-<!-- i18n: source-sha256=8f48d029c96eb2d3cb177b92621564f08cacdd8ac5fbf554c6262486776aca78 generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=8f48d029c96eb2d3cb177b92621564f08cacdd8ac5fbf554c6262486776aca78 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 > 확인된 커밋: b304b7dc
 

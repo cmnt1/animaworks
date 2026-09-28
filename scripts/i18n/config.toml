@@ -13,7 +13,6 @@ endpoint_env = "AZURE_OPENAI_ENDPOINT"
 api_key_env = "AZURE_OPENAI_API_KEY"
 deployment = "gpt-6-luna"
 api_version = "2025-04-01-preview"
-temperature = 0.0
 max_output_tokens = 16000
 timeout_seconds = 600
 

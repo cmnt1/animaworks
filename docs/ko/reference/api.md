@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=726bdca8f0f75f90cdda2433ae9dcda2f29a046bdf5f3fde901295d9bf35d6ba generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=8dfafb774697bcfebed1629917b28172f870c16d4c6445eee1a618b53cb61db7 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # API 참조
 
@@ -129,32 +129,34 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/internal.py`
 
-| POST | `/api/internal/anima/create` | 내부 | 샌드박스 EROFS 제약 외부에서 아니마를 생성합니다. | `server/routes/internal.py:internal_anima_create` |
+| POST | `/api/internal/anima/create` | 내부 | 샌드박스 EROFS 제약 외부에서 애니마를 생성합니다. | `server/routes/internal.py:internal_anima_create` |
 | POST | `/api/internal/call-human/confirm` | 내부 | CLI ``call_human`` 확인 키를 확인합니다. 키는 서버 메모리에만 존재합니다. | `server/routes/internal.py:internal_call_human_confirm` |
 | GET | `/api/internal/company/boundary` | 내부 | 샌드박스 처리기를 위해 호스트에서 회사 멤버십을 확인합니다. | `server/routes/internal.py:internal_company_boundary` |
-| POST | `/api/internal/delegate-task` | 내부 | 샌드박스 EROFS 제약 외부에 위임된 작업을 저장합니다. | `server/routes/internal.py:internal_delegate_task` |
+| POST | `/api/internal/delegate-task` | 내부 | 샌드박스 EROFS 제약 외부에서 위임된 작업을 저장합니다. | `server/routes/internal.py:internal_delegate_task` |
 | POST | `/api/internal/embed` | 내부 | 하위 프로세스를 위한 중앙 집중식 임베딩 추론. | `server/routes/internal.py:internal_embed` |
 | POST | `/api/internal/interaction/create` | 내부 | — | `server/routes/internal.py:internal_interaction_create` |
 | POST | `/api/internal/interaction/message-ts` | 내부 | — | `server/routes/internal.py:internal_interaction_message_ts` |
 | POST | `/api/internal/message-sent` | 내부 | CLI를 통해 메시지가 전송되었음을 서버에 알립니다. | `server/routes/internal.py:internal_message_sent` |
 | POST | `/api/internal/notification-mapping` | 내부 | — | `server/routes/internal.py:internal_notification_mapping` |
-| POST | `/api/internal/post-channel` | 내부 | 샌드박스 EROFS 제약 외부에 채널 게시물을 추가합니다. | `server/routes/internal.py:internal_post_channel` |
+| POST | `/api/internal/post-channel` | 내부 | 샌드박스 EROFS 제약 외부에서 채널 게시물을 추가합니다. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | 내부 | 하위 프로세스를 위한 중앙 집중식 크로스 인코더 재순위화. | `server/routes/internal.py:internal_rerank` |
-| POST | `/api/internal/send-message` | 내부 | 샌드박스 EROFS 제약 외부에 DM을 저장합니다. | `server/routes/internal.py:internal_send_message` |
+| POST | `/api/internal/send-message` | 내부 | 샌드박스 EROFS 제약 외부에서 DM을 저장합니다. | `server/routes/internal.py:internal_send_message` |
 | POST | `/api/internal/submit-tasks` | 내부 | 호스트에서 완전한 배치를 게시합니다. 샌드박스 DB 권한이 필요 없습니다. | `server/routes/internal.py:internal_submit_tasks` |
-| POST | `/api/internal/task-board-action` | 내부 | 샌드박스 아니마 CLI를 위해 임대 보호된 작업 보드 쓰기를 실행합니다. | `server/routes/internal.py:internal_task_board_action` |
+| POST | `/api/internal/task-board-action` | 내부 | 샌드박스 애니마 CLI를 위해 임대 보호된 작업 보드 쓰기를 실행합니다. | `server/routes/internal.py:internal_task_board_action` |
 | GET | `/api/internal/tasks` | 내부 | 데이터베이스에 직접 접근할 수 없는 작업자를 위해 작업 스냅샷을 읽습니다. | `server/routes/internal.py:internal_tasks` |
-| POST | `/api/internal/update-task` | 내부 | 샌드박스 EROFS 제약 외부에 작업 업데이트를 저장합니다. | `server/routes/internal.py:internal_update_task` |
+| POST | `/api/internal/update-task` | 내부 | 샌드박스 EROFS 제약 외부에서 작업 업데이트를 저장합니다. | `server/routes/internal.py:internal_update_task` |
+| POST | `/api/internal/vector/count` | 내부 | — | `server/routes/internal.py:vector_count` |
 | POST | `/api/internal/vector/create-collection` | 내부 | — | `server/routes/internal.py:vector_create_collection` |
 | POST | `/api/internal/vector/delete-collection` | 내부 | — | `server/routes/internal.py:vector_delete_collection` |
 | POST | `/api/internal/vector/delete-documents` | 내부 | — | `server/routes/internal.py:vector_delete_documents` |
+| POST | `/api/internal/vector/get-all` | 내부 | — | `server/routes/internal.py:vector_get_all` |
 | POST | `/api/internal/vector/get-by-ids` | 내부 | — | `server/routes/internal.py:vector_get_by_ids` |
 | POST | `/api/internal/vector/get-by-metadata` | 내부 | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | 내부 | — | `server/routes/internal.py:vector_list_collections` |
 | POST | `/api/internal/vector/query` | 내부 | 내부 서비스용 벡터 검색을 실행합니다. | `server/routes/internal.py:vector_query` |
 | POST | `/api/internal/vector/update-metadata` | 내부 | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | 내부 | — | `server/routes/internal.py:vector_upsert` |
-| GET | `/api/messages/{message_id}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | ID로 저장된 메시지의 전체 JSON을 반환합니다. | `server/routes/internal.py:get_message` |
+| GET | `/api/messages/{message_id}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 저장된 메시지의 전체 JSON을 ID로 반환합니다. | `server/routes/internal.py:get_message` |
 
 ## `server/routes/logs_routes.py`
 

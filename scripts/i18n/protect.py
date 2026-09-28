@@ -6,6 +6,8 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
+_SENTINEL_RE = re.compile(r"⟦P\d+⟧")
+
 
 class ProtectionError(ValueError):
     """Raised when protected data cannot be restored exactly once."""
@@ -18,8 +20,7 @@ class ProtectedText:
 
     def restore(self, translated: str) -> str:
         """Restore every sentinel, rejecting loss, duplication, or invention."""
-        sentinel_re = re.compile(r"⟦P\d+⟧")
-        counts = Counter(sentinel_re.findall(translated))
+        counts = Counter(_SENTINEL_RE.findall(translated))
         expected = Counter({sentinel: 1 for sentinel in self.values})
         if counts != expected:
             missing = sorted((expected - counts).elements())
@@ -38,6 +39,9 @@ class _Protector:
         self.next_index = start_index
 
     def keep(self, value: str) -> str:
+        # A later pattern can span sentinels from an earlier pass (a path around
+        # {placeholders}); fold them back in so every sentinel stays top-level.
+        value = _SENTINEL_RE.sub(lambda match: self.values.pop(match.group(0), match.group(0)), value)
         sentinel = f"⟦P{self.next_index}⟧"
         self.next_index += 1
         self.values[sentinel] = value
@@ -89,7 +93,7 @@ _INLINE_PATTERNS = (
     re.compile(r"</?[A-Za-z][^<>]*?>"),
     re.compile(r"\{\{|\}\}"),
     re.compile(r"\{[A-Za-z_][A-Za-z0-9_.]*\}"),
-    re.compile(r"https?://[^\s<>()]+"),
+    re.compile(r"https?://[^\s<>()`\u3000-\u9fff\uff00-\uffef]+"),
     re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*"),
     re.compile(r"(?<![\w])(?:~?/|(?:[A-Za-z0-9_.-]+/)+)[^\s`<>()[\]{}ぁ-んァ-ン一-龯々〆ヵヶ]+"),
     re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9_./~-]+\.(?:md|py|json|toml|yaml|sh)(?![A-Za-z0-9_])", re.IGNORECASE),

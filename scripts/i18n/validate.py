@@ -16,7 +16,8 @@ class ValidationError(ValueError):
 _HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+", re.MULTILINE)
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n|$).*?^ {0,3}(`{3,}|~{3,})[ \t]*$", re.MULTILINE | re.DOTALL)
 _PLACEHOLDER_RE = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_.]*)\}(?!\})")
-_URL_RE = re.compile(r"https?://[^\s<>()]+")
+# URLs end at backticks and CJK/full-width text (Japanese prose glued to a URL).
+_URL_RE = re.compile(r"https?://[^\s<>()`\u3000-\u9fff\uff00-\uffef]+")
 _LINK_DEST_RE = re.compile(r"\]\(([^\s)]+)")
 _JAPANESE_RE = re.compile(r"[ぁ-んァ-ン一-龯々〆ヵヶ]")
 _KANA_RE = re.compile(r"[ぁ-んァ-ン]")
@@ -117,15 +118,18 @@ def _check_language(source_visible: str, translated_visible: str, lang: str) -> 
     # Japanese characters that already appear in the source (usage examples,
     # quotes, protected fragments) are expected to survive; exclude them from
     # the translated-side ratio instead of penalising a legitimate output.
+    # Chinese legitimately shares Han characters with Japanese, so only kana
+    # can show that a zh output is still Japanese.
+    ja_marker = _KANA_RE if lang == "zh" else _JAPANESE_RE
     source_ja = set(_JAPANESE_RE.findall(source_visible))
-    ja_only = [char for char in letters if _JAPANESE_RE.fullmatch(char) and char not in source_ja]
+    ja_only = [char for char in letters if ja_marker.fullmatch(char) and char not in source_ja]
     japanese_ratio = len(ja_only) / len(letters) if letters else 0.0
 
     short = _count_visible_japanese(source_visible) < _SHORT_JA_THRESHOLD
     # An output that is still essentially all Japanese was never translated
     # (an unchanged copy keeps the source characters even after excluding
     # source-shared ones); reject it even for short sections.
-    all_ja = sum(1 for char in letters if _JAPANESE_RE.fullmatch(char))
+    all_ja = sum(1 for char in letters if ja_marker.fullmatch(char))
     raw_japanese_ratio = all_ja / len(letters) if letters else 0.0
     if raw_japanese_ratio >= _NOT_PERFORMED_RATIO:
         raise ValidationError(f"Translation to {lang} was not performed (Japanese ratio {raw_japanese_ratio:.1%})")
@@ -145,6 +149,30 @@ def _check_language(source_visible: str, translated_visible: str, lang: str) -> 
     elif lang == "zh":
         if japanese_ratio >= _EN_JA_RATIO:
             raise ValidationError(f"Chinese output contains too much Japanese text ({japanese_ratio:.1%})")
+
+
+def _frontmatter_errors(source: str, translated: str) -> list[str]:
+    try:
+        source_data = _frontmatter(source)
+    except ValidationError:
+        # Template frontmatter such as ``name: {{skill_name}}`` is not YAML in the
+        # source either; its keys and delimiters stay protected verbatim.
+        return []
+    try:
+        translated_data = _frontmatter(translated)
+    except ValidationError as exc:
+        return [str(exc)]
+    if source_data is None or translated_data is None:
+        return ["frontmatter delimiters changed"]
+    source_mapping, _ = source_data
+    translated_mapping, _ = translated_data
+    errors: list[str] = []
+    if set(source_mapping) != set(translated_mapping):
+        errors.append("frontmatter keys changed")
+    for key in set(source_mapping) - _ALLOWED_FRONTMATTER_KEYS:
+        if source_mapping.get(key) != translated_mapping.get(key):
+            errors.append(f"frontmatter value changed for {key}")
+    return errors
 
 
 def validate_translation(
@@ -175,21 +203,7 @@ def validate_translation(
         errors.append("table row/column structure changed")
 
     if frontmatter:
-        try:
-            source_data = _frontmatter(source)
-            translated_data = _frontmatter(translated)
-            if source_data is None or translated_data is None:
-                errors.append("frontmatter delimiters changed")
-            else:
-                source_mapping, _ = source_data
-                translated_mapping, _ = translated_data
-                if set(source_mapping) != set(translated_mapping):
-                    errors.append("frontmatter keys changed")
-                for key in set(source_mapping) - _ALLOWED_FRONTMATTER_KEYS:
-                    if source_mapping.get(key) != translated_mapping.get(key):
-                        errors.append(f"frontmatter value changed for {key}")
-        except ValidationError as exc:
-            errors.append(str(exc))
+        errors.extend(_frontmatter_errors(source, translated))
 
     if errors:
         raise ValidationError("; ".join(errors))

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=d62bbf4b1679f7dcd504dae77057698c0bf3b7d00c814d636a5b11305c469d40 generated=2026-09-27 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=92b56543103c512cc42f576f51d3e9dc48a56d9fd976fa97bbe6d048019e75ba generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -810,15 +810,15 @@ OpenClaw 데이터 가져오기
 
 ## `profile add`
 
-Register a new profile
+새 프로필 등록
 
 `usage: animaworks profile add [-h] [--data-dir DATA_DIR] [--port PORT] name`
 
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| name | positional | — | — | Profile name |
-| --data-dir | option | — | — | Data directory (default: ~/.animaworks/<name>) |
-| --port | option | — | — | Port (default: auto-assign from 18500, step 10) |
+| name | 위치 인수 | — | — | 프로필 이름 |
+| --data-dir | 옵션 | — | — | 데이터 디렉터리(기본값: ~/.animaworks/<name>) |
+| --port | 옵션 | — | — | 포트(기본값: 18500부터 10씩 증가하며 자동 할당) |
 
 ## `profile list`
 
@@ -995,7 +995,9 @@ Vibe Transfer를 사용하여 참조 anima의 아트 스타일에 맞게 캐릭�
 
 Skill Hub 가져오기 설치 및 관리
 
-`usage: animaworks skills [-h] {install,list,inspect,remove,quarantine} ...`
+`usage: animaworks skills [-h]
+                         {install,list,inspect,remove,ledger,rollback,quarantine}
+                         ...`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
@@ -1035,6 +1037,17 @@ Skill Hub 가져오기 설치 및 관리
 | --force | 플래그 | false | — | 호환성을 위해 허용됨; 가져오기 정책은 여전히 적용됨 |
 | --quarantine | 플래그 | false | — | 활성 카탈로그 대신 격리 영역에 설치 |
 | --trust-level | 옵션 | "community" | community, untrusted | 활성 설치에 적용할 신뢰 수준 |
+
+## `skills ledger`
+
+스킬 콘텐츠 변경 내역 나열
+
+`usage: animaworks skills ledger [-h] [--anima ANIMA] [skill_name]`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| skill_name | 위치 인자 | — | — | 스킬 이름으로 필터링 |
+| --anima | 옵션 | — | — | 개인 기록을 특정 Anima로 필터링 |
 
 ## `skills list`
 
@@ -1104,6 +1117,17 @@ Skill Hub 가져오기 설치 및 관리
 | skill_name | 위치 인자 | — | — | 스킬 이름 |
 | --target | 옵션 | "personal" | personal, common | 설치 대상 |
 | --anima | 옵션 | — | — | personal 대상의 애니마 이름 |
+
+## `skills rollback`
+
+원장 ID로 스킬 콘텐츠 변경 하나를 롤백
+
+`usage: animaworks skills rollback [-h] --anima ANIMA id`
+
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
+|---|---|---|---|---|
+| id | 위치 인자 | — | — | 원장 항목 ID |
+| --anima | 옵션 | — | — | 롤백을 위한 Anima context/owner |
 
 ## `start`
 

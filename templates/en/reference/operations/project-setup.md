@@ -88,7 +88,7 @@ Role of each section:
 <!-- AUTO-GENERATED:START config_fields -->
 ### Configuration Item Reference (auto-generated)
 
-#### Anima Settings (per-anima overrides)
+#### Anima configuration (per-anima overrides)
 
 | Field | Type | Default | Description |
 |-----------|-----|----------|------|
@@ -97,6 +97,7 @@ Role of each section:
 | `speciality` | `str | None` | None |  |
 | `model` | `str | None` | None |  |
 | `heartbeat_enabled` | `bool | None` | None |  |
+| `background_review_enabled` | `bool | None` | None |  |
 | `token_budget_monthly` | `int | None` | None |  |
 | `aliases` | `list[str]` | `[]` |  |
 
@@ -134,29 +135,30 @@ Role of each section:
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig Top Level
+#### AnimaWorksConfig top level
 
 | Section | Description |
 |-----------|------|
 | `version` | Configuration file version |
 | `setup_complete` | Setup completion flag |
-| `locale` | Locale settings |
-| `system` | System settings (mode, log level) |
+| `locale` | Locale configuration |
+| `system` | System configuration (mode, log level) |
 | `credentials` | API authentication information |
-| `model_modes` | Model name → execution mode mapping |
+| `model_modes` | Model name to execution mode mapping |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
 | `anima_defaults` | Anima configuration default values |
-| `animas` | Per-Anima configuration overrides |
-| `consolidation` | Consolidation settings |
-| `rag` | RAG (retrieval-augmented generation) settings |
+| `animas` | Per-anima configuration overrides |
+| `consolidation` | Consolidation configuration |
+| `background_review` |  |
+| `rag` | RAG (search-augmented generation) configuration |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | Priming (automatic memory recall) settings |
-| `image_gen` | Image generation settings |
+| `priming` | Priming (automatic memory recall) configuration |
+| `image_gen` | Image generation configuration |
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |

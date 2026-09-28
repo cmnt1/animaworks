@@ -6,16 +6,17 @@ description: >-
 tags: [workspace, directory, project, management]
 ---
 
+
 # Workspace Management
 
 Skill for managing project directories (workspaces) where Animas perform work.
 
 ## Concept
 
-An Anima normally lives in its "home" (~/.animaworks/animas/{name}/).
-When working on a project, it "goes to the workplace" (workspace) to do the job.
+Anima is usually at “its own home” (~/.animaworks/animas/{name}/）).
+When working on a project, it goes to the “workplace” (workspace) to work.
 
-Workspaces are stored in a shared registry (config.json `workspaces` section) and referenced by alias#hash.
+Workspaces are registered in the organization-shared registry (the workspaces section of config.json) and referenced as alias#hash.
 
 ## Aliases and Hashes
 

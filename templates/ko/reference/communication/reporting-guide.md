@@ -5,22 +5,22 @@
 상급자에게 보고하는 것은 조직 운영의 생명선이다.
 적절한 시기와 형식으로 보고함으로써 문제의 조기 발견과 신속한 의사결정을 지원한다.
 
-## ツールの使い分け
+## 도구 사용 구분
 
-報告には `send_message` ツールを使用する。以下の制約を守ること。
+보고에는 `send_message` 도구를 사용한다. 다음 제약을 준수한다.
 
-| ツール | 用途 | 備考 |
+| 도구 | 용도 | 비고 |
 |--------|------|------|
-| `send_message` | 上司・同僚への1対1報告・質問 | 報告・進捗・判断依頼は `intent="report"`、質問は `intent="question"`。Anima 名・エイリアス・`slack:`/`chatwork:` 等（下記参照） |
-| `post_channel` | チーム全体へのお知らせ（Board） | acknowledgments・感謝・FYI は Board を使用。同一チャネル1回/run、再投稿はクールダウン（`heartbeat.channel_post_cooldown_s`、既定300秒）が必要 |
-| `call_human` | 人間への緊急通知 | サービス停止・セキュリティインシデント等 |
+| `send_message` | 상급자·동료에게 일대일 보고·질문 | 보고·진행 상황·판단 요청은 `intent="report"`, 질문은 `intent="question"`. Anima 이름·별칭·`slack:`/`chatwork:` 등(아래 참조) |
+| `post_channel` | 팀 전체에 공지(Board) | 확인 응답·감사 인사·FYI는 Board를 사용한다. 같은 채널에는 실행당 1회만 게시하며, 재게시하려면 쿨다운(`heartbeat.channel_post_cooldown_s`, 기본값 300초)이 필요하다 |
+| `call_human` | 사람에게 긴급 알림 | 서비스 종료·보안 사고 등 |
 
-**send_message の制約**:
-- `intent` は必須で、値は **`report` または `question` のみ**（報告・進捗は `report`、質問は `question`）。**`delegation` は `send_message` では使えない**（ツールが拒否する）。タスク委譲は `delegate_task` を使う
-- 1 run あたりの宛先数は **`max_recipients_per_run`**（`status.json` で上書き可、未設定時はロール既定。例: `general` は 2）。同一宛先へは 1 通のみ。3人以上への伝達は Board を使用
-- 追加の連絡は Board（post_channel）を使用する
-- **宛先** は下記「宛先の解決」を参照（Anima 名・人間エイリアス・`slack:` / `chatwork:` 直指定など）
-- **注**: チャットセッション中は人間宛てに send_message は使えない。直接テキストで返答する
+**send_message 제약**:
+- `intent`는 필수이며, 값은 **`report` 또는 `question`만 가능**(보고·진행 상황은 `report`, 질문은 `question`). **`delegation`는 `send_message`에서 사용할 수 없다**(도구가 거부함). 작업 위임에는 `delegate_task`을 사용한다
+- 실행당 수신자 수는 **`max_recipients_per_run`**(`status.json`로 재정의 가능하며, 설정되지 않은 경우 역할 기본값 적용. 예: `general`는 2). 같은 수신자에게는 한 번만 보낸다. 3명 이상에게 전달하려면 Board를 사용한다
+- 추가 연락에는 Board(post_channel)를 사용한다
+- **수신자**는 아래의 ‘수신자 확인’을 참조한다(Anima 이름·사람 별칭·`slack:` / `chatwork:` 직접 지정 등)
+- **참고**: 채팅 세션 중에는 사람에게 send_message를 사용할 수 없다. 직접 텍스트로 답변한다.
 
 ### 수신처 해결과 외부 배송(`core/messaging/outbound.py`)
 
