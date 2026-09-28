@@ -209,6 +209,19 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "en": ("Error: Read {path} with read_memory_file before overwriting.\n\nExisting content preview:\n{existing}"),
     },
+    "handler.skill_read_before_write": {
+        "ja": (
+            "Error: 既存スキル {path} は、同じセッションで read_memory_file を使って先に読み直してから書き込んでください。\n\n既存内容のプレビュー:\n{existing}"
+        ),
+        "en": (
+            "Error: Re-read existing skill {path} with read_memory_file in this session before writing it.\n\n"
+            "Existing content preview:\n{existing}"
+        ),
+        "ko": (
+            "오류: 기존 스킬 {path}을(를) 쓰기 전에 같은 세션에서 read_memory_file로 먼저 다시 읽어 주세요.\n\n"
+            "기존 내용 미리보기:\n{existing}"
+        ),
+    },
     "handler.reason_prefix": {
         "ja": "理由: {reason}",
         "en": "Reason: {reason}",

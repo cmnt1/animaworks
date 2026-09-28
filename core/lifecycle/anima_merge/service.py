@@ -1475,6 +1475,7 @@ class AnimaMergeService:
     def _copy_skill_directory(self, source_path: Path, desired: Path) -> Path:
         if not desired.exists():
             shutil.copytree(source_path, desired, copy_function=shutil.copy2)
+            self._record_merged_skill(desired)
             return desired
         if self._directory_fingerprint(source_path) == self._directory_fingerprint(desired):
             return desired
@@ -1489,7 +1490,30 @@ class AnimaMergeService:
             index += 1
         candidate.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_path, candidate, copy_function=shutil.copy2)
+        self._record_merged_skill(candidate)
         return candidate
+
+    def _record_merged_skill(self, skill_dir: Path) -> None:
+        skill_path = skill_dir / "SKILL.md"
+        if not skill_path.is_file():
+            return
+        from core.skills.ledger import SkillLedger
+
+        content = skill_path.read_text(encoding="utf-8")
+        SkillLedger(
+            self.target_dir,
+            data_dir=self.data_dir,
+            common_skills_dir=self.data_dir / "common_skills",
+        ).record_change(
+            skill_path,
+            before_text="",
+            after_text=content,
+            before_exists=False,
+            after_exists=True,
+            actor=f"anima_merge:{self.source}",
+            route="anima_merge.copy_skill",
+            reason=f"copy skill from {self.source}",
+        )
 
     @staticmethod
     def _directory_fingerprint(root: Path) -> list[tuple[str, str]]:

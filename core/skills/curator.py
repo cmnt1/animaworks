@@ -351,6 +351,15 @@ class SkillCurator:
         for meta in skills:
             if meta.is_procedure or is_unloadable_lifecycle_state(meta.lifecycle_state):
                 continue
+            if meta.pinned or meta.protected:
+                logger.info("Automatic skill curation skipped protected skill name=%s path=%s", meta.name, meta.path)
+                continue
+            if meta.path is not None:
+                from core.skills.ledger import automatic_skill_edit_allowed
+
+                if not automatic_skill_edit_allowed(meta.path):
+                    logger.info("Automatic skill curation skipped human-authored skill name=%s", meta.name)
+                    continue
             stats = stats_by_name.get(
                 usage_ref_from_path(
                     meta.path,
@@ -380,8 +389,6 @@ class SkillCurator:
                 suggestions.append(
                     LifecycleSuggestion(meta.name, SkillLifecycleState.review, "patch_count_consolidation", patch_count)
                 )
-                continue
-            if meta.pinned or meta.protected:
                 continue
             last_used = _parse_time(stats.last_used_at if stats else None) or meta.last_used_at
             if is_probation and last_used is None:

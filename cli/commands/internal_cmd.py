@@ -183,8 +183,23 @@ def _cmd_create_skill(args: argparse.Namespace, anima_dir: Path) -> None:
         print("Error: invalid name (path traversal not allowed)", file=sys.stderr)
         sys.exit(1)
 
+    from core.paths import get_data_dir
+    from core.skills.ledger import SkillLedger
+
+    before_exists = skill_path.is_file()
+    before_text = skill_path.read_text(encoding="utf-8") if before_exists else ""
     skill_path.parent.mkdir(parents=True, exist_ok=True)
     skill_path.write_text(content, encoding="utf-8")
+    SkillLedger(anima_dir, data_dir=get_data_dir()).record_change(
+        skill_path,
+        before_text=before_text,
+        after_text=content,
+        before_exists=before_exists,
+        after_exists=True,
+        actor="cli",
+        route="internal.create_skill",
+        reason="internal CLI skill creation",
+    )
     rel_path = skill_path.relative_to(anima_dir)
     print(
         json.dumps(

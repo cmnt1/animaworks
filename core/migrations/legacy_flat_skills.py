@@ -138,11 +138,11 @@ def _is_legacy_flat_skill_file(path: Path) -> bool:
 
 def _migrate_legacy_flat_skill(candidate: _LegacyFlatSkillCandidate, data_dir: Path, backup_root: Path) -> None:
     if not candidate.destination.is_file():
-        _write_trusted_skill_bundle(candidate)
+        _write_trusted_skill_bundle(candidate, data_dir=data_dir)
     _backup_and_remove_legacy_flat_skill(candidate.source, data_dir, backup_root)
 
 
-def _write_trusted_skill_bundle(candidate: _LegacyFlatSkillCandidate) -> None:
+def _write_trusted_skill_bundle(candidate: _LegacyFlatSkillCandidate, *, data_dir: Path) -> None:
     from core.memory.frontmatter import parse_frontmatter
     from core.skills.loader import load_skill_metadata
 
@@ -185,8 +185,26 @@ def _write_trusted_skill_bundle(candidate: _LegacyFlatSkillCandidate) -> None:
     rendered = yaml.dump(normalized, allow_unicode=True, default_flow_style=False, sort_keys=False).strip()
     candidate.destination.parent.mkdir(parents=True, exist_ok=True)
     tmp = candidate.destination.with_suffix(candidate.destination.suffix + ".tmp")
-    tmp.write_text(f"---\n{rendered}\n---\n\n{body.lstrip()}", encoding="utf-8")
+    updated_text = f"---\n{rendered}\n---\n\n{body.lstrip()}"
+    tmp.write_text(updated_text, encoding="utf-8")
     tmp.replace(candidate.destination)
+    from core.skills.ledger import SkillLedger
+
+    ledger = SkillLedger(
+        candidate.reference_scope,
+        data_dir=data_dir,
+        common_skills_dir=data_dir / "common_skills",
+    )
+    ledger.record_change(
+        candidate.destination,
+        before_text="",
+        after_text=updated_text,
+        before_exists=False,
+        after_exists=True,
+        actor="migration",
+        route="legacy_flat_skill_migration.create",
+        reason="convert legacy flat skill to SKILL.md bundle",
+    )
 
 
 def _coerce_legacy_skill_version(value: Any) -> int:
@@ -198,7 +216,26 @@ def _coerce_legacy_skill_version(value: Any) -> int:
 
 
 def _backup_and_remove_legacy_flat_skill(source: Path, data_dir: Path, backup_root: Path) -> None:
+    from core.skills.ledger import SkillLedger
+
+    before_text = source.read_text(encoding="utf-8")
+    common_skills_dir = data_dir / "common_skills"
+    if source.resolve().is_relative_to(common_skills_dir.resolve()):
+        ledger = SkillLedger(data_dir=data_dir, common_skills_dir=common_skills_dir)
+    else:
+        anima_dir = source.parents[1]
+        ledger = SkillLedger(anima_dir, data_dir=data_dir, common_skills_dir=common_skills_dir)
     backup_path = backup_root / source.relative_to(data_dir)
     backup_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, backup_path)
     source.unlink()
+    ledger.record_change(
+        source,
+        before_text=before_text,
+        after_text=None,
+        before_exists=True,
+        after_exists=False,
+        actor="migration",
+        route="legacy_flat_skill_migration.remove_legacy",
+        reason=f"backup legacy skill at {backup_path.relative_to(data_dir)}",
+    )
