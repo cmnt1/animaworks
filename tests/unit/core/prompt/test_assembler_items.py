@@ -22,6 +22,51 @@ def test_priming_heading_without_recalled_content_is_not_emitted() -> None:
     assert _priming_has_content('## Recalled\n<priming source="knowledge">remembered</priming>')
 
 
+def test_pending_tasks_heading_stays_with_protected_payload(tmp_path, monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from core.i18n import t
+    from core.prompt.builder import _build_group3
+
+    memory = MagicMock()
+    memory.read_current_state.return_value = ""
+    priming = (
+        f"{t('priming.section_title')}\n\n{t('priming.section_intro')}\n\n"
+        f"{t('priming.pending_tasks_header')}\n\n"
+        '<priming source="pending_tasks" trust="medium">PENDING_REQUEST: do work</priming>'
+    )
+    monkeypatch.setattr("core.prompt.builder._build_resolved_approvals_section", lambda *_args: "")
+    monkeypatch.setattr("core.prompt.builder._build_resolution_registry_section", lambda *_args: "")
+
+    sections = _build_group3(tmp_path, memory, 1.0, priming, "", "a", False, False, False, {}, {})
+    protected = next(section.content for section in sections if section.id == "priming_required_context")
+    recall = next(section.content for section in sections if section.id == "priming")
+
+    assert t("priming.pending_tasks_header") in protected
+    assert "PENDING_REQUEST: do work" in protected
+    assert t("priming.pending_tasks_header") not in recall
+
+
+def test_orphan_pending_tasks_heading_is_removed(tmp_path, monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from core.i18n import t
+    from core.prompt.builder import _build_group3
+
+    memory = MagicMock()
+    memory.read_current_state.return_value = ""
+    priming = (
+        f"{t('priming.section_title')}\n\n{t('priming.section_intro')}\n\n"
+        f"{t('priming.pending_tasks_header')}\n\n"
+        '<priming source="related_knowledge" trust="medium">A useful memory</priming>'
+    )
+    monkeypatch.setattr("core.prompt.builder._build_resolved_approvals_section", lambda *_args: "")
+    monkeypatch.setattr("core.prompt.builder._build_resolution_registry_section", lambda *_args: "")
+
+    sections = _build_group3(tmp_path, memory, 1.0, priming, "", "a", False, False, False, {}, {})
+    assert all(t("priming.pending_tasks_header") not in section.content for section in sections)
+
+
 def test_priming_blocks_are_trimmed_as_complete_items() -> None:
     first = '<priming source="activity">\n' + "first " * 60 + "\n</priming>"
     second = '<priming source="knowledge">\n' + "second " * 60 + "\n</priming>"
