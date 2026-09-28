@@ -184,7 +184,7 @@ class TestHeartbeatReflectionQuery:
 
     @pytest.mark.asyncio
     async def test_heartbeat_no_reflections_empty_message(self, tmp_path):
-        """When no reflections exist, message should be empty string."""
+        """When no reflections and no current_state exist, message should be empty string."""
         agent = _make_agent(tmp_path)
         mock_engine = AsyncMock()
         mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
@@ -200,6 +200,22 @@ class TestHeartbeatReflectionQuery:
         mock_engine.prime_memories.assert_called_once()
         call_args = mock_engine.prime_memories.call_args
         assert call_args.args[0] == ""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_falls_back_to_current_state(self, tmp_path):
+        """Without reflections, the head of current_state.md becomes the query."""
+        agent = _make_agent(tmp_path)
+        state_dir = agent.anima_dir / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / "current_state.md").write_text("PR 123 のレビュー対応中", encoding="utf-8")
+        mock_engine = AsyncMock()
+        mock_engine.prime_memories = AsyncMock(return_value=_make_priming_result(sender_profile=""))
+        agent._priming_engine = mock_engine
+
+        with patch.object(agent, "_get_recent_reflections_text", return_value=""):
+            await agent._run_priming("Heartbeat prompt", "heartbeat", prompt_tier=TIER_FULL)
+
+        assert mock_engine.prime_memories.call_args.args[0] == "PR 123 のレビュー対応中"
 
 
 # ── Chat recent human messages ───────────────────────────

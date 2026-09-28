@@ -72,7 +72,7 @@ class PrimingMixin:
             channel = session_type
 
         if channel == "heartbeat":
-            message = self._get_recent_reflections_text()
+            message = self._get_recent_reflections_text() or self._get_current_state_query_text()
         else:
             message = self._extract_message_from_prompt(prompt)
 
@@ -232,6 +232,17 @@ class PrimingMixin:
             return "\n".join(parts)
         except Exception:
             logger.debug("Failed to load reflections for heartbeat priming")
+            return ""
+
+    def _get_current_state_query_text(self, max_chars: int = 800) -> str:
+        """Fallback heartbeat priming query from the head of current_state.md."""
+        try:
+            path = self.anima_dir / "state" / "current_state.md"
+            if not path.is_file():
+                return ""
+            return path.read_text(encoding="utf-8")[:max_chars].strip()
+        except OSError:
+            logger.debug("Failed to load current_state for heartbeat priming")
             return ""
 
     # ── Context window overrides ─────────────────────────────
