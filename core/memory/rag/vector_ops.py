@@ -17,6 +17,8 @@ _PATH_TO_METHOD: dict[str, str] = {
     "/update-metadata": "memory.update_metadata",
     "/delete-documents": "memory.delete_documents",
     "/get-by-metadata": "memory.get_by_metadata",
+    "/get-all": "memory.get_all",
+    "/count": "memory.count",
     "/get-by-ids": "memory.get_by_ids",
     "/create-collection": "memory.create_collection",
     "/delete-collection": "memory.delete_collection",

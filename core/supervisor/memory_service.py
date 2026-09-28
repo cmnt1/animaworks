@@ -547,6 +547,24 @@ class MemoryService:
                 ),
             )
             return {"results": self._search_results(results)}
+        if method == "memory.get_all":
+            collection = self._string(params, "collection")
+            limit = params.get("limit", 100_000)
+            if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+                raise ValueError("limit must be an integer >= 1")
+            results = self._run_native(
+                method,
+                collection,
+                lambda store: self._read_or_empty(
+                    collection,
+                    lambda: store._get_all_once(collection, limit),
+                ),
+            )
+            return {"results": self._search_results(results)}
+        if method == "memory.count":
+            collection = self._string(params, "collection")
+            count = self._run_native(method, collection, lambda store: store._count_once(collection))
+            return {"count": int(count)}
         if method == "memory.get_by_ids":
             collection = self._string(params, "collection")
             ids = params.get("ids")

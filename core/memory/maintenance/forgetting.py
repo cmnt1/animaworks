@@ -285,7 +285,15 @@ class ForgettingEngine:
             store = self._get_vector_store()
             if store is None:
                 return []
-            results = store.get_by_metadata(collection_name, {}, limit=100_000)
+            results = store.get_all(collection_name, limit=100_000)
+            if not results:
+                collection_count = store.count(collection_name)
+                if collection_count is not None and collection_count > 0:
+                    logger.warning(
+                        "All-document scan returned no chunks for non-empty collection %s: count=%d",
+                        collection_name,
+                        collection_count,
+                    )
             return [
                 {
                     "id": r.document.id,

@@ -159,6 +159,22 @@ class TestIsProtected:
 # ── Synaptic Downscaling Tests ──────────────────────────────────────
 
 
+def test_empty_scan_warns_when_collection_count_is_nonzero(forgetting_engine, caplog) -> None:
+    store = MagicMock(spec=["get_all", "count"])
+    store.get_all.return_value = []
+    store.count.return_value = 12
+
+    with (
+        patch.object(forgetting_engine, "_get_vector_store", return_value=store),
+        caplog.at_level("WARNING", logger="animaworks.forgetting"),
+    ):
+        assert forgetting_engine._get_all_chunks("test_anima_knowledge") == []
+
+    store.get_all.assert_called_once_with("test_anima_knowledge", limit=100_000)
+    store.count.assert_called_once_with("test_anima_knowledge")
+    assert "count=12" in caplog.text
+
+
 class TestSynapticDownscaling:
     """Test synaptic_downscaling() (Stage 1: daily mark low-activation)."""
 

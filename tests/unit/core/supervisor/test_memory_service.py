@@ -68,6 +68,28 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_vector_client_get_all_and_count_use_bridge_transport(tmp_path: Path) -> None:
+    store = _store()
+    documents = [
+        SearchResult(Document("doc-1", "one", metadata={"kind": "knowledge"}), 1.0),
+        SearchResult(Document("doc-2", "two", metadata={"kind": "knowledge"}), 1.0),
+    ]
+    store._get_all_once.return_value = documents
+    store._count_once.return_value = len(documents)
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+    vector_client = HttpVectorStore("sakura", transport=bridge_transport(service.handle, asyncio.get_running_loop()))
+
+    results = await asyncio.to_thread(vector_client.get_all, "sakura_knowledge", 100_000)
+    count = await asyncio.to_thread(vector_client.count, "sakura_knowledge")
+
+    assert [result.document.id for result in results] == ["doc-1", "doc-2"]
+    assert count == 2
+    store._get_all_once.assert_called_once_with("sakura_knowledge", 100_000)
+    store._count_once.assert_called_once_with("sakura_knowledge")
+    await service.close()
+
+
+@pytest.mark.asyncio
 async def test_memory_service_reads_missing_collection_as_empty(tmp_path: Path) -> None:
     """A collection that was never created reads as empty instead of failing (no retry, no ERROR)."""
     store = _store()

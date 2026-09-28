@@ -443,6 +443,31 @@ class VectorClient(VectorStore):
             return _parse_search_results(data["results"])
         return []
 
+    def get_all(self, collection: str, limit: int = 100_000) -> list[SearchResult]:
+        """Retrieve all documents without a metadata filter."""
+        data = self._request(
+            "/get-all",
+            {"anima_name": self._anima_name, "collection": collection, "limit": limit},
+            allow_retry=True,
+        )
+        if data and "results" in data:
+            return _parse_search_results(data["results"])
+        return []
+
+    def count(self, collection: str) -> int | None:
+        """Return the collection size, or None when the request is unavailable."""
+        data = self._request(
+            "/count",
+            {"anima_name": self._anima_name, "collection": collection},
+            allow_retry=True,
+        )
+        if data is None:
+            return None
+        count = data.get("count")
+        if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            return count
+        return None
+
     def get_by_ids(self, collection: str, ids: list[str]) -> list[Document]:
         """Fetch documents (with metadata) by their IDs."""
         if not ids:

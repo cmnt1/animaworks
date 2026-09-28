@@ -82,6 +82,12 @@ class VectorGetByMetadataRequest(BaseModel):
     limit: int = 20
 
 
+class VectorGetAllRequest(BaseModel):
+    anima_name: str
+    collection: str
+    limit: int = 100_000
+
+
 class VectorGetByIdsRequest(BaseModel):
     anima_name: str
     collection: str
@@ -476,6 +482,14 @@ def create_internal_router() -> APIRouter:
     @internal.post("/internal/vector/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest, request: Request):
         return await _forward_to_root(request, "/get-by-metadata", body)
+
+    @internal.post("/internal/vector/get-all")
+    async def vector_get_all(body: VectorGetAllRequest, request: Request):
+        return await _forward_to_root(request, "/get-all", body)
+
+    @internal.post("/internal/vector/count")
+    async def vector_count(body: VectorCollectionRequest, request: Request):
+        return await _forward_to_root(request, "/count", body)
 
     @internal.post("/internal/vector/get-by-ids")
     async def vector_get_by_ids(body: VectorGetByIdsRequest, request: Request):

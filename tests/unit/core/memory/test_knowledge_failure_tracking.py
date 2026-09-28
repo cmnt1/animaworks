@@ -301,8 +301,7 @@ class TestKnowledgeReconsolidation:
 
     @pytest.mark.asyncio
     async def test_triggers_below_threshold(self, anima_dir: Path, engine) -> None:
-        # With the relaxed condition (failure_count >= 1 or confidence < 0.6),
-        # a single failure at low confidence is now a target.
+        # A single unprocessed failure is sufficient, independent of confidence.
         _write_knowledge(
             anima_dir,
             "borderline.md",

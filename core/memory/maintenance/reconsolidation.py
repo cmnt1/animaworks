@@ -10,16 +10,14 @@ from __future__ import annotations
 
 """Failure-count-based memory reconsolidation engine.
 
-When a procedure has accumulated any failures (failure_count >= 1)
-and its confidence has dropped below a threshold (confidence < 0.6),
-the system triggers reconsolidation — an LLM-driven revision of the
-procedure content.  After revision the counters are reset and a new
-version is created with an archived copy of the previous one.
+When a procedure or knowledge file accumulates failures since its last
+reconsolidation, the system revises it with an LLM. A failure-count checkpoint
+prevents the same unchanged failure history from triggering repeated revisions.
 
 Pipeline:
-  1. Scan procedure frontmatter for reconsolidation targets
-  2. LLM-based procedure revision
-  3. Version-controlled update with counter reset
+  1. Scan procedure/knowledge frontmatter for unprocessed failures
+  2. LLM-based revision
+  3. Version-controlled update with a failure-count checkpoint
   4. Activity log event recording
 """
 
@@ -32,6 +30,14 @@ from typing import Any
 from core.paths import load_prompt
 
 logger = logging.getLogger("animaworks.reconsolidation")
+
+
+def _metadata_count(value: Any) -> int:
+    """Read a count from frontmatter, tolerating stringified vector metadata."""
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def _iter_reconsolidation_files(root: Path) -> list[Path]:
@@ -57,8 +63,8 @@ def _iter_reconsolidation_files(root: Path) -> list[Path]:
 class ReconsolidationEngine:
     """Failure-count-based memory reconsolidation engine.
 
-    Scans procedure files for those with high failure counts and low
-    confidence, then uses an LLM to revise the procedure content.
+    Scans procedure files for failures that occurred since the last
+    reconsolidation, then uses an LLM to revise their content.
     Each revision is version-controlled with an archived copy.
     """
 
@@ -102,10 +108,10 @@ class ReconsolidationEngine:
         *,
         max_files: int | None = None,
     ) -> list[Path]:
-        """Find procedures with failure_count >= 1 or confidence < 0.6.
+        """Find procedures with failures since their last reconsolidation.
 
         Scans all ``*.md`` files in the anima's ``procedures/`` directory,
-        reading YAML frontmatter to check the trigger conditions.
+        prioritizing higher failure counts and then newer failure timestamps.
 
         Args:
             max_files: Optional cap for nightly batch processing.
@@ -113,19 +119,19 @@ class ReconsolidationEngine:
         Returns:
             List of paths to procedure files that need reconsolidation.
         """
-        targets: list[Path] = []
         procedures_dir = self.anima_dir / "procedures"
         if not procedures_dir.exists():
-            return targets
+            return []
+        ranked_targets: list[tuple[int, str, Path]] = []
         for md_file in _iter_reconsolidation_files(procedures_dir):
             meta = self.memory_manager.read_procedure_metadata(md_file)
-            failure_count = meta.get("failure_count", 0)
-            confidence = meta.get("confidence", 1.0)
-            if failure_count >= 1 or confidence < 0.6:
-                targets.append(md_file)
-                if max_files is not None and len(targets) >= max_files:
-                    break
-        return targets
+            failure_count = _metadata_count(meta.get("failure_count", 0))
+            checkpoint = _metadata_count(meta.get("reconsolidated_failure_count", 0))
+            if failure_count > checkpoint:
+                ranked_targets.append((failure_count, str(meta.get("last_failure_at", "") or ""), md_file))
+        ranked_targets.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        targets = [item[2] for item in ranked_targets]
+        return targets[:max_files] if max_files is not None else targets
 
     # ── Reconsolidation Application ────────────────────────────
 
@@ -134,13 +140,13 @@ class ReconsolidationEngine:
         targets: list[Path],
         model: str = "",
     ) -> dict[str, int]:
-        """Revise procedures using LLM and reset counters.
+        """Revise procedures using an LLM and checkpoint handled failures.
 
         For each target procedure:
           1. Read current metadata and content
           2. Use LLM to generate a revised procedure
           3. Archive the current version
-          4. Write revised content with reset metadata
+          4. Write revised content with the current failure-count checkpoint
           5. Record activity log event
 
         Args:
@@ -168,9 +174,8 @@ class ReconsolidationEngine:
                     self._archive_version(proc_path, content, version)
 
                     meta["version"] = version + 1
-                    meta["failure_count"] = 0
+                    meta["reconsolidated_failure_count"] = _metadata_count(meta.get("failure_count", 0))
                     meta["success_count"] = 0
-                    meta["confidence"] = 0.5
                     meta["previous_version"] = f"v{version}"
                     meta["reconsolidated_at"] = datetime.now(UTC).isoformat()
 
@@ -441,10 +446,10 @@ class ReconsolidationEngine:
         max_files: int | None = None,
         exclude_paths: set[Path] | None = None,
     ) -> list[Path]:
-        """Find knowledge files with failure_count >= 1 or confidence < 0.6.
+        """Find knowledge files with failures since their last reconsolidation.
 
         Scans all ``*.md`` files in the anima's ``knowledge/`` directory,
-        reading YAML frontmatter to check the trigger conditions.
+        prioritizing higher failure counts and then newer failure timestamps.
 
         Args:
             max_files: Optional cap for nightly batch processing.
@@ -454,24 +459,24 @@ class ReconsolidationEngine:
         Returns:
             List of paths to knowledge files that need reconsolidation.
         """
-        targets: list[Path] = []
         excluded = {p.resolve() for p in (exclude_paths or set())}
         knowledge_dir = self.anima_dir / "knowledge"
         if not knowledge_dir.exists():
-            return targets
+            return []
+        ranked_targets: list[tuple[int, str, Path]] = []
         for md_file in _iter_reconsolidation_files(knowledge_dir):
             if md_file.resolve() in excluded:
                 continue
             meta = self.memory_manager.read_knowledge_metadata(md_file)
             if meta.get("valid_until"):
                 continue
-            failure_count = meta.get("failure_count", 0)
-            confidence = meta.get("confidence", 1.0)
-            if failure_count >= 1 or confidence < 0.6:
-                targets.append(md_file)
-                if max_files is not None and len(targets) >= max_files:
-                    break
-        return targets
+            failure_count = _metadata_count(meta.get("failure_count", 0))
+            checkpoint = _metadata_count(meta.get("reconsolidated_failure_count", 0))
+            if failure_count > checkpoint:
+                ranked_targets.append((failure_count, str(meta.get("last_failure_at", "") or ""), md_file))
+        ranked_targets.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        targets = [item[2] for item in ranked_targets]
+        return targets[:max_files] if max_files is not None else targets
 
     async def reconsolidate_knowledge(
         self,
@@ -480,10 +485,10 @@ class ReconsolidationEngine:
         max_files: int | None = None,
         exclude_paths: set[Path] | None = None,
     ) -> dict[str, int]:
-        """Revise knowledge files using LLM and reset counters.
+        """Revise knowledge files using an LLM and checkpoint handled failures.
 
-        Scans knowledge/*.md files for those with failure_count >= 1
-        and confidence < 0.6, then uses an LLM to revise the content.
+        Scans knowledge/*.md files with failures since their previous
+        reconsolidation checkpoint, then uses an LLM to revise the content.
         Each revision is version-controlled with an archived copy.
 
         Args:
@@ -526,9 +531,8 @@ class ReconsolidationEngine:
                     self._archive_version(know_path, content, version)
 
                     meta["version"] = version + 1
-                    meta["failure_count"] = 0
+                    meta["reconsolidated_failure_count"] = _metadata_count(meta.get("failure_count", 0))
                     meta["success_count"] = 0
-                    meta["confidence"] = 0.5
                     meta["previous_version"] = f"v{version}"
                     meta["reconsolidated_at"] = datetime.now(UTC).isoformat()
 

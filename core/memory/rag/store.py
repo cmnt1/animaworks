@@ -174,6 +174,14 @@ class VectorStore(ABC):
         """Retrieve documents by metadata filter without embedding search."""
 
     @abstractmethod
+    def get_all(self, collection: str, limit: int = 100_000) -> list[SearchResult]:
+        """Retrieve documents without applying a metadata filter."""
+
+    @abstractmethod
+    def count(self, collection: str) -> int | None:
+        """Return the collection size, or None when it cannot be determined."""
+
+    @abstractmethod
     def get_by_ids(
         self,
         collection: str,
@@ -650,6 +658,66 @@ class ChromaVectorStore(VectorStore):
                 e,
             )
             return []
+
+    def _get_all_once(self, collection: str, limit: int = 100_000) -> list[SearchResult]:
+        """Retrieve collection records without relying on empty-filter semantics."""
+        try:
+            coll = self.client.get_collection(name=collection)
+        except Exception as exc:
+            if _is_missing_collection_error(exc):
+                logger.debug("All-document recall before collection '%s' is initialized", collection)
+                return []
+            raise
+
+        data = coll.get(limit=limit, include=["documents", "metadatas"])
+        documents = data.get("documents") or []
+        metadatas = data.get("metadatas") or []
+        results: list[SearchResult] = []
+        for i, doc_id in enumerate(data.get("ids") or []):
+            content = documents[i] if i < len(documents) else ""
+            meta_raw = metadatas[i] if i < len(metadatas) else {}
+            metadata = cast(Any, dict(meta_raw)) if meta_raw else {}
+            results.append(SearchResult(Document(id=doc_id, content=content, metadata=metadata), score=1.0))
+        return results
+
+    def get_all(self, collection: str, limit: int = 100_000) -> list[SearchResult]:
+        """Retrieve documents without passing a metadata filter to Chroma."""
+        try:
+            return self._get_all_once(collection, limit)
+        except Exception as exc:
+            self._report_chroma_error(collection, exc, "get_all")
+            logger.debug(
+                "get_all failed for collection '%s': owner=%s db_path=%s error=%s",
+                collection,
+                self._owner_label(),
+                self.persist_dir,
+                exc,
+            )
+            return []
+
+    def _count_once(self, collection: str) -> int:
+        try:
+            coll = self.client.get_collection(name=collection)
+        except Exception as exc:
+            if _is_missing_collection_error(exc):
+                return 0
+            raise
+        return int(coll.count())
+
+    def count(self, collection: str) -> int | None:
+        """Return the collection size, or None if the store is unavailable."""
+        try:
+            return self._count_once(collection)
+        except Exception as exc:
+            self._report_chroma_error(collection, exc, "count")
+            logger.debug(
+                "count failed for collection '%s': owner=%s db_path=%s error=%s",
+                collection,
+                self._owner_label(),
+                self.persist_dir,
+                exc,
+            )
+            return None
 
     def _get_by_ids_once(self, collection: str, ids: list[str]) -> list[Document]:
         coll = self.client.get_collection(name=collection)

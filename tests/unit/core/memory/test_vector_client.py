@@ -26,10 +26,13 @@ class _HttpClient:
     def __init__(self, responses: list[_Response]) -> None:
         self.responses = responses
         self.calls = 0
+        self.paths: list[str] = []
+        self.payloads: list[dict[str, Any]] = []
 
-    def post(self, _path: str, *, json: dict[str, Any]) -> _Response:
-        del json
+    def post(self, path: str, *, json: dict[str, Any]) -> _Response:
         self.calls += 1
+        self.paths.append(path)
+        self.payloads.append(json)
         return self.responses.pop(0)
 
 
@@ -105,6 +108,43 @@ def test_reads_retry_once_for_all_transports(kind: str, monkeypatch: pytest.Monk
 
     assert store.list_collections() == ["sora_knowledge"]
     assert calls() == 2
+
+
+@pytest.mark.parametrize("kind", ["http", "bridge"])
+def test_get_all_returns_documents_across_transports(kind: str) -> None:
+    documents = [
+        {"id": f"doc-{index}", "content": f"body-{index}", "metadata": {"index": index}}
+        for index in range(3)
+    ]
+    payloads: list[tuple[str, dict[str, Any]]] = []
+
+    if kind == "http":
+        store = VectorClient("sora", base_url="http://vector.invalid")
+        client = _HttpClient([_Response(200, {"results": documents})])
+        store._client = client
+    else:
+        def transport(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+            payloads.append((path, payload))
+            return {"results": documents}
+
+        store = VectorClient("sora", transport=transport)
+
+    results = store.get_all("sora_knowledge", limit=100_000)
+
+    assert [result.document.id for result in results] == ["doc-0", "doc-1", "doc-2"]
+    assert [result.document.content for result in results] == ["body-0", "body-1", "body-2"]
+    if kind == "http":
+        assert client.calls == 1
+        assert client.paths == ["/get-all"]
+        assert client.payloads[0] == {
+            "anima_name": "sora",
+            "collection": "sora_knowledge",
+            "limit": 100_000,
+        }
+    else:
+        assert payloads == [
+            ("/get-all", {"anima_name": "sora", "collection": "sora_knowledge", "limit": 100_000})
+        ]
 
 
 def test_vector_client_requires_exactly_one_destination() -> None:

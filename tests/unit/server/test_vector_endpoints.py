@@ -40,6 +40,18 @@ from server.routes.internal import create_internal_router
             {"collection": "c", "where": {}, "limit": 20},
         ),
         (
+            "get-all",
+            {"collection": "c", "limit": 100_000},
+            "memory.get_all",
+            {"collection": "c", "limit": 100_000},
+        ),
+        (
+            "count",
+            {"collection": "c"},
+            "memory.count",
+            {"collection": "c"},
+        ),
+        (
             "get-by-ids",
             {"collection": "c", "ids": ["id"]},
             "memory.get_by_ids",
