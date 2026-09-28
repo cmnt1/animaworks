@@ -261,18 +261,17 @@ def check_tool_access(
 
         if origin == "core":
             profile = _load_execution_profile(tool_name) if tool_name in _core_tool_names() else None
-            disabled = frozenset(_disabled_service_tools())
         else:
             profile = _load_profile_from_file(tool_file)
-            disabled = frozenset()
 
+        # ``external_messaging.<svc>.enabled`` controls the inbound integration
+        # and only filters tool listings; it must not block explicit calls.
         return evaluate_tool_access(
             tool_name,
             action,
             config=config,
             origin=origin,
             profile=profile,
-            disabled_services=disabled,
         )
     except Exception as e:
         logger.warning("Permission check failed for %s %s: %s", tool_name, action, e, exc_info=True)

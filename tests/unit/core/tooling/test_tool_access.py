@@ -283,6 +283,16 @@ class TestCheckToolAccess:
         assert decision.allowed is False
         assert decision.reason == "tool_denied"
 
+    def test_disabled_inbound_service_does_not_block_call(self, tmp_path: Path) -> None:
+        # external_messaging.chatwork.enabled=false disables the inbound
+        # integration only; explicit tool calls must keep working.
+        anima = tmp_path / "a"
+        anima.mkdir()
+        (anima / "permissions.json").write_text(json.dumps({"external_tools": {"allow_all": True}}), encoding="utf-8")
+        with patch("core.tooling.permissions._disabled_service_tools", return_value={"chatwork"}):
+            decision = check_tool_access(anima, "chatwork", "stats", origin="core")
+        assert decision.allowed is True
+
 
 # ── ExternalToolDispatcher.dispatch fail-closed ────────────
 
