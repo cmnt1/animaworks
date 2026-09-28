@@ -1233,8 +1233,10 @@ class TestTerminalPaths:
         proc.stdout.readline = stall_after_session  # type: ignore[method-assign]
         from core.execution.watchdog import Watchdog
 
+        # The window also covers setup before the child is spawned; keep it wide
+        # enough for slow CI runners so the timeout lands in the stalled read.
         with (
-            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
+            patch("core.execution.events.Watchdog", return_value=Watchdog(0.5)),
             pytest.raises(TimeoutError, match="idle"),
         ):
             await _stream(executor, proc)
