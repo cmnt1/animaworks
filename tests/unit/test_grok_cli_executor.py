@@ -184,6 +184,9 @@ async def _stream(
     with (
         patch("core.execution.engines.grok.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
+        # The fake pid may belong to a real process on the host; never resolve
+        # (and signal) its process group, so signals reach the fake instead.
+        patch("core.execution.process_runner.os.getpgid", side_effect=ProcessLookupError),
     ):
         return [
             event
@@ -1233,10 +1236,8 @@ class TestTerminalPaths:
         proc.stdout.readline = stall_after_session  # type: ignore[method-assign]
         from core.execution.watchdog import Watchdog
 
-        # The window also covers setup before the child is spawned; keep it wide
-        # enough for slow CI runners so the timeout lands in the stalled read.
         with (
-            patch("core.execution.events.Watchdog", return_value=Watchdog(0.5)),
+            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
             pytest.raises(TimeoutError, match="idle"),
         ):
             await _stream(executor, proc)
