@@ -178,7 +178,7 @@ class ProcessHandle:
                         logger.debug("stderr.log rotation failed", exc_info=True)
 
             self._stderr_file = (
-                open(stderr_path, "a") if stderr_path else None  # noqa: SIM115
+                await asyncio.to_thread(open, stderr_path, "a") if stderr_path else None  # noqa: SIM115
             )
 
             child_env = os.environ.copy()
@@ -186,7 +186,8 @@ class ProcessHandle:
             child_env.update(self._internal_auth_env)  # overrides any parent-inherited value
             child_env["ANIMAWORKS_EXPECT_STARTUP_ACK"] = "1"
 
-            self.process = subprocess.Popen(
+            self.process = await asyncio.to_thread(
+                subprocess.Popen,
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=self._stderr_file if self._stderr_file else subprocess.DEVNULL,
@@ -222,7 +223,7 @@ class ProcessHandle:
             await self._cleanup()
             raise
 
-    async def _wait_for_socket(self, timeout: float) -> None:
+    async def _wait_for_socket(self, timeout: float) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Wait for socket file to be created."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -239,7 +240,7 @@ class ProcessHandle:
 
         raise TimeoutError(f"Socket file not created: {self.socket_path}")
 
-    async def _wait_for_ready(self, timeout: float) -> None:
+    async def _wait_for_ready(self, timeout: float) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Wait for the Anima to finish initialization.
 
         The child process creates the IPC socket immediately, then loads
@@ -281,7 +282,7 @@ class ProcessHandle:
 
         raise TimeoutError(f"Anima '{self.anima_name}' not ready within {timeout}s")
 
-    async def _send_startup_ack(self, timeout: float = 5.0) -> None:
+    async def _send_startup_ack(self, timeout: float = 5.0) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Tell the child runner the supervisor has observed readiness."""
         if not self.ipc_client:
             raise IPCConnectionError(f"IPC client not initialized for {self.anima_name}")
@@ -294,7 +295,7 @@ class ProcessHandle:
         if not response.result or response.result.get("status") != "acknowledged":
             raise ProcessError(f"Startup ack was not acknowledged for {self.anima_name}")
 
-    async def send_request(self, method: str, params: dict, timeout: float = 60.0) -> IPCResponse:
+    async def send_request(self, method: str, params: dict, timeout: float = 60.0) -> IPCResponse:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """
         Send IPC request to child process.
 
@@ -331,7 +332,7 @@ class ProcessHandle:
         self,
         method: str,
         params: dict,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     ) -> AsyncIterator[IPCResponse]:
         """
         Send IPC request to child process and yield streaming responses.
@@ -434,7 +435,7 @@ class ProcessHandle:
 
     async def ping(
         self,
-        timeout: float = 5.0,
+        timeout: float = 5.0,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         *,
         return_details: bool = False,
     ) -> bool | dict[str, Any]:
@@ -485,7 +486,7 @@ class ProcessHandle:
                 return {"success": False, "is_busy": False, "transport_error": is_transport_error}
             return False
 
-    async def _drain_active_stream(self, timeout: float) -> None:
+    async def _drain_active_stream(self, timeout: float) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Wait for an in-flight interactive stream to finish before stopping.
 
         Protects a user-facing chat response from being cut off mid-generation
@@ -505,7 +506,7 @@ class ProcessHandle:
         )
         try:
             async with asyncio.timeout(timeout):
-                while self.is_streaming and self.process and self.process.poll() is None:
+                while self.is_streaming and self.process and self.process.poll() is None:  # noqa: ASYNC110 -- polls external or transient state with no corresponding asyncio.Event
                     await asyncio.sleep(0.2)
         except TimeoutError:
             logger.warning(
@@ -516,7 +517,7 @@ class ProcessHandle:
             return
         logger.info("In-flight stream drained for %s; proceeding with stop", self.anima_name)
 
-    async def _drain_busy_lanes(self, timeout: float) -> None:
+    async def _drain_busy_lanes(self, timeout: float) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Wait for background TaskExec lanes to become idle before stopping."""
         if timeout <= 0 or not self.process or self.process.poll() is not None:
             return
@@ -546,7 +547,7 @@ class ProcessHandle:
 
     async def stop(
         self,
-        timeout: float = 10.0,
+        timeout: float = 10.0,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         *,
         drain_streams: bool = True,
         drain_background: bool = True,
@@ -630,7 +631,7 @@ class ProcessHandle:
         try:
             grace_period = min(timeout / 2, 5.0)
             async with asyncio.timeout(grace_period):
-                while self.process and self.process.poll() is None:
+                while self.process and self.process.poll() is None:  # noqa: ASYNC110 -- polls external or transient state with no corresponding asyncio.Event
                     await asyncio.sleep(0.1)
 
             self.stats.exit_code = self.process.returncode if self.process else None
@@ -648,7 +649,7 @@ class ProcessHandle:
                     raise TimeoutError  # skip to STOPPED
                 terminate_subprocess(self.process, force=False)
                 async with asyncio.timeout(timeout / 2):
-                    while self.process and self.process.poll() is None:
+                    while self.process and self.process.poll() is None:  # noqa: ASYNC110 -- polls external or transient state with no corresponding asyncio.Event
                         await asyncio.sleep(0.1)
 
                 self.stats.exit_code = self.process.returncode

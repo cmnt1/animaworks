@@ -684,7 +684,7 @@ async def one_shot_completion(
     max_tokens: int = 2048,
     structured_output: bool = False,
     temperature: float | None = None,
-    timeout: float | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     llm_extra: dict[str, object] | None = None,
 ) -> str | None:
     """Execute a one-shot LLM completion with automatic backend selection.

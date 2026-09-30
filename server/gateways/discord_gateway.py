@@ -25,6 +25,7 @@ from typing import Any
 from core.config.models import load_config
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.i18n import t
+from core.infra.tasks import spawn
 from core.integrations._base import get_credential
 from core.integrations._discord_markdown import clean_discord_markup
 from core.messaging.messenger import Messenger
@@ -451,10 +452,10 @@ class DiscordGatewayManager:
                         return
                     await interaction.response.send_message(t("interactive.error"), ephemeral=True)
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
         # Start in background task (client.start is blocking)
-        asyncio.create_task(self._run_client(client, token))
+        spawn(self._run_client(client, token), name="discord-gateway-client")
 
         # Wait for ready with timeout
         for _ in range(60):

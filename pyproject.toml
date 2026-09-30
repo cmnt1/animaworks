@@ -128,6 +128,7 @@ exclude = ["archive/", ".venv/", "site-docs/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+extend-select = ["RUF006", "ASYNC", "S110"]
 ignore = [
     "E501",
     "E402",
@@ -138,6 +139,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["RUF006", "ASYNC", "S110"]
+"scripts/**/*.py" = ["RUF006", "ASYNC", "S110"]
+"swe/**/*.py" = ["RUF006", "ASYNC", "S110"]
 "core/integrations/image_gen.py" = ["F401"]
 "core/config/__init__.py" = ["F401"]
 "core/config/models.py" = ["F401"]

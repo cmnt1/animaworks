@@ -349,7 +349,7 @@ class StreamingIPCHandler:
                         )
                     )
                 except Exception:
-                    pass  # キュー破損時は SENTINEL に委ねる
+                    logger.debug("Could not enqueue fatal stream error; SENTINEL will terminate", exc_info=True)
             finally:
                 await queue.put(_SENTINEL)
 

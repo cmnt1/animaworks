@@ -437,14 +437,14 @@ class SDKOptionsMixin:
                     encoding="utf-8",
                 )
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
             def _stderr_handler(line: str, _path: Path = _stderr_log) -> None:
                 try:
                     with open(_path, "a", encoding="utf-8") as f:
                         f.write(line + "\n")
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
         # In stream-json mode the CLI routes tool permission decisions
         # through the control protocol.  Even with bypassPermissions the

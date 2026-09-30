@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.models import load_config
+from core.infra.tasks import spawn
 from core.schemas import EXTERNAL_PLATFORM_SOURCES
 
 if TYPE_CHECKING:
@@ -241,7 +242,7 @@ class InboxRateLimiter:
         # so inbox dispatch must not wait for the root's scheduled-work lock.
         # Waiting here would let dispatch notifications accumulate or overflow.
         self._pending_trigger = True
-        asyncio.create_task(self.message_triggered_inbox())
+        spawn(self.message_triggered_inbox(), name=f"inbox-trigger-{self._anima.name}")
 
     # ── Message-Triggered Inbox Processing ──────────────────────
 
@@ -389,7 +390,7 @@ class InboxRateLimiter:
                     continue
 
                 self._pending_trigger = True
-                asyncio.create_task(self.message_triggered_inbox())
+                spawn(self.message_triggered_inbox(), name=f"inbox-trigger-{self._anima.name}")
                 await asyncio.sleep(2.0)
 
             except asyncio.CancelledError:

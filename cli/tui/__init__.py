@@ -5,6 +5,9 @@
 from __future__ import annotations
 
 import argparse
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def run_tui(args: argparse.Namespace) -> None:
@@ -160,7 +163,7 @@ def _install_stack_dump(app=None) -> None:
     try:
         signal.signal(signal.SIGUSR2, _dump_app)
     except Exception:  # pragma: no cover
-        pass
+        logger.debug("SIGUSR2 diagnostic handler is unavailable", exc_info=True)
 
 
 def _maybe_login(client, args) -> bool:

@@ -350,7 +350,7 @@ async def channel_c0_important_knowledge(
     search_cache: KnowledgeSearchCache | None = None,
 ) -> str:
     """Channel C0: opt-in resident and query-relevant important pointers."""
-    if not knowledge_dir.is_dir():
+    if not await asyncio.to_thread(knowledge_dir.is_dir):
         return ""
     try:
         denied_roots = load_denied_roots(anima_dir)
@@ -502,7 +502,7 @@ async def channel_c_related_knowledge(
     Returns a ``(medium, untrusted)`` tuple whose string-compatible values
     retain one indivisible item per readable source path.
     """
-    if not knowledge_dir.is_dir():
+    if not await asyncio.to_thread(knowledge_dir.is_dir):
         logger.debug("Channel C: No knowledge dir")
         return (ItemizedMemory(""), ItemizedMemory(""))
 

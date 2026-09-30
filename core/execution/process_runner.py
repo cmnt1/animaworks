@@ -69,7 +69,7 @@ class ProcessRunner:
     async def terminate_process(
         process: asyncio.subprocess.Process,
         *,
-        timeout: float = 3.0,
+        timeout: float = 3.0,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         pgid: int | None = None,
     ) -> None:
         """Terminate a subprocess and descendants, escalating TERM to KILL."""

@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from core.infra.tasks import spawn
 from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
 
@@ -147,7 +148,10 @@ class HealthMixin:
                     stopping_duration,
                 )
                 handle.state = ProcessState.FAILED
-                asyncio.create_task(self._handle_process_failure(anima_name, handle))
+                spawn(
+                    self._handle_process_failure(anima_name, handle),
+                    name=f"process-failure-{anima_name}",
+                )
             return
 
         # RESTARTING 状態ならヘルスチェックをスキップ
@@ -163,7 +167,10 @@ class HealthMixin:
                     "Process FAILED during streaming: %s",
                     anima_name,
                 )
-                asyncio.create_task(self._handle_process_failure(anima_name, handle))
+                spawn(
+                    self._handle_process_failure(anima_name, handle),
+                    name=f"process-failure-{anima_name}",
+                )
                 return
             if not handle.is_alive():
                 logger.error(
@@ -171,7 +178,10 @@ class HealthMixin:
                     anima_name,
                     handle.stats.exit_code,
                 )
-                asyncio.create_task(self._handle_process_failure(anima_name, handle))
+                spawn(
+                    self._handle_process_failure(anima_name, handle),
+                    name=f"process-failure-{anima_name}",
+                )
                 return
             return
 
@@ -190,7 +200,10 @@ class HealthMixin:
                 "Process in FAILED state (IPC connection lost): %s",
                 anima_name,
             )
-            asyncio.create_task(self._handle_process_failure(anima_name, handle))
+            spawn(
+                self._handle_process_failure(anima_name, handle),
+                name=f"process-failure-{anima_name}",
+            )
             return
 
         # Check if process is alive
@@ -203,7 +216,10 @@ class HealthMixin:
                 actual_rc,
                 -actual_rc if actual_rc is not None and actual_rc < 0 else "N/A",
             )
-            asyncio.create_task(self._handle_process_failure(anima_name, handle))
+            spawn(
+                self._handle_process_failure(anima_name, handle),
+                name=f"process-failure-{anima_name}",
+            )
             return
 
         warmup_reason = self._health_warmup_reason(anima_name, handle)
@@ -248,7 +264,10 @@ class HealthMixin:
                 anima_name,
                 actual_rc,
             )
-            asyncio.create_task(self._handle_process_failure(anima_name, handle))
+            spawn(
+                self._handle_process_failure(anima_name, handle),
+                name=f"process-failure-{anima_name}",
+            )
             return
 
         if success:
@@ -279,7 +298,10 @@ class HealthMixin:
                 anima_name,
                 handle.get_pid(),
             )
-            asyncio.create_task(self._handle_process_hang(anima_name, handle))
+            spawn(
+                self._handle_process_hang(anima_name, handle),
+                name=f"process-hang-{anima_name}",
+            )
 
     async def _handle_process_failure(
         self,

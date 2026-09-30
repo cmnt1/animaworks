@@ -9,6 +9,7 @@ from __future__ import annotations
 
 """Organization context building for prompt injection."""
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.config.models import read_anima_company
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.sections import _load_fallback_strings, _load_section_strings
+
+logger = logging.getLogger(__name__)
 
 # Modes that use MCP-style tool access (built-in + mcp__aw__*).
 _MCP_MODES = frozenset({"s", "c", "d", "g", "x"})
@@ -84,7 +87,7 @@ def _get_live_status(name: str, animas_dir: Path, denied_roots: tuple[Path, ...]
                 return "disabled"
             return "stopped"
     except Exception:
-        pass
+        logger.debug("Best-effort operation failed", exc_info=True)
     return "unknown"
 
 
@@ -223,7 +226,7 @@ def _scan_all_animas(animas_dir: Path, denied_roots: tuple[Path, ...] = ()) -> d
                 role = data.get("role") or None
                 model = data.get("model") or None
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
         # Fallback to config.animas when status.json omits the field
         if name in config_animas:

@@ -776,7 +776,7 @@ class VoiceSession:
             return
         if self._probe_followup_pending:
             deadline = time.monotonic() + 2.0
-            while self._processing and time.monotonic() < deadline:
+            while self._processing and time.monotonic() < deadline:  # noqa: ASYNC110 -- polls external or transient state with no corresponding asyncio.Event
                 await asyncio.sleep(0.02)
             if self._processing:
                 logger.warning("Probe follow-up still waiting for current turn (%s)", self._anima_name)
@@ -846,7 +846,7 @@ class VoiceSession:
             try:
                 await self._stream_task
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
         # 1. STT
         streaming_used = False
@@ -1038,7 +1038,7 @@ class VoiceSession:
                         }
                     )
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
             await self._stop_tts_worker()
             self._tts_playing = False
             self._interrupted = False
@@ -1439,7 +1439,7 @@ class VoiceSession:
                         await self._ws.send_json({"type": "emotion", "emotion": "neutral"})
                         await self._ws.send_json({"type": "response_done", "emotion": "neutral"})
                     except Exception:
-                        pass
+                        logger.debug("Best-effort operation failed", exc_info=True)
                 await self._stop_tts_worker()
                 self._tts_playing = False
 
@@ -1602,16 +1602,20 @@ class VoiceSession:
             watcher.cancel()
             try:
                 await watcher
-            except (asyncio.CancelledError, Exception):
-                pass
+            except asyncio.CancelledError:
+                pass  # noqa: S110 -- cancellation is expected during watcher shutdown
+            except Exception:
+                logger.debug("Voice watcher failed during shutdown", exc_info=True)
         idle = self._idle_watcher
         self._idle_watcher = None
         if idle is not None and not idle.done():
             idle.cancel()
             try:
                 await idle
-            except (asyncio.CancelledError, Exception):
-                pass
+            except asyncio.CancelledError:
+                pass  # noqa: S110 -- cancellation is expected during watcher shutdown
+            except Exception:
+                logger.debug("Voice idle watcher failed during shutdown", exc_info=True)
         self._interrupted = True
         self._clear_tts_queue()
         await self._stop_tts_worker()
@@ -1662,13 +1666,13 @@ class VoiceSession:
                 await self._ws.send_json({"type": "tts_error", "message": "TTS synthesis failed"})
                 await self._ws.send_json({"type": "tts_done"})
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         except Exception as e:
             logger.warning("TTS send error: %s", e)
             try:
                 await self._ws.send_json({"type": "tts_done"})
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
     async def greet_and_speak(self) -> None:
         """Greet on connect — generate a fresh greeting every time.
@@ -1769,7 +1773,7 @@ class VoiceSession:
             try:
                 await task
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         if not self._probe_active:
             self._finalizing = False
             return

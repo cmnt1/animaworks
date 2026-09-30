@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from pathlib import Path
@@ -43,6 +44,8 @@ from cli.tui.widgets import (
     format_input_summary,
 )
 from cli.tui.widgets.response_status import ResponseStatus
+
+logger = logging.getLogger(__name__)
 from cli.tui.widgets.sidebar import AnimaChosen
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, SystemNote, strip_html_comments
@@ -296,7 +299,7 @@ class AnimaChatApp(App):
         try:
             self._bindings.apply_keymap(app_keymap(self._keymap))
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         self.body = self.query_one("#body", Horizontal)
         self.sidebar = self.query_one("#sidebar", Sidebar)
@@ -926,7 +929,7 @@ class AnimaChatApp(App):
         try:
             save_session(self.session, base_dir=self.session_dir)
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     async def handle_sse(self, sse: SseEvent) -> None:
         name = sse.event

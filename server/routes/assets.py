@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
+from core.infra.tasks import spawn
 from server.events import emit
 from server.routes.media_proxy import proxy_external_image
 
@@ -338,7 +339,7 @@ def create_assets_router() -> APIRouter:
 
             display_mode = load_config().image_gen.image_style or "anime"
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         result: dict = {
             "name": name,
@@ -998,7 +999,7 @@ def create_assets_router() -> APIRouter:
                 _free_vram, _ = _torch.cuda.mem_get_info()
                 _low_vram_mode = _free_vram < 7 * 1024**3
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         # Emit start event immediately so UI shows spinner
         await emit(
@@ -1047,7 +1048,7 @@ def create_assets_router() -> APIRouter:
                         bg_loop,
                     )
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
             gen_kwargs["fullbody_step_callback"] = _on_step
 
@@ -1057,7 +1058,7 @@ def create_assets_router() -> APIRouter:
                     try:
                         await _ws.broadcast({"type": etype, "data": data})
                     except Exception:
-                        pass
+                        logger.debug("Best-effort operation failed", exc_info=True)
 
             async def _emit_ready(source_bytes: bytes) -> None:
                 """Save source_bytes as a numbered preview only, then emit ready event.
@@ -1186,7 +1187,7 @@ def create_assets_router() -> APIRouter:
                     },
                 )
 
-        asyncio.create_task(_bg_generate())
+        spawn(_bg_generate(), name=f"asset-backup-generate-{name}-{backup_id}")
 
         # Return 202 immediately — result arrives via WebSocket
         return JSONResponse(
@@ -1300,7 +1301,7 @@ def create_assets_router() -> APIRouter:
             remaining_steps = ["bustup"] + [
                 f"expression:{e}" for e in ["smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"]
             ]
-            asyncio.create_task(_run_fullbody_copy())
+            spawn(_run_fullbody_copy(), name=f"asset-fullbody-copy-{name}")
             return {"status": "started", "steps": remaining_steps, "mode": "fullbody_only"}
 
         # ── Normal cascade rebuild ──
@@ -1412,7 +1413,7 @@ def create_assets_router() -> APIRouter:
             if ws:
                 await ws.broadcast({"type": event_type, "data": data})
 
-        asyncio.create_task(_run_cascade())
+        spawn(_run_cascade(), name=f"asset-cascade-{name}")
 
         return {
             "status": "started",

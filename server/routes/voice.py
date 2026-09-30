@@ -167,7 +167,7 @@ def create_voice_router() -> APIRouter:
                 try:
                     await old_ws.close(code=4000, reason="Replaced by new session")
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
         _active_sessions[name] = ws
 
         session = None
@@ -240,7 +240,7 @@ def create_voice_router() -> APIRouter:
             try:
                 await ws.send_json({"type": "error", "message": str(e)})
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         finally:
             for t in running_tasks:
                 if not t.done():
@@ -251,7 +251,7 @@ def create_voice_router() -> APIRouter:
                 try:
                     await session.close()
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
             if _active_sessions.get(name) == ws:
                 _active_sessions.pop(name, None)
 

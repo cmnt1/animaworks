@@ -27,6 +27,7 @@ from core.exceptions import (  # noqa: F401
     IPCConnectionError,
     ProcessError,
 )
+from core.infra.tasks import spawn
 from core.platform.process import kill_tree, snapshot_descendants
 from core.supervisor._mgr_health import HealthMixin
 from core.supervisor._mgr_rag_repair import RAGRepairMixin
@@ -417,7 +418,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                                 "Bootstrap needed for %s, launching background task",
                                 anima_name,
                             )
-                            asyncio.create_task(self._run_bootstrap(anima_name))
+                            spawn(
+                                self._run_bootstrap(anima_name),
+                                name=f"bootstrap-{anima_name}",
+                            )
                     except Exception as e:
                         logger.warning(
                             "Could not check bootstrap status for %s: %s",
@@ -835,7 +839,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         anima_name: str,
         method: str,
         params: dict[str, Any],
-        timeout: float = 60.0,
+        timeout: float = 60.0,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     ) -> dict:
         """Send IPC request to a Anima process.
 
@@ -859,7 +863,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         anima_name: str,
         method: str,
         params: dict[str, Any],
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     ) -> AsyncIterator[IPCResponse]:
         """Send IPC request to a Anima process and yield streaming responses.
 

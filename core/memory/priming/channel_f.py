@@ -139,7 +139,7 @@ async def channel_f_episodes(
         except Exception:
             logger.debug("Failed to load rag.min_retrieval_score from config, using default")
 
-        if not episodes_dir.is_dir():
+        if not await asyncio.to_thread(episodes_dir.is_dir):
             return ""
 
         searcher = await asyncio.to_thread(build_unified_searcher, anima_dir, get_retriever, UnifiedMemorySearch)

@@ -272,7 +272,7 @@ def _build_group1(
                 )
                 logger.warning("injection.md oversized: %d chars (threshold=%d)", len(injection), threshold)
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     if tier != TIER_MICRO:
         _br = load_prompt_text("behavior_rules")

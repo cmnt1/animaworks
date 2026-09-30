@@ -207,7 +207,7 @@ def _read_model_from_status_json(anima_dir: Path) -> tuple[str, str]:
 
                 mode = resolve_execution_mode(load_config(), model)
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         return (model, mode)
     except Exception:
         return ("", "")
@@ -503,14 +503,14 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
                 if status_data.get("supervisor") == name:
                     print(f"Warning: Anima '{other_dir.name}' has deleted anima '{name}' as supervisor")
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
     # Reload server config if running
     if server_running:
         try:
             requests.post(f"{gateway_url}/api/system/reload", timeout=10)
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     print(f"Anima '{name}' deleted successfully.")
 
@@ -548,7 +548,7 @@ def cmd_anima_disable(args: argparse.Namespace) -> None:
             print(f"Disabled anima '{name}': {result}")
             api_success = True
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     if not api_success:
         # Direct file update (offline mode)
@@ -558,7 +558,7 @@ def cmd_anima_disable(args: argparse.Namespace) -> None:
             try:
                 status_data = json.loads(status_file.read_text(encoding="utf-8"))
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         status_data["enabled"] = False
         status_file.write_text(
             json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
@@ -600,7 +600,7 @@ def cmd_anima_enable(args: argparse.Namespace) -> None:
             print(f"Enabled anima '{name}': {result}")
             api_success = True
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     if not api_success:
         # Direct file update (offline mode)
@@ -610,7 +610,7 @@ def cmd_anima_enable(args: argparse.Namespace) -> None:
             try:
                 status_data = json.loads(status_file.read_text(encoding="utf-8"))
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         status_data["enabled"] = True
         status_file.write_text(
             json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
@@ -650,7 +650,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
         try:
             status_data = json.loads(status_file.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
     old_role = status_data.get("role", "-")
     status_data["role"] = new_role
@@ -1266,7 +1266,7 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
                     atomic_write_json(status_file, status_data)
                     status_updated += 1
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         if status_updated:
             print(f"  Updated status.json for {status_updated} anima(s) with supervisor reference")
 
@@ -1284,7 +1284,7 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
             try:
                 requests.post(f"{gateway_url}/api/system/reload", timeout=10)
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
             try:
                 requests.post(
                     f"{gateway_url}/api/animas/{new_name}/enable",
@@ -1413,7 +1413,7 @@ def cmd_anima_list(args: argparse.Namespace) -> None:
                 print(f"\nTotal: {len(animas)}")
                 return
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
     # Local fallback: scan filesystem
     if not animas_dir.exists():
@@ -1443,7 +1443,7 @@ def cmd_anima_list(args: argparse.Namespace) -> None:
                 role = status_data.get("role", "-")
                 model = status_data.get("model", "-") or "-"
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
         print(f"{name:<20} {enabled:<10} {role:<15} {model:<30}")
         count += 1
