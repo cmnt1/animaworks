@@ -267,6 +267,7 @@ class TestHardTimeoutRecoveryNote:
         anima.model_config = model_config
         anima.memory = MagicMock()
         anima._activity = MagicMock()
+        anima._activity.alog = AsyncMock()
         anima._agent_for_lane = MagicMock(return_value=agent)
         anima._resolve_background_config = MagicMock(return_value=None)
         anima._enforce_state_size_limit = MagicMock()
@@ -296,7 +297,10 @@ class TestHardTimeoutRecoveryNote:
             patch("core.anima.heartbeat.StreamingJournal"),
             patch("core.anima.heartbeat.ConversationMemory") as mock_conversation,
             patch("core.anima.heartbeat.asyncio.wait_for", new=recording_wait_for),
-            patch("core.anima.heartbeat.time.monotonic", side_effect=elapsed_past_hard_timeout),
+            patch(
+                "core.anima.heartbeat.time",
+                SimpleNamespace(monotonic=elapsed_past_hard_timeout),
+            ),
             patch("core.tasks.queue.TaskQueueManager") as mock_task_queue,
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
@@ -312,6 +316,48 @@ class TestHardTimeoutRecoveryNote:
         assert stream_closed.is_set()
         assert wait_for_timeouts == [10]
         assert (state_dir / "recovery_note.md").exists()
+
+    @pytest.mark.asyncio
+    async def test_slow_activity_log_does_not_block_heartbeat_failure(self, tmp_path, monkeypatch):
+        from core.memory.activity.logger import ActivityLogger
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        anima = HeartbeatMixin()
+        anima.name = "alice"
+        anima.anima_dir = tmp_path
+        anima._activity = ActivityLogger(tmp_path)
+
+        def slow_log(*_args: object, **_kwargs: object) -> None:
+            time.sleep(0.2)
+
+        monkeypatch.setattr(anima._activity, "log", slow_log)
+        loop = asyncio.get_running_loop()
+        previous_debug = loop.get_debug()
+        previous_slow_callback_duration = loop.slow_callback_duration
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.05
+        ticker_running = True
+        ticks = 0
+
+        async def ticker() -> None:
+            nonlocal ticks
+            while ticker_running:
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        ticker_task = asyncio.create_task(ticker())
+        try:
+            await asyncio.sleep(0)
+            with patch("core.anima.heartbeat.StreamingJournal.has_orphan", return_value=False):
+                await anima._handle_heartbeat_failure(RuntimeError("slow disk"), [], unread_count=0)
+        finally:
+            ticker_running = False
+            await ticker_task
+            loop.slow_callback_duration = previous_slow_callback_duration
+            loop.set_debug(previous_debug)
+
+        assert ticks >= 10
 
     def test_recovery_note_written(self, tmp_path):
         from core.i18n import t
@@ -366,6 +412,7 @@ class TestFinalizeAlwaysRuns:
         anima._status_slots = {}
         anima._task_slots = {}
         anima._activity = MagicMock()
+        anima._activity.alog = AsyncMock()
         anima._build_heartbeat_prompt = AsyncMock(return_value=["hb"])
         anima._build_prior_messages = MagicMock(return_value=None)
         anima.messenger = SimpleNamespace(has_unread=lambda: False, unread_count=lambda: 0)

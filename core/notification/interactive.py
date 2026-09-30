@@ -340,7 +340,7 @@ class InteractionRouter:
             from core.paths import get_animas_dir
 
             reply_content = f"{decision}: {comment}" if comment else decision
-            ActivityLogger(get_animas_dir() / req.anima_name).log(
+            await ActivityLogger(get_animas_dir() / req.anima_name).alog(
                 "human_reply",
                 content=reply_content,
                 from_person=actor,

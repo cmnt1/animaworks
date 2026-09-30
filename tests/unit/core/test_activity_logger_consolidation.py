@@ -57,7 +57,7 @@ class TestDigitalAnimaActivityConsolidation:
     def test_write_call_in_process_message_not_wrapped_in_try_except(self):
         """Activity log write in process_message is NOT wrapped in try/except.
 
-        The ``self._activity.log("message_received", ...)`` call should appear
+        The ``await self._activity.alog("message_received", ...)`` call should appear
         outside any ``try:`` block that is specifically guarding it.
         """
         from core.anima.digital_anima import DigitalAnima
@@ -67,7 +67,7 @@ class TestDigitalAnimaActivityConsolidation:
 
         # Find the activity log "message_received" call
         for i, line in enumerate(lines):
-            if 'self._activity.log("message_received"' in line:
+            if 'self._activity.alog("message_received"' in line:
                 # Walk backwards to check: the closest enclosing try should be
                 # the lock acquisition try, NOT a dedicated activity-log guard.
                 # A dedicated guard would have "try:" immediately preceding
@@ -182,9 +182,9 @@ class TestActivityLoggerUsageCount:
         ]
         total_source = "\n".join(p.read_text(encoding="utf-8") for p in anima_files)
 
-        activity_calls = total_source.count("self._activity.log(")
+        activity_calls = total_source.count("self._activity.alog(")
         assert activity_calls > 0, (
-            f"Expected self._activity.log() calls in anima modules: {[str(p) for p in anima_files]}"
+            f"Expected self._activity.alog() calls in anima modules: {[str(p) for p in anima_files]}"
         )
 
         recent_calls = total_source.count("self._activity.recent(")

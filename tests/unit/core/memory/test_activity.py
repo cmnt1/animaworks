@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import timedelta
 from pathlib import Path
 
@@ -25,6 +26,34 @@ def anima_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def activity_logger(anima_dir: Path) -> ActivityLogger:
     return ActivityLogger(anima_dir)
+
+
+# ── Async logging ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_alog_runs_log_in_a_worker_thread(
+    activity_logger: ActivityLogger,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop_thread = threading.get_ident()
+    calls: list[tuple[int, tuple[object, ...], dict[str, object]]] = []
+    expected = ActivityEntry(ts="2026-02-18T10:00:00", type="heartbeat_end")
+
+    def fake_log(*args: object, **kwargs: object) -> ActivityEntry:
+        calls.append((threading.get_ident(), args, kwargs))
+        return expected
+
+    monkeypatch.setattr(activity_logger, "log", fake_log)
+
+    result = await activity_logger.alog("heartbeat_end", summary="done", safe=True)
+
+    assert result is expected
+    assert len(calls) == 1
+    worker_thread, args, kwargs = calls[0]
+    assert worker_thread != loop_thread
+    assert args == ("heartbeat_end",)
+    assert kwargs == {"summary": "done", "safe": True}
 
 
 # ── ASCII label mapping ──────────────────────────────────

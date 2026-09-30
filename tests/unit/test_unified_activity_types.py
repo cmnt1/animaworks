@@ -3,7 +3,7 @@
 Verifies:
 1. Shared JS module structure (activity-types.js)
 2. Consumer JS files: local TYPE_ICONS removed, shared import added
-3. Backend: activity.log() calls include summary parameter
+3. Backend: activity.alog() calls include summary parameter
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -210,7 +210,7 @@ class TestWebSocketDefaultCase:
 
 
 class TestBackendActivityLogSummary:
-    """Verify anima modules' activity.log() calls include summary.
+    """Verify anima modules' activity.alog() calls include summary.
 
     DigitalAnima is split into Mixin sub-modules; search the facade
     plus all core/_anima_*.py files.
@@ -227,14 +227,14 @@ class TestBackendActivityLogSummary:
 
     def test_heartbeat_start_has_summary(self) -> None:
         content = self._read_all()
-        pattern = r'activity\.log\("heartbeat_start",\s*summary=t\("anima\.heartbeat_start"\)\)'
+        pattern = r'activity\.alog\("heartbeat_start",\s*summary=t\("anima\.heartbeat_start"\)\)'
         assert re.search(pattern, content), (
-            "heartbeat_start activity.log() should include summary=t('anima.heartbeat_start')"
+            "heartbeat_start activity.alog() should include summary=t('anima.heartbeat_start')"
         )
 
     def test_message_received_has_summary(self) -> None:
         content = self._read_all()
-        pattern = r'activity\.log\(\s*"message_received",\s*content=content,\s*summary=content\[:100\]'
+        pattern = r'activity\.alog\(\s*"message_received",\s*content=content,\s*summary=content\[:100\]'
         matches = re.findall(pattern, content)
         assert len(matches) == 3, (
             f"Expected 3 message_received calls with summary (chat, inbox, steer injection), found {len(matches)}"
@@ -242,9 +242,9 @@ class TestBackendActivityLogSummary:
 
     def test_message_received_from_anima_has_summary(self) -> None:
         content = self._read_all()
-        pattern = r'activity\.log\(\s*"message_received",\s*content=_m\.content,\s*summary=_m\.content\[:200\]'
+        pattern = r'activity\.alog\(\s*"message_received",\s*content=_m\.content,\s*summary=_m\.content\[:200\]'
         assert re.search(pattern, content), (
-            "message_received (from anima) activity.log() should use full content and summary=_m.content[:200]"
+            "message_received (from anima) activity.alog() should use full content and summary=_m.content[:200]"
         )
 
 

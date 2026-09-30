@@ -276,7 +276,7 @@ async def _handle_delegation_dms(anima_mixin: Any, delegation_items: list[InboxI
             )
 
         # Activity log
-        anima_mixin._activity.log(
+        await anima_mixin._activity.alog(
             "message_received",
             content=msg.content,
             summary=f"[delegation DM - framework handled, state={state}] {msg.content[:150]}",
@@ -379,7 +379,7 @@ class InboxMixin:
                             model_config=agent.model_config,
                         )
 
-                    self._activity.log(
+                    await self._activity.alog(
                         "inbox_processing_start",
                         summary=t("anima.inbox_start"),
                         meta={"session_type": "inbox", "thread_id": _INBOX_THREAD_ID},
@@ -408,7 +408,7 @@ class InboxMixin:
                     trigger = f"inbox:{senders_str}"
 
                     if budget_result is not None:
-                        self._activity.log(
+                        await self._activity.alog(
                             "inbox_processing_end",
                             summary=budget_result.summary,
                             meta={
@@ -469,7 +469,7 @@ class InboxMixin:
                     agent.reset_read_paths()
 
                     journal = StreamingJournal(self.anima_dir, session_type="inbox")
-                    journal.open(trigger=trigger, from_person=senders_str)
+                    await asyncio.to_thread(journal.open, trigger=trigger, from_person=senders_str)
 
                     accumulated_text = ""
                     result: CycleResult | None = None
@@ -494,7 +494,7 @@ class InboxMixin:
                                 if chunk.get("type") == "text_delta":
                                     text = chunk.get("text", "")
                                     attempt_text += text
-                                    journal.write_text(text)
+                                    await asyncio.to_thread(journal.write_text, text)
                                 if chunk.get("type") == "cycle_done":
                                     attempt_result = CycleResult.model_validate(
                                         {
@@ -527,11 +527,11 @@ class InboxMixin:
                                 summary=str(exc),
                                 reason=reason.value,
                             )
-                        journal.finalize(summary=result.summary[:500])
+                        await asyncio.to_thread(journal.finalize, summary=result.summary[:500])
                     finally:
                         if agent.model_config is not original_config:
                             agent.update_model_config(original_config)
-                        journal.close()
+                        await asyncio.to_thread(journal.close)
                         if _fanout_token is not None:
                             suppress_board_fanout.reset(_fanout_token)
                         active_session_type.reset(_session_token)
@@ -547,7 +547,7 @@ class InboxMixin:
 
                     # Record inbox response separately from the default chat thread.
                     if not cycle_failed and accumulated_text.strip():
-                        self._activity.log(
+                        await self._activity.alog(
                             "response_sent",
                             content=accumulated_text[:2000],
                             to_person=senders_str,
@@ -608,7 +608,7 @@ class InboxMixin:
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry — up to _MAX_INBOX_RETRIES.
                     if cycle_failed:
-                        self._undo_failed_inbox_presentation(inbox_result.inbox_items)
+                        await asyncio.to_thread(self._undo_failed_inbox_presentation, inbox_result.inbox_items)
                         logger.warning(
                             "[%s] Inbox LLM cycle failed — messages NOT archived (reason=%s)",
                             self.name,
@@ -625,7 +625,7 @@ class InboxMixin:
                         _rc: dict[str, int] = {}
                         try:
                             if _rc_path.exists():
-                                _rc = json.loads(_rc_path.read_text(encoding="utf-8"))
+                                _rc = json.loads(await asyncio.to_thread(_rc_path.read_text, encoding="utf-8"))
                         except (json.JSONDecodeError, OSError):
                             logger.warning(
                                 "[%s] Failed to read inbox_read_counts.json, using empty counts",
@@ -656,7 +656,7 @@ class InboxMixin:
                                 self.name,
                             )
 
-                    self._activity.log(
+                    await self._activity.alog(
                         "inbox_processing_end",
                         summary=result.summary[:200],
                         meta={
@@ -691,8 +691,8 @@ class InboxMixin:
                     # unread work. The watcher schedules its bounded retry;
                     # retain the original messages for recovery.
                     if inbox_result is not None:
-                        self._undo_failed_inbox_presentation(inbox_result.inbox_items)
-                    self._activity.log(
+                        await asyncio.to_thread(self._undo_failed_inbox_presentation, inbox_result.inbox_items)
+                    await self._activity.alog(
                         "error",
                         summary=t("anima.inbox_error", exc=type(exc).__name__),
                         meta={
@@ -810,7 +810,7 @@ class InboxMixin:
         if track_retries:
             try:
                 if _read_counts_path.exists():
-                    _read_counts = json.loads(_read_counts_path.read_text(encoding="utf-8"))
+                    _read_counts = json.loads(await asyncio.to_thread(_read_counts_path.read_text, encoding="utf-8"))
             except Exception:
                 _read_counts = {}
 
@@ -860,7 +860,13 @@ class InboxMixin:
 
         if track_retries:
             try:
-                atomic_write_json(_read_counts_path, _read_counts, indent=None, trailing_newline=False)
+                await asyncio.to_thread(
+                    atomic_write_json,
+                    _read_counts_path,
+                    _read_counts,
+                    indent=None,
+                    trailing_newline=False,
+                )
             except Exception:
                 logger.debug("[%s] Failed to write inbox_read_counts", self.name, exc_info=True)
 
@@ -950,7 +956,7 @@ class InboxMixin:
         for _m in _recordable[:50]:
             _msg_origin = _SOURCE_TO_ORIGIN.get(_m.source, ORIGIN_UNKNOWN)
             _msg_origin_chain = _m.origin_chain if _m.origin_chain else [_msg_origin]
-            self._activity.log(
+            await self._activity.alog(
                 "message_received",
                 content=_m.content,
                 summary=_m.content[:200],

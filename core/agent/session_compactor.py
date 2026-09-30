@@ -547,7 +547,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
         from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima.anima_dir)
-        activity.log(
+        await activity.alog(
             "idle_compaction",
             summary=f"Idle compaction completed (mode={mode}, thread={thread_id})",
             meta=compaction_meta,

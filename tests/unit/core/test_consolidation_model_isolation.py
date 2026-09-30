@@ -742,6 +742,7 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     anima._status_slots = {}
     anima._task_slots = {}
     anima._activity = MagicMock()
+    anima._activity.alog = AsyncMock()
     anima._last_activity = None
 
     anima._validate_thread_id = lambda thread_id: None

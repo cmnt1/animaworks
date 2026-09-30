@@ -347,7 +347,7 @@ class LifecycleMixin:
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_local()
-                self._activity.log("heartbeat_start", summary=t("anima.heartbeat_start"))
+                await self._activity.alog("heartbeat_start", summary=t("anima.heartbeat_start"))
 
                 try:
                     parts = await self._build_heartbeat_prompt()
@@ -504,7 +504,7 @@ class LifecycleMixin:
 
                 _consolidation_flag = self.anima_dir / "state" / ".consolidation_mode"
                 try:
-                    _consolidation_flag.write_text("1", encoding="utf-8")
+                    await asyncio.to_thread(_consolidation_flag.write_text, "1", encoding="utf-8")
                 except OSError:
                     pass
 
@@ -517,7 +517,7 @@ class LifecycleMixin:
                         else ConsolidationEngine(self.anima_dir, self.name)
                     )
 
-                    self._activity.log(
+                    await self._activity.alog(
                         "consolidation_start",
                         summary=t("anima.consolidation_start", type=consolidation_type),
                     )
@@ -528,7 +528,7 @@ class LifecycleMixin:
                         result = await self._run_weekly_consolidation(engine)
 
                     self._last_activity = now_local()
-                    self._activity.log(
+                    await self._activity.alog(
                         "consolidation_end",
                         summary=t("anima.consolidation_end", type=consolidation_type),
                         content=result.summary[:500] if result.summary else "",
@@ -552,7 +552,7 @@ class LifecycleMixin:
                         self.name,
                         consolidation_type,
                     )
-                    self._activity.log(
+                    await self._activity.alog(
                         "error",
                         summary=t("anima.consolidation_error", exc=type(exc).__name__),
                         meta={"phase": "run_consolidation", "error": str(exc)[:200]},
@@ -563,7 +563,7 @@ class LifecycleMixin:
                     if project is not None:
                         agent._tool_handler._default_project = previous_default_project
                     _keepalive.cancel()
-                    _consolidation_flag.unlink(missing_ok=True)
+                    await asyncio.to_thread(_consolidation_flag.unlink, missing_ok=True)
                     active_session_type.reset(_session_token)
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
@@ -1097,7 +1097,7 @@ class LifecycleMixin:
                     )
 
                     # Activity log: cron executed
-                    self._activity.log(
+                    await self._activity.alog(
                         "cron_executed",
                         summary=t("anima.cron_task_summary", task=task_name),
                         content=result.summary[:500] if result else "",
@@ -1112,7 +1112,7 @@ class LifecycleMixin:
                         },
                     )
                     if warning_dicts:
-                        self._activity.log(
+                        await self._activity.alog(
                             "cron_skill_warning",
                             summary=f"Cron skill warnings: {task_name}",
                             meta={
@@ -1150,7 +1150,7 @@ class LifecycleMixin:
                     except Exception:
                         logger.warning("[%s] Failed to append cron error log", self.name, exc_info=True)
                     # Activity log: error (safe=True to prevent double-fault)
-                    self._activity.log(
+                    await self._activity.alog(
                         "error",
                         summary=t("anima.cron_task_error", exc=type(exc).__name__),
                         meta={"phase": "run_cron_task", "error": str(exc)[:200]},
@@ -1300,7 +1300,7 @@ class LifecycleMixin:
                     exit_code = 1
                     logger.exception("[%s] run_cron_command FAILED task=%s", self.name, task_name)
                     # Activity log: error (safe=True to prevent double-fault)
-                    self._activity.log(
+                    await self._activity.alog(
                         "error",
                         summary=t("anima.cron_cmd_error", exc=type(exc).__name__),
                         meta={"phase": "run_cron_command", "error": str(exc)[:200]},
@@ -1333,7 +1333,7 @@ class LifecycleMixin:
             # Activity log: cron command executed (intentionally logs even on
             # failure — exit_code captures the error state, unlike run_cron_task
             # which re-raises and never reaches this point on error)
-            self._activity.log(
+            await self._activity.alog(
                 "cron_executed",
                 summary=t("anima.cron_cmd_summary", task=task_name),
                 meta={"task_name": task_name, "exit_code": exit_code, "command": command or "", "tool": tool or ""},

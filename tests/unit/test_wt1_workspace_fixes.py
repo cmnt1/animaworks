@@ -94,12 +94,12 @@ class TestIssueA_WSEventMismatch:
                 for name in ("digital_anima", "lifecycle", "messaging", "inbox", "heartbeat")
             ]
         )
-        # Find activity.log("message_received" ...) calls — may span multiple lines
+        # Find activity.alog("message_received" ...) calls — may span multiple lines
         matches = re.findall(
-            r'activity\.log\(\s*"message_received"[\s\S]*?\n\s*\)',
+            r'activity\.alog\(\s*"message_received"[\s\S]*?\n\s*\)',
             src,
         )
-        assert len(matches) > 0, "No activity.log('message_received') call found in anima.py"
+        assert len(matches) > 0, "No activity.alog('message_received') call found in anima.py"
         # At least one call must have from_type in meta and to_person=self.name
         anima_dm_calls = [m for m in matches if "from_type" in m and "to_person" in m]
         assert len(anima_dm_calls) >= 1, "No message_received log with from_type meta and to_person found"

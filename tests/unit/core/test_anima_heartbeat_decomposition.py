@@ -875,6 +875,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
             dp._activity = MagicMock()
+            dp._activity.alog = AsyncMock()
             with (
                 patch("core.anima.heartbeat.StreamingJournal"),
                 patch("core.anima.heartbeat.ConversationMemory") as conversation,
@@ -887,7 +888,7 @@ class TestExecuteHeartbeatCycle:
             assert result.reason == failure_reason
             assert result.stop_kind == "stream_error"
             assert (anima_dir / "state" / "heartbeat_checkpoint.json").exists()
-            ends = [call for call in dp._activity.log.call_args_list if call.args[0] == "heartbeat_end"]
+            ends = [call for call in dp._activity.alog.call_args_list if call.args[0] == "heartbeat_end"]
             assert len(ends) == 1
             assert ends[0].kwargs["meta"]["status"] == "failed"
         finally:
@@ -1194,6 +1195,7 @@ class TestProcessInboxMessage:
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
             dp._resolve_background_config = MagicMock(return_value=primary)
             dp._activity = MagicMock()
+            dp._activity.alog = AsyncMock()
             dp.agent.run_cycle = AsyncMock(
                 return_value=CycleResult(
                     trigger="cron:test",
@@ -1210,7 +1212,7 @@ class TestProcessInboxMessage:
                 result = await dp.run_cron_task("test", "Inspect the synthetic fixture.")
             assert result.action == "error"
             assert dp.agent.run_cycle.await_count == 2
-            ends = [call for call in dp._activity.log.call_args_list if call.args[0] == "cron_executed"]
+            ends = [call for call in dp._activity.alog.call_args_list if call.args[0] == "cron_executed"]
             assert len(ends) == 1
             assert ends[0].kwargs["meta"]["status"] == "failed"
             assert ends[0].kwargs["meta"]["reason"] == "network"
@@ -1240,6 +1242,7 @@ class TestProcessInboxMessage:
             dp.messenger.receive_with_paths.return_value = [item]
             dp.agent.replied_to = set()
             dp._activity = MagicMock()
+            dp._activity.alog = AsyncMock()
             dp._archive_processed_messages = AsyncMock()
             calls = 0
 
@@ -1298,6 +1301,7 @@ class TestProcessInboxMessage:
                 )
             )
             dp._activity = MagicMock()
+            dp._activity.alog = AsyncMock()
             dp._archive_processed_messages = AsyncMock()
             dp.agent.replied_to = set()
             calls = 0
@@ -1364,6 +1368,7 @@ class TestProcessInboxMessage:
                 )
             )
             dp._activity = MagicMock()
+            dp._activity.alog = AsyncMock()
             dp._archive_processed_messages = AsyncMock()
             dp.agent.replied_to = set()
 
@@ -1391,8 +1396,8 @@ class TestProcessInboxMessage:
             assert result.reason == "quota_exhausted"
             assert result.stop_kind == "stream_error"
             dp._archive_processed_messages.assert_not_awaited()
-            assert not any(call.args and call.args[0] == "response_sent" for call in dp._activity.log.call_args_list)
-            ends = [call for call in dp._activity.log.call_args_list if call.args[0] == "inbox_processing_end"]
+            assert not any(call.args and call.args[0] == "response_sent" for call in dp._activity.alog.call_args_list)
+            ends = [call for call in dp._activity.alog.call_args_list if call.args[0] == "inbox_processing_end"]
             assert ends[-1].kwargs["meta"]["status"] == "failed"
             assert ends[-1].kwargs["meta"]["reason"] == "quota_exhausted"
         finally:
@@ -1610,12 +1615,13 @@ class TestHandleHeartbeatFailure:
             dp._heartbeat_stream_queue = None
 
             mock_activity = MagicMock()
+            mock_activity.alog = AsyncMock()
             dp._activity = mock_activity
 
             await dp._handle_heartbeat_failure(error, [], unread_count=0)
 
-            assert mock_activity.log.call_count == 1
-            end_call = mock_activity.log.call_args_list[0]
+            assert mock_activity.alog.await_count == 1
+            end_call = mock_activity.alog.call_args_list[0]
             assert end_call[0][0] == "heartbeat_end"
             assert "TypeError" in end_call[1]["summary"]
             assert end_call[1]["meta"]["status"] == "failed"

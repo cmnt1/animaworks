@@ -16,6 +16,7 @@ import inspect
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -203,6 +204,7 @@ class PendingTaskExecutor:
         self._wake_event = asyncio.Event()
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
         self._active_task_ids: set[str] = set()
+        self._active_task_ids_lock = threading.Lock()
         self._task_runner_supervisor = task_runner_supervisor
         self._task_isolated = task_runner_supervisor is not None
         self._background_isolated = task_runner_supervisor is not None
@@ -213,6 +215,18 @@ class PendingTaskExecutor:
         """Return a validated pool size while tolerating legacy test doubles."""
         value = getattr(self._anima, "_background_worker_pool_size", 1)
         return value if isinstance(value, int) and 1 <= value <= 10 else 1
+
+    def _is_task_active(self, task_id: str) -> bool:
+        with self._active_task_ids_lock:
+            return task_id in self._active_task_ids
+
+    def _mark_task_active(self, task_id: str) -> None:
+        with self._active_task_ids_lock:
+            self._active_task_ids.add(task_id)
+
+    def _forget_task_active(self, task_id: str) -> None:
+        with self._active_task_ids_lock:
+            self._active_task_ids.discard(task_id)
 
     async def _acquire_worker(self, task_id: str) -> BackgroundWorkerSlot | None:
         acquire = getattr(type(self._anima), "_acquire_background_worker", None)
@@ -239,11 +253,12 @@ class PendingTaskExecutor:
 
     def _next_attempt(self, task_id: str) -> int:
         """Allocate a new attempt number; never reuses a previously claimed one."""
-        previous = self._attempt_by_task_id.get(task_id, 0)
-        # Also inspect any leftover lease so restarts do not reuse attempt.
-        attempt = previous + 1
-        self._attempt_by_task_id[task_id] = attempt
-        return attempt
+        with self._active_task_ids_lock:
+            previous = self._attempt_by_task_id.get(task_id, 0)
+            # Also inspect any leftover lease so restarts do not reuse attempt.
+            attempt = previous + 1
+            self._attempt_by_task_id[task_id] = attempt
+            return attempt
 
     def _should_defer_claim(
         self,
@@ -263,7 +278,7 @@ class PendingTaskExecutor:
             # Non-canonical filename with a duplicated task_id is a genuine
             # duplicate descriptor; let the claim path drop it.
             return False
-        if task_id in self._active_task_ids:
+        if self._is_task_active(task_id):
             return True
         return (processing_dir / pending_path.name).exists()
 
@@ -295,11 +310,13 @@ class PendingTaskExecutor:
         existing = read_processing_lease(processing_path)
         if existing is not None:
             existing_attempt = existing.get("attempt")
+            with self._active_task_ids_lock:
+                previous_attempt = self._attempt_by_task_id.get(task_id)
             if (
                 isinstance(existing_attempt, int)
                 and not isinstance(existing_attempt, bool)
                 and existing_attempt >= 1
-                and self._attempt_by_task_id.get(task_id) == existing_attempt
+                and previous_attempt == existing_attempt
                 and is_processing_lease_live(processing_path, expected_anima=self._anima_name)
             ):
                 logger.warning(
@@ -323,7 +340,11 @@ class PendingTaskExecutor:
                 logger.exception("Failed to drop unleased task: %s", processing_path.name)
             return None
 
-        if task_id in self._active_task_ids:
+        with self._active_task_ids_lock:
+            duplicate = task_id in self._active_task_ids
+            if not duplicate:
+                self._active_task_ids.add(task_id)
+        if duplicate:
             logger.warning("Duplicate task_id claim rejected: %s", task_id)
             try:
                 _unlink_processing_descriptor(processing_path)
@@ -331,8 +352,43 @@ class PendingTaskExecutor:
                 logger.exception("Failed to drop duplicate task: %s", processing_path.name)
             return None
 
-        self._active_task_ids.add(task_id)
         return task_id
+
+    def _claim_pending_task_file(
+        self,
+        path: Path,
+        task_desc: dict[str, Any],
+        processing_dir: Path,
+    ) -> tuple[str, Path] | None:
+        """Move one descriptor and create its lease without blocking the event loop."""
+        if self._should_defer_claim(path, task_desc, processing_dir):
+            return None
+
+        processing_path = processing_dir / path.name
+        try:
+            path.rename(processing_path)
+        except OSError:
+            logger.exception("Failed to move task to processing: %s", path.name)
+            return None
+
+        claimed_task_id = self._claim_processing_task(processing_path, task_desc)
+        if claimed_task_id is None:
+            return None
+        return claimed_task_id, processing_path
+
+    def _restore_pending_claim(self, path: Path, processing_path: Path, task_id: str) -> None:
+        """Undo a file claim if the watcher is cancelled before dispatching it."""
+        try:
+            if path.exists():
+                _unlink_processing_descriptor(processing_path)
+            else:
+                processing_path.rename(path)
+                _remove_processing_lease(processing_path)
+        except OSError:
+            logger.exception("Failed to restore pending task after watcher cancellation: %s", path.name)
+            _remove_processing_lease(processing_path)
+        finally:
+            self._forget_task_active(task_id)
 
     def _display_lane_for_task(self, task_id: str, slot_id: int | None) -> str:
         if slot_id is not None and self._worker_pool_size() > 1:
@@ -369,7 +425,7 @@ class PendingTaskExecutor:
         while True:
             await asyncio.sleep(_PROCESSING_TOUCH_INTERVAL_SECONDS)
             try:
-                os.utime(processing_path, None)
+                await asyncio.to_thread(os.utime, processing_path, None)
             except FileNotFoundError:
                 return
             except OSError:
@@ -396,7 +452,7 @@ class PendingTaskExecutor:
                 logger.warning("Failed to finalize command task file: %s", processing_path, exc_info=True)
             finally:
                 _remove_processing_lease(processing_path)
-                self._active_task_ids.discard(task_id)
+                self._forget_task_active(task_id)
                 self.wake()
 
         background_task.add_done_callback(_done)
@@ -697,6 +753,59 @@ class PendingTaskExecutor:
                     task_id,
                 )
 
+    def _read_pending_task_files(self, pending_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
+        """Read one pending-file snapshot without blocking the event loop."""
+        pending_tasks: list[tuple[Path, dict[str, Any]]] = []
+        for path in self._order_pending_claims(list(pending_dir.glob("*.json"))):
+            try:
+                task_desc = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                logger.warning("Invalid JSON in pending task file: %s", path.name)
+                path.unlink(missing_ok=True)
+                continue
+            except OSError:
+                logger.warning("Could not read pending task file: %s", path.name, exc_info=True)
+                continue
+            if not isinstance(task_desc, dict):
+                logger.warning("Ignoring non-object pending task file: %s", path.name)
+                continue
+            pending_tasks.append((path, task_desc))
+        return pending_tasks
+
+    def _claim_canonical_pending_tasks(self) -> list[dict[str, Any]]:
+        """Recover and claim canonical task inputs with blocking store I/O off-loop."""
+        try:
+            from core.tasks.board.tasks import process_identity
+            from core.tasks.queue import TaskQueueManager
+
+            store = TaskQueueManager(self._anima_dir).store
+            self._recover_task_attempts(store)
+            self._deliver_task_wakeups(store)
+            claims = []
+            for payload in store.pending(self._anima_name):
+                task_desc = store.claim(
+                    self._anima_name,
+                    str(payload["task_id"]),
+                    process_identity(),
+                    max_active=self._worker_pool_size(),
+                )
+                if task_desc is not None:
+                    claims.append(task_desc)
+            return claims
+        except Exception:
+            logger.exception("Error polling canonical tasks for %s", self._anima_name)
+            return []
+
+    def _dispatch_canonical_tasks(self, claims: list[dict[str, Any]]) -> None:
+        for task_desc in claims:
+            task_id = task_desc["task_id"]
+            self._mark_task_active(task_id)
+            dispatch = spawn(
+                self._execute_canonical_task(task_desc),
+                name=f"taskexec-{self._anima_name}-{task_id}",
+            )
+            self._track_dispatch_task(dispatch)
+
     async def watcher_loop(self) -> None:
         """Watch state/background_tasks/pending/ for submitted tasks.
 
@@ -708,47 +817,40 @@ class PendingTaskExecutor:
         File lifecycle: pending/ → processing/ → success: delete | fail: failed/
         """
         pending_dir = self._anima_dir / "state" / "background_tasks" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(pending_dir.mkdir, parents=True, exist_ok=True)
         cmd_processing_dir = pending_dir / "processing"
-        cmd_processing_dir.mkdir(exist_ok=True)
+        await asyncio.to_thread(cmd_processing_dir.mkdir, exist_ok=True)
 
         def _recovered(task_desc: dict[str, Any], reason: str) -> None:
             self._return_task_to_pending(task_desc, reason, stop_kind="crash")
 
-        self._recover_processing(cmd_processing_dir, self._anima_dir, _recovered)
+        await asyncio.to_thread(self._recover_processing, cmd_processing_dir, self._anima_dir, _recovered)
 
         logger.info("Pending task watcher started for %s", self._anima_name)
 
         while not self._shutdown_event.is_set():
             try:
-                # Process command-type pending tasks in arrival order.
-                for path in self._order_pending_claims(list(pending_dir.glob("*.json"))):
+                pending_tasks = await asyncio.to_thread(self._read_pending_task_files, pending_dir)
+                for path, task_desc in pending_tasks:
+                    claim_work = asyncio.create_task(
+                        asyncio.to_thread(self._claim_pending_task_file, path, task_desc, cmd_processing_dir)
+                    )
                     try:
-                        task_desc = json.loads(path.read_text(encoding="utf-8"))
-                    except json.JSONDecodeError:
-                        logger.warning(
-                            "Invalid JSON in pending task file: %s",
-                            path.name,
-                        )
-                        path.unlink(missing_ok=True)
+                        claim = await asyncio.shield(claim_work)
+                    except asyncio.CancelledError:
+                        claim = await claim_work
+                        if claim is not None:
+                            claimed_task_id, processing_path = claim
+                            await asyncio.to_thread(
+                                self._restore_pending_claim,
+                                path,
+                                processing_path,
+                                claimed_task_id,
+                            )
+                        raise
+                    if claim is None:
                         continue
-
-                    if self._should_defer_claim(path, task_desc, cmd_processing_dir):
-                        continue
-
-                    try:
-                        processing_path = cmd_processing_dir / path.name
-                        path.rename(processing_path)
-                    except OSError:
-                        logger.exception(
-                            "Failed to move task to processing: %s",
-                            path.name,
-                        )
-                        continue
-
-                    claimed_task_id = self._claim_processing_task(processing_path, task_desc)
-                    if claimed_task_id is None:
-                        continue
+                    claimed_task_id, processing_path = claim
                     claim_transferred = False
                     try:
                         logger.info(
@@ -770,41 +872,26 @@ class PendingTaskExecutor:
                             )
                             claim_transferred = True
                         else:
-                            _unlink_processing_descriptor(processing_path)
+                            await asyncio.to_thread(_unlink_processing_descriptor, processing_path)
                     except Exception:
                         logger.exception(
                             "Error processing pending task file: %s",
                             path.name,
                         )
-                        processing_path.unlink(missing_ok=True)
+                        await asyncio.to_thread(processing_path.unlink, missing_ok=True)
                     finally:
                         if not claim_transferred:
-                            self._active_task_ids.discard(claimed_task_id)
-                            _remove_processing_lease(processing_path)
+                            self._forget_task_active(claimed_task_id)
+                            await asyncio.to_thread(_remove_processing_lease, processing_path)
 
                 # One canonical claim transaction owns task, input, and attempt.
-                from core.tasks.board.tasks import process_identity
-                from core.tasks.queue import TaskQueueManager
-
-                store = TaskQueueManager(self._anima_dir).store
-                self._recover_task_attempts(store)
-                self._deliver_task_wakeups(store)
-                for payload in store.pending(self._anima_name):
-                    task_desc = store.claim(
-                        self._anima_name,
-                        str(payload["task_id"]),
-                        process_identity(),
-                        max_active=self._worker_pool_size(),
-                    )
-                    if task_desc is None:
-                        continue
-                    task_id = task_desc["task_id"]
-                    self._active_task_ids.add(task_id)
-                    dispatch = spawn(
-                        self._execute_canonical_task(task_desc),
-                        name=f"taskexec-{self._anima_name}-{task_id}",
-                    )
-                    self._track_dispatch_task(dispatch)
+                canonical_poll = asyncio.create_task(asyncio.to_thread(self._claim_canonical_pending_tasks))
+                try:
+                    canonical_claims = await asyncio.shield(canonical_poll)
+                except asyncio.CancelledError:
+                    self._dispatch_canonical_tasks(await canonical_poll)
+                    raise
+                self._dispatch_canonical_tasks(canonical_claims)
 
                 try:
                     await asyncio.wait_for(
@@ -854,7 +941,7 @@ class PendingTaskExecutor:
         from core.tasks.board.tasks import identity_liveness
 
         for attempt in store.active_attempts(self._anima_name):
-            if attempt["task_id"] in self._active_task_ids:
+            if self._is_task_active(attempt["task_id"]):
                 continue
             if identity_liveness(json.loads(attempt["identity_json"])) != "dead":
                 continue
@@ -986,7 +1073,7 @@ class PendingTaskExecutor:
                     result_ref=result_ref if (self._anima_dir / result_ref).is_file() else "",
                     wakeup=not declared_pending,
                 )
-            self._active_task_ids.discard(task_id)
+            self._forget_task_active(task_id)
             self.wake()
 
     async def _watch_canonical_cancel(self, task_id: str, execution: asyncio.Task[Any]) -> None:
@@ -1055,7 +1142,7 @@ class PendingTaskExecutor:
             "attempt": task_desc.get("_attempt_number"),
         }
         activity = ActivityLogger(self._anima_dir)
-        activity.log(
+        await activity.alog(
             "task_exec_start",
             summary=t("pending_executor.task_exec_start", title=title),
             ctx=trigger,
@@ -1068,7 +1155,7 @@ class PendingTaskExecutor:
                 worker_slot=worker_slot,
             )
         except asyncio.CancelledError:
-            activity.log(
+            await activity.alog(
                 "task_exec_end",
                 summary=t("pending_executor.task_exec_end", title=title, result="cancelled"),
                 ctx=trigger,
@@ -1079,7 +1166,7 @@ class PendingTaskExecutor:
             raise
         except Exception as exc:
             error = str(exc).strip()[:200] or type(exc).__name__
-            activity.log(
+            await activity.alog(
                 "task_exec_end",
                 summary=t("pending_executor.task_exec_end", title=title, result=error),
                 ctx=trigger,
@@ -1099,7 +1186,7 @@ class PendingTaskExecutor:
             _SENTINEL_BUDGET_SKIPPED: "budget_skipped",
             _SENTINEL_UNDECLARED: "undeclared",
         }.get(result, "completed")
-        activity.log(
+        await activity.alog(
             "task_exec_end",
             summary=t("pending_executor.task_exec_end", title=title, result=result[:200]),
             ctx=trigger,
@@ -1266,7 +1353,7 @@ class PendingTaskExecutor:
             agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
 
         journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=task_id)
-        journal.open(trigger=trigger)
+        await asyncio.to_thread(journal.open, trigger=trigger)
 
         model_config_override = self._task_model_config_override(task_desc)
 
@@ -1329,7 +1416,7 @@ class PendingTaskExecutor:
                         chunk_type = chunk.get("type")
                         if chunk_type == "text_delta":
                             accumulated_text += chunk.get("text", "")
-                            journal.write_text(chunk.get("text", ""))
+                            await asyncio.to_thread(journal.write_text, chunk.get("text", ""))
                         elif chunk_type == "error":
                             had_error = True
                             error_message = chunk.get("message", "unknown error")
@@ -1355,7 +1442,7 @@ class PendingTaskExecutor:
                             cycle_error_category = str(cycle_result.get("error_category") or "")
                             if cycle_result.get("action") == "error" or stop_kind == "stream_error":
                                 task_failed_reason = result_summary or "task execution failed"
-                            journal.finalize(summary=result_summary[:500])
+                            await asyncio.to_thread(journal.finalize, summary=result_summary[:500])
                 finally:
                     agent.set_task_cwd(None)
                     if (
@@ -1365,7 +1452,7 @@ class PendingTaskExecutor:
                     ):
                         interrupt_events.pop(task_id, None)
         finally:
-            journal.close()
+            await asyncio.to_thread(journal.close)
 
         error_suppressed = False
         if had_error or task_failed_reason:
@@ -1502,7 +1589,7 @@ class PendingTaskExecutor:
                                 exc_info=True,
                             )
                             if hasattr(self._anima, "_activity"):
-                                self._anima._activity.log(
+                                await self._anima._activity.alog(
                                     "error",
                                     content=f"Task completion notification failed: {task_id} → {reply_to}",
                                 )

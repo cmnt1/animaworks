@@ -72,8 +72,9 @@ def _queue_task(executor: PendingTaskExecutor, task_id: str, *, status: str = "i
 def _execution_patches():
     with (
         patch("core.paths.load_prompt", return_value="prompt"),
-        patch("core.memory.activity.logger.ActivityLogger"),
+        patch("core.memory.activity.logger.ActivityLogger") as activity,
     ):
+        activity.return_value.alog = AsyncMock()
         yield
 
 
@@ -380,12 +381,13 @@ async def test_budget_skipped_keeps_queue_pending_and_records_activity(tmp_path:
         patch("core.paths.load_prompt", return_value="prompt"),
         patch("core.memory.activity.logger.ActivityLogger") as activity,
     ):
+        activity.return_value.alog = AsyncMock()
         await executor._execute_llm_task(_task("budget"))
 
     entry = manager.get_task_by_id("budget")
     assert entry is not None
     assert entry.status == "pending"
-    assert activity.return_value.log.call_args_list[-1].kwargs["meta"]["status"] == "budget_skipped"
+    assert activity.return_value.alog.await_args_list[-1].kwargs["meta"]["status"] == "budget_skipped"
 
 
 @pytest.mark.asyncio

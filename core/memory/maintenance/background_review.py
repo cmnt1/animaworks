@@ -536,7 +536,7 @@ async def perform_background_review(
         model,
     )
     try:
-        ActivityLogger(anima_dir).log(
+        await ActivityLogger(anima_dir).alog(
             "background_review",
             summary=f"Background review ({trigger}): wrote {written} item(s)",
             meta={

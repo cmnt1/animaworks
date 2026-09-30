@@ -82,7 +82,7 @@ async def test_injected_user_turn_is_persisted_once(tmp_path: Path) -> None:
         agent=agent,
         _active_chat_conversations={"default": conversation},
         _log_human_conversation=MagicMock(),
-        _activity=MagicMock(),
+        _activity=SimpleNamespace(alog=AsyncMock()),
     )
 
     assert await _inject_chat_message(owner, "steer", from_person="human", thread_id="default") is True
@@ -102,7 +102,7 @@ async def test_declined_injection_rolls_back_user_turn(tmp_path: Path) -> None:
         agent=SimpleNamespace(supports_message_injection=True, inject_message=AsyncMock(return_value=False)),
         _active_chat_conversations={"default": conversation},
         _log_human_conversation=MagicMock(),
-        _activity=MagicMock(),
+        _activity=SimpleNamespace(alog=AsyncMock()),
     )
 
     assert await _inject_chat_message(owner, "not sent", from_person="human", thread_id="default") is False
