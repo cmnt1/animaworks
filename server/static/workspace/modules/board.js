@@ -3,7 +3,7 @@
 
 import { escapeHtml, smartTimestamp } from "./utils.js";
 import { t } from "../../shared/i18n.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 import { getCurrentUser } from "./login.js";
 import { createLogger } from "../../shared/logger.js";
 
@@ -75,13 +75,13 @@ async function loadBoardChannelList() {
   if (!select) return;
 
   try {
-    const [chRes, dmRes] = await Promise.all([
-      fetch(`${basePath}/api/channels`),
-      fetch(`${basePath}/api/dm`),
+    const [channelsResult, dmsResult] = await Promise.allSettled([
+      api("/api/channels"),
+      api("/api/dm"),
     ]);
 
-    _boardChannels = chRes.ok ? await chRes.json() : [];
-    _boardDMs = dmRes.ok ? await dmRes.json() : [];
+    _boardChannels = channelsResult.status === "fulfilled" ? channelsResult.value : [];
+    _boardDMs = dmsResult.status === "fulfilled" ? dmsResult.value : [];
 
     let html = `<option value="">${t("board.select_channel")}</option>`;
 
@@ -128,18 +128,12 @@ async function loadBoardMessages() {
   try {
     let url;
     if (_boardSelectedType === "channel") {
-      url = `${basePath}/api/channels/${encodeURIComponent(_boardSelectedChannel)}?limit=50&offset=0`;
+      url = `/api/channels/${encodeURIComponent(_boardSelectedChannel)}?limit=50&offset=0`;
     } else {
-      url = `${basePath}/api/dm/${encodeURIComponent(_boardSelectedChannel)}?limit=50`;
+      url = `/api/dm/${encodeURIComponent(_boardSelectedChannel)}?limit=50`;
     }
 
-    const res = await fetch(url);
-    if (!res.ok) {
-      messagesEl.innerHTML = `<div class="loading-placeholder">${t("board.load_failed")}</div>`;
-      return;
-    }
-
-    const data = await res.json();
+    const data = await api(url);
     const messages = data.messages || [];
 
     if (messages.length === 0) {
@@ -190,14 +184,11 @@ async function sendBoardMessage() {
   input.value = "";
 
   try {
-    const res = await fetch(`${basePath}/api/channels/${encodeURIComponent(_boardSelectedChannel)}`, {
+    await api(`/api/channels/${encodeURIComponent(_boardSelectedChannel)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, from_name: userName }),
     });
-    if (!res.ok) {
-      logger.error("Failed to send board message", { status: res.status });
-    }
   } catch (err) {
     logger.error("Failed to send board message", { error: err.message });
   }

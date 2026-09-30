@@ -3,7 +3,6 @@ import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { createPageTabs } from "../shared/page-tabs.js";
 import { t } from "/shared/i18n.js";
-import { basePath } from "/shared/base-path.js";
 import { applyTheme, applyDisplayMode, getDisplayMode, applyFontSize, getFontSize } from "../modules/app.js";
 
 const _LS_ACTIVITY  = "aw-activity-level";
@@ -26,7 +25,7 @@ const _TABS = [
  * @param {string} [subPath]
  * @returns {"general"|"activity"|"api"|"users"}
  */
-export function resolveSettingsTab(subPath) {
+function resolveSettingsTab(subPath) {
   const head = String(subPath || "")
     .split("/")
     .filter(Boolean)[0] || "";
@@ -37,7 +36,7 @@ export function resolveSettingsTab(subPath) {
  * @param {string} tabId
  * @returns {string}
  */
-export function buildSettingsTabHash(tabId) {
+function buildSettingsTabHash(tabId) {
   return tabId === "general" || !_TABS.some((tab) => tab.id === tabId)
     ? "#/settings"
     : `#/settings/${tabId}`;
@@ -357,7 +356,7 @@ async function _onModeChange(mode, container) {
   localStorage.removeItem("aw-workspace-view");
 
   try {
-    await fetch(`${basePath}/api/settings/display-mode`, {
+    await api("/api/settings/display-mode", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
@@ -381,18 +380,11 @@ async function _initActivityLevel(container) {
   let level = 100;
   let fromApi = false;
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-level`);
-    if (res.ok) {
-      const data = await res.json();
-      level = data.activity_level || 100;
-      schedule = data.activity_schedule || [];
-      fromApi = true;
-      _cacheActivityState(level, schedule);
-    } else {
-      console.warn("[Settings] GET activity-level failed:", res.status);
-      ({ level, schedule } = _loadCachedActivityState());
-      if (!schedule.length) _showSettingsStatus(container, t("settings.load_error"), true);
-    }
+    const data = await api("/api/settings/activity-level");
+    level = data.activity_level || 100;
+    schedule = data.activity_schedule || [];
+    fromApi = true;
+    _cacheActivityState(level, schedule);
   } catch (err) {
     console.warn("[Settings] GET activity-level error:", err);
     ({ level, schedule } = _loadCachedActivityState());
@@ -469,15 +461,11 @@ function _updatePresetButtons(container, level) {
 async function _setActivityLevel(level, container) {
   _cacheActivityState(level, null);
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-level`, {
+    await api("/api/settings/activity-level", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_level: level }),
     });
-    if (!res.ok) {
-      console.warn("[Settings] PUT activity-level failed:", res.status);
-      _showSettingsStatus(container, t("settings.save_error"), true);
-    }
   } catch (err) {
     console.warn("[Settings] PUT activity-level error:", err);
     _showSettingsStatus(container, t("settings.save_error"), true);
@@ -571,19 +559,11 @@ async function _saveNightMode(container, revertOnFail) {
   _cacheActivityState(dayLevel, schedule);
 
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-schedule`, {
+    await api("/api/settings/activity-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_schedule: schedule }),
     });
-    if (!res.ok) {
-      console.warn("[Settings] PUT activity-schedule failed:", res.status);
-      _showSettingsStatus(container, t("settings.save_error"), true);
-      if (revertOnFail) {
-        _revertNightModeToggle(container, false);
-        _cacheActivityState(dayLevel, []);
-      }
-    }
   } catch (err) {
     console.warn("[Settings] PUT activity-schedule error:", err);
     _showSettingsStatus(container, t("settings.save_error"), true);
@@ -601,19 +581,11 @@ async function _clearNightMode(container) {
   _cacheActivityState(curLevel, []);
 
   try {
-    const res = await fetch(`${basePath}/api/settings/activity-schedule`, {
+    await api("/api/settings/activity-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activity_schedule: [] }),
     });
-    if (!res.ok) {
-      console.warn("[Settings] PUT clear schedule failed:", res.status);
-      if (container) {
-        _showSettingsStatus(container, t("settings.save_error"), true);
-        _revertNightModeToggle(container, true);
-        _cacheActivityState(curLevel, prevSchedule);
-      }
-    }
   } catch (err) {
     console.warn("[Settings] PUT clear schedule error:", err);
     if (container) {
@@ -834,31 +806,25 @@ async function _loadAnthropicAuthSettings() {
       }
 
       try {
-        const saveRes = await fetch(`${basePath}/api/settings/anthropic-auth`, {
+        await api("/api/settings/anthropic-auth", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
           body: JSON.stringify({
             auth_mode: authMode,
             api_key: apiKey,
           }),
         });
-        const saveData = await saveRes.json();
-        if (!saveRes.ok) {
-          result.style.color = "#ef4444";
-          result.textContent = saveData.detail || t("settings.api_auth.anthropic_save_failed");
-          result.classList.remove("hidden");
-          return;
-        }
 
         result.style.color = "#22c55e";
         result.textContent = t("settings.api_auth.anthropic_saved_success");
         result.classList.remove("hidden");
         await _loadApiKeys();
         await _loadAnthropicAuthSettings();
-      } catch {
+      } catch (err) {
         result.style.color = "#ef4444";
-        result.textContent = t("settings.api_auth.network_error");
+        result.textContent = err.status
+          ? err.message || t("settings.api_auth.anthropic_save_failed")
+          : t("settings.api_auth.network_error");
         result.classList.remove("hidden");
       }
     });
@@ -985,31 +951,25 @@ async function _loadOpenAIAuthSettings() {
       }
 
       try {
-        const saveRes = await fetch(`${basePath}/api/settings/openai-auth`, {
+        await api("/api/settings/openai-auth", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
           body: JSON.stringify({
             auth_mode: authMode,
             api_key: apiKey,
           }),
         });
-        const saveData = await saveRes.json();
-        if (!saveRes.ok) {
-          result.style.color = "#ef4444";
-          result.textContent = saveData.detail || t("settings.api_auth.openai_save_failed");
-          result.classList.remove("hidden");
-          return;
-        }
 
         result.style.color = "#22c55e";
         result.textContent = t("settings.api_auth.openai_saved_success");
         result.classList.remove("hidden");
         await _loadApiKeys();
         await _loadOpenAIAuthSettings();
-      } catch {
+      } catch (err) {
         result.style.color = "#ef4444";
-        result.textContent = t("settings.api_auth.network_error");
+        result.textContent = err.status
+          ? err.message || t("settings.api_auth.openai_save_failed")
+          : t("settings.api_auth.network_error");
         result.classList.remove("hidden");
       }
     });

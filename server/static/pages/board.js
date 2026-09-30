@@ -518,7 +518,7 @@ async function _renderChannelMembers(channelName, metaEl) {
 
 async function _saveMembership(channelId, members) {
   try {
-    await fetch(`${basePath}/api/discord/channel-members/${encodeURIComponent(channelId)}`, {
+    await api(`/api/discord/channel-members/${encodeURIComponent(channelId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ members }),

@@ -64,7 +64,7 @@ export function renderWsThreadTabs() {
   if (newBtn) newBtn.addEventListener("click", () => createWsNewThread());
 }
 
-export async function selectWsThread(threadId) {
+async function selectWsThread(threadId) {
   const current = getState().activeThreadId;
   if (threadId === current) return;
 
@@ -97,7 +97,7 @@ export async function selectWsThread(threadId) {
   _refreshSentinel();
 }
 
-export function createWsNewThread() {
+function createWsNewThread() {
   const animaName = getState().conversationAnima;
   if (!animaName) return;
 
@@ -116,7 +116,7 @@ export function createWsNewThread() {
   _refreshSentinel();
 }
 
-export function closeWsThread(threadId) {
+function closeWsThread(threadId) {
   if (threadId === "default") return;
   const animaName = getState().conversationAnima;
   if (!animaName) return;

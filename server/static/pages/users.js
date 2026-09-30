@@ -2,7 +2,6 @@
 import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { t } from "/shared/i18n.js";
-import { basePath } from "/shared/base-path.js";
 
 let _container = null;
 let _currentUser = null;
@@ -181,31 +180,25 @@ function _bindAddUserForm() {
     e.preventDefault();
     const result = document.getElementById("addUserResult");
     try {
-      const res = await fetch(`${basePath}/api/users`, {
+      const data = await api("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
         body: JSON.stringify({
           username: document.getElementById("newUsername").value.trim(),
           password: document.getElementById("newUserPassword").value,
           role: document.getElementById("newUserRole").value || "user",
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        result.textContent = t("users.add_success", { username: data.username });
-        result.style.color = "#22c55e";
-        result.classList.remove("hidden");
-        form.reset();
-        _loadUsers();
-      } else {
-        result.style.color = "#ef4444";
-        result.textContent = data.error || t("users.add_failed");
-        result.classList.remove("hidden");
-      }
-    } catch {
+      result.textContent = t("users.add_success", { username: data.username });
+      result.style.color = "#22c55e";
+      result.classList.remove("hidden");
+      form.reset();
+      _loadUsers();
+    } catch (err) {
       result.style.color = "#ef4444";
-      result.textContent = t("users.network_error");
+      result.textContent = err.status
+        ? err.message || t("users.add_failed")
+        : t("users.network_error");
       result.classList.remove("hidden");
     }
   });
@@ -215,18 +208,12 @@ async function _onDeleteUser(username) {
   if (!username) return;
   if (!confirm(t("users.delete_confirm", { username }))) return;
   try {
-    const res = await fetch(`${basePath}/api/users/${encodeURIComponent(username)}`, {
-      method: "DELETE",
-      credentials: "same-origin",
-    });
-    if (res.ok) {
-      _loadUsers();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error || t("users.delete_failed"));
-    }
-  } catch {
-    alert(t("users.network_error"));
+    await api(`/api/users/${encodeURIComponent(username)}`, { method: "DELETE" });
+    _loadUsers();
+  } catch (err) {
+    alert(err.status
+      ? err.message || t("users.delete_failed")
+      : t("users.network_error"));
   }
 }
 
@@ -250,30 +237,24 @@ function _bindPasswordForm(me) {
 
     try {
       const curPwEl = document.getElementById("currentPassword");
-      const res = await fetch(`${basePath}/api/users/me/password`, {
+      await api("/api/users/me/password", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
         body: JSON.stringify({
           current_password: curPwEl ? curPwEl.value : "",
           new_password: newPw,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        result.textContent = t("users.password_success");
-        result.style.color = "#22c55e";
-        result.classList.remove("hidden");
-        form.reset();
-        if (skipCurrent) setTimeout(() => location.reload(), 1000);
-      } else {
-        result.style.color = "#ef4444";
-        result.textContent = data.error || t("users.password_failed");
-        result.classList.remove("hidden");
-      }
-    } catch {
+      result.textContent = t("users.password_success");
+      result.style.color = "#22c55e";
+      result.classList.remove("hidden");
+      form.reset();
+      if (skipCurrent) setTimeout(() => location.reload(), 1000);
+    } catch (err) {
       result.style.color = "#ef4444";
-      result.textContent = t("users.network_error");
+      result.textContent = err.status
+        ? err.message || t("users.password_failed")
+        : t("users.network_error");
       result.classList.remove("hidden");
     }
   });

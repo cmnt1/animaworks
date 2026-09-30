@@ -1,3 +1,4 @@
+import { api } from "../../../modules/api.js";
 import { drawPixelText } from "./pixel-text.js";
 import { resolveBasePath } from "./scene-layout.js";
 
@@ -39,7 +40,13 @@ function runtimeAssetUrl(file) {
 
 async function fetchRuntimeAsset(file) {
   try {
-    const response = await fetch(runtimeAssetUrl(file), { cache: "no-store" });
+    const response = await api(runtimeAssetUrl(file), {
+      cache: "no-store",
+      rawResponse: true,
+      redirectOnUnauthorized: false,
+      throwOnHttpError: false,
+      logErrors: false,
+    });
     return response.ok ? response : null;
   } catch {
     return null;

@@ -121,7 +121,7 @@ export function clearDraft(animaName, threadId) {
 }
 
 // ── Tab / Thread Helpers ──
-export function getTabEntry(ctx, animaName) {
+function getTabEntry(ctx, animaName) {
   return ctx.state.animaTabs.find(tab => tab.name === animaName) || null;
 }
 
@@ -154,7 +154,7 @@ export function clearUnreadForActiveThread(ctx, animaName, threadId) {
   refreshAnimaUnread(ctx, animaName);
 }
 
-export function isBusinessTheme() {
+function isBusinessTheme() {
   return document.body.classList.contains("mode-realistic");
 }
 
@@ -171,7 +171,7 @@ export function mergeThreadsFromSessions(ctx, animaName, sessionsData) {
 }
 
 // ── Chat UI State Persistence ──
-export function serializeChatUiState(ctx) {
+function serializeChatUiState(ctx) {
   const { animaTabs, threads, activeThreadByAnima, selectedAnima, animaLastAccess } = ctx.state;
   const threadState = {};
   for (const tab of animaTabs) {
@@ -197,7 +197,7 @@ export function serializeChatUiState(ctx) {
   };
 }
 
-export async function saveChatUiStateNow(ctx) {
+async function saveChatUiStateNow(ctx) {
   try {
     await ctx.deps.api("/api/chat/ui-state", {
       method: "PUT",

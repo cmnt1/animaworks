@@ -1,5 +1,6 @@
 /* ── Step 4: Confirmation ──────────────────── */
 
+import { api } from "../../modules/api.js";
 import { basePath } from "/shared/base-path.js";
 import { t, goToStep } from "../setup.js";
 import { LANGUAGES } from "./language.js";
@@ -152,16 +153,11 @@ export async function completeSetup(data) {
   }
 
   try {
-    const res = await fetch(`${basePath}/api/setup/complete`, {
+    await api("/api/setup/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || t("confirm.error"));
-    }
 
     // Persist username to localStorage so the dashboard auto-logs in
     if (data.userinfo?.username) {

@@ -135,7 +135,7 @@ export function closeConversation() {
   wsHidePendingIndicator();
 }
 
-export function isConvStreaming() {
+function isConvStreaming() {
   const animaName = getState().conversationAnima;
   if (!animaName) return false;
   return ChatSessionManager.getInstance().isStreamingForAnima(animaName);

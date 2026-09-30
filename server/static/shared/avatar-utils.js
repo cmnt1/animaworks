@@ -48,7 +48,7 @@ export function companyColor(company) {
  * @param {string|null|undefined} model
  * @returns {string}
  */
-export function shortModel(model) {
+function shortModel(model) {
   if (!model) return "";
   return String(model)
     .replace(/^(openai|google|vertex_ai|azure|ollama|bedrock)\//, "")

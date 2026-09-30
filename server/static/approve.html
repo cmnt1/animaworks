@@ -130,8 +130,14 @@
             const comment = decision === 'comment' ? document.getElementById('comment-text').value : '';
 
             try {
-                const res = await fetch(`/api/approve/${ctx.callback_id}`, {
+                const marker = '/api/approve/';
+                const markerIndex = window.location.pathname.indexOf(marker);
+                const apiPrefix = markerIndex > 0 ? window.location.pathname.slice(0, markerIndex) : '';
+                const { api } = await import(`${apiPrefix}/modules/api.js`);
+                await api(`${apiPrefix}/api/approve/${encodeURIComponent(ctx.callback_id)}`, {
                     method: 'POST',
+                    logErrors: false,
+                    redirectOnUnauthorized: false,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         token: ctx.token,
@@ -140,11 +146,6 @@
                         actor: 'web_user',
                     }),
                 });
-
-                if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    throw new Error(data.detail || `HTTP ${res.status}`);
-                }
 
                 const resultIcons = { approve: '✅', reject: '❌', comment: '💬' };
                 document.getElementById('form-view').style.display = 'none';

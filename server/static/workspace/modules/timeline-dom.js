@@ -18,25 +18,6 @@ import { resolveEventPersons } from "./activity-normalize.js";
 
 const _avatarUrlPromises = new Map();
 
-// ── Time formatting ────────────────────────────────
-
-/**
- * Format an ISO timestamp to HH:MM for display.
- * @param {string} isoString
- * @returns {string}
- */
-export function formatTime(isoString) {
-  if (!isoString) return "--:--";
-  try {
-    const d = new Date(isoString);
-    const h = d.getHours().toString().padStart(2, "0");
-    const m = d.getMinutes().toString().padStart(2, "0");
-    return `${h}:${m}`;
-  } catch {
-    return "--:--";
-  }
-}
-
 /**
  * Extract from/to person names and text from an event,
  * handling both WS format (meta.from_person) and API format (top-level from_person).

@@ -1,4 +1,5 @@
 // Reuse Pixel's WebSocket transport (ping/pong, backoff, base path, cleanup).
+import { api } from "../../modules/api.js";
 import { LiveClient } from '../../workspace/pixel/modules/live.js';
 
 export class BattleLiveClient extends LiveClient {
@@ -32,13 +33,11 @@ export class BattleLiveClient extends LiveClient {
     const timeout = setTimeout(() => this.controller?.abort(), 12000);
     const revision = this.taskRevision;
     try {
-      const get = async path => {
-        const response = await fetch(`${this.basePath}${path}`, {
-          headers: { Accept: 'application/json' }, signal: this.controller.signal, cache: 'no-store',
-        });
-        if (!response.ok) throw new Error(String(response.status));
-        return response.json();
-      };
+      const get = (path) => api(path, {
+        headers: { Accept: "application/json" },
+        signal: this.controller.signal,
+        cache: "no-store",
+      });
       const results = await Promise.allSettled([get('/api/animas'), get('/api/task-board')]);
       if (this.stopped) return;
       const [roster, tasks] = results;

@@ -622,14 +622,15 @@ function _renderUsageError(provider, data, msg) {
 }
 
 async function _runUsageRelogin(provider) {
-  const path = provider === "claude" ? `${basePath}/api/usage/claude/relogin` : `${basePath}/api/usage/openai/relogin`;
+  const path = provider === "claude" ? "/api/usage/claude/relogin" : "/api/usage/openai/relogin";
   try {
-    const res = await fetch(path, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-    });
-    const data = await res.json().catch(() => ({}));
+    let data;
+    try {
+      data = await api(path, { method: "POST", headers: { "Content-Type": "application/json" } });
+    } catch (err) {
+      if (!err.payload) throw err;
+      data = err.payload;
+    }
 
     if (provider === "openai" && data.login_url) {
       window.open(data.login_url, "_blank", "noopener,noreferrer");
@@ -643,7 +644,7 @@ async function _runUsageRelogin(provider) {
       lines.push("");
       lines.push(`Terminal: ${data.manual_command}`);
     }
-    alert(lines.join("\n") || (res.ok ? "Done" : "Failed"));
+    alert(lines.join("\n") || (data.success ? "Done" : "Failed"));
   } catch (err) {
     alert(err.message || "Failed");
   }
@@ -745,12 +746,16 @@ async function _loadUsage(forceRefresh = false) {
     // then retry once before showing the error
     if (data.claude?.error === "rate_limited") {
       try {
-        const reloginRes = await fetch(`${basePath}/api/usage/claude/relogin`, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-        });
-        const reloginData = await reloginRes.json().catch(() => ({}));
+        let reloginData;
+        try {
+          reloginData = await api("/api/usage/claude/relogin", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        } catch (err) {
+          if (!err.payload) throw err;
+          reloginData = err.payload;
+        }
         if (reloginData.success) {
           // Token refreshed — retry usage fetch (skip_cache)
           const retry = await api("/api/usage?skip_cache=true");
