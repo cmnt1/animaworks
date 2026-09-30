@@ -48,7 +48,7 @@ export function createThread(threadList, _animaName) {
  * @param {string} threadId
  * @returns {Array} Updated list with thread marked archived
  */
-export function archiveThread(threadList, threadId) {
+function archiveThread(threadList, threadId) {
   if (threadId === "default") return threadList;
   return threadList.map(th => th.id === threadId ? { ...th, archived: true } : th);
 }

@@ -320,7 +320,7 @@ export function initBustup(canvas) {
  * Stop rendering and clean up all resources.
  * Safe to call multiple times.
  */
-export function disposeBustup() {
+function disposeBustup() {
   if (_resizeObserver) {
     _resizeObserver.disconnect();
     _resizeObserver = null;
@@ -480,6 +480,6 @@ export function onClick(callback) {
  * Return the canvas element being used for rendering.
  * @returns {HTMLCanvasElement|null}
  */
-export function getCanvas() {
+function getCanvas() {
   return _canvas;
 }

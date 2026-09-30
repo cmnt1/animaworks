@@ -1,7 +1,9 @@
+import { api } from "../../../modules/api.js";
+
 const TEMPLATE_URL = new URL("../assets/scene.json", import.meta.url);
 const HUMAN_ID = "human";
-export const LOGICAL_CANVAS_WIDTH = 1120;
-export const LOGICAL_CANVAS_HEIGHT = 736;
+const LOGICAL_CANVAS_WIDTH = 1120;
+const LOGICAL_CANVAS_HEIGHT = 736;
 
 export function resolveBasePath() {
   const configured = document.querySelector('meta[name="aw-base-path"]')?.content || "";
@@ -207,7 +209,7 @@ export function sampleAnimas(count = 12) {
   }));
 }
 
-export function generateScene(animas, template) {
+function generateScene(animas, template) {
   const members = normalizedAnimas(animas);
   const groups = companyGroups(members);
   if (!groups.length) return generateScene(sampleAnimas(), template);
@@ -440,17 +442,16 @@ export async function loadScene(animas) {
   const templateResponse = await fetch(TEMPLATE_URL, { cache: "no-store" });
   if (!templateResponse.ok) throw new Error(`scene template: HTTP ${templateResponse.status}`);
   const template = await templateResponse.json();
-  let response;
   try {
-    response = await fetch(`${resolveBasePath()}/api/workspace/pixel/scene`, {
+    const scene = await api("/api/workspace/pixel/scene", {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
+    return normalizeRuntimeScene(scene);
   } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
-    return generateScene(animas, template);
+    if (error instanceof TypeError || error.status === 404) {
+      return generateScene(animas, template);
+    }
+    throw error;
   }
-  if (response.ok) return normalizeRuntimeScene(await response.json());
-  if (response.status !== 404) throw new Error(`runtime scene: HTTP ${response.status}`);
-  return generateScene(animas, template);
 }

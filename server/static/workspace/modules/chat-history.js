@@ -134,7 +134,7 @@ export async function loadAndRenderConvMessages(animaName, { resumeStream }) {
 
 // ── Infinite Scroll ──────────────────────
 
-export function setupScrollObserver() {
+function setupScrollObserver() {
   const dom = _getDom();
   if (_scrollObserver) _scrollObserver.disconnect();
   if (!dom.convMessages) return;

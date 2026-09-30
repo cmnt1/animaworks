@@ -5,6 +5,7 @@
  * If the asset doesn't exist, callers should show the initial placeholder.
  */
 
+import { api } from "./api.js";
 import { invalidateCache } from "./image-cache.js";
 import { basePath } from "/shared/base-path.js";
 
@@ -61,13 +62,20 @@ export function assetUrl(animaName, filename) {
  * @param {string[]} candidates - list of filenames to try
  * @returns {Promise<string|null>}
  */
-export async function resolveAvatar(animaName, candidates) {
+async function resolveAvatar(animaName, candidates) {
   if (_headProbeCache.has(animaName)) return _headProbeCache.get(animaName);
 
   for (const filename of candidates) {
     const url = assetUrl(animaName, filename);
     try {
-      const resp = await fetch(url, { method: "HEAD" });
+      const resp = await api(url, {
+        method: "HEAD",
+        cache: "default",
+        rawResponse: true,
+        redirectOnUnauthorized: false,
+        throwOnHttpError: false,
+        logErrors: false,
+      });
       if (resp.ok) {
         _headProbeCache.set(animaName, url);
         const validator = resp.headers.get("etag") || resp.headers.get("last-modified") || "";

@@ -1,6 +1,14 @@
 /* ── State & DOM refs ──────────────────────── */
 
 import { basePath } from "/shared/base-path.js";
+import {
+  escapeAttr,
+  escapeHtml,
+  nowTimeStr,
+  smartTimestamp,
+  timeStr,
+} from "/shared/html-utils.js";
+export { escapeAttr, escapeHtml, nowTimeStr, smartTimestamp, timeStr };
 
 export const state = {
   uiTheme: "default",
@@ -32,46 +40,6 @@ export const dom = {
 };
 
 // ── Helpers ────────────────────────────────
-
-export function timeStr(isoOrTs) {
-  if (!isoOrTs) return "--:--";
-  const d = new Date(isoOrTs);
-  if (isNaN(d.getTime())) return "--:--";
-  return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-}
-
-export function nowTimeStr() {
-  return new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-export function smartTimestamp(isoOrTs) {
-  if (!isoOrTs) return "";
-  const d = new Date(isoOrTs);
-  if (isNaN(d.getTime())) return "";
-  const now = new Date();
-  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) return time;
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (d.getFullYear() === now.getFullYear()) return `${mm}/${dd} ${time}`;
-  return `${d.getFullYear()}/${mm}/${dd} ${time}`;
-}
-
-export function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-export function escapeAttr(str) {
-  if (!str) return "";
-  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 export function statusClass(status) {
   if (!status) return "status-offline";

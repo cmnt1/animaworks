@@ -8,7 +8,7 @@
 
 import { normalizeEvent } from "../../shared/activity-types.js";
 import { t } from "/shared/i18n.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 
 // ── Pagination state ───────────────────────────────
 
@@ -65,9 +65,7 @@ function _normalizeRawEvents(rawEvents) {
 export async function fetchHistory(hours = 48) {
   _currentHours = hours;
   try {
-    const res = await fetch(`${basePath}/api/activity/recent?hours=${hours}&limit=200&offset=0`);
-    if (!res.ok) return { events: [], hasMore: false, total: 0 };
-    const data = await res.json();
+    const data = await api(`/api/activity/recent?hours=${hours}&limit=200&offset=0`);
     const rawEvents = data.events || [];
 
     _currentOffset = rawEvents.length;
@@ -97,9 +95,7 @@ export async function fetchMore() {
     btn.disabled = true;
   }
   try {
-    const res = await fetch(`${basePath}/api/activity/recent?hours=${_currentHours}&limit=200&offset=${_currentOffset}`);
-    if (!res.ok) return { events: [], hasMore: _hasMore, total: _totalCount };
-    const data = await res.json();
+    const data = await api(`/api/activity/recent?hours=${_currentHours}&limit=200&offset=${_currentOffset}`);
     const rawEvents = data.events || [];
 
     _hasMore = data.has_more || false;

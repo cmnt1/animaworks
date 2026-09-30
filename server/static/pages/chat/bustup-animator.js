@@ -12,6 +12,7 @@
  *   - nextMouthState(state, rms, now): 口パクのヒステリシス+最短保持
  */
 
+import { api } from "../../modules/api.js";
 import {
   assetUrl,
   bustupExpressionCandidates,
@@ -117,7 +118,14 @@ async function hasFrameSet(animaName, expr) {
   const url = assetUrl(animaName, frameFileFor(expr, "neutral"));
   let exists = false;
   try {
-    const resp = await fetch(url, { method: "HEAD" });
+    const resp = await api(url, {
+      method: "HEAD",
+      cache: "default",
+      rawResponse: true,
+      redirectOnUnauthorized: false,
+      throwOnHttpError: false,
+      logErrors: false,
+    });
     exists = resp.ok;
   } catch {
     exists = false;

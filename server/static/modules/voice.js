@@ -18,7 +18,7 @@ const VAD_FRAME_MS = 32;
 // Resume playback if the server never returns a probe verdict.
 const BARGE_PROBE_TIMEOUT_MS = 2000;
 
-export function accumulateBargeMs(prevMs, probability, frameMs) {
+function accumulateBargeMs(prevMs, probability, frameMs) {
   return probability >= BARGE_PROB_THRESHOLD ? prevMs + frameMs : prevMs;
 }
 

@@ -1,6 +1,7 @@
 /* ── Step 2: Environment + API Keys ───────── */
 
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
+import { escapeAttr, escapeHtml } from "/shared/html-utils.js";
 import { t } from "../setup.js";
 
 let container = null;
@@ -48,9 +49,7 @@ export function initEnvironmentStep(el) {
 
 async function fetchEnvironment() {
   try {
-    const res = await fetch(`${basePath}/api/setup/environment`);
-    if (!res.ok) return;
-    envData = { ...envData, ...(await res.json()) };
+    envData = { ...envData, ...(await api("/api/setup/environment")) };
 
     if (!selectedProvider) {
       if (envData.claude_code_authenticated) selectedProvider = "claude_code";
@@ -414,12 +413,11 @@ function bindEvents() {
 }
 
 async function postValidation(payload) {
-  const res = await fetch(`${basePath}/api/setup/validate-key`, {
+  return api("/api/setup/validate-key", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return res.json();
 }
 
 async function validateApiKey() {
@@ -475,8 +473,10 @@ async function startCodexBrowserLogin() {
   if (!infoEl) return;
   infoEl.innerHTML = `<div class="validation-status checking"><span class="loading-spinner"></span> ${t("btn.validating")}</div>`;
   try {
-    const res = await fetch(`${basePath}/api/setup/codex/device-login`, { method: "POST", headers: { "Content-Type": "application/json" } });
-    codexDeviceLogin = await res.json();
+    codexDeviceLogin = await api("/api/setup/codex/device-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
     if (codexDeviceLogin.login_url) window.open(codexDeviceLogin.login_url, "_blank", "noopener,noreferrer");
     infoEl.innerHTML = renderCodexDeviceLoginInfo();
   } catch {
@@ -583,12 +583,4 @@ export function getEnvironmentData() {
 
 function formatInlineCode(text) {
   return text.replace(/`([^`]+)`/g, "<code>$1</code>");
-}
-
-function escapeAttr(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function escapeHtml(s) {
-  return escapeAttr(String(s));
 }

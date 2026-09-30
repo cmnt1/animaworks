@@ -350,7 +350,7 @@ function findPath(start, goal, blocked, scene) {
   return [start, goal];
 }
 
-export class Actor {
+class Actor {
   constructor(id, definition, homeTile, tileSize, seatPosition, assets, metadata = {}) {
     this.id = id;
     this.company = metadata.company || "default";
@@ -1166,4 +1166,4 @@ export class ActorManager {
   }
 }
 
-export { normalizeState, findPath, WORK_KINDS };
+export { findPath, WORK_KINDS };

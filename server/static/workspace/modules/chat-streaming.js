@@ -530,7 +530,7 @@ export function wsUpdateSendButton(isStreaming) {
   else { dom.convSend.innerHTML = _ICONS.stop; dom.convSend.classList.add("stop"); dom.convSend.disabled = false; }
 }
 
-export function wsShowPendingIndicator() {
+function wsShowPendingIndicator() {
   const dom = _getDom();
   const { anima, thread } = _animaThread();
   if (!anima) return;
@@ -571,7 +571,7 @@ export function wsHidePendingIndicator() {
   if (dom.convPending) dom.convPending.style.display = "none";
 }
 
-export function wsStopStreaming() {
+function wsStopStreaming() {
   const animaName = getState().conversationAnima;
   if (!animaName) return;
   _mgr().stopStreaming(animaName);

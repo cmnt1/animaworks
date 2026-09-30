@@ -3,6 +3,7 @@
    ============================================ */
 
 import { initI18n, applyTranslations, t } from "/shared/i18n.js";
+import { api } from "./api.js";
 import { basePath } from "/shared/base-path.js";
 import { state } from "./state.js";
 import { connectWebSocket } from "./websocket.js";
@@ -83,12 +84,9 @@ async function initTheme() {
 
   let serverTheme = "default";
   try {
-    const resp = await fetch(`${basePath}/api/system/config`);
-    if (resp.ok) {
-      const cfg = await resp.json();
-      if (cfg?.ui?.theme) {
-        serverTheme = cfg.ui.theme;
-      }
+    const cfg = await api("/api/system/config", { redirectOnUnauthorized: false });
+    if (cfg?.ui?.theme) {
+      serverTheme = cfg.ui.theme;
     }
   } catch { /* ignore */ }
 
@@ -105,13 +103,8 @@ import { initRouter } from "./router.js";
 
 async function initDemoMode() {
   try {
-    const resp = await fetch(`${basePath}/api/system/config`);
-    if (resp.ok) {
-      const cfg = await resp.json();
-      state.demoMode = cfg?.ui?.demo_mode === true;
-    } else {
-      state.demoMode = false;
-    }
+    const cfg = await api("/api/system/config");
+    state.demoMode = cfg?.ui?.demo_mode === true;
   } catch {
     state.demoMode = false;
   }

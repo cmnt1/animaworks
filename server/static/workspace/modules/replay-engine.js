@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from "../../shared/logger.js";
-import { basePath } from "/shared/base-path.js";
+import { api } from "../../modules/api.js";
 import { eventTimeMs, normalizeActivityEvent } from "./activity-normalize.js";
 
 const logger = createLogger("replay-engine");
@@ -191,10 +191,7 @@ export class ReplayEngine {
           grouped: "true",
           semantic: "true",
         });
-        const res = await fetch(`${basePath}/api/activity/recent?${params.toString()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const data = await res.json();
+        const data = await api(`/api/activity/recent?${params.toString()}`);
         const pageEvents = data.events || [];
         const total = Number(data.raw_total || data.total || 0);
         if (total > MAX_REPLAY_EVENTS || raw.length + pageEvents.length > MAX_REPLAY_EVENTS) {

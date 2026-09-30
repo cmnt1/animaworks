@@ -82,7 +82,7 @@ function loginAs(username) {
 /**
  * Render the login UI into the given container element.
  */
-export function showLogin(container) {
+function showLogin(container) {
   _container = container || _container;
   if (!_container) return;
   renderLoginScreen();
@@ -95,7 +95,7 @@ export function showLogin(container) {
 /**
  * Hide the login screen overlay.
  */
-export function hideLogin() {
+function hideLogin() {
   if (!_container) return;
   const screen = _container.querySelector("#wsLoginScreen");
   if (screen) {

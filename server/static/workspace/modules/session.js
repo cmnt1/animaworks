@@ -3,16 +3,10 @@
 
 import { getState, setState } from "./state.js";
 import * as api from "./api.js";
-import { escapeHtml, renderSimpleMarkdown, timeStr } from "./utils.js";
+import { escapeAttr, escapeHtml, renderSimpleMarkdown, timeStr } from "./utils.js";
 import { t } from "/shared/i18n.js";
 
 const TOOL_RESULT_TRUNCATE = 500;
-
-function _escapeAttr(str) {
-  if (!str) return "";
-  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
-            .replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 // Container reference for async operations
 let _container = null;
@@ -66,7 +60,7 @@ function _messageMeta(turn) {
 // ── Render ──────────────────────
 
 /** Build the session panel DOM inside the given container. */
-export function renderSessionList(container) {
+function renderSessionList(container) {
   _container = container;
 
   container.innerHTML = `

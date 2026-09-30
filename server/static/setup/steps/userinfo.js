@@ -1,6 +1,7 @@
 /* ── Step 2: User Information ────────────── */
 
 import { t } from "../setup.js";
+import { escapeAttr } from "/shared/html-utils.js";
 
 let container = null;
 let username = "";
@@ -85,8 +86,4 @@ export function getUserInfoData() {
     display_name: displayName,
     bio: bio,
   };
-}
-
-function escapeAttr(s) {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
