@@ -12,7 +12,6 @@ import time
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from core.config.models import read_anima_company_checked
 from core.memory.facts.observability import warn_rate_limited
@@ -467,7 +466,7 @@ class RAGMemorySearch:
         return self._indexer
 
     def _get_retriever(self, indexer, knowledge_dir: Path):
-        """Reuse the retriever so its loaded graph survives across searches."""
+        """Reuse the retriever instance across searches."""
         from core.memory.rag.retriever import MemoryRetriever
 
         if (
@@ -504,9 +503,6 @@ class RAGMemorySearch:
         """
         offset = max(0, min(offset, 50))
         self._last_search_meta = {}
-        if self._retriever is not None:
-            self._retriever.clear_search_cache()
-
         if scope == "activity_log":
             if search_activity_log is None:
                 return []
@@ -607,7 +603,6 @@ class RAGMemorySearch:
             "cross_encoder_model",
             "confidence_threshold",
             "rrf_confidence_threshold",
-            "enable_spreading_activation",
         }
         try:
             from core.config import load_config
@@ -618,89 +613,6 @@ class RAGMemorySearch:
             rag = RAGConfig()
 
         return rag.model_dump(include=setting_keys.intersection(RAGConfig.model_fields))
-
-    def _graph_episodes_search(
-        self,
-        query: str,
-        pool_k: int,
-        knowledge_dir: Path,
-        *,
-        embedding: list[float] | None = None,
-        indexer: Any | None = None,
-        access_batch=None,
-    ) -> list[dict]:
-        """Episodes vector search with graph spreading activation."""
-        if not self._load_rag_pipeline_settings().get("enable_spreading_activation", True):
-            return []
-        if indexer is None:
-            indexer = self._get_indexer()
-        if indexer is None:
-            return []
-
-        anima_name = self._anima_dir.name
-        retriever = self._get_retriever(indexer, knowledge_dir)
-        try:
-            saved = access_batch.take_episode_graph_results(query, pool_k) if access_batch is not None else None
-            if saved is not None:
-                results, already_expanded = saved
-                rag_results = results if already_expanded else retriever.expand_search_results(results, anima_name)
-            else:
-                rag_results = retriever.search(
-                    query=query,
-                    anima_name=anima_name,
-                    memory_type="episodes",
-                    top_k=pool_k,
-                    enable_spreading_activation=True,
-                    embedding=embedding,
-                    access_batch=access_batch,
-                )
-        except Exception:
-            logger.debug("graph episodes search failed", exc_info=True)
-            return []
-
-        out: list[dict] = []
-        for r in rag_results:
-            meta = r.metadata if isinstance(r.metadata, dict) else {}
-            item = {
-                "doc_id": r.doc_id,
-                "source_file": meta.get("source_file", r.doc_id),
-                "content": r.content,
-                "score": r.score,
-                "chunk_index": int(meta.get("chunk_index", 0)),
-                "total_chunks": int(meta.get("total_chunks", 1)),
-                "memory_type": str(meta.get("memory_type", "episodes") or "episodes"),
-                "search_method": "vector_graph",
-            }
-            for key in (
-                "fact_id",
-                "edge_type",
-                "source_entity",
-                "target_entity",
-                "valid_at_iso",
-                "valid_at",
-                "event_time_iso",
-                "event_time_text",
-                "event_time_parse_error",
-                "valid_until",
-                "source_episode",
-                "source_session_id",
-                "access_count",
-                "retrieved_count",
-                "used_count",
-                "last_accessed_at",
-                "last_retrieved_at",
-                "last_used_at",
-                "anima",
-                "created_at",
-                "updated_at",
-                "recorded_at",
-                "origin",
-                "confidence",
-            ):
-                if key in meta:
-                    item[key] = meta[key]
-            out.append(item)
-        return out
 
     def _vector_search_primary(
         self,

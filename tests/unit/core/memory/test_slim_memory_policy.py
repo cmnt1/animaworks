@@ -338,15 +338,3 @@ async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
     assert second.action == "skipped"
     generation_calls = [call for call in llm.await_args_list if not call.kwargs.get("structured_output")]
     assert len(generation_calls) == 1
-
-
-def test_explicit_graph_disable_skips_indexer_creation(tmp_path: Path):
-    from core.memory.retrieval.rag_search import RAGMemorySearch
-
-    search = RAGMemorySearch(tmp_path, tmp_path / "common_knowledge", tmp_path / "common_skills")
-    with (
-        patch.object(search, "_load_rag_pipeline_settings", return_value={"enable_spreading_activation": False}),
-        patch.object(search, "_get_indexer") as indexer,
-    ):
-        assert search._graph_episodes_search("query", 10, tmp_path / "knowledge") == []
-    indexer.assert_not_called()

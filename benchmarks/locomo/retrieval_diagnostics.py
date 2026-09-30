@@ -98,7 +98,6 @@ def run_retrieval_diagnostics(
     mode: str,
     top_k: int,
     ceiling_top_k: int,
-    entity_aware_graph: bool = False,
     fact_index: bool | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Run retrieval-only LoCoMo diagnostics and return results plus error count."""
@@ -106,10 +105,7 @@ def run_retrieval_diagnostics(
     errors = 0
     adapter = AnimaWorksLoCoMoAdapter(search_mode=mode, top_k=top_k)
     try:
-        with _temporary_ablation_features(
-            entity_aware_graph=entity_aware_graph,
-            fact_index=fact_index,
-        ):
+        with _temporary_fact_index(fact_index):
             for sample_index, sample in enumerate(samples):
                 sample_id = str(sample.get("sample_id", f"conv-{sample_index}"))
                 print(f"\n[{sample_index + 1}/{len(samples)}] retrieval | {sample_id}")
@@ -198,12 +194,9 @@ def write_diagnostics_json(
     conversations: int,
     top_k: int,
     ceiling_top_k: int,
-    entity_aware_graph: bool = False,
     summary: dict[str, Any],
     results: list[dict[str, Any]],
     errors: int,
-    entity_aware_graph_ablation: dict[str, Any] | None = None,
-    feature_on_ablation: dict[str, Any] | None = None,
     fact_index: bool = False,
     fact_ablation: dict[str, Any] | None = None,
 ) -> Path:
@@ -216,17 +209,12 @@ def write_diagnostics_json(
             "conversations": conversations,
             "top_k": top_k,
             "ceiling_top_k": ceiling_top_k,
-            "entity_aware_graph": entity_aware_graph,
             "fact_index": fact_index,
         },
         "summary": summary,
         "results": results,
         "errors": errors,
     }
-    if entity_aware_graph_ablation is not None:
-        payload["entity_aware_graph_ablation"] = entity_aware_graph_ablation
-    if feature_on_ablation is not None:
-        payload["feature_on_ablation"] = feature_on_ablation
     if fact_ablation is not None:
         payload["fact_ablation"] = fact_ablation
 
@@ -294,73 +282,8 @@ def _ablation_delta(base: dict[str, Any], boosted: dict[str, Any]) -> dict[str, 
     return delta
 
 
-def _per_question_deltas(
-    base_results: list[dict[str, Any]],
-    boosted_results: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Return per-question retrieval deltas for common diagnostics rows."""
-    base_by_key = {_question_key(row): row for row in base_results}
-    boosted_by_key = {_question_key(row): row for row in boosted_results}
-    rows: list[dict[str, Any]] = []
-    for key in sorted(set(base_by_key) & set(boosted_by_key)):
-        base = base_by_key[key]
-        boosted = boosted_by_key[key]
-        category = int(boosted.get("category", base.get("category", 0)) or 0)
-        if category == 5:
-            continue
-        recall_10_delta = _numeric_delta(
-            base.get("answer_token_recall_at_10"),
-            boosted.get("answer_token_recall_at_10"),
-        )
-        recall_50_delta = _numeric_delta(
-            base.get("answer_token_recall_at_50"),
-            boosted.get("answer_token_recall_at_50"),
-        )
-        rows.append(
-            {
-                "sample_id": key[0],
-                "question_index": key[1],
-                "category": category,
-                "category_name": CATEGORY_NAMES.get(category, str(category)),
-                "question": key[2],
-                "reference": str(boosted.get("reference", base.get("reference", "")) or ""),
-                "answer_token_recall_at_10_delta": recall_10_delta,
-                "answer_token_recall_at_50_delta": recall_50_delta,
-                "base_top_memory_type": str(base.get("top_memory_type", "") or ""),
-                "boosted_top_memory_type": str(boosted.get("top_memory_type", "") or ""),
-            },
-        )
-    rows.sort(
-        key=lambda row: (row["answer_token_recall_at_10_delta"] is None, row["answer_token_recall_at_10_delta"] or 0.0)
-    )
-    return rows
-
-
-def _question_key(row: dict[str, Any]) -> tuple[str, int, str]:
-    return (
-        str(row.get("sample_id", "") or ""),
-        int(row.get("question_index", 0) or 0),
-        str(row.get("question", "") or ""),
-    )
-
-
 def _numeric_delta(base: Any, boosted: Any) -> float | None:
     return None if base is None or boosted is None else float(boosted) - float(base)
-
-
-@contextmanager
-def _temporary_entity_aware_graph(enabled: bool) -> Iterator[None]:
-    import core.config as core_config
-
-    config = core_config.load_config()
-    previous = config.rag.entity_aware_graph_enabled
-    config.rag.entity_aware_graph_enabled = enabled
-    core_config.save_config(config)
-    try:
-        yield
-    finally:
-        config.rag.entity_aware_graph_enabled = previous
-        core_config.save_config(config)
 
 
 @contextmanager
@@ -369,19 +292,6 @@ def _temporary_fact_index(enabled: bool | None) -> Iterator[None]:
         yield
         return
     with _temporary_env_flag("LOCOMO_FACT_INDEX", enabled):
-        yield
-
-
-@contextmanager
-def _temporary_ablation_features(
-    *,
-    entity_aware_graph: bool,
-    fact_index: bool | None,
-) -> Iterator[None]:
-    with (
-        _temporary_entity_aware_graph(entity_aware_graph),
-        _temporary_fact_index(fact_index),
-    ):
         yield
 
 
@@ -409,8 +319,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--conversations", type=int, default=1)
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--ceiling-top-k", type=int, default=50)
-    parser.add_argument("--entity-aware-graph-ablation", action="store_true")
-    parser.add_argument("--feature-on-ablation", action="store_true")
     parser.add_argument("--fact-ablation", action="store_true")
     return parser.parse_args(argv)
 
@@ -422,9 +330,7 @@ def main(argv: list[str] | None = None) -> int:
 
     data_path = args.data if args.data.is_absolute() else (_ROOT / args.data).resolve()
     samples = load_dataset(data_path)[: max(0, int(args.conversations))]
-    primary_fact_index = locomo_fact_index_enabled()
-    if args.fact_ablation or args.feature_on_ablation:
-        primary_fact_index = False
+    primary_fact_index = locomo_fact_index_enabled() and not args.fact_ablation
 
     started = time.perf_counter()
     results, errors = run_retrieval_diagnostics(
@@ -432,39 +338,17 @@ def main(argv: list[str] | None = None) -> int:
         mode=str(args.mode),
         top_k=int(args.top_k),
         ceiling_top_k=int(args.ceiling_top_k),
-        entity_aware_graph=False,
         fact_index=primary_fact_index,
     )
     summary = summarize_results(results)
 
-    entity_aware_graph_ablation: dict[str, Any] | None = None
-    feature_on_ablation: dict[str, Any] | None = None
     fact_ablation: dict[str, Any] | None = None
-    if args.entity_aware_graph_ablation:
-        boosted_results, boosted_errors = run_retrieval_diagnostics(
-            samples=samples,
-            mode=str(args.mode),
-            top_k=int(args.top_k),
-            ceiling_top_k=int(args.ceiling_top_k),
-            entity_aware_graph=True,
-            fact_index=primary_fact_index,
-        )
-        boosted_summary = summarize_results(boosted_results)
-        entity_aware_graph_ablation = {
-            "config": {"entity_aware_graph": True},
-            "summary": boosted_summary,
-            "results": boosted_results,
-            "errors": boosted_errors,
-            "deltas": _ablation_delta(summary, boosted_summary),
-        }
-        errors += boosted_errors
     if args.fact_ablation:
         boosted_results, boosted_errors = run_retrieval_diagnostics(
             samples=samples,
             mode=str(args.mode),
             top_k=int(args.top_k),
             ceiling_top_k=int(args.ceiling_top_k),
-            entity_aware_graph=False,
             fact_index=True,
         )
         boosted_summary = summarize_results(boosted_results)
@@ -476,39 +360,16 @@ def main(argv: list[str] | None = None) -> int:
             "deltas": _ablation_delta(summary, boosted_summary),
         }
         errors += boosted_errors
-    if args.feature_on_ablation:
-        boosted_results, boosted_errors = run_retrieval_diagnostics(
-            samples=samples,
-            mode=str(args.mode),
-            top_k=int(args.top_k),
-            ceiling_top_k=int(args.ceiling_top_k),
-            entity_aware_graph=True,
-            fact_index=True,
-        )
-        boosted_summary = summarize_results(boosted_results)
-        feature_on_ablation = {
-            "config": {"fact_index": True, "entity_aware_graph": True},
-            "summary": boosted_summary,
-            "results": boosted_results,
-            "errors": boosted_errors,
-            "deltas": _ablation_delta(summary, boosted_summary),
-            "per_question_deltas": _per_question_deltas(results, boosted_results),
-        }
-        errors += boosted_errors
-
     out = write_diagnostics_json(
         args.output,
         mode=str(args.mode),
         conversations=len(samples),
         top_k=int(args.top_k),
         ceiling_top_k=int(args.ceiling_top_k),
-        entity_aware_graph=False,
         fact_index=primary_fact_index,
         summary=summary,
         results=results,
         errors=errors,
-        entity_aware_graph_ablation=entity_aware_graph_ablation,
-        feature_on_ablation=feature_on_ablation,
         fact_ablation=fact_ablation,
     )
     elapsed = time.perf_counter() - started

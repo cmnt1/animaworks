@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 765b1a0d543fa05121b2e0d10a48676af5bc5791fb98adb3aecf909a48ad906c -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 2f9f5c6f94191fab437aa4f8888894bebf8faad14a6b9abb030826a954e2001f -->
 
 # モジュール一覧
 
@@ -166,7 +166,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 121 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1436 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1415 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -478,11 +478,9 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.direct_access` | 12 | — |
 | `core.memory.rag.embedding` | 396 | — |
 | `core.memory.rag.endpoints` | 78 | — |
-| `core.memory.rag.entity_graph` | 319 | — |
 | `core.memory.rag.episode_time` | 46 | — |
 | `core.memory.rag.exclusion` | 38 | — |
 | `core.memory.rag.facts_chunker` | 100 | — |
-| `core.memory.rag.graph` | 813 | — |
 | `core.memory.rag.http_store` | 13 | — |
 | `core.memory.rag.index_signature` | 27 | Compatibility diagnostics for an existing embedding index signature. |
 | `core.memory.rag.indexer` | 1596 | — |
@@ -495,7 +493,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.repair_state` | 150 | Persistent repair-state helpers for RAG auto-repair. |
 | `core.memory.rag.repair_types` | 27 | — |
 | `core.memory.rag.repair_utils` | 163 | — |
-| `core.memory.rag.retriever` | 1088 | — |
+| `core.memory.rag.retriever` | 860 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
 | `core.memory.rag.singleton` | 47 | — |
@@ -510,13 +508,13 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.retrieval.entity` | 192 | — |
 | `core.memory.retrieval.pipeline` | 92 | — |
 | `core.memory.retrieval.query_expansion` | 496 | — |
-| `core.memory.retrieval.rag_search` | 1236 | — |
+| `core.memory.retrieval.rag_search` | 1148 | — |
 | `core.memory.retrieval.reranker` | 264 | — |
 | `core.memory.retrieval.rrf` | 107 | — |
 | `core.memory.retrieval.search_metadata` | 108 | — |
 | `core.memory.retrieval.time_expr` | 230 | — |
 | `core.memory.retrieval.types` | 38 | — |
-| `core.memory.retrieval.unified_search` | 788 | — |
+| `core.memory.retrieval.unified_search` | 722 | — |
 | `core.memory.skill_metadata` | 301 | — |
 | `core.memory.state_lock` | 96 | Process-safe locking for ``state/current_state.md`` updates. |
 
@@ -574,7 +572,7 @@ Model Context Protocol サーバーとクライアント。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.memory.rag` | 30 | — |
+| `core.memory.rag` | 24 | — |
 
 ## `core.memory.retrieval`
 
@@ -754,7 +752,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor._mgr_health（非公開）` | 458 | Health check mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_rag_repair（非公開）` | 245 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_reconcile（非公開）` | 316 | Reconciliation mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_scheduler（非公開）` | 1059 | System scheduler mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_scheduler（非公開）` | 1033 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
 | `core.supervisor.inbox_rate_limiter` | 413 | Inbox rate limiting, cascade detection, and deferred trigger management. |
@@ -969,7 +967,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.internal` | 1013 | — |
 | `server.routes.logs_routes` | 213 | — |
 | `server.routes.media_proxy` | 186 | — |
-| `server.routes.memory_routes` | 459 | — |
+| `server.routes.memory_routes` | 426 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 609 | — |

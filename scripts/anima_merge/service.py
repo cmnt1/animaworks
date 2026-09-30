@@ -385,7 +385,7 @@ class AnimaMergeService:
         return {
             "target": self.target,
             "estimated_inputs": categories,
-            "substeps": ["vectordb", "entities", "bm25", "graph_cache"],
+            "substeps": ["vectordb", "entities", "bm25"],
         }
 
     @staticmethod
@@ -1025,7 +1025,6 @@ class AnimaMergeService:
         self._run_rebuild_substep(journal, "vectordb", self._rebuild_vectordb)
         self._run_rebuild_substep(journal, "entities", self._rebuild_entities)
         self._run_rebuild_substep(journal, "bm25", self._rebuild_bm25)
-        self._run_rebuild_substep(journal, "graph_cache", self._rebuild_graph_cache)
 
         substeps = journal.data.get("phases", {}).get(MergePhase.REBUILD_INDEXES.value, {}).get("substeps", {})
         return {
@@ -1110,18 +1109,6 @@ class AnimaMergeService:
 
         result = rebuild_longterm_bm25_index(self.target_dir)
         return {"documents": result.documents, "path": str(result.path)}
-
-    def _rebuild_graph_cache(self) -> dict[str, Any]:
-        from core.memory.rag.graph import rebuild_graph_cache
-
-        vector_store, indexer = self._target_vector_components()
-        rebuilt = rebuild_graph_cache(
-            self.target,
-            self.target_dir,
-            vector_store,
-            indexer,
-        )
-        return {"rebuilt": rebuilt}
 
     # ── VERIFY and TOMBSTONE ──────────────────────────────────
 

@@ -21,12 +21,10 @@ class FakeRAGSearch:
         self.vector_returns: dict[str, list[dict[str, Any]]] = {}
         self.vector_query_returns: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.keyword_returns: dict[str, list[dict[str, Any]]] = {}
-        self.graph_returns: list[dict[str, Any]] = []
         self.vector_scopes: list[str] = []
         self.vector_queries: list[str] = []
         self.keyword_scopes: list[str] = []
         self.keyword_queries: list[str] = []
-        self.graph_calls = 0
 
     def _load_rag_pipeline_settings(self) -> dict[str, object]:
         return {
@@ -46,10 +44,6 @@ class FakeRAGSearch:
         if (query, scope) in self.vector_query_returns:
             return self.vector_query_returns[(query, scope)]
         return self.vector_returns.get(scope, [])
-
-    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path, **kwargs) -> list[dict[str, Any]]:
-        self.graph_calls += 1
-        return self.graph_returns
 
     def _keyword_search_fallback(self, query: str, scope: str, *args, **kwargs) -> list[dict[str, Any]]:
         self.keyword_queries.append(query)
@@ -116,6 +110,8 @@ def test_heartbeat_policy_disables_rerank(fake_rag: FakeRAGSearch, monkeypatch: 
     assert results[0]["doc_id"] == "episode-1"
     assert CapturingPipeline.calls[0]["pool_k"] == 20
     assert CapturingPipeline.calls[0]["rerank_enabled"] is False
+    assert fake_rag.vector_scopes == ["episodes"]
+    assert CapturingPipeline.calls[0]["ranked_lists"] == [[fake_rag.vector_returns["episodes"][0]]]
 
 
 def test_explicit_scope_restricts_trigger_scopes(fake_rag: FakeRAGSearch, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,7 +123,6 @@ def test_explicit_scope_restricts_trigger_scopes(fake_rag: FakeRAGSearch, monkey
 
     assert fake_rag.vector_scopes == ["facts"]
     assert fake_rag.keyword_scopes == ["facts"]
-    assert fake_rag.graph_calls == 0
 
 
 def test_tool_offset_applies_after_final_ranking(fake_rag: FakeRAGSearch, monkeypatch: pytest.MonkeyPatch) -> None:

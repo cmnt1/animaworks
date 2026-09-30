@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ── Constants ──────────
 
 ANIMA_NAME = "locomo_bench"
-SEARCH_MODES: tuple[str, ...] = ("vector", "vector_graph", "scope_all")
+SEARCH_MODES: tuple[str, ...] = ("vector", "scope_all")
 _SESSION_RE = re.compile(r"^session_(\d+)$")
 
 # ── Dependency checks ──────────
@@ -108,11 +108,6 @@ def _env_flag(name: str) -> bool:
 def locomo_fact_index_enabled() -> bool:
     """Return True when LoCoMo fact dual-index ablation is explicitly enabled."""
     return _env_flag("LOCOMO_FACT_INDEX")
-
-
-def locomo_entity_aware_graph_enabled() -> bool:
-    """Return True when LoCoMo entity-aware graph ablation is explicitly enabled."""
-    return _env_flag("LOCOMO_ENTITY_AWARE_GRAPH")
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -280,7 +275,7 @@ class AnimaWorksLoCoMoAdapter:
     ) -> None:
         """
         Args:
-            search_mode: ``vector`` | ``vector_graph`` | ``scope_all``
+            search_mode: ``vector`` | ``scope_all``
             top_k: Number of hits to return from retrieval
             answer_timeout: Optional LiteLLM timeout for answer generation.
             answer_max_retries: Number of retries after the first answer attempt.
@@ -393,8 +388,6 @@ class AnimaWorksLoCoMoAdapter:
         if self._cross_encoder_model:
             cfg.rag.cross_encoder_model = self._cross_encoder_model
         cfg.rag.embedding_e5_prefix_enabled = self._embedding_e5_prefix_enabled
-        if locomo_entity_aware_graph_enabled():
-            cfg.rag.entity_aware_graph_enabled = True
         save_config(cfg)
 
     @property
@@ -436,15 +429,6 @@ class AnimaWorksLoCoMoAdapter:
         self._last_fact_count = 0
         self._query_reference_time = ""
         self._last_multihop_meta = empty_multihop_meta()
-        if self._retriever is not None:
-            self._retriever._knowledge_graph = None
-            self._retriever._knowledge_graph_signature = None
-        graph_cache = self._anima_dir / "vectordb" / "knowledge_graph.json"
-        if graph_cache.exists():
-            try:
-                graph_cache.unlink()
-            except OSError as e:
-                logger.warning("Failed to remove %s: %s", graph_cache, e)
         meta = self._index_meta_path
         if meta.exists():
             try:
@@ -682,18 +666,6 @@ class AnimaWorksLoCoMoAdapter:
                 anima_name=ANIMA_NAME,
                 memory_type="episodes",
                 top_k=self._top_k,
-                enable_spreading_activation=False,
-            )
-            items = self._retrieval_to_dicts(res)
-            self._remember_retrieval_diagnostics(items)
-            return items
-        if self._search_mode == "vector_graph":
-            res = self._retriever.search(
-                query=question,
-                anima_name=ANIMA_NAME,
-                memory_type="episodes",
-                top_k=self._top_k,
-                enable_spreading_activation=True,
             )
             items = self._retrieval_to_dicts(res)
             self._remember_retrieval_diagnostics(items)
@@ -805,7 +777,6 @@ class AnimaWorksLoCoMoAdapter:
                 anima_name=ANIMA_NAME,
                 memory_type="facts",
                 top_k=top_k,
-                enable_spreading_activation=False,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("LoCoMo fact vector retrieval skipped after failure: %s", e)

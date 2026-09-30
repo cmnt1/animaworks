@@ -769,32 +769,6 @@ class SchedulerMixin:
                         exc_info=True,
                     )
 
-                # Refresh the spreading-activation graph cache so newly
-                # indexed memories become reachable via graph search.
-                # In-process graphs already loaded by a running retriever
-                # pick this up on restart/re-initialization.
-                try:
-                    from core.memory.rag.graph import rebuild_graph_cache
-
-                    rebuilt = await loop.run_in_executor(
-                        None,
-                        functools.partial(
-                            rebuild_graph_cache,
-                            anima_name,
-                            anima_dir,
-                            vector_store,
-                            indexer,
-                        ),
-                    )
-                    if rebuilt:
-                        logger.info("Knowledge graph cache rebuilt for %s", anima_name)
-                except Exception:
-                    logger.warning(
-                        "Knowledge graph cache rebuild failed for %s",
-                        anima_name,
-                        exc_info=True,
-                    )
-
                 for label, src_dir, glob, meta_key in shared_sources:
                     if not src_dir.is_dir():
                         continue

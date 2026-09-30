@@ -7,7 +7,7 @@ from __future__ import annotations
 """Unified Legacy memory retrieval orchestration.
 
 This module keeps Legacy retrieval policy in one place while reusing the
-existing RAG search helpers for vector, graph, keyword, and activity sources.
+existing RAG search helpers for vector, keyword, and activity sources.
 """
 
 import logging
@@ -169,7 +169,7 @@ class UnifiedMemorySearch:
         coerced_reference_time = coerce_reference_time(reference_time)
         expanded = expand_query(query, reference_time=coerced_reference_time)
         # Sparse (BM25/keyword) query carries expanded ISO dates and lowercased
-        # tokens; dense (vector/graph) query keeps natural text plus quoted
+        # tokens; dense vector query keeps natural text plus quoted
         # phrases only. See F19.
         search_query = expanded.search_text or query
         dense_query = expanded.dense_text or query
@@ -209,9 +209,7 @@ class UnifiedMemorySearch:
             sparse_query=search_query,
             scopes=scopes,
             pool_k=pool_k,
-            pipeline_settings=settings,
             embedding=embedding,
-            indexer=indexer,
             access_batch=access_batch,
             skip_bm25_validation=skip_bm25_validation,
             time_start=time_start,
@@ -552,16 +550,14 @@ class UnifiedMemorySearch:
         sparse_query: str,
         scopes: tuple[str, ...],
         pool_k: int,
-        pipeline_settings: dict[str, object],
         embedding: list[float] | None,
-        indexer: Any | None,
         access_batch: Any,
         skip_bm25_validation: bool,
         time_start: str | None,
         time_end: str | None,
     ) -> list[list[dict[str, Any]]]:
-        # Vector and graph retrieval use the dense query; BM25-backed
-        # activity_log and keyword fallbacks use the sparse query. See F19.
+        # Vector retrieval uses the dense query; BM25-backed activity_log and
+        # keyword fallbacks use the sparse query. See F19.
         ranked_lists: list[list[dict[str, Any]]] = []
         vector_scopes = [scope for scope in scopes if scope != "activity_log"]
         remaining_vector_scopes = vector_scopes
@@ -579,47 +575,7 @@ class UnifiedMemorySearch:
                 ranked_lists.append(first_hits)
             remaining_vector_scopes = vector_scopes[1:]
 
-        vector_groups: list[tuple[list[str], bool]] = []
-        graph_enabled = bool(pipeline_settings.get("enable_spreading_activation", True))
-        grouped: set[str] = set()
-        for scope in remaining_vector_scopes:
-            if scope in grouped:
-                continue
-            group = [scope]
-            if scope == "knowledge" and "common_knowledge" in remaining_vector_scopes:
-                group.append("common_knowledge")
-            grouped.update(group)
-            vector_groups.append((group, graph_enabled and "episodes" in group))
-        if graph_enabled and "episodes" in scopes and "episodes" not in remaining_vector_scopes:
-            vector_groups.append(([], True))
-
-        def _run_vector_group(group: list[str], include_graph: bool):
-            hits = {
-                scope: self._vector_hits(
-                    rag,
-                    dense_query,
-                    scope,
-                    pool_k,
-                    embedding=embedding,
-                    access_batch=access_batch,
-                )
-                for scope in group
-            }
-            graph_hits = (
-                self._graph_hits(
-                    rag,
-                    dense_query,
-                    pool_k,
-                    embedding=embedding,
-                    indexer=indexer,
-                    access_batch=access_batch,
-                )
-                if include_graph
-                else []
-            )
-            return hits, graph_hits
-
-        with ThreadPoolExecutor(max_workers=len(vector_groups) + 2) as pool:
+        with ThreadPoolExecutor(max_workers=max(1, len(remaining_vector_scopes)) + 2) as pool:
             activity_future = (
                 pool.submit(
                     search_activity_log,
@@ -641,21 +597,22 @@ class UnifiedMemorySearch:
                 pool_k,
                 skip_bm25_validation=skip_bm25_validation,
             )
-            vector_futures = [pool.submit(_run_vector_group, *group) for group in vector_groups]
-            vector_hits: dict[str, list[dict[str, Any]]] = {}
-            graph_hits: list[dict[str, Any]] = []
-            for future in vector_futures:
-                group_hits, group_graph_hits = future.result()
-                vector_hits.update(group_hits)
-                if group_graph_hits:
-                    graph_hits = group_graph_hits
+            vector_futures = {
+                scope: pool.submit(
+                    self._vector_hits,
+                    rag,
+                    dense_query,
+                    scope,
+                    pool_k,
+                    embedding=embedding,
+                    access_batch=access_batch,
+                )
+                for scope in remaining_vector_scopes
+            }
             for vector_scope in remaining_vector_scopes:
-                hits = vector_hits.get(vector_scope, [])
+                hits = vector_futures[vector_scope].result()
                 if hits:
                     ranked_lists.append(hits)
-
-            if graph_hits:
-                ranked_lists.append(graph_hits)
 
             if activity_future is not None:
                 try:
@@ -692,29 +649,6 @@ class UnifiedMemorySearch:
             )
         except Exception:
             logger.debug("Unified vector search failed for scope=%s", scope, exc_info=True)
-            return []
-
-    def _graph_hits(
-        self,
-        rag: Any,
-        query: str,
-        pool_k: int,
-        *,
-        embedding: list[float] | None,
-        indexer: Any | None,
-        access_batch: Any,
-    ) -> list[dict[str, Any]]:
-        try:
-            return rag._graph_episodes_search(
-                query,
-                pool_k,
-                self._anima_dir / "knowledge",
-                embedding=embedding,
-                indexer=indexer,
-                access_batch=access_batch,
-            )
-        except Exception:
-            logger.debug("Unified graph episode search failed", exc_info=True)
             return []
 
     def _keyword_hits(

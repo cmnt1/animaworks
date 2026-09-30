@@ -62,9 +62,6 @@ class StaticRAGSearch:
             },
         ]
 
-    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path) -> list[dict[str, Any]]:
-        return []
-
     def _keyword_search_fallback(self, query: str, scope: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         return []
 

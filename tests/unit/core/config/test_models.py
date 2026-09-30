@@ -299,6 +299,29 @@ class TestRAGConfig:
     def test_entity_registry_remains_enabled_for_fact_features(self) -> None:
         assert RAGConfig().entity_registry_enabled is True
 
+    def test_removed_graph_retrieval_settings_are_ignored(self, tmp_path: Path) -> None:
+        retired_settings = {
+            "enable_spreading_activation": True,
+            "graph_cache_enabled": True,
+            "implicit_link_threshold": 0.75,
+            "spreading_memory_types": ["knowledge", "episodes"],
+            "entity_aware_graph_enabled": True,
+            "graph_entity_edge_cap": 8,
+            "graph_inverse_fan_enabled": True,
+            "graph_recency_weight_enabled": True,
+            "max_graph_hops": 2,
+        }
+        config_path = get_config_path(tmp_path)
+        config_path.write_text(json.dumps({"rag": retired_settings}), encoding="utf-8")
+        invalidate_cache()
+
+        try:
+            config = load_config(config_path)
+        finally:
+            invalidate_cache()
+
+        assert not retired_settings.keys() & config.rag.model_dump().keys()
+
     def test_legacy_boost_config_keys_are_ignored(self) -> None:
         rag = RAGConfig.model_validate(
             {

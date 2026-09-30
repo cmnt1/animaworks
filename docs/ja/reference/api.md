@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 67ac2523566a090d644914d29b1e579b2295321bc67ad2fe1f00571bbaf15c15 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 74c1fd8e7fe0b923042aec5714476412a5fda8b1afcf58e3c4ec14e2c54ea73d -->
 
 # API リファレンス
 
@@ -174,7 +174,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/episodes/{date}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_episode` |
 | GET | `/api/animas/{name}/knowledge` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_knowledge` |
 | GET | `/api/animas/{name}/knowledge/{topic}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_knowledge` |
-| GET | `/api/animas/{name}/memory/graph` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the cached memory graph or an explicit-link-only fallback. | `server/routes/memory_routes.py:memory_graph` |
+| GET | `/api/animas/{name}/memory/graph` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
 | GET | `/api/animas/{name}/memory/stats` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
 | GET | `/api/animas/{name}/procedures` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:list_procedures` |
 | GET | `/api/animas/{name}/procedures/{proc}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/memory_routes.py:get_procedure` |

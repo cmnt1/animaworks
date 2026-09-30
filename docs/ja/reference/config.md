@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 10a29e6c5ee438bf5e94c85a20f3837f3727c0483a34ac76696189077c33665e -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 36be726724b5da3eb2ebe4fb414801620390a2483a0320d2ec367132648ce570 -->
 
 # 設定リファレンス
 
@@ -107,14 +107,6 @@
 | `rag.embedding_document_prefix` | `str` | `"passage: "` | — |
 | `rag.embedding_max_seq_length` | `int` | `2048` | Cap on the embedding model's max sequence length (tokens). Long-context models like ruri-v3 default to 8192, which blows up GPU activation memory during bulk encode. 0 = use model default. |
 | `rag.use_gpu` | `bool` | `false` | — |
-| `rag.enable_spreading_activation` | `bool` | `true` | — |
-| `rag.graph_cache_enabled` | `bool` | `true` | — |
-| `rag.implicit_link_threshold` | `float` | `0.75` | — |
-| `rag.spreading_memory_types` | `list[str]` | `["knowledge","episodes"]` | — |
-| `rag.entity_aware_graph_enabled` | `bool` | `false` | Enable Legacy NetworkX graph nodes/edges for facts and entities. |
-| `rag.graph_entity_edge_cap` | `int` | `8` | Maximum co-mentioned memory/fact carriers connected per entity. |
-| `rag.graph_inverse_fan_enabled` | `bool` | `true` | Reduce graph edge weights for high-fanout entity nodes. |
-| `rag.graph_recency_weight_enabled` | `bool` | `true` | Apply a conservative recency multiplier to graph edge weights. |
 | `rag.min_retrieval_score` | `float` | `0.3` | — |
 | `rag.skill_match_min_score` | `float` | `0.75` | — |
 | `rag.repair_enabled` | `bool` | `true` | — |

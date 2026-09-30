@@ -38,7 +38,6 @@ class TestRAGSearchScopeAllPipeline:
 
         with (
             patch.object(rag_search, "_vector_search_primary", return_value=vector_hits),
-            patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch.object(rag_search, "_keyword_search_fallback", return_value=[]),
             patch(
                 "core.memory.retrieval.rag_search.search_activity_log",
@@ -72,7 +71,6 @@ class TestRAGSearchScopeAllPipeline:
 
         with (
             patch.object(rag_search, "_vector_search_primary", return_value=[{"content": "x", "score": 0.01}]),
-            patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch.object(rag_search, "_keyword_search_fallback", return_value=[]),
             patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
             patch("core.memory.retrieval.pipeline.RetrievalPipeline", return_value=mock_pipeline),
@@ -108,7 +106,6 @@ class TestRAGSearchScopeAllPipeline:
 
         with (
             patch.object(rag_search, "_vector_search_primary", return_value=[]),
-            patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
             patch("core.memory.retrieval.pipeline.RetrievalPipeline") as pipeline_cls,
         ):
@@ -150,7 +147,6 @@ class TestRAGSearchScopeAllPipeline:
                 },
             ),
             patch.object(rag_search, "_vector_search_primary", return_value=[]),
-            patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch.object(rag_search, "_keyword_search_fallback", side_effect=fake_keyword),
             patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
         ):
@@ -218,7 +214,6 @@ def test_rag_pipeline_settings_use_schema_defaults_on_config_failure(
         "cross_encoder_model",
         "confidence_threshold",
         "rrf_confidence_threshold",
-        "enable_spreading_activation",
     }
     expected = RAGConfig().model_dump(include=setting_keys.intersection(RAGConfig.model_fields))
 

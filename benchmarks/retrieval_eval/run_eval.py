@@ -21,12 +21,7 @@ VARIANT_OVERRIDES: dict[str, dict[str, bool]] = {
     "no_rerank": {"rerank_enabled": False},
     "minimal": {
         "rerank_enabled": False,
-        "enable_spreading_activation": False,
         "entity_registry_enabled": False,
-        "entity_aware_graph_enabled": False,
-        "graph_cache_enabled": False,
-        "graph_inverse_fan_enabled": False,
-        "graph_recency_weight_enabled": False,
     },
 }
 # minimal pipeline with the cross-encoder rerank kept on

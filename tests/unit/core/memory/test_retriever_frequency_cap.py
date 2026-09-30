@@ -31,14 +31,6 @@ from core.memory.rag.retriever import (
 # ── Mock fixtures ────────────────────────────────────────────────────
 
 
-class _MockConfigDisabled:
-    class _RAG:
-        enable_spreading_activation = False
-        spreading_memory_types = ["knowledge", "episodes"]
-
-    rag = _RAG()
-
-
 def _make_result(
     score: float = 0.8,
     *,
