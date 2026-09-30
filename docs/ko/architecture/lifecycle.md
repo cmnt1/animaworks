@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/lifecycle.md -->
-<!-- i18n: source-sha256=de6fcde4cf6062283624864367afb218ffffe243f3589f600913606fad8f582f generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=fc15ebd7f7ff4e9d39caf9e22e42c6aac67d6fbda00a162a69943b1044a4f2bd generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 
@@ -22,9 +22,9 @@ Anima는 server의 요청뿐만 아니라 메시지나 스케줄을 계기로 �
 
 ## Heartbeat와 cron
 
-heartbeat의 기본 간격은 전체 설정에서 30분이 기본값이며, `status.json`의 `heartbeat_interval_minutes`에서 Anima별로 덮어쓸 수 있다. 유효 범위는 1~1440분이다. 전체의 `activity_level`는 기본 100%, 허용 범위 10~400%이며, 값이 높을수록 실효 간격이 짧아진다. `activity_schedule`을 사용하면 시간대별로 활동도를 전환할 수 있다. `heartbeat.md`에서 활동 시간대를 설정한다.
+heartbeat의 기본 간격은 전체 설정에서 30분이 기본값이며, `status.json`의 `heartbeat_interval_minutes`에서 Anima별로 덮어쓸 수 있다. 유효한 범위는 1~1440분이다. 전체의 `activity_level`는 기본값 100%, 허용 범위 10~400%이며, 값이 높을수록 실제 간격이 짧아진다. `activity_schedule`을 사용하면 시간대별로 활동도를 전환할 수 있다. `heartbeat.md`에서 활동 시간대를 설정한다.
 
-`cron.md`는 제목별 task 정의로, `schedule`에 표준 5필드 cron식을 적는다. `type`, 설명, 필요 시 command/tool과 인자를 설정하고 `core/supervisor/schedule_parser.py`가 해석한다. 초기 설정이나 hot reload 시 파싱·등록에 실패한 일정은 `cron_health_*.md` 알림으로 보고한다. 등록된 cron의 실행 빈도나 실패를 주기적으로 감시하는 기능은 없다.
+`cron.md`는 제목 단위의 정의이며, `schedule`에 표준 5필드 cron식을 적는다. `type`, 설명, 필요에 따라 command/tool과 인수를 설정하고, `core/supervisor/schedule_parser.py`이 분석한다. 셋업이나 hot-reload 시에는 분석·등록하지 못한 스케줄만 `cron_health_*.md`로 알림한다. 등록된 cron의 실행 빈도나 실패를 정기적으로 모니터링하는 기능은 없다.
 
 ## 최초 시작과 1사이클
 

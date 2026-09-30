@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/overview.md -->
-<!-- i18n: source-sha256=b2c22dd9823637ef5314ee8000da5cf5fe2dd07ffd716e6adcbd304c92cced4a generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=83b674d9d55c88172f6b70638b086b91f3f0e7394f67f0690f11bc78e9819a2c generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 
@@ -65,4 +65,4 @@ server와 supervisor가 Anima root, task runner 시작, 통신, 재시작을 관
 
 ## MCP
 
-MCP 허용 목록 `MCP_TOOL_NAMES`와 트리거·역할에 따른 `resolve_tool_surface` 정책은 `core/tooling/surface.py`에 모여 있다. 실제 공개 목록은 트리거와 Anima의 실행 조건에 따라 달라진다.
+MCP의 허용 목록 `MCP_TOOL_NAMES`과 트리거·역할에 따른 `resolve_tool_surface`은 `core/tooling/surface.py`에 집약되어 있다. 실제로 공개되는 목록은 트리거와 Anima의 실행 조건에 따라 다르다.

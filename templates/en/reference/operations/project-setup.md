@@ -138,27 +138,27 @@ Roles of each section:
 #### AnimaWorksConfig Top Level
 
 | Section | Description |
-|-----------|------|
+|---------|-------------|
 | `version` | Configuration file version |
 | `setup_complete` | Setup completion flag |
-| `locale` | Locale settings |
-| `system` | System settings (mode, log level) |
-| `credentials` | API authentication credentials |
-| `model_modes` | Model name-to-execution mode mapping |
+| `locale` | Locale configuration |
+| `system` | System configuration (mode, log level) |
+| `credentials` | API authentication information |
+| `model_modes` | Model name → execution mode mapping |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
-| `anima_defaults` | Anima configuration defaults |
+| `anima_defaults` | Anima configuration default values |
 | `animas` | Per-Anima configuration overrides |
-| `consolidation` | Consolidation settings |
+| `consolidation` | Consolidation configuration |
 | `background_review` |  |
-| `rag` | RAG (retrieval-augmented generation) settings |
+| `rag` | RAG (search-augmented generation) configuration |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | Priming (automatic memory recall) settings |
-| `image_gen` | Image generation settings |
+| `priming` | Priming (automatic memory recall) configuration |
+| `image_gen` | Image generation configuration |
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |

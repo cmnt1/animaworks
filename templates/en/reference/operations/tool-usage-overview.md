@@ -7,33 +7,33 @@ description: "Overall Tool System Architecture and Usage Guide"
 
 ## Overview
 
-The tool system consists of the following three layers:
+The tools are structured in three layers:
 
-1. **Framework built-in tools** — Dispatched by name via `ToolHandler` (memory, messages, tasks, file operations, etc.). The definitions in `core/tooling/handler.py` under `_dispatch` are the primary source.
-2. **External tool modules** — Public modules directly under `core/integrations/` (files starting with `_*` are excluded). They have `get_tool_schemas()` / `dispatch()` / `cli_main()` and can also be called from `animaworks-tool <モジュール名> …`. Additionally, `~/.animaworks/common_tools/` and each Anima's `tools/*.py` (personal) are loaded at runtime (see `core/integrations/__init__.py` under `discover_*`).
+1. **Framework built-in tools** — `ToolHandler` dispatches by name (memory, message, task, file operations, etc.). The definitions in `core/tooling/handler.py`'s `_dispatch` are the primary source.
+2. **External tool modules** — Public modules directly under `core/integrations/` (files starting with `_*` are excluded). They have `get_tool_schemas()` / `dispatch()` / `cli_main()` and can also be called from `animaworks-tool <モジュール名> …`. Additionally, `~/.animaworks/common_tools/` and each Anima's `tools/*.py` (personal) are loaded at runtime (`core/integrations/__init__.py`'s `discover_*`).
 3. **`animaworks-tool` CLI** — Executes subcommands of the above modules, handles long-running processes via `submit`, and provides fallback forwarding to some main CLI commands.
 
 **The "tool list visible to the LLM" differs depending on the execution mode.** Even with the same handler implementation, the way schemas are bundled changes.
 
-| Category | Tool List Assembly |
+| Category | Tool list assembly |
 |------|----------------------|
-| **MCP-backed modes (S / C / D / G / X)** | The engine's native tools plus AnimaWorks tools from MCP. `core/tooling/surface.py` owns the `MCP_TOOL_NAMES` allowlist and `resolve_tool_surface` applies trigger and Anima-role gates. |
-| **Mode A (LiteLLM; legacy B uses the same surface)** | `build_unified_tool_list` (see `core/tooling/schemas/builder.py`) assembles schemas selected by `resolve_tool_surface`. `call_human` requires configured notifications, `delegate_task` / `ping_subordinate` require subordinates, and `submit_tasks` is available via `background` / `submit_tasks` / `heartbeat` triggers. Skill-management tools are scoped to heartbeat/consolidation. During `consolidation:*`, messaging, delegation, task submission, and workspace-access tools are hidden. |
+| **MCP mode (S / C / D / G / X)** | In addition to engine built-in tools, AnimaWorks tools are used via MCP. The permission list in `MCP_TOOL_NAMES` and the trigger/role determination via `resolve_tool_surface` are consolidated in `core/tooling/surface.py`. |
+| **Mode A (LiteLLM. Old B has the same surface)** | `build_unified_tool_list` (`core/tooling/schemas/builder.py`) assembles the schema selected by `resolve_tool_surface`. `call_human` is included when notifications are configured, `delegate_task` / `ping_subordinate` are included when subordinates exist, and `submit_tasks` can be used with `background` / `submit_tasks` / `heartbeat` triggers. Skill management tools are limited to heartbeat / consolidation. In `consolidation:*`, communication, delegation, task submission, and workspace permission tools are hidden. |
 
-### AnimaWorks Tools Exposed via MCP (Modes S / C / D / G / X)
+### AnimaWorks tools exposed via MCP (Mode S / C / D / G / X)
 
-`core/tooling/surface.py` defines the full `MCP_TOOL_NAMES` allowlist. `resolve_tool_surface(ctx, trigger, mode)` applies trigger scope and role gates before the MCP server advertises tools.
+The overall permission list `MCP_TOOL_NAMES` is defined in `core/tooling/surface.py`. `resolve_tool_surface(ctx, trigger, mode)` returns the final list based on triggers and roles, and the MCP server exposes those schemas.
 
 - **Memory**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
-- **Messages**: `send_message`, `post_channel`
-- **Notifications**: `call_human`
-- **Tasks**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
+- **Message**: `send_message`, `post_channel`
+- **Notification**: `call_human`
+- **Task**: `delegate_task`, `submit_tasks`, `update_task`, `list_tasks`
 - **Workspace**: `grant_workspace_access`
 - **Skill creation**: `create_skill`
 - **Skill management**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
 - **Hiring**: `create_anima`
 
-When `mcp.trigger_scoped_tools` is enabled, skill-management tools (such as `promote_procedure_to_skill` and lifecycle management) are shown only during heartbeat and consolidation; `create_skill` is not subject to this restriction. `call_human` requires an enabled notification channel, `delegate_task` requires subordinates, and `create_anima` requires the `newstaff` skill. `grant_workspace_access` is hidden during consolidation to match the stricter Mode A surface.
+When `mcp.trigger_scoped_tools` is enabled, skill management tools (such as `promote_procedure_to_skill` and lifecycle management) are only shown during heartbeat and consolidation, and `create_skill` is not subject to this restriction. `call_human` is shown when notification channels are configured, `delegate_task` is shown only when there are direct subordinates, and `create_anima` can be used when the `newstaff` skill is present. To align with the stricter side of Mode A, `grant_workspace_access` is not shown during consolidation.
 
 ### Examples Not Included in the Mode A Tool List
 

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=af5a1f89b0edeedbc0dbbe4c7312a1483b77153709ac37f0c867a83d4d3d9645 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=538ea214d652f8dad1c797289ed1f70ff2e2766e155ec9043cc7a0e027ae23df generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -9,12 +9,12 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `cli` | 9 | — |
 | `cli.__main__（非公開）` | 9 | — |
-| `cli._gateway（非公開）` | 76 | — |
-| `cli.demo` | 392 | Native ``animaworks demo`` command. |
+| `cli._gateway（非公開）` | 93 | — |
+| `cli.demo` | 394 | Native ``animaworks demo`` command. |
 | `cli.parser` | 878 | — |
 | `cli.tool_dispatch` | 91 | — |
 
@@ -22,27 +22,27 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
-| `cli.commands.anima_mgmt` | 1196 | CLI commands for anima process management. |
+| `cli.commands.anima_mgmt` | 1195 | CLI commands for anima process management. |
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
 | `cli.commands.import_cmd` | 88 | — |
-| `cli.commands.index_cmd` | 387 | — |
+| `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 136 | — |
 | `cli.commands.internal_cmd` | 362 | — |
 | `cli.commands.logs` | 209 | CLI commands for viewing anima logs. |
 | `cli.commands.mcp_cmd` | 66 | — |
 | `cli.commands.memory_cmd` | 56 | — |
-| `cli.commands.messaging` | 142 | — |
+| `cli.commands.messaging` | 144 | — |
 | `cli.commands.migrate_cmd` | 114 | — |
 | `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
-| `cli.commands.rag_repair_status` | 148 | Status reporting for persistent RAG repair state. |
+| `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 834 | — |
@@ -117,20 +117,20 @@ LLM agent execution, conversation control, and engine integration.
 
 Digital Anima lifecycle and runtime objects.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima.asset_reconciler` | 790 | — |
-| `core.anima.bootstrap_state` | 574 | — |
+| `core.anima.bootstrap_state` | 576 | — |
 | `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
-| `core.anima.factory` | 765 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
-| `core.anima.heartbeat` | 944 | — |
+| `core.anima.factory` | 773 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
+| `core.anima.heartbeat` | 959 | — |
 | `core.anima.image_artifacts` | 219 | — |
-| `core.anima.inbox` | 1007 | — |
+| `core.anima.inbox` | 1013 | — |
 | `core.anima.inbox_overflow` | 130 | — |
 | `core.anima.lifecycle` | 1359 | — |
-| `core.anima.messaging` | 1609 | — |
+| `core.anima.messaging` | 1612 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.skills_check` | 15 | — |
@@ -145,35 +145,47 @@ User authentication, sessions, and credential management.
 | `core.auth.manager` | 192 | — |
 | `core.auth.models` | 45 | — |
 
+## `core.channels`
+
+Common send clients and token resolution for Slack, Discord, and Chatwork.
+
+| Module | Lines | First docstring line |
+|---|---:|---|
+| `core.channels` | 1 | Shared clients and token resolution for external communication channels. |
+| `core.channels.chatwork` | 33 | Central Chatwork message send client. |
+| `core.channels.discord` | 346 | Central Discord REST API v10 client for channel messaging. |
+| `core.channels.slack` | 97 | Central Slack Web API and incoming-webhook send client. |
+| `core.channels.tokens` | 102 | Per-Anima external-channel token resolution. |
+
 ## `core.config`
 
-Application configuration schemas, loading, validation, and migration.
+Application configuration schema, loading, validation, and migration.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
-| `core.config` | 35 | — |
-| `core.config.anima_registry` | 295 | Anima registration in config.json: register, unregister, rename. |
-| `core.config.cli` | 348 | CLI handlers for the ``animaworks config`` subcommand. |
+| `core.config` | 36 | — |
+| `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
+| `core.config.cli` | 340 | CLI handlers for the ``animaworks config`` subcommand. |
 | `core.config.env_slots` | 118 | — |
-| `core.config.file_access_policy` | 310 | — |
+| `core.config.file_access_policy` | 536 | — |
 | `core.config.global_permissions` | 251 | — |
-| `core.config.io` | 253 | Configuration I/O: singleton cache, load, and save. |
+| `core.config.io` | 303 | Configuration I/O: singleton cache, load, and save. |
 | `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 220 | Migrate legacy permissions.md files to permissions.json. |
 | `core.config.model_catalog` | 171 | Static model catalog and per-request model override validation. |
-| `core.config.model_config` | 880 | Model configuration resolution: load_model_config, penalties, max_tokens. |
+| `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 96 | Central configuration module — facade re-exporting split modules. |
-| `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1389 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.resolver` | 162 | Configuration resolution: status.json merge with anima_defaults. |
+| `core.config.schemas` | 1402 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
 
 Tool execution, command execution, and safety controls.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.execution` | 57 | — |
 | `core.execution._sanitize（非公開）` | 433 | — |
@@ -181,7 +193,7 @@ Tool execution, command execution, and safety controls.
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 102 | — |
 | `core.execution.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
-| `core.execution.base` | 874 | — |
+| `core.execution.base` | 902 | — |
 | `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 295 | — |
 | `core.execution.engine_base` | 75 | — |
@@ -190,16 +202,16 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 106 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 556 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
-| `core.execution.engines.claude._sdk_security（非公開）` | 319 | — |
+| `core.execution.engines.claude._sdk_security（非公開）` | 294 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 524 | — |
 | `core.execution.engines.claude._sdk_stream（非公開）` | 461 | — |
 | `core.execution.engines.claude.agent_sdk` | 896 | — |
 | `core.execution.engines.codex.codex_sdk` | 847 | — |
 | `core.execution.engines.codex.events` | 667 | — |
-| `core.execution.engines.codex.setup` | 952 | — |
-| `core.execution.engines.cursor.cursor_agent` | 711 | — |
-| `core.execution.engines.gemini.gemini_cli` | 468 | — |
-| `core.execution.engines.grok.grok_cli` | 1087 | — |
+| `core.execution.engines.codex.setup` | 960 | — |
+| `core.execution.engines.cursor.cursor_agent` | 717 | — |
+| `core.execution.engines.gemini.gemini_cli` | 474 | — |
+| `core.execution.engines.grok.grok_cli` | 1089 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 524 | — |
 | `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
@@ -276,9 +288,9 @@ Tool execution, command execution, and safety controls.
 
 ## `core.i18n`
 
-Translation catalogs and language selection.
+Translation catalog and language selection.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 53 | Domain-specific i18n strings. |
@@ -328,12 +340,12 @@ Infrastructure functions such as logs, databases, and caches.
 
 ## `core.integrations`
 
-Implementation of external service integrations and animaworks-tool.
+External service integration and animaworks-tool implementation.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.integrations` | 394 | AnimaWorks external tools package. |
-| `core.integrations._anima_icon_url（非公開）` | 306 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
+| `core.integrations._anima_icon_url（非公開）` | 308 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
 | `core.integrations._async_compat（非公開）` | 41 | Async compatibility helpers for tools with synchronous HTTP clients. |
 | `core.integrations._base（非公開）` | 372 | Base infrastructure for AnimaWorks tools. |
 | `core.integrations._cache（非公開）` | 96 | Shared SQLite message cache base class for communication tools. |
@@ -344,9 +356,10 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations._chatwork_markdown（非公開）` | 162 | Markdown-to-Chatwork format conversion utilities. |
 | `core.integrations._comm_cli（非公開）` | 52 | — |
 | `core.integrations._discord_cache（非公開）` | 266 | SQLite message cache for Discord (offline search, sync state). |
-| `core.integrations._discord_client（非公開）` | 361 | Discord REST API v10 client with rate-limit retry. |
-| `core.integrations._discord_cli（非公開）` | 311 | Standalone CLI entry point for Discord tools. |
+| `core.integrations._discord_client（非公開）` | 47 | Backward-compatible Discord client import path. |
+| `core.integrations._discord_cli（非公開）` | 297 | Standalone CLI entry point for Discord tools. |
 | `core.integrations._discord_markdown（非公開）` | 138 | Discord markup helpers: plain-text cleanup and length limits. |
+| `core.integrations._google_auth（非公開）` | 174 | Shared OAuth2 credential handling for Google integrations. |
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
 | `core.integrations._image_cli（非公開）` | 369 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
@@ -354,18 +367,18 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
 | `core.integrations._slack_cache（非公開）` | 387 | SQLite message cache for Slack (offline search, unreplied detection). |
-| `core.integrations._slack_client（非公開）` | 306 | Slack Web API client with rate-limit retry and pagination. |
-| `core.integrations._slack_cli（非公開）` | 320 | Standalone CLI entry point for Slack tools. |
+| `core.integrations._slack_client（非公開）` | 307 | Slack Web API client with rate-limit retry and pagination. |
+| `core.integrations._slack_cli（非公開）` | 308 | Standalone CLI entry point for Slack tools. |
 | `core.integrations._slack_markdown（非公開）` | 240 | Slack markdown conversion and formatting utilities. |
 | `core.integrations.aws_collector` | 393 | AnimaWorks AWS collector tool — ECS status, CloudWatch logs & metrics. |
-| `core.integrations.call_human` | 402 | — |
+| `core.integrations.call_human` | 400 | — |
 | `core.integrations.chatwork` | 192 | Chatwork integration for AnimaWorks. |
-| `core.integrations.discord` | 276 | Discord integration for AnimaWorks. |
+| `core.integrations.discord` | 261 | Discord integration for AnimaWorks. |
 | `core.integrations.github` | 400 | AnimaWorks GitHub tool — gh CLI wrapper. |
-| `core.integrations.gmail` | 1255 | AnimaWorks Gmail tool -- direct Gmail API access. |
-| `core.integrations.google_calendar` | 628 | — |
-| `core.integrations.google_sheets` | 470 | — |
-| `core.integrations.google_tasks` | 455 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
+| `core.integrations.gmail` | 1213 | AnimaWorks Gmail tool -- direct Gmail API access. |
+| `core.integrations.google_calendar` | 593 | — |
+| `core.integrations.google_sheets` | 449 | — |
+| `core.integrations.google_tasks` | 421 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
 | `core.integrations.image.codex` | 319 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
@@ -375,10 +388,10 @@ Implementation of external service integrations and animaworks-tool.
 | `core.integrations.image.novelai` | 192 | NovelAI V4.5 API client for anime full-body image generation. |
 | `core.integrations.image.prompts` | 197 | Prompt constants for bustup, chibi, and expression variants. |
 | `core.integrations.image.utils` | 135 | Shared utilities for image/3D generation clients. |
-| `core.integrations.image_gen` | 418 | Character image & 3-D model generation tool for AnimaWorks. |
+| `core.integrations.image_gen` | 426 | Character image & 3-D model generation tool for AnimaWorks. |
 | `core.integrations.local_llm` | 534 | AnimaWorks local LLM tool -- Ollama API client. |
 | `core.integrations.notion` | 825 | Notion integration for AnimaWorks. |
-| `core.integrations.slack` | 245 | Slack integration for AnimaWorks. |
+| `core.integrations.slack` | 231 | Slack integration for AnimaWorks. |
 | `core.integrations.transcribe` | 420 | AnimaWorks transcribe tool -- Whisper speech-to-text with LLM refinement. |
 | `core.integrations.web_search` | 399 | Web Search tool for AnimaWorks. |
 | `core.integrations.x_search` | 335 | X (Twitter) Search tool for AnimaWorks. |
@@ -403,16 +416,16 @@ The lifecycle of Anima startup, shutdown, and initialization.
 
 ## `core.mcp`
 
-Model Context Protocol servers and clients.
+Model Context Protocol server and client.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.mcp` | 0 | — |
 | `core.mcp.server` | 688 | — |
 
 ## `core.memory`
 
-Storage, search, and organization of conversation and episode memories.
+Storage, search, and organization of conversation and episode memory.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -423,7 +436,7 @@ Storage, search, and organization of conversation and episode memories.
 | `core.memory.activity.audit` | 290 | — |
 | `core.memory.activity.conversation` | 492 | — |
 | `core.memory.activity.format` | 567 | — |
-| `core.memory.activity.logger` | 583 | — |
+| `core.memory.activity.logger` | 588 | — |
 | `core.memory.activity.models` | 202 | — |
 | `core.memory.activity.replay` | 537 | — |
 | `core.memory.activity.rotation` | 187 | — |
@@ -431,10 +444,10 @@ Storage, search, and organization of conversation and episode memories.
 | `core.memory.config_reader` | 31 | — |
 | `core.memory.conversation.compression` | 321 | Compression logic for conversation memory. |
 | `core.memory.conversation.finalize` | 477 | Session finalization for conversation memory. |
-| `core.memory.conversation.memory` | 327 | Conversation memory (conversation memory / working memory) management. |
+| `core.memory.conversation.memory` | 327 | Conversation memory (会話記憶 / ワーキングメモリ) management. |
 | `core.memory.conversation.models` | 149 | Data classes and constants for conversation memory. |
 | `core.memory.conversation.prompt` | 270 | Prompt building functions for conversation memory. |
-| `core.memory.conversation.shortterm` | 344 | Short-term memory management. |
+| `core.memory.conversation.shortterm` | 344 | Short-term memory (短期記憶) management. |
 | `core.memory.conversation.state_update` | 49 | State update functions for conversation memory finalization. |
 | `core.memory.conversation.streaming_journal` | 473 | — |
 | `core.memory.facts.config` | 110 | — |
@@ -454,7 +467,7 @@ Storage, search, and organization of conversation and episode memories.
 | `core.memory.maintenance.cron_logger` | 159 | — |
 | `core.memory.maintenance.distillation` | 546 | — |
 | `core.memory.maintenance.forgetting` | 588 | — |
-| `core.memory.maintenance.housekeeping` | 1710 | — |
+| `core.memory.maintenance.housekeeping` | 1483 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 658 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
@@ -485,12 +498,11 @@ Storage, search, and organization of conversation and episode memories.
 | `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
-| `core.memory.rag.repair` | 31 | Public API for RAG corruption detection and automatic repair. |
-| `core.memory.rag.repair.detect` | 741 | RAG corruption classification, thresholds, and repair request detection. |
-| `core.memory.rag.repair.rebuild` | 396 | Source snapshots, staging rebuild, and metadata publication helpers. |
-| `core.memory.rag.repair.service` | 246 | Supervisor polling and execution of requested RAG repairs. |
-| `core.memory.rag.repair.state` | 191 | Persistent RAG repair-state and signal helpers. |
-| `core.memory.rag.repair.types` | 27 | Result types for RAG repair operations. |
+| `core.memory.rag.repair.detect` | 741 | — |
+| `core.memory.rag.repair.rebuild` | 396 | — |
+| `core.memory.rag.repair.service` | 246 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.memory.rag.repair.state` | 191 | Persistent repair-state helpers for RAG auto-repair. |
+| `core.memory.rag.repair.types` | 27 | — |
 | `core.memory.rag.retriever` | 809 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
@@ -571,6 +583,14 @@ Storage, search, and organization of conversation and episode memories.
 |---|---:|---|
 | `core.memory.rag` | 23 | — |
 
+## `core.memory.rag.repair`
+
+—
+
+| Module | Lines | First line of docstring |
+|---|---:|---|
+| `core.memory.rag.repair` | 31 | — |
+
 ## `core.memory.retrieval`
 
 —
@@ -581,7 +601,7 @@ Storage, search, and organization of conversation and episode memories.
 
 ## `core.messaging`
 
-Message delivery between animas and to external parties.
+Message delivery between animas and with external parties.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
@@ -590,8 +610,8 @@ Message delivery between animas and to external parties.
 | `core.messaging.discord_webhooks` | 296 | — |
 | `core.messaging.meeting_room_store` | 130 | — |
 | `core.messaging.messenger` | 1063 | — |
-| `core.messaging.outbound` | 406 | — |
-| `core.messaging.outbound_auto` | 393 | — |
+| `core.messaging.outbound` | 408 | — |
+| `core.messaging.outbound_auto` | 377 | — |
 | `core.messaging.sender` | 32 | — |
 
 ## `core.migrations`
@@ -602,7 +622,7 @@ Gradual migration of runtime data formats.
 |---|---:|---|
 | `core.migrations` | 1 | Runtime migration framework; import specific modules directly. |
 | `core.migrations.registry` | 149 | — |
-| `core.migrations.steps` | 1198 | Migration step implementations for AnimaWorks runtime data. |
+| `core.migrations.steps` | 1234 | Migration step implementations for AnimaWorks runtime data. |
 | `core.migrations.template_sync` | 133 | — |
 | `core.migrations.tracker` | 143 | — |
 
@@ -613,11 +633,11 @@ Notification generation and delivery.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.notification` | 40 | — |
-| `core.notification.channels.chatwork` | 87 | — |
-| `core.notification.channels.discord` | 240 | — |
+| `core.notification.channels.chatwork` | 79 | — |
+| `core.notification.channels.discord` | 251 | — |
 | `core.notification.channels.line` | 86 | — |
 | `core.notification.channels.ntfy` | 87 | — |
-| `core.notification.channels.slack` | 259 | — |
+| `core.notification.channels.slack` | 261 | — |
 | `core.notification.channels.telegram` | 91 | — |
 | `core.notification.interactive` | 624 | — |
 | `core.notification.notifier` | 219 | — |
@@ -634,25 +654,25 @@ Notification generation and delivery.
 
 ## `core.org`
 
-Organization models for companies, departments, roles, and more.
+Organization model for companies, departments, roles, and more.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.org` | 6 | — |
-| `core.org.company` | 1213 | Company membership and cross-company boundary helpers. |
+| `core.org.company` | 1216 | Company membership and cross-company boundary helpers. |
 | `core.org.company_resources` | 86 | — |
 | `core.org.hierarchy` | 39 | — |
-| `core.org.org_sync` | 498 | — |
-| `core.org.workspace` | 234 | — |
+| `core.org.org_sync` | 482 | — |
+| `core.org.workspace` | 232 | — |
 
 ## `core.platform`
 
-An integration layer that abstracts over differences between execution engines and operating systems.
+Integration layer that absorbs differences across execution engines and operating systems.
 
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.platform` | 4 | — |
-| `core.platform.atomic_io` | 109 | — |
+| `core.platform.atomic_io` | 158 | — |
 | `core.platform.claude_code` | 194 | — |
 | `core.platform.codex` | 214 | — |
 | `core.platform.cursor` | 60 | — |
@@ -663,6 +683,7 @@ An integration layer that abstracts over differences between execution engines a
 | `core.platform.pid` | 32 | — |
 | `core.platform.process` | 318 | — |
 | `core.platform.processing_lease` | 331 | — |
+| `core.platform.status_store` | 51 | — |
 | `core.platform.tasks` | 35 | — |
 
 ## `core.prompt`
@@ -742,22 +763,22 @@ Skill discovery, loading, and execution support.
 
 ## `core.supervisor`
 
-Anima supervision, delegation, and execution coordination.
+Supervision, delegation, and execution coordination for anima.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.supervisor` | 20 | — |
-| `core.supervisor._mgr_health（非公開）` | 476 | Health check mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_health（非公開）` | 469 | Health check mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_rag_repair（非公開）` | 9 | Supervisor entry point for the RAG repair lifecycle mixin. |
-| `core.supervisor._mgr_reconcile（非公開）` | 315 | Reconciliation mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_reconcile（非公開）` | 317 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
-| `core.supervisor.inbox_rate_limiter` | 414 | Inbox rate limiting, cascade detection, and deferred trigger management. |
+| `core.supervisor.inbox_rate_limiter` | 406 | Inbox rate limiting, cascade detection, and deferred trigger management. |
 | `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1104 | Process Supervisor - Manages lifecycle of Anima child processes. |
-| `core.supervisor.memory_service` | 766 | Root-owned vector memory service. |
+| `core.supervisor.memory_service` | 770 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 768 | Process handle for managing child Anima processes. |
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1249 | Child process entry point for Anima subprocess. |
@@ -772,7 +793,7 @@ Anima supervision, delegation, and execution coordination.
 
 Task registration, status management, and execution control.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.tasks` | 1 | Task queue, task board, delegated/background task execution and external task sources. |
 | `core.tasks.background` | 603 | — |
@@ -791,7 +812,7 @@ Task registration, status management, and execution control.
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1856 | Pending task watcher and executor. |
+| `core.tasks.pending_executor` | 1943 | Pending task watcher and executor. |
 | `core.tasks.pending_housekeeping` | 49 | — |
 | `core.tasks.queue` | 489 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
@@ -824,7 +845,7 @@ Task registration, status management, and execution control.
 
 Tool schemas, permissions, and execution infrastructure.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
 | `core.tooling.action_gate` | 188 | — |
@@ -832,18 +853,18 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.command_policy` | 455 | — |
 | `core.tooling.dispatch` | 255 | — |
 | `core.tooling.handler` | 865 | — |
-| `core.tooling.handler_base` | 367 | — |
+| `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 902 | — |
-| `core.tooling.handler_create_anima` | 234 | — |
+| `core.tooling.handler_create_anima` | 240 | — |
 | `core.tooling.handler_delegation` | 260 | — |
 | `core.tooling.handler_files` | 1220 | — |
 | `core.tooling.handler_memory` | 1253 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 199 | — |
-| `core.tooling.handler_perms` | 453 | — |
+| `core.tooling.handler_perms` | 384 | — |
 | `core.tooling.handler_skills` | 879 | — |
-| `core.tooling.handler_subordinate_control` | 415 | — |
-| `core.tooling.handler_workspace` | 252 | — |
+| `core.tooling.handler_subordinate_control` | 410 | — |
+| `core.tooling.handler_workspace` | 250 | — |
 | `core.tooling.org_helpers` | 154 | — |
 | `core.tooling.permissions` | 331 | — |
 | `core.tooling.schemas.admin` | 221 | — |
@@ -861,13 +882,13 @@ Tool schemas, permissions, and execution infrastructure.
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
 | `core.tooling.standalone` | 187 | — |
-| `core.tooling.surface` | 247 | Single source of truth for runtime tool visibility. |
+| `core.tooling.surface` | 247 | — |
 
 ## `core.tooling.schemas`
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.tooling.schemas` | 70 | Canonical tool schema definitions and format converters. |
 
@@ -883,12 +904,12 @@ Recording and aggregating LLM usage and costs.
 
 ## `core.voice`
 
-Audio input/output and voice conversations.
+Voice input/output and voice conversation.
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
-| `core.voice.front` | 365 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
 | `core.voice.session` | 1839 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.stt` | 137 | Voice STT — in-memory PCM transcription via faster-whisper. |
@@ -905,7 +926,7 @@ Audio input/output and voice conversations.
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `server` | 7 | — |
 | `server.app` | 1372 | — |
@@ -921,13 +942,13 @@ Audio input/output and voice conversations.
 
 —
 
-| Module | Lines | First line of docstring |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `server.gateways` | 1 | Inbound chat/meeting gateways (Slack, Discord, Zoom, GitHub) run by the server. |
-| `server.gateways.discord_channel_sync` | 271 | — |
+| `server.gateways.discord_channel_sync` | 275 | — |
 | `server.gateways.discord_gateway` | 727 | — |
 | `server.gateways.github_gateway` | 534 | — |
-| `server.gateways.slack_channel_sync` | 492 | — |
+| `server.gateways.slack_channel_sync` | 493 | — |
 | `server.gateways.slack_interactive` | 239 | — |
 | `server.gateways.slack_socket` | 1081 | — |
 | `server.gateways.zoom_gateway` | 700 | — |
@@ -953,17 +974,17 @@ Audio input/output and voice conversations.
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 101 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
-| `server.routes.config_routes` | 331 | — |
+| `server.routes.config_routes` | 329 | — |
 | `server.routes.external_tasks` | 261 | — |
-| `server.routes.internal` | 1010 | — |
+| `server.routes.internal` | 1012 | — |
 | `server.routes.logs_routes` | 217 | — |
 | `server.routes.media_proxy` | 186 | — |
 | `server.routes.memory_routes` | 426 | — |
 | `server.routes.room` | 443 | Meeting room API routes with SSE streaming. |
 | `server.routes.sessions` | 297 | — |
-| `server.routes.setup` | 609 | — |
+| `server.routes.setup` | 602 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1130 | — |
+| `server.routes.system` | 1129 | — |
 | `server.routes.taskboard` | 235 | — |
 | `server.routes.usage_routes` | 842 | — |
 | `server.routes.users` | 279 | — |

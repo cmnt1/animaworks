@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/overview.md -->
-<!-- i18n: source-sha256=b2c22dd9823637ef5314ee8000da5cf5fe2dd07ffd716e6adcbd304c92cced4a generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=83b674d9d55c88172f6b70638b086b91f3f0e7394f67f0690f11bc78e9819a2c generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -65,4 +65,4 @@ Provides startup preparation, log checking, data maintenance, and troubleshootin
 
 ## MCP
 
-The MCP server's `MCP_TOOL_NAMES` allowlist and the trigger/role-aware `resolve_tool_surface` policy are defined in `core/tooling/surface.py`. The final advertised list varies by trigger and Anima's execution conditions.
+The MCP allowlist `MCP_TOOL_NAMES` and the trigger- and role-based `resolve_tool_surface` are consolidated in `core/tooling/surface.py`. The list that is actually published varies depending on the trigger and Anima execution conditions.

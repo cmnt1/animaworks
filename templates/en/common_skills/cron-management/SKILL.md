@@ -285,13 +285,13 @@ and have Anima focus on judgment, analysis, and reporting.
 
 ## cron.md Parse Notifications (Automatic)
 
-When cron.md parsing or job registration fails during initial setup or `reload_schedule`, the scheduler writes `state/background_notifications/cron_health_{タイムスタンプ}.md`. The notification is included in the next heartbeat or cron context. Registered cron execution is not checked periodically.
+When a parse or registration error is detected during the initial registration of cron.md or at `reload_schedule`, the scheduler generates a `state/background_notifications/cron_health_{タイムスタンプ}.md`. The notification is included in the context of the next heartbeat or cron execution. There is no feature for periodically monitoring the execution status of registered cron jobs.
 
-Detected problems:
+**Detected issues**:
 
-- Tasks are defined, but **no valid schedule can be registered** (e.g., all expressions are invalid)
-- An indented `schedule:` line appears outside comments and fenced code blocks (`schedule:` must start at the beginning of the line)
-- The effective configuration contains `schedule:`, but the parser **returns zero tasks**
+- A task is defined, but **no valid schedule can be registered** (e.g., all expressions are invalid)
+- Outside of comments or code fences, there is a `schedule:` line with leading whitespace (`schedule:` must be written at the beginning of the line)
+- The valid configuration text contains `schedule:`, but the parser **returns no tasks at all**
 
 ---
 

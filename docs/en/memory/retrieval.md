@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/memory/retrieval.md -->
-<!-- i18n: source-sha256=5ed0ee0ebc2583afa642643b8e55c029012dab15829db8c693b8012bea91b30d generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=cd9eb191d085ca1974053e1c223707420169fadf846459b8690a8f5b40695a92 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Verified commit: 193a5e72
 
@@ -44,4 +44,4 @@ The Chroma persistent store is owned by `MemoryService` of the root process for 
 
 ## RAG Repair
 
-`core/memory/rag/repair/detect.py` requests repair upon signs of corruption. The root's `MemoryService` builds a staging index from the original memory files, validates it, then switches over. If explicit repair is needed during operation, see [`repair-rag` in the CLI Reference](../reference/cli.md).
+`core/memory/rag/repair/detect.py` requests repair upon signs of corruption. The root `MemoryService` creates a staging index from the original memory file, validates it, and then switches over. If explicit repair is needed during operation, refer to the [CLI reference for `repair-rag`](../reference/cli.md).

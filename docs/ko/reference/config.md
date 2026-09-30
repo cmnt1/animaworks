@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=d8fc475eeb91191b55188b30bc7b258c137e537b9a0a0d9e2ec440e5da0b1c43 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=ee2aef29009e2c98144ea857dcfaf50a9d4b32094b89f40c39fbf4ba7a760178 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # 설정 참조
 
@@ -21,7 +21,7 @@
 | `credentials.keys` | `dict[str, str]` | `{}` | — |
 | `credentials.base_url` | `str \| None` | `null` | — |
 | `model_modes` | `dict[str, str]` | `{}` | 모델 이름 패턴과 실행 모드의 대응. |
-| `model_context_windows` | `dict[str, int]` | `{}` | 모델별 컨텍스트 길이의 호환 설정. models.json 사용을 권장. |
+| `model_context_windows` | `dict[str, int]` | `{}` | 모델별 컨텍스트 길이의 호환 설정. models.json 사용 권장. |
 | `model_max_tokens` | `dict[str, int]` | `{}` | 모델 이름 패턴별 기본 출력 토큰 수. |
 | `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | 각 anima에 적용하는 모델·실행 설정의 기본값. |
 | `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
@@ -62,7 +62,7 @@
 | `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
-| `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | 기억 통합의 동작과 스케줄. |
+| `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | 기억 통합의 동작과 일정. |
 | `consolidation.daily_enabled` | `bool` | `true` | — |
 | `consolidation.weekly_distillation_enabled` | `bool` | `true` | — |
 | `consolidation.synaptic_downscaling_enabled` | `bool` | `true` | — |
@@ -73,7 +73,7 @@
 | `consolidation.llm_model` | `str` | `"claude-sonnet-4-6"` | — |
 | `consolidation.llm_credential` | `str` | `""` | — |
 | `consolidation.episode_summary_max_input_bytes` | `int` | `204800` | 각 일일 에피소드 요약 LLM 호출의 최대 UTF-8 프롬프트 크기. |
-| `consolidation.episode_summary_backfill_days` | `int` | `7` | 처리되지 않은 일일 에피소드 활동을 위해 이만큼의 로컬 일수를 되돌아봄. |
+| `consolidation.episode_summary_backfill_days` | `int` | `7` | 처리되지 않은 일일 에피소드 활동을 찾기 위해 이만큼의 로컬 일수를 되돌아봄. |
 | `consolidation.episode_summary_backfill_max_days_per_run` | `int` | `3` | 한 번의 일일 통합 중 백필할 최대 이전 일수 (어제는 별도). |
 | `consolidation.ipc_timeout_base_seconds` | `int` | `1800` | — |
 | `consolidation.ipc_timeout_per_activity_entry_seconds` | `float` | `4.0` | — |
@@ -104,7 +104,7 @@
 | `rag.embedding_e5_prefix_enabled` | `bool` | `false` | 활성화하면 쿼리 임베딩에 embedding_query_prefix를, 인덱싱된 문서 임베딩에 embedding_document_prefix를 접두사로 붙입니다. E5 계열 절제 실험을 위한 것이며, 문서 접두사 변경이 적용되려면 재인덱싱이 필요합니다. |
 | `rag.embedding_query_prefix` | `str` | `"query: "` | — |
 | `rag.embedding_document_prefix` | `str` | `"passage: "` | — |
-| `rag.embedding_max_seq_length` | `int` | `2048` | 임베딩 모델의 최대 시퀀스 길이(토큰) 상한. ruri-v3 같은 장문 컨텍스트 모델은 기본 8192로, 대량 인코딩 시 GPU 활성 메모리를 폭발시킵니다. 0 = 모델 기본값 사용. |
+| `rag.embedding_max_seq_length` | `int` | `2048` | 임베딩 모델의 최대 시퀀스 길이(토큰) 상한. ruri-v3 같은 장문 컨텍스트 모델은 기본 8192로, 대량 인코딩 중 GPU 활성 메모리를 크게 사용합니다. 0 = 모델 기본값 사용. |
 | `rag.use_gpu` | `bool` | `false` | — |
 | `rag.min_retrieval_score` | `float` | `0.3` | — |
 | `rag.skill_match_min_score` | `float` | `0.75` | — |
@@ -154,7 +154,7 @@
 | `skills.cron.allow_external_send` | `bool` | `false` | — |
 | `skills.external_roots` | `list[ExternalSkillRoot]` | `…` | — |
 | `skills.external_roots.path` | `str` | `"—"` | ``~``을 포함할 수 있음; 사용 전에 확장됨 |
-| `skills.external_roots.engine` | `str` | `"—"` | ^[a-z][a-z0-9-]*$ 패턴과 일치 |
+| `skills.external_roots.engine` | `str` | `"—"` | ^[a-z][a-z0-9-]*$ 패턴 일치 |
 | `skills.external_roots.trust_level` | `str` | `"trusted"` | — |
 | `skills.external_roots.enabled` | `bool` | `true` | — |
 | `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Chatwork 도구의 권한 설정. |
@@ -182,7 +182,7 @@
 | `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
 | `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
 | `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
-| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 공급자와 기본 파라미터. |
+| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | 이미지 생성 제공자와 기본 파라미터. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
 | `image_gen.prefer_codex` | `bool` | `true` | codex CLI가 있으면 이미지 생성에 최우선으로 사용 |
@@ -211,7 +211,7 @@
 | `human_notification.channels.enabled` | `bool` | `true` | — |
 | `human_notification.channels.config` | `dict[str, Any]` | `{}` | — |
 | `interaction` | `InteractionConfig` | `{InteractionConfig}` | anima 간 대화와 메시지 처리. |
-| `interaction.default_approver_ids` | `list[str]` | `[]` | 호출별 call_human allowed_users와 병합되는 기본 Slack 사용자 ID. |
+| `interaction.default_approver_ids` | `list[str]` | `[]` | 기본 Slack 사용자 ID가 호출별 call_human allowed_users와 병합됨. |
 | `interaction.web_base_url` | `str` | `""` | — |
 | `server` | `ServerConfig` | `{ServerConfig}` | HTTP 서버, 인증, 사용량 제어 설정. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = 무제한 |
@@ -263,7 +263,7 @@
 | `external_messaging.slack.enabled` | `bool` | `false` | — |
 | `external_messaging.slack.mode` | `str` | `"socket"` | "socket" \| "webhook" |
 | `external_messaging.slack.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.slack.default_anima` | `str` | `""` | 매핑되지 않은 채널용 폴백 anima |
+| `external_messaging.slack.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
 | `external_messaging.slack.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
 | `external_messaging.slack.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
 | `external_messaging.slack.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채워짐) |
@@ -276,7 +276,7 @@
 | `external_messaging.chatwork.enabled` | `bool` | `false` | — |
 | `external_messaging.chatwork.mode` | `str` | `"socket"` | "socket" \| "webhook" |
 | `external_messaging.chatwork.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.chatwork.default_anima` | `str` | `""` | 매핑되지 않은 채널용 폴백 anima |
+| `external_messaging.chatwork.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
 | `external_messaging.chatwork.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
 | `external_messaging.chatwork.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
 | `external_messaging.chatwork.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채워짐) |
@@ -289,7 +289,7 @@
 | `external_messaging.discord.enabled` | `bool` | `false` | — |
 | `external_messaging.discord.mode` | `str` | `"socket"` | "socket" \| "webhook" |
 | `external_messaging.discord.anima_mapping` | `dict[str, str]` | `{}` | channel_id → anima_name ("" = 이 채널 무시) |
-| `external_messaging.discord.default_anima` | `str` | `""` | 매핑되지 않은 채널용 폴백 anima |
+| `external_messaging.discord.default_anima` | `str` | `""` | 매핑되지 않은 채널의 폴백 anima |
 | `external_messaging.discord.app_id_mapping` | `dict[str, str]` | `{}` | api_app_id → anima_name (Anima별 웹훅 라우팅) |
 | `external_messaging.discord.auto_response` | `bool` | `false` | LLM 응답을 원래 플랫폼으로 자동 게시 |
 | `external_messaging.discord.board_mapping` | `dict[str, str]` | `{}` | channel_id → animaworks_board_name (자동 채워짐) |
@@ -300,10 +300,10 @@
 | `external_messaging.discord.default_channel_company` | `str` | `""` | 자동 생성 보드의 회사 (비어 있으면 귀속 없음) |
 | `external_messaging.zoom` | `ZoomRTMSConfig` | `{ZoomRTMSConfig}` | — |
 | `external_messaging.zoom.enabled` | `bool` | `false` | — |
-| `external_messaging.zoom.default_anima` | `str` | `""` | 매핑되지 않은 회의용 폴백 anima |
+| `external_messaging.zoom.default_anima` | `str` | `""` | 매핑되지 않은 회의의 폴백 anima |
 | `external_messaging.zoom.meeting_mapping` | `dict[str, str]` | `{}` | meeting_id → anima_name |
 | `external_messaging.zoom.chunk_interval_seconds` | `int` | `300` | 버퍼링된 트랜스크립트의 플러시 간격 |
-| `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | 청크당 최대 문자 수 (먼저 도달하는 쪽에서 플러시) |
+| `external_messaging.zoom.chunk_max_chars` | `int` | `4000` | 청크당 최대 문자 수 (먼저 도달하는 조건에서 플러시) |
 | `external_tasks` | `ExternalTasksConfig` | `{ExternalTasksConfig}` | 외부 작업 시스템과의 연동. |
 | `external_tasks.enabled` | `bool` | `true` | — |
 | `external_tasks.interval_minutes` | `int` | `5` | — |
@@ -342,17 +342,17 @@
 | `activity_log.max_size_mb` | `int` | `1024` | anima별 총량, 기본 1GB |
 | `activity_log.max_file_size_mb` | `int` | `100` | 파일당 비대화 트리거; 0 = 비활성화 |
 | `activity_log.max_age_days` | `int` | `7` | mode="time"\|"both"에서 사용 |
-| `activity_log.rotation_time` | `str` | `"05:00"` | 실행 시각 (구성된 TZ) |
+| `activity_log.rotation_time` | `str` | `"05:00"` | 실행 시각 (설정된 TZ) |
 | `logging` | `LoggingConfig` | `{LoggingConfig}` | 로그 레벨, 출력 대상, 민감 정보 마스킹. |
 | `logging.redaction_enabled` | `bool` | `true` | 로그 출력에서 비밀 마스킹; 원시 로그 디버깅 시 비활성화. |
 | `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | 정기적인 heartbeat의 실행 설정. |
 | `heartbeat.interval_minutes` | `int` | `30` | — |
-| `heartbeat.current_state_max_chars` | `int` | `8000` | current_state.md의 최대 문자 수 (트림 전); 0 = 비활성화 |
+| `heartbeat.current_state_max_chars` | `int` | `8000` | current_state.md의 최대 문자 수 (초과 시 트림); 0 = 비활성화 |
 | `heartbeat.current_state_cleanup_chars` | `int` | `2000` | current_state.md의 소프트 정리 임계값; 0 = current_state_max_chars의 80% |
-| `heartbeat.heartbeat_md_max_bytes` | `int` | `8000` | 압축 지시가 heartbeat 프롬프트에 주입되기 전 heartbeat.md의 최대 바이트; 0 = 비활성화 |
+| `heartbeat.heartbeat_md_max_bytes` | `int` | `8000` | heartbeat.md의 최대 바이트 수 (초과 시 압축 지시가 heartbeat 프롬프트에 주입됨); 0 = 비활성화 |
 | `heartbeat.recent_dialogue_max_age_hours` | `int` | `6` | 마지막 턴이 이 시간(시간)보다 최근일 때만 heartbeat 컨텍스트에 최근 채팅 대화 포함; 0 = 항상 포함 |
-| `heartbeat.soft_timeout_seconds` | `int` | `300` | HB 세션에 마무리 시스템 알림을 주입하기 전까지의 초 |
-| `heartbeat.hard_timeout_seconds` | `int` | `0` | HB 세션을 강제 종료하기 전까지의 초; 0 = 비활성화 |
+| `heartbeat.soft_timeout_seconds` | `int` | `300` | HB 세션에 마무리 시스템 알림을 주입하기 전 대기 시간(초) |
+| `heartbeat.hard_timeout_seconds` | `int` | `0` | HB 세션을 강제 종료하기 전 대기 시간(초); 0 = 비활성화 |
 | `heartbeat.default_model` | `str \| None` | `null` | heartbeat/cron용 전역 백그라운드 모델 (None = 메인 모델 사용) |
 | `heartbeat.msg_heartbeat_cooldown_s` | `int` | `300` | 메시지 트리거 heartbeat 쿨다운 |
 | `heartbeat.cascade_window_s` | `int` | `1800` | 캐스케이드 감지용 슬라이딩 윈도우 |
@@ -361,12 +361,12 @@
 | `heartbeat.max_depth` | `int` | `6` | 최대 양방향 교환 깊이 |
 | `heartbeat.actionable_intents` | `list[str]` | `["report","question"]` | — |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
-| `heartbeat.channel_post_cooldown_s` | `int` | `300` | Anima당 보드 게시 사이 최소 초 (0 = 제한 없음) |
-| `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task는 이미 대상의 보류 설명자를 작성합니다; DM은 추가 받은 편지함 실행만 깨웁니다. 건너뛰려면 false로 설정. |
+| `heartbeat.channel_post_cooldown_s` | `int` | `300` | Anima당 보드 게시 사이 최소 시간(초) (0 = 제한 없음) |
+| `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task는 이미 대상의 대기 설명자를 작성합니다; DM은 추가 받은 편지함 실행만 깨웁니다. 건너뛰려면 false로 설정. |
 | `heartbeat.outbound_limit_enabled` | `bool` | `true` | False는 전역 hourly/daily 아웃바운드 메시지 상한을 비활성화 |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | 마지막 스트림 종료 후 유휴 자동 압축을 트리거할 때까지의 분 |
-| `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | 시스템 프롬프트에 해결된 승인 알림을 주입할 시간; 0 = 알림 섹션 비활성화 |
-| `voice` | `VoiceConfig` | `{VoiceConfig}` | 음성 입출력과 음성 공급자. |
+| `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | 해결된 승인 알림을 시스템 프롬프트에 주입할 시간; 0 = 알림 섹션 비활성화 |
+| `voice` | `VoiceConfig` | `{VoiceConfig}` | 음성 입출력과 음성 제공자. |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |
 | `voice.stt_compute_type` | `str` | `"default"` | — |
@@ -422,6 +422,7 @@
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
+| `housekeeping.sdk_bash_injection_max_size_mb` | `int` | `10` | — |
 | `housekeeping.archive_superseded_retention_days` | `int` | `7` | — |
 | `housekeeping.archive_versions_keep_per_file` | `int` | `5` | — |
 | `inbox` | `InboxConfig` | `{InboxConfig}` | anima의 받은 편지함과 알림 표시. |
@@ -440,8 +441,8 @@
 | `github_identities` | `dict[str, str]` | `{}` | 회사 slug와 GitHub 계정의 대응. |
 | `activity_level` | `int` | `100` | 전체 활동 빈도를 조정하는 배율. |
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | 시간대별 활동 빈도. |
-| `activity_schedule.start` | `str` | `"—"` | HH:MM 형식의 시작 시간 |
-| `activity_schedule.end` | `str` | `"—"` | HH:MM 형식의 종료 시간 (자정을 넘길 수 있음) |
+| `activity_schedule.start` | `str` | `"—"` | 시작 시간 (HH:MM 형식) |
+| `activity_schedule.end` | `str` | `"—"` | 종료 시간 (HH:MM 형식, 자정을 넘길 수 있음) |
 | `activity_schedule.level` | `int` | `"—"` | 이 기간의 활동 수준 백분율 |
 | `icon_url_template` | `str` | `""` | anima 아이콘 URL의 템플릿. |
 | `ui` | `UIConfig` | `{UIConfig}` | Web UI의 표시 설정. |

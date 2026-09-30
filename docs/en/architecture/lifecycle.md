@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/lifecycle.md -->
-<!-- i18n: source-sha256=de6fcde4cf6062283624864367afb218ffffe243f3589f600913606fad8f582f generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=fc15ebd7f7ff4e9d39caf9e22e42c6aac67d6fbda00a162a69943b1044a4f2bd generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -20,11 +20,11 @@ Anima is executed not only in response to requests from the server, but also tri
 
 Chat uses a per-thread conversation lock to prevent conflicts within the same conversation. Inbox and scheduled background work have separate control locks. TaskExec uses dedicated worker slots and AgentCore, and does not share the execution lock of heartbeat/Cron. Updates to file `state/current_state.md` use a process-safe state file lock.
 
-## Heartbeat and Cron
+## Heartbeat and cron
 
-The default heartbeat interval is 30 minutes in the global configuration, and can be overridden per Anima via `status.json` in `heartbeat_interval_minutes`. The valid range is 1 to 1440 minutes. The global `activity_level` defaults to 100% with an allowable range of 10 to 400%; higher values shorten the effective interval. `activity_schedule` can be used to switch activity levels by time period. Activity time windows are configured from `heartbeat.md`.
+The default heartbeat interval is 30 minutes in the global configuration, and can be overridden per Anima via `status.json` in `heartbeat_interval_minutes`. The valid range is 1–1440 minutes. The global `activity_level` defaults to 100%, with an allowable range of 10–400%; higher values shorten the effective interval. `activity_schedule` can be used to switch activity levels by time of day. Active time windows are configured from `heartbeat.md`.
 
-`cron.md` defines one task per heading, with a standard 5-field cron expression in `schedule`; `type`, a description, and optional command/tool arguments are parsed by `core/supervisor/schedule_parser.py`. During setup or hot reload, parse/registration failures are reported as `cron_health_*.md` notifications. Registered cron execution frequency and failures are not monitored periodically.
+`cron.md` is a heading-level definition, where `schedule` holds a standard 5-field cron expression. `type`, a description, and optionally command/tool with arguments are set, and `core/supervisor/schedule_parser.py` parses them. During setup or hot-reload, only schedules that could not be parsed or registered are reported as `cron_health_*.md` notifications. There is no periodic monitoring of registered cron execution frequency or failures.
 
 ## Initial Startup and One Cycle
 

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/memory/retrieval.md -->
-<!-- i18n: source-sha256=5ed0ee0ebc2583afa642643b8e55c029012dab15829db8c693b8012bea91b30d generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=cd9eb191d085ca1974053e1c223707420169fadf846459b8690a8f5b40695a92 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: 193a5e72
 
@@ -42,6 +42,6 @@ Anima는 자동 회상으로 부족한 정보를 `search_memory`로 명시적으
 
 Chroma의 영구 저장소는 Anima별 root 프로세스의 `MemoryService`이 소유한다. `core/memory/rag/vector_client.py`의 공통 client와 `vector_registry.py`가 연결을 선택하고, root 자신은 in-process bridge를 사용한다. server 측 내부 vector API는 root로 IPC 전송하며, 다른 프로세스는 HTTP client 경유로 접근한다. 임베딩 처리도 server 측에 집약된다.
 
-## RAG의 복구
+## RAG 복구
 
-`core/memory/rag/repair/detect.py`은 손상 징후를 받아 복구를 요청한다. root의 `MemoryService`은 원본 기억 파일에서 staging 색인을 만들고, 검증한 후에 전환한다. 운영 중 명시적 복구가 필요한 경우에는 [CLI 참조의 `repair-rag`](../reference/cli.md)를 참조한다.
+`core/memory/rag/repair/detect.py`는 손상 징후를 받아 복구를 요청한다. root의 `MemoryService`는 원본 메모리 파일에서 staging 인덱스를 만들고, 검증한 후에 전환한다. 운영 중 명시적인 복구가 필요한 경우에는 [CLI 참조의 `repair-rag`](../reference/cli.md)를 참조한다.

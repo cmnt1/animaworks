@@ -1,11 +1,11 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=4b0815db2f25e4f65706a582e915e27083e7fb318a5b36a8bf77b7bb41dfb7a1 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=180823a8c7bc50385b74c0144a1d8f1884784e5889a68c8865182ca7636498e1 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
-# CLI reference: `animaworks`
+# CLI Reference: `animaworks`
 
 Generated from the argparse definition of the `animaworks` command.
 
-## Global options
+## Global Options
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
@@ -645,7 +645,7 @@ Check and maintain memory
 
 ## `memory forgetting-dry-run`
 
-Show the number of targets for low activation and complete forgetting without updating
+Show the number of targets for low activation and full forgetting without updating
 
 `usage: animaworks memory forgetting-dry-run [-h] --anima ANIMA`
 
@@ -655,7 +655,7 @@ Show the number of targets for low activation and complete forgetting without up
 
 ## `migrate`
 
-Run necessary migrations on runtime data.
+Run required migrations on runtime data.
 
 `usage: animaworks migrate [-h] [--dry-run] [--verbose] [--list] [--force]`
 
@@ -1293,7 +1293,7 @@ Update task status
 
 ## `task-store`
 
-Maintain and migrate the authoritative task store per assignee
+Maintenance and migration of per-assignee task source of truth
 
 `usage: animaworks task-store [-h]
                              {status,quiesce,resume,migrate,backup,export} ...`
@@ -1339,7 +1339,7 @@ Import a quiesced old ledger (backup required)
 
 ## `task-store quiesce`
 
-Permanently stop acquiring new executions
+Permanently stop fetching new executions
 
 `usage: animaworks task-store quiesce [-h] --anima ANIMA`
 
@@ -1349,7 +1349,7 @@ Permanently stop acquiring new executions
 
 ## `task-store resume`
 
-Resume acquiring new executions
+Resume fetching new executions
 
 `usage: animaworks task-store resume [-h] --anima ANIMA`
 
@@ -1359,7 +1359,7 @@ Resume acquiring new executions
 
 ## `task-store status`
 
-Show the quiesce gate and execution count
+Show quiesce gate and execution count
 
 `usage: animaworks task-store status [-h] --anima ANIMA`
 
@@ -1410,7 +1410,7 @@ Manage encrypted vault values
 
 `usage: animaworks vault [-h] {status,init,get,store,list,delete} ...`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1420,7 +1420,7 @@ Remove a key from one section
 
 `usage: animaworks vault delete [-h] [--shared] key`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | key | positional | — | — | Key to remove |
 | --shared | flag | false | — | Delete from the shared section instead of the Anima namespace (never cascades) |
@@ -1431,7 +1431,7 @@ Get a value by key
 
 `usage: animaworks vault get [-h] [--shared] key`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | key | positional | — | — | Key to retrieve |
 | --shared | flag | false | — | Look only in the shared section (default: Anima namespace, then shared) |
@@ -1442,7 +1442,7 @@ Generate a vault key if one does not exist
 
 `usage: animaworks vault init [-h]`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1452,7 +1452,7 @@ List keys in the anima namespace and the shared section
 
 `usage: animaworks vault list [-h] [--shared]`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | --shared | flag | false | — | List only the shared section (does not require ANIMAWORKS_ANIMA_DIR) |
 
@@ -1462,7 +1462,7 @@ Show key and encryption status without values
 
 `usage: animaworks vault status [-h]`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1472,7 +1472,7 @@ Store a key-value pair
 
 `usage: animaworks vault store [-h] [--shared] key [value]`
 
-| Name | Type | Default | Choices | Description |
+| Name | Type | Default | Options | Description |
 |---|---|---|---|---|
 | key | positional | — | — | Key to store |
 | value | positional | — | — | Value to store (Anima-scoped compatibility mode only) |

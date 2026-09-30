@@ -271,11 +271,11 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 
 ## Adding Core Tools to the Repository
 
-1. Add `core/integrations/{name}.py` (files starting with `_` are excluded from scanning).
-2. `TOOL_MODULES` is automatically registered via `discover_core_tools()`. No manual list in `core/integrations/__init__.py` is needed.
-3. The curated MCP allowlist is `MCP_TOOL_NAMES` in `core/tooling/surface.py`; `resolve_tool_surface` then applies trigger and role gates for MCP-backed modes (S / C / D / G / X). Examples include `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, and `create_skill`. **External service core tools like Slack / Gmail / `web_search` are not exposed to MCP** — they typically use the **`use_tool` / Bash (`animaworks-tool`) / skill** path.
-4. Add tests to `tests/`. If schemas or reference documents are auto-generated, also check the targets of `scripts/generate_reference.py`.
-5. For destructive operations, consider updating `gated: True` and the permissions-side description.
+1. Add `core/integrations/{name}.py` (items starting with `_` are excluded from scanning).
+2. `TOOL_MODULES` is automatically registered via `discover_core_tools()`. No manual list for `core/integrations/__init__.py` is needed.
+3. The curated allowlist for MCP is `MCP_TOOL_NAMES` in `core/tooling/surface.py`. `resolve_tool_surface` performs filtering based on trigger and role in MCP usage modes (S / C / D / G / X). Examples: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. **External service core tools such as Slack / Gmail / `web_search` do not appear in MCP** — they typically go through **`use_tool` / Bash (`animaworks-tool`) / skills**.
+4. Add tests to `tests/`. If schemas or reference documents are auto-generated, also check the targets in `scripts/generate_reference.py`.
+5. For destructive operations, consider updating `gated: True` and the permission descriptions.
 
 ## Validation Checklist
 

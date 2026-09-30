@@ -11,18 +11,18 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 
 1. **프레임워크 내장 도구** — `ToolHandler`가 이름으로 디스패치(기억·메시지·작업·파일 조작 등). 정의는 `core/tooling/handler.py`의 `_dispatch`가 1차 정보입니다.
 2. **외부 도구 모듈** — `core/integrations/` 바로 아래의 공개 모듈(`_*`로 시작하는 파일은 제외). `get_tool_schemas()` / `dispatch()` / `cli_main()`을 가지며, `animaworks-tool <モジュール名> …`에서도 호출할 수 있습니다. 추가로 `~/.animaworks/common_tools/` 및 각 Anima의 `tools/*.py`(개인용)을 런타임에 로드합니다(`core/integrations/__init__.py`의 `discover_*`).
-3. **`animaworks-tool` CLI** — 위 모듈의 하위 명령 실행, 장시간 처리의 `submit`, 그리고 일부 메인 CLI로의 폴백 전송.
+3. **`animaworks-tool` CLI** — 위 모듈의 하위 명령 실행, 장시간 처리의 `submit`, 및 일부 메인 CLI로의 폴백 전송.
 
-**실행 모드에 따라 'LLM에 보이는 도구 목록'은 다릅니다.** 동일한 핸들러 구현이라도 스키마의 묶음 방식이 달라집니다.
+**실행 모드에 따라 "LLM에 보이는 도구 목록"이 다릅니다.** 동일한 핸들러 구현이라도 스키마의 묶음 방식이 달라집니다.
 
 | 구분 | 도구 목록의 구성 |
 |------|----------------------|
-| **MCP 사용 모드(S / C / D / G / X)** | 엔진 내장 도구 외에 MCP를 통해 AnimaWorks 도구를 사용합니다. `MCP_TOOL_NAMES` 허용 목록과 `resolve_tool_surface`의 트리거·역할 판정은 `core/tooling/surface.py`에 모여 있습니다. |
-| **Mode A(LiteLLM, 구 B도 같은 surface)** | `build_unified_tool_list`(`core/tooling/schemas/builder.py`)은 `resolve_tool_surface`가 선택한 스키마를 조립합니다. `call_human`은 알림 설정 시, `delegate_task` / `ping_subordinate`은 부하가 있을 때 포함되고, `submit_tasks`는 `background` / `submit_tasks` / `heartbeat` 트리거로 이용할 수 있습니다. 스킬 관리 도구는 heartbeat / consolidation으로 제한됩니다. `consolidation:*`에서는 통신·위임·태스크 등록·워크스페이스 권한 도구를 숨깁니다. |
+| **MCP 이용 모드 (S / C / D / G / X)** | 엔진 내장 도구에 더해, MCP를 통해 AnimaWorks 도구를 이용합니다. `MCP_TOOL_NAMES`의 허가 목록과 `resolve_tool_surface`에 의한 트리거·역할 판정은 `core/tooling/surface.py`에 집약되어 있습니다. |
+| **Mode A (LiteLLM. 구 B도 동일한 surface)** | `build_unified_tool_list`(`core/tooling/schemas/builder.py`)은 `resolve_tool_surface`가 선택한 스키마를 구성합니다. `call_human`은 알림 설정 시, `delegate_task` / `ping_subordinate`은 부하가 있는 경우에 포함되며, `submit_tasks`는 `background` / `submit_tasks` / `heartbeat` 트리거로 이용할 수 있습니다. 스킬 관리 도구는 heartbeat / consolidation으로 한정됩니다. `consolidation:*`에서는 통신·위임·작업 투입·작업 공간 권한 부여 도구가 숨겨집니다. |
 
-### MCP(Mode S / C / D / G / X)로 공개되는 AnimaWorks 도구
+### MCP (Mode S / C / D / G / X)로 공개되는 AnimaWorks 도구
 
-전체 허용 목록 `MCP_TOOL_NAMES`는 `core/tooling/surface.py`에 정의되어 있습니다. `resolve_tool_surface(ctx, trigger, mode)`가 트리거와 역할에 따른 최종 목록을 반환하고, MCP 서버가 해당 스키마를 공개합니다.
+전체 허가 목록 `MCP_TOOL_NAMES`은 `core/tooling/surface.py`에 정의되어 있습니다. `resolve_tool_surface(ctx, trigger, mode)`가 트리거와 역할에 따른 최종 목록을 반환하고, MCP 서버가 그 스키마를 공개합니다.
 
 - **기억**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
 - **메시지**: `send_message`, `post_channel`
@@ -33,7 +33,7 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 - **스킬 관리**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
 - **고용**: `create_anima`
 
-`mcp.trigger_scoped_tools`가 활성화된 경우 스킬 관리 도구(`promote_procedure_to_skill` 및 라이프사이클 관리 등)는 heartbeat·consolidation 때만 표시되며, `create_skill`은 이 제한의 대상이 아닙니다. `call_human`은 알림 채널 설정 시, `delegate_task`은 직속 부하가 있을 때만 표시되며, `create_anima`는 `newstaff` 스킬이 필요합니다. Mode A의 더 엄격한 기준에 맞춰 `grant_workspace_access`는 consolidation 중 숨겨집니다.
+`mcp.trigger_scoped_tools`가 유효한 경우, 스킬 관리 계열 도구(`promote_procedure_to_skill`나 라이프사이클 관리 등)는 heartbeat·consolidation 때만 표시되며, `create_skill`는 이 제한의 대상이 아닙니다. `call_human`은 알림 채널 설정 시, `delegate_task`은 직속 부하가 있을 때만 표시되며, `create_anima`는 `newstaff` 스킬을 가진 경우에 이용할 수 있습니다. Mode A와 더 엄격한 쪽을 맞추기 위해, `grant_workspace_access`는 consolidation 중에 표시되지 않습니다.
 
 ### Mode A의 도구 목록에 포함되지 않는 예
 

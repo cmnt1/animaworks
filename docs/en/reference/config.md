@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=d8fc475eeb91191b55188b30bc7b258c137e537b9a0a0d9e2ec440e5da0b1c43 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=ee2aef29009e2c98144ea857dcfaf50a9d4b32094b89f40c39fbf4ba7a760178 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Configuration Reference
 
@@ -11,8 +11,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 |---|---|---|---|
 | `version` | `int` | `1` | Configuration file format version. |
 | `setup_complete` | `bool` | `false` | Whether initial setup has been completed. |
-| `locale` | `str` | `"ja"` | Default language used across the system. |
-| `system` | `SystemConfig` | `{SystemConfig}` | Settings for runtime environment, timezone, and basic behavior. |
+| `locale` | `str` | `"ja"` | Default language used across the entire system. |
+| `system` | `SystemConfig` | `{SystemConfig}` | Settings for the runtime environment, timezone, and basic behavior. |
 | `system.mode` | `str` | `"server"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
 | `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | Authentication information for external models and services. |
@@ -21,8 +21,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `credentials.keys` | `dict[str, str]` | `{}` | — |
 | `credentials.base_url` | `str \| None` | `null` | — |
 | `model_modes` | `dict[str, str]` | `{}` | Mapping of model name patterns to execution modes. |
-| `model_context_windows` | `dict[str, int]` | `{}` | Per-model context length compatibility settings. Use of models.json is recommended. |
-| `model_max_tokens` | `dict[str, int]` | `{}` | Default output token count per model name pattern. |
+| `model_context_windows` | `dict[str, int]` | `{}` | Per-model context length compatibility settings. models.json usage recommended. |
+| `model_max_tokens` | `dict[str, int]` | `{}` | Default output token count for each model name pattern. |
 | `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and execution settings applied to each anima. |
 | `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
 | `anima_defaults.fallback_model` | `str \| None` | `null` | — |
@@ -51,7 +51,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.max_recipients_per_run` | `int \| None` | `null` | — |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. Set false to disable only the periodic heartbeat. Message-triggered heartbeats and cron are unaffected. |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. Set false to disable only the periodic heartbeat. Message-triggered HB and cron are unaffected. |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
 | `animas` | `dict[str, AnimaModelConfig]` | `{}` | Per-anima model configuration overrides. |
 | `animas.supervisor` | `str \| None` | `null` | — |
@@ -90,7 +90,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `consolidation.post_processing_cooldown_seconds` | `int` | `30` | — |
 | `consolidation.inactivity_skip_enabled` | `bool` | `true` | — |
 | `consolidation.inactivity_days` | `int` | `7` | — |
-| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | Settings for post-session asynchronous reflection and persona updates. |
+| `background_review` | `BackgroundReviewConfig` | `{BackgroundReviewConfig}` | Settings for asynchronous post-session reflection and persona updates. |
 | `background_review.enabled` | `bool` | `true` | — |
 | `background_review.chat_every_user_turns` | `int` | `10` | — |
 | `background_review.min_interval_minutes` | `int` | `10` | — |
@@ -204,7 +204,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen.diffusers_img2img_strength` | `float` | `0.55` | — |
 | `image_gen.ip_adapter_model` | `str` | `"h94/IP-Adapter"` | — |
 | `image_gen.ip_adapter_scale` | `float` | `0.6` | IP-Adapter face reference blend weight (0.0-1.0) |
-| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Methods and destinations for notifying humans. |
+| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Human notification methods and destinations. |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
@@ -336,7 +336,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
-| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for storing operation and activity logs. |
+| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for saving operation and activity logs. |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
 | `activity_log.rotation_mode` | `Literal['size', 'time', 'both']` | `"size"` | — |
 | `activity_log.max_size_mb` | `int` | `1024` | per-anima total, default 1GB |
@@ -422,6 +422,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
+| `housekeeping.sdk_bash_injection_max_size_mb` | `int` | `10` | — |
 | `housekeeping.archive_superseded_retention_days` | `int` | `7` | — |
 | `housekeeping.archive_versions_keep_per_file` | `int` | `5` | — |
 | `inbox` | `InboxConfig` | `{InboxConfig}` | Anima inbox and notification display. |

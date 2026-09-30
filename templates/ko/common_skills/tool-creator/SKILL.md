@@ -271,11 +271,11 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 
 ## 코어 도구를 리포지토리에 추가하는 경우
 
-1. `core/integrations/{name}.py`를 추가(`_` 시작은 스캔 대상 외).
-2. `TOOL_MODULES`는 `discover_core_tools()`로 자동 등록. `core/integrations/__init__.py`의 수동 목록은 불필요.
-3. MCP의 엄선 허용 목록은 `core/tooling/surface.py`의 `MCP_TOOL_NAMES`입니다. `resolve_tool_surface`가 MCP 사용 모드(S / C / D / G / X)에서 트리거와 역할에 따른 필터링을 수행합니다. 예: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. **Slack / Gmail / `web_search` 등 외부 서비스 코어 도구는 MCP에 표시되지 않습니다** — 일반적으로 **`use_tool` / Bash(`animaworks-tool`) / 스킬** 경로를 사용합니다.
-4. 테스트를 `tests/`에 추가. 스키마나 참조 문서를 자동 생성하고 있다면 `scripts/generate_reference.py`의 대상도 확인.
-5. 파괴적 조작은 `gated: True`와 permissions 측의 설명 업데이트를 검토.
+1. `core/integrations/{name}.py`를 추가 (`_`로 시작하는 것은 스캔 대상 아님).
+2. `TOOL_MODULES`는 `discover_core_tools()`에서 자동 등록. `core/integrations/__init__.py`의 수동 목록은 불필요.
+3. MCP의 엄선 허용 목록은 `core/tooling/surface.py`의 `MCP_TOOL_NAMES`. `resolve_tool_surface`가 MCP 사용 모드(S / C / D / G / X)에서 트리거와 역할에 따른 필터링을 수행. 예: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. **Slack / Gmail / `web_search` 등의 외부 서비스 계열 코어 도구는 MCP에 나오지 않음** — 보통은 **`use_tool` / Bash(`animaworks-tool`) / 스킬** 경로.
+4. 테스트를 `tests/`에 추가. 스키마나 참조 문서를 자동 생성하는 경우 `scripts/generate_reference.py`의 대상도 확인.
+5. 파괴적 작업은 `gated: True`와 permissions 쪽의 설명 업데이트를 검토.
 
 ## 검증 체크리스트
 
