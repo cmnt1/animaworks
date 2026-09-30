@@ -102,8 +102,10 @@ def test_variant_settings_do_not_mutate_schema_config() -> None:
 
     assert settings["rerank_enabled"] is False
     assert settings["enable_spreading_activation"] is False
+    assert "entity_boost_enabled" not in settings
+    assert "temporal_boost_enabled" not in settings
+    assert "access_boost_enabled" not in settings
     assert config.rerank_enabled is True
-    assert config.entity_boost_enabled is True
     assert config.enable_spreading_activation is True
 
 

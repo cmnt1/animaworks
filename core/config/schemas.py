@@ -292,17 +292,6 @@ class RAGConfig(BaseModel):
         description="Maximum similar active facts considered during legacy fact reconciliation.",
     )
     entity_registry_enabled: bool = True
-    entity_boost_enabled: bool = True
-    entity_boost: float = 0.20
-    entity_boost_cap: float = 0.80
-    temporal_boost_enabled: bool = True
-    temporal_boost: float = 0.05
-    temporal_boost_max: float = 0.10
-    temporal_half_life_days: float = 7.0
-    access_boost_enabled: bool = True
-    access_boost_weight: float = 0.05
-    access_boost_cap: float = 0.25
-    access_boost_half_life_days: float = 30.0
 
 
 class GPUConfig(BaseModel):

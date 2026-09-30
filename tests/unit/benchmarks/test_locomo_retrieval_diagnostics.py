@@ -11,9 +11,7 @@ import benchmarks.locomo.retrieval_diagnostics as retrieval_diagnostics
 from benchmarks.locomo.retrieval_diagnostics import (
     _per_question_deltas,
     _temporary_entity_aware_graph,
-    _temporary_entity_boost,
     _temporary_fact_index,
-    _temporary_temporal_boost,
     answer_token_recall,
     parse_args,
     summarize_results,
@@ -122,8 +120,6 @@ class TestWriteDiagnosticsJson:
             conversations=1,
             top_k=10,
             ceiling_top_k=50,
-            temporal_boost=False,
-            entity_boost=False,
             summary={"answer_token_recall_at_10": 0.5},
             results=[],
             errors=0,
@@ -135,8 +131,6 @@ class TestWriteDiagnosticsJson:
             "conversations": 1,
             "top_k": 10,
             "ceiling_top_k": 50,
-            "temporal_boost": False,
-            "entity_boost": False,
             "entity_aware_graph": False,
             "fact_index": False,
         }
@@ -149,8 +143,6 @@ class TestWriteDiagnosticsJson:
             conversations=1,
             top_k=10,
             ceiling_top_k=10,
-            temporal_boost=False,
-            entity_boost=False,
             fact_index=False,
             summary={},
             results=[],
@@ -175,8 +167,6 @@ class TestWriteDiagnosticsJson:
             conversations=1,
             top_k=10,
             ceiling_top_k=10,
-            temporal_boost=False,
-            entity_boost=False,
             summary={},
             results=[],
             errors=0,
@@ -200,13 +190,11 @@ class TestWriteDiagnosticsJson:
             conversations=1,
             top_k=10,
             ceiling_top_k=10,
-            temporal_boost=False,
-            entity_boost=False,
             summary={},
             results=[],
             errors=0,
             feature_on_ablation={
-                "config": {"fact_index": True, "entity_boost": True, "entity_aware_graph": True},
+                "config": {"fact_index": True, "entity_aware_graph": True},
                 "summary": {"answer_token_recall_at_10": 0.8},
                 "results": [],
                 "errors": 0,
@@ -218,27 +206,6 @@ class TestWriteDiagnosticsJson:
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["feature_on_ablation"]["config"]["fact_index"] is True
         assert payload["feature_on_ablation"]["deltas"]["answer_token_recall_at_10"] == 0.3
-
-    def test_write_json_path_can_include_temporal_and_entity_ablation(self, tmp_path: Path) -> None:
-        out = write_diagnostics_json(
-            tmp_path / "diagnostics.json",
-            mode="scope_all",
-            conversations=1,
-            top_k=10,
-            ceiling_top_k=10,
-            temporal_boost=False,
-            entity_boost=False,
-            summary={},
-            results=[],
-            errors=0,
-            temporal_ablation={"config": {"temporal_boost": True}},
-            entity_ablation={"config": {"entity_boost": True}},
-        )
-
-        payload = json.loads(out.read_text(encoding="utf-8"))
-        assert out.name == "diagnostics.json"
-        assert payload["temporal_ablation"]["config"]["temporal_boost"] is True
-        assert payload["entity_ablation"]["config"]["entity_boost"] is True
 
 
 class TestRetrievalHelpers:
@@ -266,36 +233,6 @@ class TestRetrievalHelpers:
             assert os.environ["LOCOMO_FACT_INDEX"] == "1"
 
         assert os.environ["LOCOMO_FACT_INDEX"] == "1"
-
-
-class TestTemporalAblationCli:
-    def test_parse_temporal_ablation_flag(self) -> None:
-        args = parse_args(["--temporal-ablation"])
-
-        assert args.temporal_ablation is True
-
-    def test_temporary_temporal_boost_sets_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LOCOMO_TEMPORAL_BOOST", raising=False)
-
-        with _temporary_temporal_boost(True):
-            assert os.environ["LOCOMO_TEMPORAL_BOOST"] == "1"
-
-        assert "LOCOMO_TEMPORAL_BOOST" not in os.environ
-
-
-class TestEntityAblationCli:
-    def test_parse_entity_ablation_flag(self) -> None:
-        args = parse_args(["--entity-ablation"])
-
-        assert args.entity_ablation is True
-
-    def test_temporary_entity_boost_sets_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LOCOMO_ENTITY_BOOST", raising=False)
-
-        with _temporary_entity_boost(True):
-            assert os.environ["LOCOMO_ENTITY_BOOST"] == "1"
-
-        assert "LOCOMO_ENTITY_BOOST" not in os.environ
 
 
 class TestEntityAwareGraphAblationCli:
@@ -413,32 +350,6 @@ class TestFactAblationCli:
         assert retrieval_diagnostics.main(["--fact-ablation", "--output", str(tmp_path)]) == 0
         assert calls == [False, True]
 
-    def test_temporal_ablation_preserves_env_fact_index(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        calls: list[bool] = []
-
-        monkeypatch.setenv("LOCOMO_FACT_INDEX", "1")
-        monkeypatch.setattr(retrieval_diagnostics, "load_dataset", lambda _path: [{"qa": []}])
-        monkeypatch.setattr(retrieval_diagnostics, "summarize_results", lambda _results: {})
-        monkeypatch.setattr(retrieval_diagnostics, "_ablation_delta", lambda _base, _boosted: {})
-
-        def fake_run_retrieval_diagnostics(**kwargs):
-            calls.append(kwargs["fact_index"])
-            return [], 0
-
-        monkeypatch.setattr(retrieval_diagnostics, "run_retrieval_diagnostics", fake_run_retrieval_diagnostics)
-        monkeypatch.setattr(
-            retrieval_diagnostics,
-            "write_diagnostics_json",
-            lambda _output, **_kwargs: tmp_path / "out.json",
-        )
-
-        assert retrieval_diagnostics.main(["--temporal-ablation", "--output", str(tmp_path)]) == 0
-        assert calls == [True, True]
-
 
 class TestFeatureOnAblationCli:
     def test_parse_feature_on_ablation_flag(self) -> None:
@@ -451,7 +362,7 @@ class TestFeatureOnAblationCli:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        calls: list[tuple[bool, bool, bool]] = []
+        calls: list[tuple[bool, bool]] = []
         captured_write: dict[str, object] = {}
 
         monkeypatch.setenv("LOCOMO_FACT_INDEX", "1")
@@ -460,7 +371,7 @@ class TestFeatureOnAblationCli:
         monkeypatch.setattr(retrieval_diagnostics, "_ablation_delta", lambda _base, _boosted: {})
 
         def fake_run_retrieval_diagnostics(**kwargs):
-            calls.append((kwargs["fact_index"], kwargs["entity_boost"], kwargs["entity_aware_graph"]))
+            calls.append((kwargs["fact_index"], kwargs["entity_aware_graph"]))
             return [], 0
 
         def fake_write_diagnostics_json(_output: Path, **kwargs):
@@ -471,7 +382,7 @@ class TestFeatureOnAblationCli:
         monkeypatch.setattr(retrieval_diagnostics, "write_diagnostics_json", fake_write_diagnostics_json)
 
         assert retrieval_diagnostics.main(["--feature-on-ablation", "--output", str(tmp_path)]) == 0
-        assert calls == [(False, False, False), (True, True, True)]
+        assert calls == [(False, False), (True, True)]
         assert captured_write["feature_on_ablation"] is not None
         assert captured_write["fact_index"] is False
 

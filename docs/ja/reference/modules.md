@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 2d9804679ced6d3e282fc456ab4a0b8192b3c388fc68109a7b73f07cad70f0c3 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 765b1a0d543fa05121b2e0d10a48676af5bc5791fb98adb3aecf909a48ad906c -->
 
 # モジュール一覧
 
@@ -161,12 +161,12 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.local_llm` | 100 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 944 | Migrate legacy config.md files to unified config.json. |
 | `core.config.model_catalog` | 171 | Static model catalog and per-request model override validation. |
-| `core.config.model_config` | 860 | Model configuration resolution: load_model_config, penalties, max_tokens. |
+| `core.config.model_config` | 880 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 121 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1447 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1436 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 473 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -182,6 +182,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution._tool_summary（非公開）` | 102 | — |
 | `core.execution.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
 | `core.execution.base` | 874 | — |
+| `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 295 | — |
 | `core.execution.engine_base` | 75 | — |
 | `core.execution.engine_session` | 101 | — |
@@ -189,7 +190,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 106 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 556 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
-| `core.execution.engines.claude._sdk_security（非公開）` | 344 | — |
+| `core.execution.engines.claude._sdk_security（非公開）` | 349 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 524 | — |
 | `core.execution.engines.claude._sdk_stream（非公開）` | 461 | — |
 | `core.execution.engines.claude.agent_sdk` | 896 | — |
@@ -494,7 +495,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.repair_state` | 150 | Persistent repair-state helpers for RAG auto-repair. |
 | `core.memory.rag.repair_types` | 27 | — |
 | `core.memory.rag.repair_utils` | 163 | — |
-| `core.memory.rag.retriever` | 1080 | — |
+| `core.memory.rag.retriever` | 1088 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
 | `core.memory.rag.singleton` | 47 | — |
@@ -503,21 +504,19 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.vector_client` | 503 | — |
 | `core.memory.rag.vector_ops` | 82 | Conversion between vector API requests and the MemoryService wire format. |
 | `core.memory.rag.vector_registry` | 160 | — |
-| `core.memory.retrieval.access_boost` | 131 | — |
 | `core.memory.retrieval.bm25` | 1325 | — |
 | `core.memory.retrieval.code_index` | 221 | — |
 | `core.memory.retrieval.confidence_gate` | 39 | — |
-| `core.memory.retrieval.entity` | 632 | — |
-| `core.memory.retrieval.pipeline` | 109 | — |
+| `core.memory.retrieval.entity` | 192 | — |
+| `core.memory.retrieval.pipeline` | 92 | — |
 | `core.memory.retrieval.query_expansion` | 496 | — |
-| `core.memory.retrieval.rag_search` | 1297 | — |
+| `core.memory.retrieval.rag_search` | 1236 | — |
 | `core.memory.retrieval.reranker` | 264 | — |
 | `core.memory.retrieval.rrf` | 107 | — |
 | `core.memory.retrieval.search_metadata` | 108 | — |
-| `core.memory.retrieval.temporal` | 196 | — |
 | `core.memory.retrieval.time_expr` | 230 | — |
 | `core.memory.retrieval.types` | 38 | — |
-| `core.memory.retrieval.unified_search` | 895 | — |
+| `core.memory.retrieval.unified_search` | 788 | — |
 | `core.memory.skill_metadata` | 301 | — |
 | `core.memory.state_lock` | 96 | Process-safe locking for ``state/current_state.md`` updates. |
 

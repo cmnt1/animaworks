@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 73fb0303b4f6b9ed37ee08c869892c27d41cdd86709f3c89f54245f987561353 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 10a29e6c5ee438bf5e94c85a20f3837f3727c0483a34ac76696189077c33665e -->
 
 # 設定リファレンス
 
@@ -141,17 +141,6 @@
 | `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | Minimum facts vector similarity before strict LLM duplicate/contradiction/complement labeling. |
 | `rag.facts_reconcile_top_k` | `int` | `5` | Maximum similar active facts considered during legacy fact reconciliation. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
-| `rag.entity_boost_enabled` | `bool` | `true` | — |
-| `rag.entity_boost` | `float` | `0.2` | — |
-| `rag.entity_boost_cap` | `float` | `0.8` | — |
-| `rag.temporal_boost_enabled` | `bool` | `true` | — |
-| `rag.temporal_boost` | `float` | `0.05` | — |
-| `rag.temporal_boost_max` | `float` | `0.1` | — |
-| `rag.temporal_half_life_days` | `float` | `7.0` | — |
-| `rag.access_boost_enabled` | `bool` | `true` | — |
-| `rag.access_boost_weight` | `float` | `0.05` | — |
-| `rag.access_boost_cap` | `float` | `0.25` | — |
-| `rag.access_boost_half_life_days` | `float` | `30.0` | — |
 | `gpu` | `GPUConfig` | `{GPUConfig}` | GPU 利用とデバイス選択の設定。 |
 | `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |

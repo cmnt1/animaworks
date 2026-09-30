@@ -23,7 +23,6 @@ from pathlib import Path
 from time import perf_counter
 
 from core.memory.rag.store import SearchResult
-from core.memory.retrieval.access_boost import PER_ANIMA_ACCESS_PREFIX, access_count_for
 from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.rag.retriever")
@@ -36,6 +35,7 @@ WEIGHT_RECENCY = 0.2
 RECENCY_HALF_LIFE_DAYS = 30.0
 
 WEIGHT_FREQUENCY = 0.1
+PER_ANIMA_ACCESS_PREFIX = "ac_"
 
 
 @lru_cache(maxsize=2048)
@@ -192,6 +192,14 @@ def _metadata_number(metadata: dict[str, object], field: str, *, default: float 
         return max(0.0, float(str(metadata.get(field, default))))
     except (TypeError, ValueError):
         return max(0.0, default)
+
+
+def _access_count_for(metadata: dict[str, object], anima_name: str | None) -> float:
+    """Read the per-Anima count for shared memories, otherwise the global count."""
+    field = (
+        f"{PER_ANIMA_ACCESS_PREFIX}{anima_name}" if metadata.get("anima") == "shared" and anima_name else "access_count"
+    )
+    return _metadata_number(metadata, field)
 
 
 # ── MemoryRetriever ────────────────────────────────────────────────
@@ -754,7 +762,7 @@ class MemoryRetriever:
             result.source_scores["recency"] = recency_score
 
             # --- Frequency boost (Hebbian LTP analog) ---
-            access_count = access_count_for(result.metadata, anima_name)
+            access_count = _access_count_for(result.metadata, anima_name)
             frequency_boost = min(WEIGHT_FREQUENCY * math.log1p(access_count), cap)
             result.score += frequency_boost
             result.source_scores["frequency"] = frequency_boost

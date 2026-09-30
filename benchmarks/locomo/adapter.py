@@ -96,12 +96,6 @@ _EVENT_METADATA_FIELDS: tuple[str, ...] = (
     "event_time_parse_error",
     "entities",
     "confidence",
-    "base_score",
-    "temporal_boost",
-    "entity_boost",
-    "entity_overlap",
-    "query_entities",
-    "candidate_entities",
     *MULTIHOP_METADATA_FIELDS,
 )
 _ENV_TRUE = {"1", "true", "yes", "on"}
@@ -109,16 +103,6 @@ _ENV_TRUE = {"1", "true", "yes", "on"}
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _ENV_TRUE
-
-
-def locomo_temporal_boost_enabled() -> bool:
-    """Return True when LoCoMo temporal boost ablation is explicitly enabled."""
-    return _env_flag("LOCOMO_TEMPORAL_BOOST")
-
-
-def locomo_entity_boost_enabled() -> bool:
-    """Return True when LoCoMo entity boost ablation is explicitly enabled."""
-    return _env_flag("LOCOMO_ENTITY_BOOST")
 
 
 def locomo_fact_index_enabled() -> bool:
@@ -645,10 +629,6 @@ class AnimaWorksLoCoMoAdapter:
             "abstain_on_low_confidence": True,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
-            "access_boost_enabled": True,
-            "access_boost_weight": 0.05,
-            "access_boost_cap": 0.25,
-            "access_boost_half_life_days": 30.0,
         }
         try:
             cfg_path = Path("~/.animaworks/config.json").expanduser()
@@ -677,22 +657,6 @@ class AnimaWorksLoCoMoAdapter:
                         "rrf_confidence_threshold": rag.get(
                             "rrf_confidence_threshold",
                             defaults["rrf_confidence_threshold"],
-                        ),
-                        "access_boost_enabled": rag.get(
-                            "access_boost_enabled",
-                            defaults["access_boost_enabled"],
-                        ),
-                        "access_boost_weight": rag.get(
-                            "access_boost_weight",
-                            defaults["access_boost_weight"],
-                        ),
-                        "access_boost_cap": rag.get(
-                            "access_boost_cap",
-                            defaults["access_boost_cap"],
-                        ),
-                        "access_boost_half_life_days": rag.get(
-                            "access_boost_half_life_days",
-                            defaults["access_boost_half_life_days"],
                         ),
                     },
                 )
@@ -740,7 +704,6 @@ class AnimaWorksLoCoMoAdapter:
 
     def _retrieve_scope_all(self, question: str, *, category: int | None) -> list[dict[str, Any]]:
         """Production-compatible Legacy unified search with benchmark ablations."""
-        from core.memory.retrieval.temporal import TemporalBoostConfig  # noqa: PLC0415
         from core.memory.retrieval.unified_search import UnifiedMemorySearch  # noqa: PLC0415
 
         assert self._anima_dir is not None
@@ -765,11 +728,6 @@ class AnimaWorksLoCoMoAdapter:
             trigger="chat",
             scope_override=scope_override,
             pipeline_settings=search_settings,
-            temporal_boost=TemporalBoostConfig(
-                enabled=locomo_temporal_boost_enabled(),
-                category=category,
-            ),
-            entity_boost=self._entity_boost_config(category),
             reference_time=self._query_reference_time or None,
         )
         meta = searcher.last_search_meta
@@ -939,18 +897,6 @@ class AnimaWorksLoCoMoAdapter:
             row["metadata"]["search_method"] = "rrf"
             merged.append(row)
         return merged
-
-    def _entity_boost_config(self, category: int | None) -> Any:
-        from core.memory.retrieval.entity import EntityBoostConfig  # noqa: PLC0415
-
-        stricter_multi_hop = category == 1
-        return EntityBoostConfig(
-            enabled=locomo_entity_boost_enabled(),
-            category=category,
-            ignored_entities=self._entity_ignored_entities,
-            use_content_tokens=not stricter_multi_hop,
-            require_multi_token_overlap=stricter_multi_hop,
-        )
 
     def _complete_sync(
         self,

@@ -8,7 +8,6 @@ from core.memory.facts.entity_index import load_entity_registry, match_query_ent
 from core.memory.facts.extraction import extract_and_store_facts_with_outcome
 from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
 from core.memory.facts.ontology import ExtractedEntity, ExtractedFact
-from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
 
 
 class DeterministicExtractor:
@@ -33,7 +32,7 @@ class DeterministicExtractor:
 
 @pytest.mark.asyncio
 @pytest.mark.e2e
-async def test_fact_ingest_updates_entity_registry_and_boosts_metadata_candidates(
+async def test_fact_ingest_updates_entity_registry_for_entity_features(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -68,15 +67,3 @@ async def test_fact_ingest_updates_entity_registry_and_boosts_metadata_candidate
     assert registry["entities"]["caroline"]["mention_count"] == 1
     assert registry["entities"]["becoming nicole"]["source_fact_ids"] == [outcome.records[0].fact_id]
     assert match_query_entities(anima_dir, "What did Caroline recommend?") == {"caroline"}
-
-    boosted = apply_entity_boost(
-        "What did Caroline recommend?",
-        [
-            {"content": "generic answer", "score": 0.5, "entities": ["Unrelated"]},
-            {"content": outcome.records[0].text, "score": 0.4, "entities": outcome.records[0].entities},
-        ],
-        EntityBoostConfig(enabled=True, category=None, query_entities=("caroline",), boost=0.2, max_boost=0.2),
-    )
-
-    assert boosted[0]["content"] == "Caroline recommended Becoming Nicole."
-    assert boosted[0]["entity_boost"] == 0.2
