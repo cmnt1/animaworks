@@ -494,6 +494,8 @@ class RAGMemorySearch:
         result_limit: int | None = None,
         time_start: str | None = None,
         time_end: str | None = None,
+        pipeline_settings: dict[str, object] | None = None,
+        read_only: bool = False,
     ) -> list[dict]:
         """Search memory through the unified Legacy retrieval policy.
 
@@ -544,9 +546,14 @@ class RAGMemorySearch:
                 offset=offset,
                 time_start=time_start,
                 time_end=time_end,
+                pipeline_settings=pipeline_settings,
+                _flush_access_batch=not read_only,
             )
             self._last_search_meta = searcher.last_search_meta
             return results
+
+        if read_only:
+            raise ValueError(f"Read-only retrieval does not support scope {scope!r}")
 
         indexer = self._get_indexer()
         primary_results: list[dict] = []
