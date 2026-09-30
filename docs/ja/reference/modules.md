@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 6b18742968689b7caad239638338d6f44c289fac75fe6a40c04711bca9581bc4 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 827ad33f1ada3e09372dcff7ce086c5226017d00bbe5c75f8982709649c59f76 -->
 
 # モジュール一覧
 
@@ -140,17 +140,18 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.anima` | 23 | — |
+| `core.anima._mixin_protocols（非公開）` | 128 | Structural host protocols for the compositional mixins. |
 | `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 576 | — |
 | `core.anima.digital_anima` | 685 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 770 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
-| `core.anima.heartbeat` | 959 | — |
+| `core.anima.heartbeat` | 961 | — |
 | `core.anima.image_artifacts` | 219 | — |
-| `core.anima.inbox` | 987 | — |
+| `core.anima.inbox` | 989 | — |
 | `core.anima.inbox_overflow` | 130 | — |
-| `core.anima.lifecycle` | 1403 | — |
-| `core.anima.messaging` | 1323 | — |
+| `core.anima.lifecycle` | 1405 | — |
+| `core.anima.messaging` | 1325 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.skills_check` | 15 | — |
@@ -536,7 +537,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
 | `core.memory.rag.repair.detect` | 743 | — |
 | `core.memory.rag.repair.rebuild` | 396 | — |
-| `core.memory.rag.repair.service` | 246 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.memory.rag.repair.service` | 269 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `core.memory.rag.repair.state` | 191 | Persistent repair-state helpers for RAG auto-repair. |
 | `core.memory.rag.repair.types` | 27 | — |
 | `core.memory.rag.retriever` | 809 | — |
@@ -795,10 +796,11 @@ anima の監督、委任、実行調整。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.supervisor` | 20 | — |
-| `core.supervisor._mgr_health（非公開）` | 469 | Health check mixin for ProcessSupervisor. |
+| `core.supervisor._manager_protocols（非公開）` | 84 | Structural host protocols for the compositional mixins. |
+| `core.supervisor._mgr_health（非公開）` | 470 | Health check mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_rag_repair（非公開）` | 9 | Supervisor entry point for the RAG repair lifecycle mixin. |
-| `core.supervisor._mgr_reconcile（非公開）` | 317 | Reconciliation mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_reconcile（非公開）` | 319 | Reconciliation mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_scheduler（非公開）` | 1035 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
 | `core.supervisor.inbox_rate_limiter` | 270 | Event-driven inbox wakeups and deferred trigger management. |
@@ -883,23 +885,24 @@ anima の監督、委任、実行調整。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.tooling` | 1 | Tooling package; import specific modules to avoid eager handler loading. |
+| `core.tooling._handler_protocols（非公開）` | 226 | Structural host protocols for the compositional mixins. |
 | `core.tooling.codex_command_hook` | 93 | Codex ``PreToolUse`` hook: deny shell commands by the shared command policy. |
 | `core.tooling.dispatch` | 252 | — |
-| `core.tooling.handler` | 866 | — |
+| `core.tooling.handler` | 878 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 855 | — |
-| `core.tooling.handler_create_anima` | 237 | — |
-| `core.tooling.handler_delegation` | 260 | — |
+| `core.tooling.handler_comms` | 857 | — |
+| `core.tooling.handler_create_anima` | 235 | — |
+| `core.tooling.handler_delegation` | 262 | — |
 | `core.tooling.handler_exec` | 345 | — |
-| `core.tooling.handler_files` | 895 | — |
-| `core.tooling.handler_memory` | 1341 | — |
+| `core.tooling.handler_files` | 899 | — |
+| `core.tooling.handler_memory` | 1345 | — |
 | `core.tooling.handler_org` | 39 | — |
-| `core.tooling.handler_org_dashboard` | 199 | — |
-| `core.tooling.handler_perms` | 384 | — |
-| `core.tooling.handler_skills` | 828 | — |
-| `core.tooling.handler_subordinate_control` | 410 | — |
-| `core.tooling.handler_workspace` | 250 | — |
-| `core.tooling.org_helpers` | 154 | — |
+| `core.tooling.handler_org_dashboard` | 203 | — |
+| `core.tooling.handler_perms` | 388 | — |
+| `core.tooling.handler_skills` | 832 | — |
+| `core.tooling.handler_subordinate_control` | 414 | — |
+| `core.tooling.handler_workspace` | 256 | — |
+| `core.tooling.org_helpers` | 158 | — |
 | `core.tooling.permissions` | 330 | — |
 | `core.tooling.policy.action_gate` | 188 | — |
 | `core.tooling.policy.command_policy` | 455 | — |
@@ -922,6 +925,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
 | `core.tooling.standalone` | 188 | — |
+| `core.tooling.tool_context` | 17 | Shared runtime state passed to ToolHandler mixin delegates. |
 
 ## `core.tooling.policy`
 
