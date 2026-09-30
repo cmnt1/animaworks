@@ -506,3 +506,74 @@ class TestResolveEffectiveModelConfig:
             "remaining": 42.0,
         }
         assert fallback_event_meta(primary_config, primary_config) is None
+
+
+class TestBusyFallbackSkip:
+    """A congested self-hosted candidate (busy_probe) yields to a later free one."""
+
+    @pytest.fixture
+    def primary(self) -> ModelConfig:
+        return ModelConfig(
+            model="codex/gpt-5.4",
+            execution_mode="C",
+            resolved_mode="C",
+            credential="openai",
+            fallback_models=["a:openai/gpt-4.1", "x:grok/grok-4.5"],
+        )
+
+    def _resolve(self, fallback_config, primary, busy_models, blocks):
+        guard = _guard_with_blocks(blocks)
+        with (
+            patch("core.config.io.load_config", return_value=fallback_config),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
+            patch(
+                "core.config.model_config._match_models_json",
+                side_effect=lambda m: {"busy": m in busy_models},
+            ),
+            patch(
+                "core.execution.busy_probe.is_model_busy",
+                side_effect=lambda entry: bool(entry and entry["busy"]),
+            ),
+        ):
+            return resolve_effective_model_config(primary)
+
+    def test_busy_candidate_skipped_for_next_free(self, fallback_config, primary) -> None:
+        result = self._resolve(fallback_config, primary, {"openai/gpt-4.1"}, {"openai:codex": 120.0})
+        assert result.model == "grok/grok-4.5"
+
+    def test_busy_candidate_used_when_rest_blocked(self, fallback_config, primary) -> None:
+        result = self._resolve(fallback_config, primary, {"openai/gpt-4.1"}, {"openai:codex": 120.0, "grok:grok": 60.0})
+        assert result.model == "openai/gpt-4.1"
+
+    def test_not_busy_keeps_order(self, fallback_config, primary) -> None:
+        result = self._resolve(fallback_config, primary, set(), {"openai:codex": 120.0})
+        assert result.model == "openai/gpt-4.1"
+
+
+class TestBusyProbe:
+    def test_parse_and_threshold(self) -> None:
+        from core.execution import busy_probe
+
+        text = (
+            'vllm:num_requests_running{engine="0"} 2.0\n'
+            'vllm:num_requests_waiting{engine="0"} 0.0\n'
+            'vllm:num_requests_waiting_by_reason{engine="0",reason="capacity"} 5.0\n'
+        )
+        assert busy_probe._parse_vllm_load(text) == (2.0, 0.0)
+        entry = {"busy_probe": {"metrics_url": "http://x/metrics", "max_running": 2}}
+        with patch.object(busy_probe, "_fetch_load", return_value=(1.0, 0.0)):
+            assert busy_probe.is_model_busy(entry) is False
+        with patch.object(busy_probe, "_fetch_load", return_value=(2.0, 0.0)):
+            assert busy_probe.is_model_busy(entry) is True
+        with patch.object(busy_probe, "_fetch_load", return_value=(0.0, 1.0)):
+            assert busy_probe.is_model_busy(entry) is True
+
+    def test_fail_open(self) -> None:
+        from core.execution import busy_probe
+
+        assert busy_probe.is_model_busy(None) is False
+        assert busy_probe.is_model_busy({"mode": "A"}) is False
+        busy_probe._cache.clear()
+        entry = {"busy_probe": {"metrics_url": "http://127.0.0.1:9/metrics"}}
+        assert busy_probe.is_model_busy(entry) is False

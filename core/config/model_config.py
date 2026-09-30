@@ -329,6 +329,7 @@ def resolve_effective_model_config(
     earliest_config = model_config
     earliest_until = guard.blocked_until(primary_key)
     earliest_remaining = primary_remaining
+    busy_candidate: ModelConfig | None = None
 
     for entry in model_config.fallback_models:
         parsed = parse_fallback_entry(entry, config)
@@ -369,6 +370,16 @@ def resolve_effective_model_config(
                 earliest_remaining = candidate_remaining
             continue
 
+        from core.execution.busy_probe import is_model_busy
+
+        if is_model_busy(_match_models_json(model)):
+            # Congested self-hosted model: prefer a later free candidate, but
+            # keep it as the choice of last resort over a blocked one.
+            logger.info("Skipping busy fallback %s:%s", mode, model)
+            if busy_candidate is None:
+                busy_candidate = candidate
+            continue
+
         logger.warning(
             "primary %s blocked (%.0fs) \u2192 fallback %s:%s",
             model_config.model,
@@ -377,6 +388,15 @@ def resolve_effective_model_config(
             model,
         )
         return candidate
+
+    if busy_candidate is not None:
+        logger.warning(
+            "primary %s blocked (%.0fs) → busy fallback %s (no free candidate)",
+            model_config.model,
+            primary_remaining,
+            busy_candidate.model,
+        )
+        return busy_candidate
 
     if earliest_config is not model_config:
         logger.warning(
