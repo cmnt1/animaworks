@@ -181,6 +181,35 @@ class TestResolveThinkingEffort:
     def test_low(self):
         assert resolve_thinking_effort("claude-sonnet-4-6", "low") == "low"
 
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-opus-5-5",
+            "bedrock/jp.anthropic.claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-sonnet-5",
+            "claude-fable-5-1",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "azure/responses/gpt-6-luna",
+            "openai/deepseek-v4-flash",
+        ],
+    )
+    def test_max_passes_through_on_supporting_models(self, model):
+        assert resolve_thinking_effort(model, "max") == "max"
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-haiku-4-5",
+            "claude-opus-4-5-20251101",
+            "claude-3-7-sonnet-20250219",
+            "bedrock/moonshot.kimi-k2-thinking",
+        ],
+    )
+    def test_max_clamped_on_unsupported_models(self, model):
+        assert resolve_thinking_effort(model, "max") == "high"
+
 
 # ── resolve_max_tokens ────────────────────────────────────────
 

@@ -486,3 +486,5 @@ def test_reasoning_model_flags_and_api_version() -> None:
     assert lane._reasoning_model
     assert lane._api_version == "2025-04-01-preview"
     assert not VoiceFrontLane(model="openai/qwen3.6-35b-a3b", api_base="http://x", system_prompt="s")._reasoning_model
+    assert VoiceFrontLane(model="azure/gpt-6-luna", api_base="https://x", system_prompt="s")._reasoning_model
+    assert not VoiceFrontLane(model="azure/gpt-4.1", api_base="https://x", system_prompt="s")._reasoning_model

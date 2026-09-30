@@ -973,6 +973,30 @@ class TestConfigWriting:
         parsed = tomllib.loads(config_toml)
         assert parsed["model_reasoning_effort"] == "ultra"
 
+    def test_write_codex_config_models_json_effort_overrides_thinking_effort(
+        self, model_config, anima_dir, monkeypatch
+    ):
+        """models.jsonのreasoning_effortはanimaのthinking_effort（フォールバック継承分）より優先。"""
+        import core.config.model_mode as model_mode
+
+        monkeypatch.setattr(
+            model_mode,
+            "_match_models_json",
+            lambda name: {"mode": "C", "reasoning_effort": "max"} if name == "codex/gpt-6-luna" else None,
+        )
+        model_config.model = "codex/gpt-6-luna"
+        model_config.thinking_effort = "medium"
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc._write_codex_config("prompt")
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        assert parsed["model_reasoning_effort"] == "max"
+
+        model_config.extra_keys = {"codex_reasoning_effort": "low"}
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc._write_codex_config("prompt")
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        assert parsed["model_reasoning_effort"] == "low"
+
     def test_write_codex_config_openai_provider_by_default(self, executor, anima_dir):
         executor._write_codex_config("prompt")
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")

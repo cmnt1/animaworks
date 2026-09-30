@@ -771,9 +771,17 @@ class CodexSetupMixin:
 
         # Codex CLI側のeffort語彙（gpt-5.6系: low〜ultra）をそのまま渡す。
         # Claude系のresolve_thinking_effort（maxクランプ）は適用しない。
-        reasoning_effort = (self._model_config.extra_keys or {}).get(
-            "codex_reasoning_effort"
-        ) or self._model_config.thinking_effort
+        # models.json の ``reasoning_effort`` はモデル単位の固定値で、anima の
+        # thinking_effort より優先する（フォールバック先は元 anima の effort を
+        # 引き継ぐため、モデル側で揃えたい場合はここで指定する）。
+        from core.config.model_mode import _match_models_json
+
+        model_entry = _match_models_json(self._model_config.model) or {}
+        reasoning_effort = (
+            (self._model_config.extra_keys or {}).get("codex_reasoning_effort")
+            or model_entry.get("reasoning_effort")
+            or self._model_config.thinking_effort
+        )
         effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
         task_compaction_tokens = self._model_config.task_compaction_tokens
         task_compaction_line = (

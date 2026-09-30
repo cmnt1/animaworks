@@ -129,12 +129,40 @@ def supports_streaming_tool_use(model: str) -> bool:
     return not any(tag in bare for tag in _no_streaming_tool_use)
 
 
+# Claude families whose effort scale tops out at "max": Opus 4.6, then every
+# Opus/Sonnet/Fable/Mythos release from 4.7 on.  Sonnet 4.6 and anything older
+# (4.5, Haiku) reject it.
+_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos|haiku)-(\d+)(?:-(\d{1,2}))?(?!\d)")
+
+
+def supports_max_effort(model: str) -> bool:
+    """Return True if *model* accepts ``effort="max"``.
+
+    Claude models are gated by version; Kimi on Bedrock only takes ``"high"``.
+    Any other model receives the configured value unchanged: an operator who
+    wrote ``"max"`` for e.g. ``gpt-6-luna`` or DeepSeek meant it.
+    """
+    if is_bedrock_kimi(model):
+        return False
+    bare = _bare_model_name(model)
+    if not bare.startswith("claude-"):
+        return True
+    m = _CLAUDE_VERSION_RE.match(bare)
+    if m is None:
+        return False
+    family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
+    if family == "haiku":
+        return False
+    if (major, minor) >= (4, 7):
+        return True
+    return (family, major, minor) == ("opus", 4, 6)
+
+
 def resolve_thinking_effort(model: str, effort: str | None) -> str:
-    """Resolve thinking effort, clamping ``"max"`` to ``"high"`` for non-Opus-4.6."""
+    """Resolve thinking effort, clamping ``"max"`` to ``"high"`` where unsupported."""
     resolved = effort or "high"
-    if resolved == "max":
-        if _bare_model_name(model) != "claude-opus-4-6":
-            return "high"
+    if resolved == "max" and not supports_max_effort(model):
+        return "high"
     return resolved
 
 
