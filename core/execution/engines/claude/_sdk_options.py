@@ -541,11 +541,18 @@ class SDKOptionsMixin:
         if hasattr(ClaudeAgentOptions, "skills"):
             kwargs["skills"] = []
 
-        if self._model_config.thinking:
-            from core.execution.base import is_adaptive_model, resolve_thinking_effort
+        from core.execution.base import is_adaptive_model, resolve_thinking_effort
 
-            if is_adaptive_model(self._model_config.model):
+        if is_adaptive_model(self._model_config.model):
+            if self._model_config.thinking:
                 kwargs["thinking"] = {"type": "adaptive"}
+                kwargs["effort"] = resolve_thinking_effort(
+                    self._model_config.model,
+                    self._model_config.thinking_effort,
+                )
+            elif self._model_config.thinking is None and self._model_config.thinking_effort:
+                # thinking unset: leave the model's own thinking default alone
+                # (always on for Opus 5.5) but still honor the configured effort.
                 kwargs["effort"] = resolve_thinking_effort(
                     self._model_config.model,
                     self._model_config.thinking_effort,

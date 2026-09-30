@@ -46,8 +46,6 @@ _active_interrupt_event: ContextVar[asyncio.Event | None] = ContextVar(
 
 # ── Adaptive Thinking helpers ─────────────────────────────────
 
-_ADAPTIVE_MODELS = frozenset({"claude-opus-4-6", "claude-sonnet-4-6"})
-
 _PROVIDER_PREFIX_RE = re.compile(
     r"^(?:anthropic|bedrock|vertex_ai)/"
     r"(?:[a-z]{2}\.anthropic\.)?"
@@ -68,9 +66,25 @@ def _bare_model_name(model: str) -> str:
     return stripped
 
 
+# Anthropic model ids: claude-<family>-<major>[-<minor>][-<date>]
+_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos|haiku)-(\d+)(?:-(\d{1,2}))?(?!\d)")
+
+
 def is_adaptive_model(model: str) -> bool:
-    """Return True if *model* supports Anthropic adaptive thinking (4.6 series)."""
-    return _bare_model_name(model) in _ADAPTIVE_MODELS
+    """Return True if *model* uses Anthropic adaptive thinking + ``effort``.
+
+    Opus/Sonnet 4.6 and every Opus/Sonnet/Fable/Mythos release from 4.7 on.
+    These reject ``budget_tokens`` (4.7+) and are tuned through ``effort``.
+    """
+    m = _CLAUDE_VERSION_RE.match(_bare_model_name(model))
+    if m is None:
+        return False
+    family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
+    if family == "haiku":
+        return False
+    if (major, minor) >= (4, 7):
+        return True
+    return (major, minor) == (4, 6) and family in ("opus", "sonnet")
 
 
 def is_anthropic_claude(model: str) -> bool:
@@ -129,33 +143,20 @@ def supports_streaming_tool_use(model: str) -> bool:
     return not any(tag in bare for tag in _no_streaming_tool_use)
 
 
-# Claude families whose effort scale tops out at "max": Opus 4.6, then every
-# Opus/Sonnet/Fable/Mythos release from 4.7 on.  Sonnet 4.6 and anything older
-# (4.5, Haiku) reject it.
-_CLAUDE_VERSION_RE = re.compile(r"^claude-(opus|sonnet|fable|mythos|haiku)-(\d+)(?:-(\d{1,2}))?(?!\d)")
-
-
 def supports_max_effort(model: str) -> bool:
     """Return True if *model* accepts ``effort="max"``.
 
-    Claude models are gated by version; Kimi on Bedrock only takes ``"high"``.
-    Any other model receives the configured value unchanged: an operator who
-    wrote ``"max"`` for e.g. ``gpt-6-luna`` or DeepSeek meant it.
+    Among Claude models every adaptive model except Sonnet 4.6 does; Kimi on
+    Bedrock only takes ``"high"``.  Any other model receives the configured
+    value unchanged: an operator who wrote ``"max"`` for e.g. ``gpt-6-luna``
+    or DeepSeek meant it.
     """
     if is_bedrock_kimi(model):
         return False
     bare = _bare_model_name(model)
     if not bare.startswith("claude-"):
         return True
-    m = _CLAUDE_VERSION_RE.match(bare)
-    if m is None:
-        return False
-    family, major, minor = m.group(1), int(m.group(2)), int(m.group(3) or 0)
-    if family == "haiku":
-        return False
-    if (major, minor) >= (4, 7):
-        return True
-    return (family, major, minor) == ("opus", 4, 6)
+    return is_adaptive_model(model) and not bare.startswith("claude-sonnet-4-6")
 
 
 def resolve_thinking_effort(model: str, effort: str | None) -> str:

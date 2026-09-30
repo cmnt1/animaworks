@@ -154,8 +154,10 @@ class ContextMixin:
                             self._model_config.thinking_effort,
                         )
                     else:
+                        # budget_tokens thinking requires temperature 1; adaptive
+                        # models from 4.7 on reject sampling parameters outright.
                         kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
-                    kwargs["temperature"] = 1
+                        kwargs["temperature"] = 1
             elif model.startswith("openai/"):
                 if self._thinking_format() == "deepseek":
                     self._apply_deepseek_thinking(kwargs, self._model_config.thinking)
