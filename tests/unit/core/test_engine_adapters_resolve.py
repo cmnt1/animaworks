@@ -22,3 +22,20 @@ def test_engine_adapter_paths_resolve(mode: str) -> None:
         assert callable(_resolve(adapter.availability_path))
     if adapter.availability_attr:
         assert adapter.availability_attr == "_sdk_available"
+
+
+def test_mode_a_resolves_via_concrete_engine_module() -> None:
+    adapter = ENGINE_ADAPTERS["a"]
+    assert adapter.executor_path == "core.execution.engines.litellm.litellm_loop:LiteLLMExecutor"
+    assert isinstance(_resolve(adapter.executor_path), type)
+
+
+def test_execution_facade_propagates_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import core.execution as execution
+
+    def fail_import(module_name: str) -> object:
+        raise ImportError(f"missing optional dependency for {module_name}")
+
+    monkeypatch.setattr(execution, "import_module", fail_import)
+    with pytest.raises(ImportError, match="missing optional dependency"):
+        execution.__getattr__("LiteLLMExecutor")

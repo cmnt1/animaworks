@@ -53,7 +53,7 @@ ENGINE_ADAPTERS: dict[str, EngineAdapter] = {
         availability_path="core.execution.engines.grok.grok_cli:is_grok_cli_available",
     ),
     "a": EngineAdapter(
-        "core.execution:LiteLLMExecutor",
+        "core.execution.engines.litellm.litellm_loop:LiteLLMExecutor",
         extra_kwargs=("tool_handler", "memory"),
     ),
 }
@@ -127,8 +127,6 @@ class ExecutorFactoryMixin:
             if adapter.availability_path and not _resolve(adapter.availability_path)():
                 raise ImportError(f"{class_name} unavailable")
             executor_class = _resolve(adapter.executor_path)
-            if executor_class is None:
-                raise ImportError(f"{class_name} unavailable")
         except ImportError as exc:
             unavailable = _unavailable_modes | {mode.upper()}
             fallback = resolve_unavailable_model_config(active_config, unavailable_modes=unavailable)
