@@ -295,7 +295,7 @@ async def test_memory_service_unavailable_is_not_an_empty_success(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_phase3_memory_does_not_use_cross_process_repair_fence(tmp_path: Path) -> None:
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)
@@ -474,7 +474,7 @@ async def test_root_repair_builds_staging_in_subprocess(tmp_path: Path, monkeypa
 
     cmd = captured["cmd"]
     assert isinstance(cmd, tuple)
-    assert cmd[1:3] == ("-m", "core.memory.rag.repair_rebuild")
+    assert cmd[1:3] == ("-m", "core.memory.rag.repair.rebuild")
     assert "--shared" in cmd
     assert staging.name.startswith("vectordb.staging-root-")
     assert chunks == 2
@@ -607,7 +607,7 @@ async def test_root_memory_is_explicitly_unavailable_during_repair(tmp_path: Pat
 
 @pytest.mark.asyncio
 async def test_root_open_failure_marks_background_repair_without_failing_startup(tmp_path: Path) -> None:
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     anima_dir = tmp_path / "animas" / "sakura"
     anima_dir.mkdir(parents=True)

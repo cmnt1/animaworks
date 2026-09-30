@@ -487,13 +487,12 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
-| `core.memory.rag.repair` | 33 | — |
-| `core.memory.rag.repair_rebuild` | 253 | — |
-| `core.memory.rag.repair_service` | 621 | — |
-| `core.memory.rag.repair_snapshot` | 152 | Private inputs and metadata publication for the existing RAG rebuild path. |
-| `core.memory.rag.repair_state` | 151 | Persistent repair-state helpers for RAG auto-repair. |
-| `core.memory.rag.repair_types` | 27 | — |
-| `core.memory.rag.repair_utils` | 163 | — |
+| `core.memory.rag.repair` | 31 | RAG 自動修復の公開 API。 |
+| `core.memory.rag.repair.detect` | 741 | RAG の破損分類、閾値判定、修復要求。 |
+| `core.memory.rag.repair.rebuild` | 396 | 入力スナップショット、staging 再構築、メタデータ公開。 |
+| `core.memory.rag.repair.service` | 246 | Supervisor の poller と修復実行。 |
+| `core.memory.rag.repair.state` | 191 | 永続修復 state とシグナルの管理。 |
+| `core.memory.rag.repair.types` | 27 | RAG 修復処理の結果型。 |
 | `core.memory.rag.retriever` | 809 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
@@ -751,7 +750,7 @@ anima の監督、委任、実行調整。
 |---|---:|---|
 | `core.supervisor` | 20 | — |
 | `core.supervisor._mgr_health（非公開）` | 476 | Health check mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_rag_repair（非公開）` | 245 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_rag_repair（非公開）` | 9 | RAG 修復 lifecycle mixin の supervisor 入口。 |
 | `core.supervisor._mgr_reconcile（非公開）` | 315 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |

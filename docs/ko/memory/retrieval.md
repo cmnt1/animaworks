@@ -44,4 +44,4 @@ Chroma의 영구 저장소는 Anima별 root 프로세스의 `MemoryService`이 �
 
 ## RAG의 복구
 
-`core/memory/rag/repair_service.py`은 손상 징후를 받아 복구를 요청한다. root의 `MemoryService`은 원본 기억 파일에서 staging 색인을 만들고, 검증한 후에 전환한다. 운영 중 명시적 복구가 필요한 경우에는 [CLI 참조의 `repair-rag`](../reference/cli.md)를 참조한다.
+`core/memory/rag/repair/detect.py`은 손상 징후를 받아 복구를 요청한다. root의 `MemoryService`은 원본 기억 파일에서 staging 색인을 만들고, 검증한 후에 전환한다. 운영 중 명시적 복구가 필요한 경우에는 [CLI 참조의 `repair-rag`](../reference/cli.md)를 참조한다.

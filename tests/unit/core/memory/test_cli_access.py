@@ -147,7 +147,7 @@ def test_open_vector_access_rejects_orphaned_owner_lock(tmp_path: Path, monkeypa
 )
 def test_request_repair_and_wait_returns_terminal_state(monkeypatch, state: dict, expected_ok: bool) -> None:
     import core.memory.rag.cli_access as cli_access
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     reads = iter([{}, state])
     monkeypatch.setattr(repair_state, "read_state", lambda _name: next(reads))
@@ -168,7 +168,7 @@ def test_request_repair_and_wait_returns_terminal_state(monkeypatch, state: dict
 
 def test_request_repair_and_wait_times_out(monkeypatch) -> None:
     import core.memory.rag.cli_access as cli_access
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     monkeypatch.setattr(repair_state, "read_state", lambda _name: {"status": "requested"})
     monkeypatch.setattr(repair_state, "write_repair_request_state", MagicMock())

@@ -446,7 +446,7 @@ def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
     repo = Path(__file__).resolve().parents[3]
     direct_factory_callers = {
         "core/supervisor/memory_service.py",
-        "core/memory/rag/repair_rebuild.py",
+        "core/memory/rag/repair/rebuild.py",
     }
     persistent_client_callers: set[str] = set()
     factory_callers: set[str] = set()

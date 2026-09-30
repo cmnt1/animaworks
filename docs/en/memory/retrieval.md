@@ -44,4 +44,4 @@ The Chroma persistent store is owned by `MemoryService` of the root process for 
 
 ## RAG Repair
 
-`core/memory/rag/repair_service.py` requests repair upon signs of corruption. The root's `MemoryService` builds a staging index from the original memory files, validates it, then switches over. If explicit repair is needed during operation, see [`repair-rag` in the CLI Reference](../reference/cli.md).
+`core/memory/rag/repair/detect.py` requests repair upon signs of corruption. The root's `MemoryService` builds a staging index from the original memory files, validates it, then switches over. If explicit repair is needed during operation, see [`repair-rag` in the CLI Reference](../reference/cli.md).

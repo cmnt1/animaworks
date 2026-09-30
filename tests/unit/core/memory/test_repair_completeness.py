@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult
-from core.memory.rag.repair_rebuild import RebuildVerificationError, _reindex_into_store
+from core.memory.rag.repair.rebuild import RebuildVerificationError, _reindex_into_store
 from core.memory.rag.store import ChromaVectorStore
 
 

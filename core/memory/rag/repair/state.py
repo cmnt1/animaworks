@@ -7,13 +7,13 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.memory.rag.repair_types import RepairResult
-from core.memory.rag.repair_utils import iso, parse_dt, utc_now
 from core.platform.atomic_io import atomic_write_json
+
+from .types import RepairResult
 
 ACTIVE_REPAIR_STATUSES = frozenset({"requested", "stopping", "repairing"})
 STAGE_FENCE_ACCESS = "fence_access"
@@ -21,8 +21,24 @@ STAGE_REPAIR = "repair"
 STAGE_UNFENCE = "unfence"
 
 
-def now_iso() -> str:
-    return iso()
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def parse_dt(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+def iso(dt: datetime | None = None) -> str:
+    return (dt or utc_now()).isoformat()
 
 
 def state_path(anima_name: str, *, animas_dir: Path | None = None) -> Path:
@@ -74,6 +90,26 @@ def state_with_defaults(state: dict[str, Any] | None = None) -> dict[str, Any]:
     return merged
 
 
+def _update_state(
+    anima_name: str,
+    updates: dict[str, Any],
+    *,
+    animas_dir: Path | None = None,
+    current: dict[str, Any] | None = None,
+    with_defaults: bool = True,
+) -> dict[str, Any]:
+    state = read_state(anima_name, animas_dir=animas_dir) if current is None else current
+    if with_defaults:
+        state = state_with_defaults(state)
+    state.update(updates)
+    write_state(anima_name, state, animas_dir=animas_dir)
+    return state
+
+
+def prune_recent_signals(signals: list[dict[str, Any]], cutoff: datetime) -> list[dict[str, Any]]:
+    return [signal for signal in signals[-50:] if (parse_dt(signal.get("at")) or utc_now()) >= cutoff]
+
+
 def write_repair_request_state(
     anima_name: str,
     *,
@@ -84,8 +120,8 @@ def write_repair_request_state(
     animas_dir: Path | None = None,
 ) -> None:
     now = iso()
-    state = state_with_defaults(read_state(anima_name, animas_dir=animas_dir))
-    state.update(
+    _update_state(
+        anima_name,
         {
             "status": "requested",
             "stage": "detect",
@@ -98,15 +134,15 @@ def write_repair_request_state(
             "source": source,
             "include_shared": bool(include_shared),
             "last_error": None,
-        }
+        },
+        animas_dir=animas_dir,
     )
-    write_state(anima_name, state, animas_dir=animas_dir)
 
 
 def write_blocked_state(anima_name: str, result: RepairResult, *, animas_dir: Path | None = None) -> None:
     now = iso()
-    state = state_with_defaults(read_state(anima_name, animas_dir=animas_dir))
-    state.update(
+    _update_state(
+        anima_name,
         {
             "status": result.status,
             "stage": result.stage or result.status,
@@ -114,9 +150,9 @@ def write_blocked_state(anima_name: str, result: RepairResult, *, animas_dir: Pa
             "heartbeat_at": now,
             "reason": result.reason,
             "last_error": result.error,
-        }
+        },
+        animas_dir=animas_dir,
     )
-    write_state(anima_name, state, animas_dir=animas_dir)
 
 
 def update_repair_state(
@@ -126,12 +162,11 @@ def update_repair_state(
     **updates: Any,
 ) -> dict[str, Any]:
     now = iso()
-    state = state_with_defaults(read_state(anima_name, animas_dir=animas_dir))
-    state.update(updates)
-    state["updated_at"] = now
-    state["heartbeat_at"] = now
-    write_state(anima_name, state, animas_dir=animas_dir)
-    return state
+    return _update_state(
+        anima_name,
+        {**updates, "updated_at": now, "heartbeat_at": now},
+        animas_dir=animas_dir,
+    )
 
 
 def append_state_signal(
@@ -147,5 +182,10 @@ def append_state_signal(
         signals = []
     cutoff = utc_now() - window
     signals.append(signal)
-    state["recent_signals"] = [s for s in signals[-50:] if (parse_dt(s.get("at")) or utc_now()) >= cutoff]
-    write_state(anima_name, state, animas_dir=animas_dir)
+    _update_state(
+        anima_name,
+        {"recent_signals": prune_recent_signals(signals, cutoff)},
+        animas_dir=animas_dir,
+        current=state,
+        with_defaults=False,
+    )
