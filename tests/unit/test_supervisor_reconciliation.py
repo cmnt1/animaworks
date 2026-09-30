@@ -9,16 +9,17 @@ Unit tests for ProcessSupervisor reconciliation feature.
 from __future__ import annotations
 
 import json
-import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from core.supervisor.manager import (
-    ProcessSupervisor,
-    RestartPolicy,
     HealthConfig,
+    ProcessSupervisor,
     ReconciliationConfig,
+    RestartPolicy,
 )
 from core.supervisor.process_handle import ProcessHandle
 
@@ -79,9 +80,7 @@ async def test_read_anima_enabled_true(temp_dirs):
     """status.json with enabled: true → returns True."""
     anima_dir = temp_dirs["animas_dir"] / "alice"
     anima_dir.mkdir(parents=True)
-    (anima_dir / "status.json").write_text(
-        json.dumps({"enabled": True}), encoding="utf-8"
-    )
+    (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
     result = ProcessSupervisor.read_anima_enabled(anima_dir)
 
@@ -93,9 +92,7 @@ async def test_read_anima_enabled_false(temp_dirs):
     """status.json with enabled: false → returns False."""
     anima_dir = temp_dirs["animas_dir"] / "alice"
     anima_dir.mkdir(parents=True)
-    (anima_dir / "status.json").write_text(
-        json.dumps({"enabled": False}), encoding="utf-8"
-    )
+    (anima_dir / "status.json").write_text(json.dumps({"enabled": False}), encoding="utf-8")
 
     result = ProcessSupervisor.read_anima_enabled(anima_dir)
 
@@ -107,9 +104,7 @@ async def test_read_anima_enabled_missing_key(temp_dirs):
     """status.json with empty object → returns True (default)."""
     anima_dir = temp_dirs["animas_dir"] / "alice"
     anima_dir.mkdir(parents=True)
-    (anima_dir / "status.json").write_text(
-        json.dumps({}), encoding="utf-8"
-    )
+    (anima_dir / "status.json").write_text(json.dumps({}), encoding="utf-8")
 
     result = ProcessSupervisor.read_anima_enabled(anima_dir)
 
@@ -121,9 +116,7 @@ async def test_read_anima_enabled_invalid_json(temp_dirs):
     """status.json with invalid JSON → returns True (safe fallback)."""
     anima_dir = temp_dirs["animas_dir"] / "alice"
     anima_dir.mkdir(parents=True)
-    (anima_dir / "status.json").write_text(
-        "not valid json!!!", encoding="utf-8"
-    )
+    (anima_dir / "status.json").write_text("not valid json!!!", encoding="utf-8")
 
     result = ProcessSupervisor.read_anima_enabled(anima_dir)
 
@@ -141,9 +134,7 @@ async def test_reconcile_starts_enabled_anima(supervisor, temp_dirs):
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
-    (alice_dir / "status.json").write_text(
-        json.dumps({"enabled": True}), encoding="utf-8"
-    )
+    (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
     supervisor.start_anima = AsyncMock()
     supervisor.stop_anima = AsyncMock()
@@ -165,9 +156,7 @@ async def test_reconcile_stops_disabled_anima(supervisor, temp_dirs):
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
-    (alice_dir / "status.json").write_text(
-        json.dumps({"enabled": False}), encoding="utf-8"
-    )
+    (alice_dir / "status.json").write_text(json.dumps({"enabled": False}), encoding="utf-8")
 
     # Simulate running process
     handle = MagicMock(spec=ProcessHandle)
@@ -257,9 +246,7 @@ async def test_reconcile_skips_already_running(supervisor, temp_dirs):
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
-    (alice_dir / "status.json").write_text(
-        json.dumps({"enabled": True}), encoding="utf-8"
-    )
+    (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
     # Already running
     handle = MagicMock(spec=ProcessHandle)
@@ -283,15 +270,11 @@ async def test_reconcile_start_anima_failure(supervisor, temp_dirs):
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
-    (alice_dir / "status.json").write_text(
-        json.dumps({"enabled": True}), encoding="utf-8"
-    )
+    (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
     bob_dir = animas_dir / "bob"
     bob_dir.mkdir()
     (bob_dir / "identity.md").write_text("Bob identity", encoding="utf-8")
-    (bob_dir / "status.json").write_text(
-        json.dumps({"enabled": True}), encoding="utf-8"
-    )
+    (bob_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
     # start_anima fails for alice but succeeds for bob
     async def start_side_effect(name: str) -> None:
@@ -320,9 +303,7 @@ async def test_reconcile_callback_not_set(supervisor, temp_dirs):
     alice_dir = animas_dir / "alice"
     alice_dir.mkdir()
     (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
-    (alice_dir / "status.json").write_text(
-        json.dumps({"enabled": True}), encoding="utf-8"
-    )
+    (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
     supervisor.start_anima = AsyncMock()
     supervisor.stop_anima = AsyncMock()
@@ -354,3 +335,12 @@ async def test_supervisor_has_reconciliation_task_attr(supervisor):
     """Supervisor init has _reconciliation_task attribute."""
     assert hasattr(supervisor, "_reconciliation_task")
     assert supervisor._reconciliation_task is None
+
+
+@pytest.mark.asyncio
+async def test_periodic_reconcile_does_not_run_asset_reconciliation(supervisor):
+    supervisor.animas_dir.mkdir(parents=True, exist_ok=True)
+
+    await supervisor._reconcile()
+
+    supervisor._reconcile_assets.assert_not_awaited()

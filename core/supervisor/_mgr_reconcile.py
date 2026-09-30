@@ -247,12 +247,8 @@ class ReconcileMixin:
                         name,
                     )
 
-        # Check for missing anima assets (fallback generation)
-        if not self._shutdown:
-            await self._reconcile_assets()
-
     async def _reconcile_assets(self) -> None:
-        """Check for and generate missing anima assets during reconciliation."""
+        """Explicitly generate missing assets for animas when requested."""
         try:
             from core.anima.asset_reconciler import find_animas_with_missing_assets, reconcile_anima_assets
             from core.config.models import load_config

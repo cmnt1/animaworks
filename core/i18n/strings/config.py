@@ -91,8 +91,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Slack DM",
     },
     "scheduler.cron_health_title": {
-        "ja": "⚠️ Cronヘルスチェック警告",
-        "en": "⚠️ Cron Health Check Warning",
+        "ja": "⚠️ cron.md解析警告",
+        "en": "⚠️ cron.md Parse Warning",
     },
     "scheduler.cron_health_no_valid_schedule": {
         "ja": (
@@ -113,19 +113,6 @@ STRINGS: dict[str, dict[str, str]] = {
             "cron.mdに schedule: を含む行がありますが、パーサーに認識されていません。フォーマットを確認してください。"
         ),
         "en": ("Lines containing 'schedule:' found in cron.md but not recognized by the parser. Please check format."),
-    },
-    "scheduler.cron_health_no_execution": {
-        "ja": (
-            "{job_count}件のcronジョブが登録されていますが、"
-            "直近{hours}時間にcron実行ログがありません。"
-            "低頻度（例: 日次/週次）のcronであれば正常な場合があります。"
-            "想定より頻度が高いはずの場合は、cron.mdとスケジュール設定を確認してください。"
-        ),
-        "en": (
-            "{job_count} cron job(s) registered but no execution logs in the last "
-            "{hours} hours. This can be normal for low-frequency crons (e.g., daily/weekly). "
-            "If the expected frequency is higher, please check cron.md and schedule settings."
-        ),
     },
     "anima.greeting_error": {
         "ja": "[ERROR: 挨拶生成中にエラーが発生しました]",

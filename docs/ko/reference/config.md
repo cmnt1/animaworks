@@ -366,11 +366,6 @@
 | `heartbeat.outbound_limit_enabled` | `bool` | `true` | False는 전역 hourly/daily 아웃바운드 메시지 상한을 비활성화 |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | 마지막 스트림 종료 후 유휴 자동 압축을 트리거할 때까지의 분 |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | 시스템 프롬프트에 해결된 승인 알림을 주입할 시간; 0 = 알림 섹션 비활성화 |
-| `cron_guard` | `CronGuardConfig` | `{CronGuardConfig}` | cron 작업 실행의 안전 제어. |
-| `cron_guard.mode` | `Literal['off', 'warn', 'disable']` | `"warn"` | — |
-| `cron_guard.max_fires_per_window` | `int` | `60` | — |
-| `cron_guard.window_minutes` | `int` | `60` | — |
-| `cron_guard.max_consecutive_failures` | `int` | `5` | — |
 | `voice` | `VoiceConfig` | `{VoiceConfig}` | 음성 입출력과 음성 공급자. |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |

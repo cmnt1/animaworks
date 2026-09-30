@@ -15,7 +15,7 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 76 | — |
 | `cli.demo` | 392 | 네이티브 ``animaworks demo`` 명령어. |
-| `cli.parser` | 883 | — |
+| `cli.parser` | 878 | — |
 | `cli.tool_dispatch` | 91 | — |
 
 ## `cli.commands`
@@ -30,7 +30,6 @@
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
-| `cli.commands.cron_guard` | 93 | cron 가드 작업을 확인하고 다시 활성화하기 위한 CLI 명령어. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 387 | — |
 | `cli.commands.init_cmd` | 136 | — |
@@ -121,7 +120,7 @@ Digital Anima의 수명 주기 및 런타임 객체.
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.anima` | 23 | — |
-| `core.anima.asset_reconciler` | 675 | — |
+| `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 574 | — |
 | `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | LLM 응답을 위한 공통 감정 태그 추출. |
@@ -167,7 +166,7 @@ Digital Anima의 수명 주기 및 런타임 객체.
 | `core.config.model_mode` | 446 | 표준 S/C/D/G/X/A 모드에 대한 모델 실행 모드 확인. |
 | `core.config.models` | 96 | 중앙 설정 모듈 — 분할된 모듈을 다시 내보내는 파사드. |
 | `core.config.resolver` | 172 | 설정 확인: status.json와 anima_defaults 병합. |
-| `core.config.schemas` | 1400 | AnimaWorks용 Pydantic 설정 스키마. |
+| `core.config.schemas` | 1389 | AnimaWorks용 Pydantic 설정 스키마. |
 | `core.config.vault` | 409 | PyNaCl SealedBox 암호화를 사용하는 인증 정보 보관소. |
 
 ## `core.execution`
@@ -284,7 +283,7 @@ Digital Anima의 수명 주기 및 런타임 객체.
 | `core.i18n` | 135 | 런타임 문자열을 위한 경량 i18n 지원. |
 | `core.i18n.strings.communication` | 53 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.company` | 14 | 회사 관리를 위한 현지화 문자열. |
-| `core.i18n.strings.config` | 310 | 도메인별 i18n 문자열. |
+| `core.i18n.strings.config` | 297 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | 도메인별 i18n 문자열. |
 | `core.i18n.strings.handler` | 388 | 도메인별 i18n 문자열(핸들러 1부). |
@@ -763,7 +762,7 @@ Anima 감독, 위임 및 실행 조정.
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1249 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
-| `core.supervisor.scheduler_manager` | 1141 | APScheduler management for heartbeat and cron tasks. |
+| `core.supervisor.scheduler_manager` | 835 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
 | `core.supervisor.task_runner` | 953 | Disposable task runner entry point. |
 | `core.supervisor.task_runner_supervisor` | 1109 | Root-side lifecycle manager for disposable task runner processes. |
@@ -909,7 +908,7 @@ LLM 사용량과 비용 기록·집계.
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1397 | — |
+| `server.app` | 1372 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

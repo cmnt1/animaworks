@@ -389,7 +389,7 @@ def _request_accepts_html(request: Request) -> bool:
 
 
 async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
-    """Background task: generate missing anima assets after startup."""
+    """Background task: generate missing anima assets once during startup."""
     try:
         from core.anima.asset_reconciler import reconcile_all_assets
         from core.config.models import load_config
@@ -412,6 +412,17 @@ async def _reconcile_assets_at_startup(animas_dir: Path) -> None:
             logger.info("Startup asset reconciliation: %d anima(s) processed", len(results))
     except Exception:
         logger.exception("Startup asset reconciliation failed")
+
+
+def _schedule_startup_asset_reconciliation(app: FastAPI) -> None:
+    """Schedule one fallback asset scan per app runtime."""
+    if getattr(app.state, "_asset_reconciliation_scheduled", False):
+        return
+    app.state._asset_reconciliation_scheduled = True
+    spawn(
+        _reconcile_assets_at_startup(app.state.animas_dir),
+        name="startup-asset-reconciliation",
+    )
 
 
 async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = True) -> None:
@@ -487,11 +498,8 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         except Exception:
             logger.exception("Org structure sync failed at startup")
 
-        # Reconcile missing anima assets (fallback for failed bootstrap)
-        spawn(
-            _reconcile_assets_at_startup(app.state.animas_dir),
-            name="startup-asset-reconciliation",
-        )
+        # Reconcile missing anima assets once as a fallback for failed bootstrap.
+        _schedule_startup_asset_reconciliation(app)
 
         # ── Slack: ensure .env slots + warn about missing tokens ──
         try:
@@ -773,39 +781,6 @@ async def _activate_runtime_services(app: FastAPI) -> None:
         IntervalTrigger(minutes=10),
         id="orphan_anima_detection",
         name="System: Orphan Anima Detection",
-        replace_existing=True,
-    )
-
-    # ── Asset reconciliation (periodic) ───────────────
-    from core.anima.asset_reconciler import reconcile_all_assets
-
-    async def _reconcile_assets_periodic() -> None:
-        try:
-            enable_3d = True
-            image_style = "realistic"
-            try:
-                from core.config.models import load_config
-
-                _cfg = load_config()
-                enable_3d = _cfg.image_gen.enable_3d
-                image_style = _cfg.image_gen.image_style or "realistic"
-            except Exception:
-                logger.debug("Best-effort operation failed", exc_info=True)
-            await reconcile_all_assets(
-                app.state.animas_dir,
-                enable_3d=enable_3d,
-                image_style=image_style,
-            )
-        except asyncio.CancelledError:
-            logger.debug("Asset reconciliation cancelled (shutdown)")
-        except Exception:
-            logger.exception("Periodic asset reconciliation failed")
-
-    msg_log_scheduler.add_job(
-        _reconcile_assets_periodic,
-        IntervalTrigger(minutes=5),
-        id="asset_reconciliation",
-        name="System: Asset Reconciliation",
         replace_existing=True,
     )
 

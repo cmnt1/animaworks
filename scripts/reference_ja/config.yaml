@@ -32,7 +32,6 @@ background_task: バックグラウンド実行対象ツールの設定。
 activity_log: 操作・活動ログの保存設定。
 logging: ログレベル、出力先、機密情報のマスキング。
 heartbeat: 定期的な heartbeat の実行設定。
-cron_guard: cron タスク実行の安全制御。
 voice: 音声入出力と音声プロバイダー。
 housekeeping: 実行時データの定期整理。
 inbox: anima の受信箱と通知表示。

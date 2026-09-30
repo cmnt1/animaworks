@@ -172,7 +172,6 @@ Roles of each section:
 | `activity_log` |  |
 | `logging` |  |
 | `heartbeat` |  |
-| `cron_guard` |  |
 | `voice` |  |
 | `housekeeping` |  |
 | `inbox` |  |

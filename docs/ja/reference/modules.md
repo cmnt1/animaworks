@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 1cfea2f3f0599d58a29b3cc41ce1566140a6802843365ce76ea6262ce816861a -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 846522524bc52d6f87d6038dca096b1b7bf1da0a2a32ac978f842b0f2f4f0b02 -->
 
 # モジュール一覧
 
@@ -15,7 +15,7 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.demo` | 394 | Native ``animaworks demo`` command. |
-| `cli.parser` | 883 | — |
+| `cli.parser` | 878 | — |
 | `cli.tool_dispatch` | 91 | — |
 
 ## `cli.commands`
@@ -30,7 +30,6 @@
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
-| `cli.commands.cron_guard` | 93 | CLI commands for inspecting and re-enabling cron guard tasks. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 380 | — |
 | `cli.commands.init_cmd` | 136 | — |
@@ -121,7 +120,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.anima` | 23 | — |
-| `core.anima.asset_reconciler` | 675 | — |
+| `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 576 | — |
 | `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
@@ -179,7 +178,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 96 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 162 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1413 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1402 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -296,7 +295,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 53 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 310 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 297 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 388 | Domain-specific i18n strings (handler part 1). |
@@ -771,7 +770,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor` | 20 | — |
 | `core.supervisor._mgr_health（非公開）` | 469 | Health check mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_rag_repair（非公開）` | 9 | Supervisor entry point for the RAG repair lifecycle mixin. |
-| `core.supervisor._mgr_reconcile（非公開）` | 321 | Reconciliation mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_reconcile（非公開）` | 317 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
@@ -784,7 +783,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1249 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
-| `core.supervisor.scheduler_manager` | 1147 | APScheduler management for heartbeat and cron tasks. |
+| `core.supervisor.scheduler_manager` | 835 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
 | `core.supervisor.task_runner` | 953 | Disposable task runner entry point. |
 | `core.supervisor.task_runner_supervisor` | 1109 | Root-side lifecycle manager for disposable task runner processes. |
@@ -930,7 +929,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1397 | — |
+| `server.app` | 1372 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 2ba6155ac26faafb7cf752b84b9522d5855a6f4aebea78175f882a5e3c5b8c15 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: d2084e65e46d86ebb33f770d6fe1316021ef72c0bf886f394d87900cae735ccc -->
 
 # 設定リファレンス
 
@@ -366,11 +366,6 @@
 | `heartbeat.outbound_limit_enabled` | `bool` | `true` | False disables the global hourly/daily outbound message caps |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | Minutes after last stream end to trigger idle auto-compaction |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section |
-| `cron_guard` | `CronGuardConfig` | `{CronGuardConfig}` | cron タスク実行の安全制御。 |
-| `cron_guard.mode` | `Literal['off', 'warn', 'disable']` | `"warn"` | — |
-| `cron_guard.max_fires_per_window` | `int` | `60` | — |
-| `cron_guard.window_minutes` | `int` | `60` | — |
-| `cron_guard.max_consecutive_failures` | `int` | `5` | — |
 | `voice` | `VoiceConfig` | `{VoiceConfig}` | 音声入出力と音声プロバイダー。 |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |

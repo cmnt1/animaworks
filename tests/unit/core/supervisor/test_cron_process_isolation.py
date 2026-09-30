@@ -26,7 +26,6 @@ def _manager(tmp_path: Path) -> tuple[SchedulerManager, MagicMock]:
     anima.run_cron_command = AsyncMock()
     emit = MagicMock()
     manager = SchedulerManager(anima, "sakura", anima_dir, emit)
-    manager._record_cron_result = MagicMock()
     return manager, anima
 
 

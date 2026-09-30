@@ -200,6 +200,8 @@ class TestLifespan:
             async with lifespan(mock_app):
                 await asyncio.wait_for(mock_app.state._anima_startup_task, timeout=1.0)
                 mock_supervisor.start_all.assert_awaited_once_with(["alice"])
+                scheduled_ids = {call.kwargs.get("id") for call in mock_scheduler.add_job.call_args_list}
+                assert "asset_reconciliation" not in scheduled_ids
 
                 from core.memory.rag.vector_client import VectorClient
                 from core.memory.rag.vector_registry import get_vector_store
@@ -214,6 +216,24 @@ class TestLifespan:
                 )
 
         mock_supervisor.shutdown_all.assert_awaited_once()
+
+    def test_startup_asset_reconciliation_is_scheduled_once(self, tmp_path):
+        from types import SimpleNamespace
+
+        from server.app import _schedule_startup_asset_reconciliation
+
+        app = SimpleNamespace(state=SimpleNamespace(animas_dir=tmp_path))
+        with patch("server.app.spawn") as mock_spawn:
+            _schedule_startup_asset_reconciliation(app)
+            _schedule_startup_asset_reconciliation(app)
+
+        mock_spawn.assert_called_once()
+        mock_spawn.assert_called_once_with(
+            mock_spawn.call_args.args[0],
+            name="startup-asset-reconciliation",
+        )
+        mock_spawn.call_args.args[0].close()
+        assert app.state._asset_reconciliation_scheduled is True
 
 
 # ── Public icon path (auth bypass regex) ────────────

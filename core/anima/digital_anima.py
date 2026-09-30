@@ -468,10 +468,10 @@ class DigitalAnima(
     def drain_chat_background_notifications(self) -> list[str]:
         """Read task-completion notifications intended for a chat turn.
 
-        Cron-health and token-budget notices are operational context for the
-        heartbeat, not background task results requested by the user.  Leave
-        those files for the existing heartbeat drain so they are not silently
-        consumed by a normal chat turn.
+        Cron parse, legacy cron-guard, and token-budget notices are operational
+        context for the heartbeat, not background task results requested by the
+        user. Leave those files for the heartbeat drain instead of consuming
+        them during a normal chat turn.
         """
         excluded_prefixes = ("cron_health_", "cron_guard_", "token_budget_")
         return self._drain_background_notifications(

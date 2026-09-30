@@ -94,8 +94,8 @@ class TestSchedulerManagerE2E:
         assert "test-anima_heartbeat" in job_ids
         assert "test-anima_cron_0" in job_ids
         assert "test-anima_cron_1" in job_ids
-        assert "test-anima_cron_health" in job_ids
-        assert len(jobs) >= 3  # heartbeat + 2 cron + system jobs (cron_health, etc.)
+        assert "test-anima_cron_health" not in job_ids
+        assert len(jobs) >= 3  # heartbeat + 2 cron + background review drain
 
         # Verify heartbeat interval
         heartbeat_job = mgr.scheduler.get_job("test-anima_heartbeat")

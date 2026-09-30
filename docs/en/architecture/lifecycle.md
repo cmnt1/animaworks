@@ -24,7 +24,7 @@ Chat uses a per-thread conversation lock to prevent conflicts within the same co
 
 The default heartbeat interval is 30 minutes in the global configuration, and can be overridden per Anima via `status.json` in `heartbeat_interval_minutes`. The valid range is 1 to 1440 minutes. The global `activity_level` defaults to 100% with an allowable range of 10 to 400%; higher values shorten the effective interval. `activity_schedule` can be used to switch activity levels by time period. Activity time windows are configured from `heartbeat.md`.
 
-`cron.md` is a heading-level definition, with a standard 5-field cron expression written in `schedule`. `type`, a description, and optionally command/tool with arguments are configured, and `core/supervisor/schedule_parser.py` parses them. Cron tasks that repeatedly fail are automatically disabled by the cron guard, and can be checked and re-enabled via `animaworks cron-guard`.
+`cron.md` defines one task per heading, with a standard 5-field cron expression in `schedule`; `type`, a description, and optional command/tool arguments are parsed by `core/supervisor/schedule_parser.py`. During setup or hot reload, parse/registration failures are reported as `cron_health_*.md` notifications. Registered cron execution frequency and failures are not monitored periodically.
 
 ## Initial Startup and One Cycle
 

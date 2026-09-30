@@ -430,37 +430,6 @@ cli.cost_help
 | --today | 플래그 | false | — | 오늘만 표시 |
 | --json | 플래그 | false | — | JSON으로 출력 |
 
-## `cron-guard`
-
-자동 비활성화된 cron 작업 검사 및 재활성화
-
-`usage: animaworks cron-guard [-h] {list,enable} ...`
-
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `cron-guard enable`
-
-자동 비활성화된 cron 작업 재활성화
-
-`usage: animaworks cron-guard enable [-h] anima task`
-
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
-|---|---|---|---|---|
-| anima | 위치 인자 | — | — | Anima 이름 |
-| task | 위치 인자 | — | — | Cron 작업 이름 |
-
-## `cron-guard list`
-
-자동 비활성화된 cron 작업 목록
-
-`usage: animaworks cron-guard list [-h] anima`
-
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
-|---|---|---|---|---|
-| anima | 위치 인자 | — | — | Anima 이름 |
-
 ## `demo`
 
 3-에이전트 데모 팀 실행 (Claude Code 또는 Codex에 로그인되어 있으면 API 키 불필요)

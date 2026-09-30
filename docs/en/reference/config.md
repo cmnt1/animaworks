@@ -366,11 +366,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `heartbeat.outbound_limit_enabled` | `bool` | `true` | False disables the global hourly/daily outbound message caps |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | Minutes after last stream end to trigger idle auto-compaction |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section |
-| `cron_guard` | `CronGuardConfig` | `{CronGuardConfig}` | Safety controls for cron task execution. |
-| `cron_guard.mode` | `Literal['off', 'warn', 'disable']` | `"warn"` | — |
-| `cron_guard.max_fires_per_window` | `int` | `60` | — |
-| `cron_guard.window_minutes` | `int` | `60` | — |
-| `cron_guard.max_consecutive_failures` | `int` | `5` | — |
 | `voice` | `VoiceConfig` | `{VoiceConfig}` | Voice input/output and voice providers. |
 | `voice.stt_model` | `str` | `"large-v3-turbo"` | — |
 | `voice.stt_device` | `str` | `"auto"` | — |
