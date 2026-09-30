@@ -24,8 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from core.i18n import t
-
-logger = logging.getLogger(__name__)
+from core.integrations._google_auth import GoogleOAuth
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -83,50 +82,30 @@ class GoogleSheetsClient:
         credentials_dir = _credentials_dir()
         self.credentials_path = credentials_path or (credentials_dir / "credentials.json")
         self.token_path = token_path or (credentials_dir / "token.json")
+        self._oauth = GoogleOAuth(
+            scopes=SCOPES,
+            token_path=self.token_path,
+            credentials_path=self.credentials_path,
+            tool_name="google_sheets",
+            allow_client_config=False,
+            missing_credentials_error=(
+                "No credentials found. Place credentials.json and token.json at {credentials_dir}."
+            ),
+            import_error_message=(
+                "google_sheets tool requires google-api packages. "
+                "Install with: pip install google-api-python-client "
+                "google-auth-httplib2 google-auth-oauthlib"
+            ),
+            create_parent_on_refresh=False,
+            best_effort_initial_persist=False,
+            persist_error_log_level=logging.DEBUG,
+            persist_error_message="could not persist refreshed token (read-only mount?)",
+        )
         self._service = None
 
     def _get_credentials(self) -> Any:
         """Obtain valid credentials via OAuth2."""
-        try:
-            from google.auth.transport.requests import Request
-            from google.oauth2.credentials import Credentials
-            from google_auth_oauthlib.flow import InstalledAppFlow
-        except ImportError:
-            raise ImportError(
-                "google_sheets tool requires google-api packages. "
-                "Install with: pip install google-api-python-client "
-                "google-auth-httplib2 google-auth-oauthlib"
-            ) from None
-
-        creds = None
-
-        if self.token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(self.token_path), SCOPES)
-
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                # Sandboxes mount credentials read-only; a refreshed token
-                # still works in-memory even when persisting fails.
-                try:
-                    self.token_path.write_text(creds.to_json())
-                except OSError:
-                    logger.debug("could not persist refreshed token (read-only mount?)")
-            else:
-                if not self.credentials_path.exists():
-                    raise FileNotFoundError(
-                        f"No credentials found. Place credentials.json and token.json at "
-                        f"{self.credentials_path.parent}."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(self.credentials_path),
-                    SCOPES,
-                )
-                creds = flow.run_local_server(port=0)
-                self.token_path.parent.mkdir(parents=True, exist_ok=True)
-                self.token_path.write_text(creds.to_json())
-
-        return creds
+        return self._oauth.get_credentials()
 
     def _build_service(self) -> Any:
         """Build the Sheets API service."""

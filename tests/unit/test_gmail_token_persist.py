@@ -39,11 +39,10 @@ def test_get_credentials_survives_readonly_token_store(tmp_path: Path) -> None:
     creds.refresh_token = "present"
 
     with (
-        patch("core.integrations.gmail.Credentials") as cred_cls,
-        patch("core.integrations.gmail.Request"),
+        patch("google.oauth2.credentials.Credentials.from_authorized_user_file", return_value=creds),
+        patch("google.auth.transport.requests.Request"),
         patch.object(Path, "write_text", side_effect=_EROFS),
     ):
-        cred_cls.from_authorized_user_file.return_value = creds
         assert client._get_credentials() is creds
 
     creds.refresh.assert_called_once()
