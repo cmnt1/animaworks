@@ -258,6 +258,7 @@ class UnifiedMemorySearch:
             sparse_query=search_query,
             scopes=scopes,
             pool_k=pool_k,
+            pipeline_settings=settings,
             entity_boost=entity_boost,
             embedding=embedding,
             indexer=indexer,
@@ -650,6 +651,7 @@ class UnifiedMemorySearch:
         sparse_query: str,
         scopes: tuple[str, ...],
         pool_k: int,
+        pipeline_settings: dict[str, object],
         entity_boost: Any | None,
         embedding: list[float] | None,
         indexer: Any | None,
@@ -679,7 +681,7 @@ class UnifiedMemorySearch:
             remaining_vector_scopes = vector_scopes[1:]
 
         vector_groups: list[tuple[list[str], bool]] = []
-        graph_enabled = bool(rag._load_rag_pipeline_settings().get("enable_spreading_activation", True))
+        graph_enabled = bool(pipeline_settings.get("enable_spreading_activation", True))
         grouped: set[str] = set()
         for scope in remaining_vector_scopes:
             if scope in grouped:
