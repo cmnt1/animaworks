@@ -23,6 +23,19 @@ def _wire_session_type(dp) -> None:
     dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
 
+def _capture_prompt_stream(captured_prompts: list[str]):
+    async def _capture_streaming(prompt, trigger="manual", **kwargs):
+        captured_prompts.append(prompt)
+        result = _make_cycle_result(
+            trigger=trigger,
+            session_type="chat",
+            thread_id=kwargs.get("thread_id", "default"),
+        )
+        yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
+
+    return _capture_streaming
+
+
 def _setup_anima(make_anima, data_dir):
     """Create a DigitalAnima with mocked dependencies."""
     anima_dir = make_anima("alice")
@@ -57,12 +70,7 @@ class TestProcessMessageSource:
         """When source is an external platform, prompt includes platform_context."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hello", from_person="human", source="googlechat")
 
         assert len(captured_prompts) == 1
@@ -74,12 +82,7 @@ class TestProcessMessageSource:
         """When source is empty, prompt is unchanged."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hello", from_person="human")
 
         assert len(captured_prompts) == 1
@@ -89,12 +92,7 @@ class TestProcessMessageSource:
         """When source is not in EXTERNAL_PLATFORM_SOURCES, no injection."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hello", from_person="human", source="webui")
 
         assert len(captured_prompts) == 1
@@ -104,12 +102,7 @@ class TestProcessMessageSource:
         """Slack source also triggers injection."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("Hi", from_person="human", source="slack")
 
         assert len(captured_prompts) == 1
@@ -120,12 +113,7 @@ class TestProcessMessageSource:
         """The original user message is still present in the prompt after injection."""
         dp = _setup_anima(make_anima, data_dir)
         captured_prompts: list[str] = []
-
-        async def _capture_run_cycle(prompt, **kwargs):
-            captured_prompts.append(prompt)
-            return _make_cycle_result()
-
-        dp.agent.run_cycle = _capture_run_cycle
+        dp.agent.run_cycle_streaming = _capture_prompt_stream(captured_prompts)
         await dp.process_message("My unique message", from_person="human", source="googlechat")
 
         assert "My unique message" in captured_prompts[0]

@@ -21,6 +21,21 @@ def _make_cycle_result(**kwargs) -> CycleResult:
     return CycleResult(**defaults)
 
 
+def _stream_cycle_result(result: CycleResult):
+    async def _stream(*_args, **_kwargs):
+        yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
+
+    return _stream
+
+
+def _stream_error(error: Exception):
+    async def _stream(*_args, **_kwargs):
+        raise error
+        yield {}
+
+    return _stream
+
+
 def _wire_session_type(dp) -> None:
     """Wire set_active_session_type to use the real ContextVar so reset() works."""
     from core.tooling.handler import active_session_type
@@ -232,13 +247,88 @@ class TestProcessMessage:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(
-                return_value=_make_cycle_result(trigger="message:human", session_type="chat", summary="Hello!")
+            dp.agent.run_cycle_streaming = _stream_cycle_result(
+                _make_cycle_result(trigger="message:human", session_type="chat", summary="Hello!")
             )
 
             result = await dp.process_message("Hi", from_person="human")
             assert result == "Hello!"
             assert dp._status_slots.get("conversation:default", "idle") == "idle"
+
+    async def test_process_message_returns_cycle_result_and_leaves_notifications_queued(self, data_dir, make_anima):
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+        ):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.needs_compression.return_value = False
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+            MockConv.return_value.write_transcript = MagicMock()
+
+            from core.anima.digital_anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            _wire_session_type(dp)
+            cycle_result = _make_cycle_result(
+                trigger="message:human",
+                session_type="chat",
+                request_id="req-1",
+                tool_session_id="session-1",
+                summary="Hello!",
+            )
+            dp.agent.run_cycle_streaming = _stream_cycle_result(cycle_result)
+            dp.agent.drain_notifications = MagicMock(return_value=[{"type": "notification"}])
+
+            result = await dp.process_message("Hi", from_person="human", include_cycle_result=True)
+
+        assert result == cycle_result.model_dump(mode="json")
+        dp.agent.drain_notifications.assert_not_called()
+
+    async def test_process_message_waits_for_bootstrap_lock(self, data_dir, make_anima):
+        import asyncio
+
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        (anima_dir / "bootstrap.md").write_text("bootstrap", encoding="utf-8")
+
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+        ):
+            MockMM.return_value.read_model_config.return_value = MagicMock()
+            MockConv.return_value.needs_compression.return_value = False
+            MockConv.return_value.append_turn = MagicMock()
+            MockConv.return_value.save = MagicMock()
+            MockConv.return_value.write_transcript = MagicMock()
+
+            from core.anima.digital_anima import DigitalAnima
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            _wire_session_type(dp)
+            dp._sync_interactive_bootstrap_state = MagicMock()
+            dp.agent.run_cycle_streaming = _stream_cycle_result(
+                _make_cycle_result(trigger="message:human", session_type="chat", summary="Hello!")
+            )
+            lock = dp._get_thread_lock("default")
+            await lock.acquire()
+
+            async def release_bootstrap_lock():
+                await asyncio.sleep(0)
+                lock.release()
+
+            release_task = asyncio.create_task(release_bootstrap_lock())
+            result = await dp.process_message("Hi", from_person="human")
+            await release_task
+
+        assert result == "Hello!"
 
     async def test_process_message_routes_external_user_reply_to_slack_dm(self, data_dir, make_anima):
         anima_dir = make_anima("alice")
@@ -277,8 +367,8 @@ class TestProcessMessage:
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
             dp._session_compactor.schedule = MagicMock()
-            dp.agent.run_cycle = AsyncMock(
-                return_value=_make_cycle_result(trigger="message:cmnt", session_type="chat", summary="Hello!")
+            dp.agent.run_cycle_streaming = _stream_cycle_result(
+                _make_cycle_result(trigger="message:cmnt", session_type="chat", summary="Hello!")
             )
 
             result = await dp.process_message("Hi", from_person="cmnt")
@@ -313,15 +403,16 @@ class TestProcessMessage:
 
             observed_statuses = []
 
-            async def mock_run_cycle(prompt, trigger="manual", **kwargs):
+            async def mock_run_cycle_streaming(prompt, trigger="manual", **kwargs):
                 observed_statuses.append(dp._status_slots.get("conversation:default", "idle"))
-                return _make_cycle_result(
+                result = _make_cycle_result(
                     trigger=trigger,
                     session_type="chat",
                     thread_id=kwargs.get("thread_id", "default"),
                 )
+                yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
 
-            dp.agent.run_cycle = mock_run_cycle
+            dp.agent.run_cycle_streaming = mock_run_cycle_streaming
             await dp.process_message("test")
             assert "thinking" in observed_statuses
             assert dp._status_slots.get("conversation:default", "idle") == "idle"
@@ -345,7 +436,7 @@ class TestProcessMessage:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(side_effect=RuntimeError("fail"))
+            dp.agent.run_cycle_streaming = _stream_error(RuntimeError("fail"))
 
             with pytest.raises(RuntimeError):
                 await dp.process_message("test")
@@ -673,7 +764,7 @@ class TestProcessMessageConversationSave:
         data_dir,
         make_anima,
     ):
-        """append_turn('human', ...) and save() must be called BEFORE agent.run_cycle()."""
+        """append_turn('human', ...) and save() precede agent.run_cycle_streaming()."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -702,29 +793,30 @@ class TestProcessMessageConversationSave:
             )
             MockConv.return_value.save.side_effect = lambda: call_order.append("save")
 
-            async def mock_run_cycle(prompt, trigger="manual", **kwargs):
-                call_order.append("run_cycle")
-                return _make_cycle_result(
+            async def mock_run_cycle_streaming(prompt, trigger="manual", **kwargs):
+                call_order.append("run_cycle_streaming")
+                result = _make_cycle_result(
                     trigger=trigger,
                     session_type="chat",
                     thread_id=kwargs.get("thread_id", "default"),
                     summary="OK",
                 )
+                yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
 
-            dp.agent.run_cycle = mock_run_cycle
+            dp.agent.run_cycle_streaming = mock_run_cycle_streaming
 
             await dp.process_message("Hello", from_person="human")
 
-            # Verify pre-save ordering: human turn + save happen before run_cycle
-            assert call_order.index("append_turn:human") < call_order.index("run_cycle")
-            assert call_order.index("save") < call_order.index("run_cycle")
+            # Verify pre-save ordering: human turn + save precede run_cycle_streaming
+            assert call_order.index("append_turn:human") < call_order.index("run_cycle_streaming")
+            assert call_order.index("save") < call_order.index("run_cycle_streaming")
 
     async def test_error_saves_user_input_and_error_marker(
         self,
         data_dir,
         make_anima,
     ):
-        """When agent.run_cycle() raises, both user input and error marker are saved."""
+        """When agent.run_cycle_streaming() raises, input and error marker are saved."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -745,7 +837,7 @@ class TestProcessMessageConversationSave:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(side_effect=RuntimeError("boom"))
+            dp.agent.run_cycle_streaming = _stream_error(RuntimeError("boom"))
 
             with pytest.raises(RuntimeError):
                 await dp.process_message("Hi there", from_person="human")
@@ -787,8 +879,8 @@ class TestProcessMessageConversationSave:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(
-                return_value=_make_cycle_result(trigger="message:human", session_type="chat", summary="Great answer")
+            dp.agent.run_cycle_streaming = _stream_cycle_result(
+                _make_cycle_result(trigger="message:human", session_type="chat", summary="Great answer")
             )
 
             result = await dp.process_message("Question", from_person="human")

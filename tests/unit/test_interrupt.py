@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -141,16 +141,21 @@ class TestDigitalAnimaInterrupt:
         mock_agent.background_manager = None
         mock_agent._tool_handler = MagicMock()
         mock_agent.execution_mode = "a"
-        mock_agent.run_cycle = AsyncMock(
-            return_value=MagicMock(
-                text="hello",
-                emotion="neutral",
-                summary="test",
-                tool_call_records=[],
-                duration_ms=1,
-                thinking_text=None,
-            )
-        )
+
+        async def mock_stream(*_args, **_kwargs):
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {
+                    "trigger": "message:human",
+                    "action": "responded",
+                    "summary": "test",
+                    "session_type": "chat",
+                    "thread_id": "default",
+                    "tool_call_records": [],
+                },
+            }
+
+        mock_agent.run_cycle_streaming = mock_stream
         mock_agent_cls.return_value = mock_agent
 
         from core.anima.digital_anima import DigitalAnima

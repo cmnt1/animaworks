@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -112,7 +112,7 @@ def test_apply_empty_model_returns_base() -> None:
     assert _apply_chat_model_override(owner, base, "", thread_id="default") is base
 
 
-# ── process_message integration (run_cycle wiring) ────────────────────
+# ── process_message integration (streaming cycle wiring) ─────────────
 
 
 def _agent() -> MagicMock:
@@ -131,13 +131,16 @@ def _agent() -> MagicMock:
     )
     agent.supports_message_injection = True
     agent._resolve_execution_mode = MagicMock(return_value="s")
-    agent.run_cycle = AsyncMock(
-        return_value=CycleResult(
+
+    async def _stream(*_args, **_kwargs):
+        result = CycleResult(
             trigger="message:human",
             action="responded",
             summary="ok",
         )
-    )
+        yield {"type": "cycle_done", "cycle_result": result.model_dump(mode="json")}
+
+    agent.run_cycle_streaming = MagicMock(side_effect=_stream)
     return agent
 
 
@@ -182,7 +185,7 @@ class TestProcessMessageModelOverride:
     async def test_model_override_reaches_run_cycle(
         self, mock_messenger_cls, mock_mm_cls, mock_agent_cls, anima_dir, shared_dir
     ):
-        """A requested model must be passed as ``model_config_override``."""
+        """A requested model must reach the streaming cycle as an override."""
         base = _base()
         override = base.model_copy(update={"model": "gpt-4.1", "execution_mode": "s", "resolved_mode": "S"})
         mock_mm_cls.return_value.read_model_config.return_value = base
@@ -208,7 +211,7 @@ class TestProcessMessageModelOverride:
         ):
             await anima.process_message("hello", from_person="human", model="gpt-4.1")
 
-        call = mock_agent_cls.return_value.run_cycle.await_args
+        call = mock_agent_cls.return_value.run_cycle_streaming.call_args
         assert call is not None
         assert call.kwargs["model_config_override"] is override
 
@@ -236,6 +239,6 @@ class TestProcessMessageModelOverride:
         ):
             await anima.process_message("hello", from_person="human", model="bad!!")
 
-        call = mock_agent_cls.return_value.run_cycle.await_args
+        call = mock_agent_cls.return_value.run_cycle_streaming.call_args
         assert call is not None
         assert call.kwargs["model_config_override"] is base
