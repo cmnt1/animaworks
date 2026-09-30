@@ -57,6 +57,10 @@ class TaskRunnerError(RuntimeError):
     """A task runner could not complete its execution contract."""
 
 
+class TaskRunnerCancelled(TaskRunnerError):
+    """The runner was stopped because its task was cancelled in the queue."""
+
+
 @dataclass
 class TaskRunnerJob:
     """Root registry entry created before a task runner is spawned."""
@@ -73,6 +77,7 @@ class TaskRunnerJob:
     last_progress: dict[str, Any] = field(default_factory=dict)
     last_progress_at: float = 0.0
     hang_kill_started: bool = False
+    external_cancelled: bool = False
     grace_acked: asyncio.Event = field(default_factory=asyncio.Event)
     process_start_time: float | None = None
     capabilities: dict[str, bool] = field(default_factory=dict)
@@ -594,6 +599,10 @@ class TaskRunnerSupervisor:
                 try:
                     await asyncio.wait_for(asyncio.shield(job.result), timeout=0.25)
                 except TimeoutError as exc:
+                    if job.external_cancelled:
+                        raise TaskRunnerCancelled(
+                            f"task runner stopped because the task was cancelled (exit={process.returncode})"
+                        ) from exc
                     raise TaskRunnerError(
                         f"task runner exited before returning a result (exit={process.returncode})"
                     ) from exc
@@ -676,6 +685,7 @@ class TaskRunnerSupervisor:
                 last_cancel_check = now
                 if await self._task_is_externally_cancelled(job):
                     job.hang_kill_started = True
+                    job.external_cancelled = True
                     logger.info(
                         "Task runner external cancel: anima=%s job=%s task_id=%s",
                         self.anima_name,
