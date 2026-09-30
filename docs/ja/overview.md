@@ -62,4 +62,4 @@ server と supervisor が Anima root、task runner の起動、通信、再起�
 
 ## MCP
 
-MCP server は `_EXPOSED_TOOL_NAMES` に定義した24種類のツールを公開し、trigger ごとに一覧を絞り込む。利用できるツールは Anima の実行条件によって異なる。
+MCP の許可リスト `MCP_TOOL_NAMES` とトリガー・役割に応じた `resolve_tool_surface` は `core/tooling/surface.py` に集約されている。実際に公開される一覧はトリガーと Anima の実行条件によって異なる。

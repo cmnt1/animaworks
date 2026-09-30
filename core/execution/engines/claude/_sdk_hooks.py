@@ -34,7 +34,7 @@ from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFE
 from core.execution.engines.claude._sdk_stream import _log_tool_use
 from core.platform.tasks import spawn
 from core.prompt.context import CHARS_PER_TOKEN
-from core.tooling.schemas import submit_tasks_enabled_for_trigger
+from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
@@ -314,7 +314,7 @@ def _build_pre_tool_hook(
                         permissionDecisionReason=_t("sdk_hooks.task_no_subtask"),
                     )
                 )
-            if not submit_tasks_enabled_for_trigger(_trigger_st):
+            if "submit_tasks" not in resolve_tool_surface(ToolSurfaceContext(), str(_trigger_st or ""), "S"):
                 from core.i18n import t as _t
 
                 logger.info(

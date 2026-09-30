@@ -355,33 +355,35 @@ class GrokCLIExecutor(CLIStreamExecutor):
     def _mcp_servers(self) -> list[dict[str, Any]]:
         from core.paths import PROJECT_DIR
 
+        # ACP expects EnvVariable objects, not a plain mapping. The MCP child
+        # receives only this list, so explicitly propagate the active trigger
+        # used by the shared tool-surface resolver.
+        env = [
+            {"name": "ANIMAWORKS_ANIMA_DIR", "value": str(self._anima_dir)},
+            {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
+            {"name": "PYTHONPATH", "value": str(PROJECT_DIR)},
+            {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
+            *(
+                {"name": key, "value": os.environ[key]}
+                for key in (
+                    "ANIMAWORKS_EMBED_URL",
+                    "ANIMAWORKS_VECTOR_URL",
+                    "ANIMAWORKS_RERANK_URL",
+                )
+                if os.environ.get(key)
+            ),
+        ]
+        from core.execution.session_context import current_runtime_session
+
+        runtime_ctx = current_runtime_session()
+        if runtime_ctx is not None:
+            env.extend({"name": key, "value": value} for key, value in runtime_ctx.to_env().items())
         return [
             {
                 "name": "aw",
                 "command": sys.executable,
                 "args": ["-m", "core.mcp.server"],
-                # ACP expects EnvVariable objects, not a plain mapping
-                # (a dict fails schema validation: "did not match any variant
-                # of untagged enum McpServer").
-                # The MCP server runs with ONLY these variables — without the
-                # embed/vector/rerank URLs it silently falls back to loading
-                # SentenceTransformer / CrossEncoder models in-process
-                # (2026-07-17 OOM; 2026-08-07 CrossEncoder load storm).
-                "env": [
-                    {"name": "ANIMAWORKS_ANIMA_DIR", "value": str(self._anima_dir)},
-                    {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
-                    {"name": "PYTHONPATH", "value": str(PROJECT_DIR)},
-                    {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
-                    *(
-                        {"name": key, "value": os.environ[key]}
-                        for key in (
-                            "ANIMAWORKS_EMBED_URL",
-                            "ANIMAWORKS_VECTOR_URL",
-                            "ANIMAWORKS_RERANK_URL",
-                        )
-                        if os.environ.get(key)
-                    ),
-                ],
+                "env": env,
             }
         ]
 

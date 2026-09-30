@@ -233,12 +233,12 @@ class TestRuntimeTemplateAccuracy:
                 assert term not in content, f"{path} contains retired reference {term!r}"
 
     def test_tool_usage_overview_lists_every_exposed_mcp_tool(self):
-        from core.mcp.server import _EXPOSED_TOOL_NAMES
+        from core.tooling.surface import MCP_TOOL_NAMES
 
         overview = (TEMPLATES_ROOT / "ja" / "reference" / "operations" / "tool-usage-overview.md").read_text(
             encoding="utf-8"
         )
-        missing = sorted(name for name in _EXPOSED_TOOL_NAMES if name not in overview)
+        missing = sorted(name for name in MCP_TOOL_NAMES if name not in overview)
         assert not missing, f"MCP tools missing from the reference: {missing}"
 
     def test_ja_templates_do_not_contain_organization_specific_anima_names(self):

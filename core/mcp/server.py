@@ -8,16 +8,16 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Stdio MCP server exposing AnimaWorks tools for Mode S.
+"""Stdio MCP server exposing AnimaWorks tools for MCP-backed modes.
 
-Launched as ``python -m core.mcp.server``.  Receives configuration via
+Used by Modes S/C/D/G/X and launched as ``python -m core.mcp.server``. Receives configuration via
 environment variables:
 
 - ``ANIMAWORKS_ANIMA_DIR`` -- path to the running anima's data directory
 - ``ANIMAWORKS_PROJECT_DIR`` -- path to the AnimaWorks project root
 
 The server name is ``aw`` so tools appear as ``mcp__aw__send_message`` etc.
-in the Claude Agent SDK tool namespace.
+in the corresponding execution engine's tool namespace.
 """
 
 import asyncio
@@ -33,9 +33,16 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
-from core.mcp.trigger_tools import SKILL_MANAGEMENT_TOOLS, is_full_tool_trigger
 from core.tooling.handler_base import active_session_type
-from core.tooling.schemas import submit_tasks_enabled_for_trigger
+from core.tooling.surface import (
+    CONSOLIDATION_BLOCKED_TOOL_NAMES,
+    MCP_TOOL_NAMES,
+    SKILL_MANAGEMENT_TOOL_NAMES,
+    ToolSurfaceContext,
+    is_consolidation_trigger,
+    is_full_tool_trigger,
+    resolve_tool_surface,
+)
 
 # ── Logging (stderr only — stdout is MCP JSON-RPC) ──────
 logging.basicConfig(
@@ -49,50 +56,7 @@ logger = logging.getLogger(__name__)
 server = Server("aw")
 
 # ── Tool selection ───────────────────────────────────────
-#
-# The tools to expose, drawn from canonical schema lists in
-# ``core/tooling/schemas.py``.  We pick them by name to build a
-# stable, curated subset suitable for Mode S.
-
-_EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
-    {
-        # AW-essential: memory
-        "search_memory",
-        "read_memory_file",
-        "write_memory_file",
-        "archive_memory_file",
-        "report_procedure_outcome",
-        "report_knowledge_outcome",
-        # AW-essential: messaging
-        "send_message",
-        "post_channel",
-        # AW-essential: notification
-        "call_human",
-        # AW-essential: task management
-        "delegate_task",
-        "submit_tasks",
-        "update_task",
-        "list_tasks",
-        # AW-essential: workspace access grants
-        "grant_workspace_access",
-        # AW-essential: skill authoring
-        "create_skill",
-        "promote_procedure_to_skill",
-        "curate_skills",
-        "archive_skill",
-        "restore_skill",
-        "block_skill",
-        "unblock_skill",
-        "delete_skill",
-        "set_skill_lifecycle",
-        # Admin: hire subordinate (gated by newstaff skill at list/call time)
-        "create_anima",
-    }
-)
-
-# Skill-management tools are only advertised during full-activity triggers
-# (heartbeat / consolidation).  See core.mcp.trigger_tools for rationale.
-_SKILL_MANAGEMENT_TOOL_NAMES: frozenset[str] = frozenset(SKILL_MANAGEMENT_TOOLS)
+# MCP schemas and runtime visibility are resolved by core.tooling.surface.
 
 
 def _trigger_scoped_tools_enabled() -> bool:
@@ -107,30 +71,6 @@ def _trigger_scoped_tools_enabled() -> bool:
         return bool(load_config().mcp.trigger_scoped_tools)
     except Exception:
         return True
-
-
-def _trigger_scoped_tool_names(trigger: str) -> frozenset[str]:
-    """Return the default exposed tool names for *trigger*.
-
-    Full-activity triggers (heartbeat / consolidation) keep every tool;
-    other triggers drop the skill-management tools.
-    """
-    from core.mcp.trigger_tools import scoped_tool_names
-
-    return frozenset(scoped_tool_names(_EXPOSED_TOOL_NAMES, trigger))
-
-
-def _get_supervisor_tool_names() -> frozenset[str]:
-    """Supervisor tool names — derived from SUPERVISOR_TOOLS at import time.
-
-    Used by list_tools() to dynamically filter supervisor-only tools.
-    """
-    from core.tooling.schemas import _supervisor_tools
-
-    return frozenset(t["name"] for t in _supervisor_tools())
-
-
-_SUPERVISOR_TOOL_NAMES: frozenset[str] = _get_supervisor_tool_names()
 
 
 # Cached original parameter schemas (before relaxation) for type coercion
@@ -181,9 +121,9 @@ def _coerce_integers(
 def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     """Convert canonical AnimaWorks schemas to MCP Tool objects.
 
-    Reads all relevant schema lists from ``core.tooling.schemas`` and
-    filters to the exposed tools.  Mode S uses skill+CLI for external
-    tools; ``use_tool`` is Mode B only.
+    Reads the canonical schema lists and filters them to the widest profile
+    returned by ``resolve_tool_surface``. External integrations are handled by
+    their dedicated CLI/tool routes rather than this AnimaWorks schema set.
 
     Returns:
         Tuple of (tool_list, exposed_name_set) where exposed_name_set
@@ -225,12 +165,24 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         *_check_permissions_tools(),
     ]
 
+    # Materialize the widest MCP profile once. list_tools() resolves the
+    # current trigger and Anima-specific gates from the same policy at runtime.
+    exposed = set(
+        resolve_tool_surface(
+            ToolSurfaceContext(
+                has_subordinates=True,
+                has_newstaff_skill=True,
+                include_notification_tools=True,
+                trigger_scoped_tools=False,
+            ),
+            "heartbeat",
+            "S",
+        )
+    )
     configured = os.environ.get("ANIMAWORKS_MCP_TOOLS")
-    if configured is None:
-        exposed = _EXPOSED_TOOL_NAMES
-    else:
+    if configured is not None:
         requested = {name.strip() for name in configured.split(",") if name.strip()}
-        exposed = _EXPOSED_TOOL_NAMES & requested
+        exposed.intersection_update(requested)
 
     # Apply file-backed description overrides
     from core.tooling.schemas import apply_prompt_descriptions
@@ -264,7 +216,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     if missing:
         logger.warning("MCP tool schemas missing for: %s", ", ".join(sorted(missing)))
 
-    return tools, exposed
+    return tools, frozenset(exposed)
 
 
 # Build once at import time.  DB descriptions are baked in at this point;
@@ -425,19 +377,20 @@ _TOOL_TIMEOUT_OVERRIDES: dict[str, float] = {
 
 
 def _mcp_tools_env_for_trigger(trigger: str, *, enabled: bool) -> str | None:
-    """Return the ANIMAWORKS_MCP_TOOLS value for *trigger*, or None to leave unset.
-
-    When *enabled* is False (config ``mcp.trigger_scoped_tools``), the server
-    keeps its previous behaviour (everything exposed) and we return None so the
-    subprocess uses its full default set.  When enabled and the trigger is
-    full (heartbeat / consolidation) we also leave it unset so the subprocess
-    advertises everything.  Only scoped triggers pin an explicit list.
-    """
+    """Return the resolved scoped tool names for the MCP subprocess, if needed."""
     if not enabled or is_full_tool_trigger(trigger):
         return None
-    from core.mcp.trigger_tools import scoped_tool_list
-
-    return scoped_tool_list(_EXPOSED_TOOL_NAMES, trigger)
+    names = resolve_tool_surface(
+        ToolSurfaceContext(
+            has_subordinates=True,
+            has_newstaff_skill=True,
+            include_notification_tools=True,
+            trigger_scoped_tools=True,
+        ),
+        trigger,
+        "S",
+    )
+    return ",".join(sorted(names))
 
 
 def _resolve_tool_timeout(name: str) -> float | None:
@@ -472,7 +425,7 @@ def _tool_not_found_message(name: str) -> str:
     """
     from core.i18n import t as _t
 
-    if name in _SKILL_MANAGEMENT_TOOL_NAMES:
+    if name in SKILL_MANAGEMENT_TOOL_NAMES:
         return _t("mcp.tool_not_exposed.skill_curation", tool=name)
     return _t("mcp.tool_not_exposed", tool=name)
 
@@ -488,55 +441,45 @@ def _is_consolidation_mode() -> bool:
     return (Path(anima_dir_env) / "state" / ".consolidation_mode").exists()
 
 
-_CONSOLIDATION_BLOCKED_NAMES: frozenset[str] = frozenset(
-    {"delegate_task", "submit_tasks", "send_message", "post_channel"}
-)
+def _has_notification_channels_for_anima() -> bool:
+    """Return whether at least one human-notification channel is enabled."""
+    try:
+        from core.config.models import load_config
+
+        return any(channel.enabled for channel in load_config().human_notification.channels)
+    except Exception:
+        logger.debug("Failed to check human notification configuration", exc_info=True)
+        return False
 
 
-def _submit_tasks_enabled_for_mcp() -> bool:
-    """Return True when this MCP subprocess is in an explicit background task session."""
+def _mcp_surface_context() -> ToolSurfaceContext:
+    """Resolve runtime-only inputs for the shared MCP tool-surface policy."""
     env_flag = os.environ.get("ANIMAWORKS_ENABLE_SUBMIT_TASKS", "").strip().lower()
-    if env_flag in {"1", "true", "yes", "on"}:
-        return True
-    ctx = RuntimeSessionContext.from_env()
-    return bool(ctx and submit_tasks_enabled_for_trigger(ctx.trigger))
+    return ToolSurfaceContext(
+        has_subordinates=_has_subordinates_for_anima(),
+        has_newstaff_skill=_has_newstaff_skill_for_anima(),
+        include_notification_tools=_has_notification_channels_for_anima(),
+        trigger_scoped_tools=_trigger_scoped_tools_enabled(),
+        consolidation_mode=_is_consolidation_mode(),
+        force_submit_tasks=env_flag in {"1", "true", "yes", "on"},
+    )
 
 
-def _runtime_blocked_tool_names() -> frozenset[str]:
-    """Return tool names blocked for the current MCP runtime context."""
-    blocked: set[str] = set()
-    if _is_consolidation_mode():
-        blocked.update(_CONSOLIDATION_BLOCKED_NAMES)
-    if not _submit_tasks_enabled_for_mcp():
-        blocked.add("submit_tasks")
-    return frozenset(blocked)
+def _current_mcp_tool_names(
+    context: ToolSurfaceContext | None = None,
+    trigger: str | None = None,
+) -> frozenset[str]:
+    current_trigger = trigger if trigger is not None else (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
+    resolved = frozenset(resolve_tool_surface(context or _mcp_surface_context(), current_trigger, "S"))
+    exposed_external_tools = _EXPOSED_NAMES - frozenset(MCP_TOOL_NAMES)
+    return (resolved & _EXPOSED_NAMES) | exposed_external_tools
 
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """Return exposed AnimaWorks tools, filtering supervisor/admin tools dynamically.
-
-    The full MCP_TOOLS list may already be trigger-scoped by the parent
-    process via the ``ANIMAWORKS_MCP_TOOLS`` env var.  As defense-in-depth
-    we re-apply the same trigger scoping from ``ANIMAWORKS_TRIGGER`` so the
-    set is correct even if the subprocess is reused across sessions — unless
-    ``mcp.trigger_scoped_tools`` is False, in which case the full tool set
-    (including skill-management tools) is always exposed.
-    """
-    trigger = (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
-    scoped = _trigger_scoped_tool_names(trigger)
-    tools = [t for t in MCP_TOOLS if t.name in scoped]
-    blocked = _runtime_blocked_tool_names()
-    if not _trigger_scoped_tools_enabled():
-        # ``mcp.trigger_scoped_tools=false`` disables trigger scoping: expose the
-        # full tool set (including skill-management tools) for every trigger.
-        tools = list(MCP_TOOLS)
-    tools = [t for t in tools if t.name not in blocked]
-    if not _has_subordinates_for_anima():
-        tools = [t for t in tools if t.name not in _SUPERVISOR_TOOL_NAMES]
-    if not _has_newstaff_skill_for_anima():
-        tools = [t for t in tools if t.name != "create_anima"]
-    return tools
+    """Return tool schemas selected by the shared visibility resolver."""
+    visible_names = _current_mcp_tool_names()
+    return [tool for tool in MCP_TOOLS if tool.name in visible_names]
 
 
 @server.call_tool()
@@ -547,8 +490,14 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
     (file reads, subprocess calls), so we run it via ``asyncio.to_thread``
     to keep the MCP event loop responsive.
     """
-    # Defense-in-depth: block delegation/messaging tools during consolidation
-    if name in _CONSOLIDATION_BLOCKED_NAMES and _is_consolidation_mode():
+    trigger = (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
+    surface_context = _mcp_surface_context()
+    visible_names = _current_mcp_tool_names(surface_context, trigger)
+
+    # Defense-in-depth follows the same consolidation policy as list_tools().
+    if name in CONSOLIDATION_BLOCKED_TOOL_NAMES and (
+        surface_context.consolidation_mode or is_consolidation_trigger(trigger)
+    ):
         return [
             TextContent(
                 type="text",
@@ -563,7 +512,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
             )
         ]
 
-    if name == "submit_tasks" and not _submit_tasks_enabled_for_mcp():
+    if name == "submit_tasks" and name in _EXPOSED_NAMES and name not in visible_names:
         return [
             TextContent(
                 type="text",
@@ -580,7 +529,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
             )
         ]
 
-    if name == "create_anima" and not _has_newstaff_skill_for_anima():
+    if name == "create_anima" and name in _EXPOSED_NAMES and not surface_context.has_newstaff_skill:
         return [
             TextContent(
                 type="text",
@@ -597,11 +546,11 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
             )
         ]
 
-    # Defense-in-depth: reject tool names not in our exposed set.
+    # Defense-in-depth: reject tool names outside the resolved runtime surface.
     # The Agent SDK should only call tools from list_tools(), but
     # ToolHandler.handle() would fall through to external dispatch
     # for unrecognised names, so we gate here explicitly.
-    if name not in _EXPOSED_NAMES:
+    if name not in visible_names:
         return [
             TextContent(
                 type="text",
