@@ -693,7 +693,7 @@ def create_internal_router() -> APIRouter:
 
         target_dir = get_shared_dir() / "inbox" / msg.to_person
         target_dir.mkdir(parents=True, exist_ok=True)
-        from core.memory._io import atomic_write_text
+        from core.platform.atomic_io import atomic_write_text
 
         if not (target_dir / "processed" / f"{msg.id}.json").exists():
             atomic_write_text(target_dir / f"{msg.id}.json", msg.model_dump_json(indent=2))

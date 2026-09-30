@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.execution._sanitize import wrap_tool_result
+from core.trust import wrap_tool_result
 from core.memory.priming import PrimingResult, format_priming_section
 from core.prompt.builder import build_system_prompt
 

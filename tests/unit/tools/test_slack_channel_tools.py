@@ -294,12 +294,12 @@ class TestTrustLevel:
     """Trust level registration in _sanitize.py."""
 
     def test_channel_post_untrusted(self):
-        from core.execution._sanitize import TOOL_TRUST_LEVELS
+        from core.trust import TOOL_TRUST_LEVELS
 
         assert TOOL_TRUST_LEVELS["slack_channel_post"] == "untrusted"
 
     def test_channel_update_untrusted(self):
-        from core.execution._sanitize import TOOL_TRUST_LEVELS
+        from core.trust import TOOL_TRUST_LEVELS
 
         assert TOOL_TRUST_LEVELS["slack_channel_update"] == "untrusted"
 

@@ -34,7 +34,7 @@ def _clean_cache():
 @pytest.fixture(autouse=True)
 def _isolate_vault():
     """Prevent vault from leaking real credentials into test resolution."""
-    with patch("core.integrations._base._lookup_vault_credential", return_value=None):
+    with patch("core.credentials._lookup_vault_credential", return_value=None):
         yield
 
 
@@ -128,7 +128,7 @@ class TestWebSearchCredentialCascade:
     """Brave search should resolve via config.json → env → error."""
 
     def test_config_json_resolution(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -141,7 +141,7 @@ class TestWebSearchCredentialCascade:
         assert result == "BSA-config-test"
 
     def test_env_fallback(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(config_dir, {})
         monkeypatch.setenv("BRAVE_API_KEY", "BSA-env-test")
@@ -180,7 +180,7 @@ class TestImageGenCredentialCascade:
     """Image generation clients should resolve via config.json → env → error."""
 
     def test_novelai_config_json(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -193,7 +193,7 @@ class TestImageGenCredentialCascade:
         assert result == "nai-config-test"
 
     def test_fal_config_json(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -206,7 +206,7 @@ class TestImageGenCredentialCascade:
         assert result == "fal-config-test"
 
     def test_meshy_config_json(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -235,7 +235,7 @@ class TestCascadePriority:
         ],
     )
     def test_config_json_takes_priority(self, config_dir, monkeypatch, cred_name, env_var):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -258,7 +258,7 @@ class TestSharedCredentialsCascadeE2E:
         cred_file.write_text(json.dumps(creds), encoding="utf-8")
 
     def test_shared_resolves_when_config_empty(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(config_dir, {})
         self._write_shared_creds(config_dir, {"CHATWORK_API_TOKEN": "cwt-shared-e2e"})
@@ -267,7 +267,7 @@ class TestSharedCredentialsCascadeE2E:
         assert result == "cwt-shared-e2e"
 
     def test_config_json_wins_over_shared(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -281,7 +281,7 @@ class TestSharedCredentialsCascadeE2E:
         assert result == "cwt-config-e2e"
 
     def test_shared_wins_over_env(self, config_dir, monkeypatch):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(config_dir, {})
         self._write_shared_creds(config_dir, {"SLACK_BOT_TOKEN": "xoxb-shared-e2e"})
@@ -300,7 +300,7 @@ class TestSharedCredentialsCascadeE2E:
         ],
     )
     def test_multiple_tools_from_shared(self, config_dir, monkeypatch, env_var, token):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(config_dir, {})
         self._write_shared_creds(config_dir, {env_var: token})
@@ -319,7 +319,7 @@ class TestSharedCredentialsCascadeE2E:
 
     def test_full_cascade_priority(self, config_dir, monkeypatch):
         """Full 3-tier cascade: config.json > shared > env."""
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -350,7 +350,7 @@ class TestMultiKeyE2E:
     """Test multi-key credential resolution end-to-end."""
 
     def test_resolve_client_id_and_secret(self, config_dir):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,
@@ -370,7 +370,7 @@ class TestMultiKeyE2E:
         assert csec == "my-client-secret"
 
     def test_multi_key_with_primary(self, config_dir):
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         _save_credentials(
             config_dir,

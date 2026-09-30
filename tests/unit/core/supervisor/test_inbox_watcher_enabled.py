@@ -104,7 +104,7 @@ def test_inbox_failure_waits_for_all_provider_guards_to_expire(tmp_path: Path) -
     with (
         patch("core.config.model_config.resolve_effective_model_config", return_value=config),
         patch("core.config.model_config._guard_key_for_model_config", return_value="test:blocked"),
-        patch("core.execution.rate_guard.get_rate_guard") as guard,
+        patch("core.llm.guard.rate_guard.get_rate_guard") as guard,
         patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=100.0),
     ):
         guard.return_value.blocked_remaining.return_value = 1800.0

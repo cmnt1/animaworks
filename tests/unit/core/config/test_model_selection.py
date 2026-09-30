@@ -180,7 +180,7 @@ def test_precedence_primary_recovers_without_rewriting_base(config):
     blocked = {"openai:codex": 100.0}
     guard.blocked_remaining.side_effect = lambda key: blocked.get(key, 0.0)
     guard.blocked_until.side_effect = lambda key: blocked.get(key, 0.0)
-    with patch("core.execution.rate_guard.get_rate_guard", return_value=guard):
+    with patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard):
         first = resolve_model_selection(base, config=config)
         blocked.clear()
         recovered = resolve_model_selection(base, config=config)
@@ -198,7 +198,7 @@ def test_unavailable_engine_honors_explicit_legacy_fallback(config):
     guard.blocked_until.return_value = 100.0
     with (
         patch("core.config.io.load_config", return_value=config),
-        patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+        patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         selected = resolve_unavailable_model_config(base, unavailable_modes=frozenset({"C"}))
     assert selected.model == "openai/backup"

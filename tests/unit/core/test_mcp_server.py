@@ -1341,7 +1341,7 @@ class TestWrapResultHelper:
         from core.mcp.server import _wrap_result
 
         with patch(
-            "core.execution._sanitize.wrap_tool_result",
+            "core.trust.wrap_tool_result",
             side_effect=ImportError("no module"),
         ):
             result = _wrap_result("search_memory", "raw data")

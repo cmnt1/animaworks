@@ -66,19 +66,19 @@ from core.execution.engines.claude._sdk_stream import (
     _tool_result_content_len,  # noqa: F401 - backward-compatible re-export
     process_stream_messages,
 )
-from core.execution.error_classifier import (
+from core.execution.events import stream_events
+from core.execution.process_runner import ProcessRunner
+from core.llm.guard.error_classifier import (
     classify_llm_error_message,
     detect_cli_error_envelope,
     guard_key,
     provider_family_of,
 )
-from core.execution.events import stream_events
-from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
+from core.llm.guard.rate_guard import get_rate_guard
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
-from core.prompt.tokens import estimate_tokens
 from core.schemas import ImageData, ModelConfig
+from core.text.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 

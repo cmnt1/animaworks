@@ -22,7 +22,7 @@ from core.channels.discord import (
 from core.channels.discord import (
     DiscordClient as _DiscordClient,
 )
-from core.integrations._base import get_credential
+from core.credentials import get_credential
 
 __all__ = [
     "API_BASE",

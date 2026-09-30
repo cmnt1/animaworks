@@ -12,7 +12,7 @@ from core.config.model_config import (
     resolve_effective_model_config,
     same_effective_model,
 )
-from core.execution.error_classifier import (
+from core.llm.guard.error_classifier import (
     FailoverReason,
     classify_llm_error,
     classify_llm_error_message,
@@ -21,7 +21,7 @@ from core.execution.error_classifier import (
 from core.schemas import ModelConfig
 
 if TYPE_CHECKING:
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
 _T = TypeVar("_T")
 
@@ -91,7 +91,7 @@ def preflight_fallback_config(
     if effective is base_config:
         return base_config
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         log_model_fallback(
             ActivityLogger(anima_dir),
@@ -136,7 +136,7 @@ def report_capacity_block(
     try:
         from core.config.io import load_config
         from core.config.model_config import _guard_key_for_model_config
-        from core.execution.rate_guard import get_rate_guard
+        from core.llm.guard.rate_guard import get_rate_guard
 
         guard = get_rate_guard()
         key = _guard_key_for_model_config(active_config, load_config())
@@ -188,7 +188,7 @@ def runtime_fallback_config(
     if same_effective_model(retry_config, active_config):
         return None
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         log_model_fallback(
             ActivityLogger(anima_dir),

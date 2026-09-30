@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.memory.io import atomic_write_text
 from core.time_utils import get_app_timezone, now_iso
 
 logger = logging.getLogger("animaworks.memory")

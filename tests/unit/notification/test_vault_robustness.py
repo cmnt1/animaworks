@@ -51,8 +51,8 @@ class TestResolveCredentialWithVault:
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
         with (
-            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.credentials._lookup_vault_credential") as mock_vault,
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
         ):
             mock_vault.side_effect = lambda k: "vault-val" if k == "MY_TOKEN__alice" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
@@ -63,8 +63,8 @@ class TestResolveCredentialWithVault:
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
         with (
-            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.credentials._lookup_vault_credential") as mock_vault,
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
         ):
             mock_vault.side_effect = lambda k: "generic-vault" if k == "MY_TOKEN" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
@@ -75,8 +75,8 @@ class TestResolveCredentialWithVault:
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
         with (
-            patch("core.integrations._base._lookup_vault_credential", return_value=None),
-            patch("core.integrations._base._lookup_shared_credentials") as mock_shared,
+            patch("core.credentials._lookup_vault_credential", return_value=None),
+            patch("core.credentials._lookup_shared_credentials") as mock_shared,
         ):
             mock_shared.side_effect = lambda k: "shared-val" if k == "MY_TOKEN__alice" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
@@ -87,8 +87,8 @@ class TestResolveCredentialWithVault:
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
         with (
-            patch("core.integrations._base._lookup_vault_credential", return_value=None),
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.credentials._lookup_vault_credential", return_value=None),
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
         ):
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
         assert result == ""
@@ -98,8 +98,8 @@ class TestResolveCredentialWithVault:
         ch = _DummyChannel({})
 
         with (
-            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.credentials._lookup_vault_credential") as mock_vault,
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
         ):
             mock_vault.side_effect = lambda k: "fb-vault" if k == "FALLBACK" else None
             result = ch._resolve_credential_with_vault(
@@ -113,8 +113,8 @@ class TestResolveCredentialWithVault:
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
         with (
-            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.credentials._lookup_vault_credential") as mock_vault,
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
         ):
             mock_vault.side_effect = lambda k: "generic" if k == "MY_TOKEN" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="")
@@ -336,9 +336,9 @@ class TestCallHumanGetBotToken:
         monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
 
         with (
-            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
-            patch("core.integrations._base.get_credential", side_effect=Exception("no cred")),
+            patch("core.credentials._lookup_vault_credential") as mock_vault,
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
+            patch("core.credentials.get_credential", side_effect=Exception("no cred")),
         ):
             mock_vault.side_effect = lambda k: "xoxb-vault" if k == "SLACK_BOT_TOKEN__alice" else None
             result = _get_bot_token({})
@@ -353,9 +353,9 @@ class TestCallHumanGetBotToken:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         with (
-            patch("core.integrations._base._lookup_vault_credential", return_value=None),
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
-            patch("core.integrations._base.get_credential", return_value="xoxb-cred"),
+            patch("core.credentials._lookup_vault_credential", return_value=None),
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
+            patch("core.credentials.get_credential", return_value="xoxb-cred"),
         ):
             result = _get_bot_token({})
 

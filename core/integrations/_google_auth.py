@@ -7,7 +7,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from core.integrations._base import ToolConfigError, get_credential
+from core.credentials import get_credential
+from core.integrations._base import ToolConfigError
 
 logger = logging.getLogger(__name__)
 

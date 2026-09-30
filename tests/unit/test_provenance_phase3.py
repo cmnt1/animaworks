@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.schemas import AnimaWorksConfig
-from core.execution._sanitize import (
+from core.trust import (
     MAX_ORIGIN_CHAIN_LENGTH,
     ORIGIN_ANIMA,
     ORIGIN_EXTERNAL_PLATFORM,
@@ -440,7 +440,7 @@ class TestInboxOriginResolution:
 
     def test_worst_origin_selection(self) -> None:
         """When inbox has mixed sources, the most untrusted is selected."""
-        from core.execution._sanitize import resolve_trust
+        from core.trust import resolve_trust
 
         origins = [ORIGIN_ANIMA, ORIGIN_EXTERNAL_PLATFORM, ORIGIN_HUMAN]
         worst = min(

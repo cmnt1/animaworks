@@ -11,7 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.platform.atomic_io import atomic_write_text
 from core.time_utils import now_iso
 
 

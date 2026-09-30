@@ -181,7 +181,7 @@ class TestTierPromptSizes:
     """Verify that smaller tiers produce smaller or equal prompts."""
 
     def _build_size(self, tmp_path: Path, data_dir: Path, context_window: int, suffix: str = "") -> int:
-        from core.prompt.tokens import estimate_tokens
+        from core.text.tokens import estimate_tokens
 
         sub = tmp_path / f"sz{suffix}"
         sub.mkdir(exist_ok=True)

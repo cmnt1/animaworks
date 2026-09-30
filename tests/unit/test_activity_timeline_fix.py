@@ -169,7 +169,7 @@ class TestBackendTimestampFormat:
         """ActivityLogger.log() must use now_iso() for timezone-aware timestamps."""
         import inspect
 
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         source = inspect.getsource(ActivityLogger.log)
         assert "now_iso()" in source

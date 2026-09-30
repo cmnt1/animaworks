@@ -16,7 +16,8 @@ from core.config.models import (
     invalidate_cache,
     save_config,
 )
-from core.integrations._base import ToolConfigError, get_credential
+from core.integrations._base import ToolConfigError
+from core.credentials import get_credential
 
 
 @pytest.fixture(autouse=True)

@@ -12,14 +12,14 @@ from typing import Any
 
 import pytest
 
-from core.execution._sanitize import (
+from core.trust import (
     ORIGIN_ANIMA,
     ORIGIN_EXTERNAL_PLATFORM,
     ORIGIN_HUMAN,
     ORIGIN_UNKNOWN,
 )
-from core.memory.activity.logger import ActivityLogger
-from core.memory.activity.models import ActivityEntry
+from core.activity.logger import ActivityLogger
+from core.activity.models import ActivityEntry
 from core.schemas import Message
 
 # ── Message.origin_chain ──────────────────────────────────────

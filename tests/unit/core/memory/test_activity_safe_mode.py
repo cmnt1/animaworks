@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from core.exceptions import MemoryWriteError
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 
 
 @pytest.fixture
@@ -31,14 +31,14 @@ def activity_logger(anima_dir: Path) -> ActivityLogger:
 
 class TestSafeFalseRaises:
     def test_oserror_raises_memory_write_error(self, activity_logger: ActivityLogger) -> None:
-        with patch("core.memory.activity.logger.os.fsync", side_effect=OSError("disk full")):
+        with patch("core.activity.logger.os.fsync", side_effect=OSError("disk full")):
             with pytest.raises(MemoryWriteError, match="disk full"):
                 activity_logger.log("error", summary="test error")
 
     def test_type_error_raises_memory_write_error(self, activity_logger: ActivityLogger) -> None:
         with (
             patch(
-                "core.memory.activity.logger.json.dumps",
+                "core.activity.logger.json.dumps",
                 side_effect=TypeError("not serializable"),
             ),
             pytest.raises(MemoryWriteError, match="not serializable"),
@@ -51,14 +51,14 @@ class TestSafeFalseRaises:
 
 class TestSafeTrueSuppresses:
     def test_oserror_suppressed_with_safe(self, activity_logger: ActivityLogger) -> None:
-        with patch("core.memory.activity.logger.os.fsync", side_effect=OSError("disk full")):
+        with patch("core.activity.logger.os.fsync", side_effect=OSError("disk full")):
             entry = activity_logger.log("error", summary="test error", safe=True)
             assert entry.type == "error"
             assert entry.summary == "test error"
 
     def test_type_error_suppressed_with_safe(self, activity_logger: ActivityLogger) -> None:
         with patch(
-            "core.memory.activity.logger.json.dumps",
+            "core.activity.logger.json.dumps",
             side_effect=TypeError("not serializable"),
         ):
             entry = activity_logger.log("error", summary="test error", safe=True)
@@ -66,14 +66,14 @@ class TestSafeTrueSuppresses:
 
     def test_value_error_suppressed_with_safe(self, activity_logger: ActivityLogger) -> None:
         with patch(
-            "core.memory.activity.logger.json.dumps",
+            "core.activity.logger.json.dumps",
             side_effect=ValueError("bad value"),
         ):
             entry = activity_logger.log("error", summary="test", safe=True)
             assert entry.type == "error"
 
     def test_safe_false_is_default(self, activity_logger: ActivityLogger) -> None:
-        with patch("core.memory.activity.logger.os.fsync", side_effect=OSError("disk full")):
+        with patch("core.activity.logger.os.fsync", side_effect=OSError("disk full")):
             with pytest.raises(MemoryWriteError):
                 activity_logger.log("error", summary="test error")
 
@@ -108,7 +108,7 @@ class TestDoubleFaultPrevention:
     ) -> None:
         recovery_marker = tmp_path / "recovery_executed"
 
-        with patch("core.memory.activity.logger.os.fsync", side_effect=OSError("disk full")):
+        with patch("core.activity.logger.os.fsync", side_effect=OSError("disk full")):
             try:
                 raise RuntimeError("original error")
             except RuntimeError:
@@ -121,7 +121,7 @@ class TestDoubleFaultPrevention:
     def test_without_safe_recovery_code_skipped(self, activity_logger: ActivityLogger, tmp_path: Path) -> None:
         recovery_marker = tmp_path / "recovery_executed"
 
-        with patch("core.memory.activity.logger.os.fsync", side_effect=OSError("disk full")):
+        with patch("core.activity.logger.os.fsync", side_effect=OSError("disk full")):
             try:
                 raise RuntimeError("original error")
             except RuntimeError:

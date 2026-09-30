@@ -17,7 +17,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.messaging.messenger import Messenger
 from core.time_utils import now_iso
 from server.events import emit

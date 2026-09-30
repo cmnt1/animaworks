@@ -35,12 +35,8 @@ import httpx  # noqa: F401 — patch compatibility
 # These live in _image_glb; we proxy reads and writes so that
 # ``import core.integrations.image_gen as mod; mod._FBX2GLTF_PATH = X`` propagates.
 import core.integrations._image_glb as _glb_mod  # noqa: E402
-from core.integrations._base import (  # noqa: F401 — patch compatibility
-    ToolConfigError,
-    dispatch_by_table,
-    get_credential,
-    logger,
-)
+from core.credentials import get_credential  # noqa: F401 — patch compatibility
+from core.integrations._base import ToolConfigError, dispatch_by_table, logger  # noqa: F401 — patch compatibility
 
 # ── Re-exports: _image_cli ─────────────────────────────────
 from core.integrations._image_cli import cli_main

@@ -24,7 +24,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from core.execution._sanitize import TRUST_RANK, record_session_trust, resolve_tool_trust
 from core.execution.engines.claude._sdk_security import (
     _build_output_guard,
     _check_a1_bash_command,
@@ -35,6 +34,7 @@ from core.execution.engines.claude._sdk_stream import _log_tool_use
 from core.platform.tasks import spawn
 from core.prompt.context import CHARS_PER_TOKEN
 from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+from core.trust import TRUST_RANK, record_session_trust, resolve_tool_trust
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
@@ -571,7 +571,7 @@ def _build_pre_compact_hook(
 def _log_compaction_event(anima_dir: Path, trigger: str, *, blocked: bool) -> None:
     """Record compaction event to activity log."""
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         action = "blocked" if blocked else "allowed"
@@ -676,7 +676,7 @@ async def _update_knowledge_frontmatter(path: Path) -> None:
 
         import yaml
 
-        from core.memory._io import atomic_write_text
+        from core.platform.atomic_io import atomic_write_text
 
         fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True)
         atomic_write_text(path, f"---\n{fm}---\n\n{body.lstrip()}")

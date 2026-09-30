@@ -23,9 +23,9 @@ import time
 from typing import Any
 
 from core.config.models import load_config
+from core.credentials import get_credential
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.i18n import t
-from core.integrations._base import get_credential
 from core.integrations._discord_markdown import clean_discord_markup
 from core.messaging.messenger import Messenger
 from core.paths import get_data_dir, get_shared_dir

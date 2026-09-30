@@ -121,7 +121,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -151,7 +151,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
             patch("core.memory.conversation.memory.ConversationMemory"),
         ):
             runner._recover_streaming_journal()
@@ -176,7 +176,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -206,7 +206,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -235,7 +235,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -264,7 +264,7 @@ class TestRecoverStreamingJournalRecoveryNote:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
         ):
             # Should not raise
             runner._recover_streaming_journal()
@@ -344,7 +344,7 @@ class TestCrashRecoveryE2EFlow:
             patch(
                 "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 

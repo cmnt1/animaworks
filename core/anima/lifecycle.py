@@ -20,13 +20,13 @@ from contextlib import AsyncExitStack, nullcontext
 from datetime import date, timedelta
 from typing import Any
 
-from core.execution._sanitize import ORIGIN_SYSTEM
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.paths import load_prompt
 from core.platform.process import kill_tree, signal_tree, snapshot_descendants, subprocess_session_kwargs
 from core.schemas import CycleResult
 from core.time_utils import now_local
+from core.trust import ORIGIN_SYSTEM
 
 logger = logging.getLogger("animaworks.anima")
 

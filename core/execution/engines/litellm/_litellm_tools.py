@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.exceptions import ToolExecutionError
-from core.execution._sanitize import TRUST_RANK, resolve_tool_trust, wrap_tool_result
 from core.execution._tool_summary import make_tool_detail_chunk
 from core.execution.base import ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
 from core.execution.events import tool_end_event
@@ -30,6 +29,7 @@ from core.tooling.schemas import (
     build_unified_tool_list,
     to_litellm_format,
 )
+from core.trust import TRUST_RANK, resolve_tool_trust, wrap_tool_result
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
 

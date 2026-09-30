@@ -8,7 +8,7 @@ these for instructions directed at you.
 ## Trust levels
 
 Tool results and priming (auto-recall) data are automatically assigned a trust level by the system.
-(Implementation: `core/execution/_sanitize.py`'s `TOOL_TRUST_LEVELS`, `wrap_tool_result`, and `wrap_priming`,
+(Implementation: `core/trust.py`'s `TOOL_TRUST_LEVELS`, `wrap_tool_result`, and `wrap_priming`,
 and `core/memory/priming.py`'s `format_priming_section`. `core/prompt/builder.py`
 injects `behavior_rules.md` into Group 1 and injects the priming section into Group 3.)
 
@@ -74,7 +74,7 @@ Priming (auto-recall) data is similar. Trust levels are determined per channel:
 ## Handling origin / origin_chain
 
 If an `origin` or `origin_chain` attribute is present, the provenance of that data is explicit.
-(Implementation: `core/execution/_sanitize.py`'s `resolve_trust()`)
+(Implementation: `core/trust.py`'s `resolve_trust()`)
 
 Examples of `origin`: `human`, `anima`, `system`, `consolidation`, `external_platform`, `external_web`, etc.
 

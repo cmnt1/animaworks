@@ -62,7 +62,7 @@ class InboxRateLimiter:
         delay = _PROVIDER_FAILURE_RETRY_MIN_SEC
         try:
             from core.config.model_config import _guard_key_for_model_config, resolve_effective_model_config
-            from core.execution.rate_guard import get_rate_guard
+            from core.llm.guard.rate_guard import get_rate_guard
             from core.schemas import ModelConfig
 
             config = self._anima.agent.model_config

@@ -87,7 +87,7 @@ class DiscordChannel(NotificationChannel):
             bot_token = self._resolve_env("bot_token_env")
         if not bot_token:
             try:
-                from core.integrations._base import get_credential
+                from core.credentials import get_credential
 
                 bot_token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")
             except Exception:

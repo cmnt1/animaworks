@@ -16,7 +16,7 @@ from core.memory.priming.result import PrimingResult
 def _wrap(source: str, content: str, *, trust: str = "mixed", **kwargs) -> str:
     """Wrap one channel's content verbatim in a ``<priming>`` boundary."""
     # Imported lazily to avoid a circular import during module load.
-    from core.execution._sanitize import wrap_priming
+    from core.trust import wrap_priming
 
     if not content:
         return ""
@@ -38,7 +38,7 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         Formatted markdown section, or empty string if no memories primed
     """
     # Imported lazily to avoid a circular import during module load.
-    from core.execution._sanitize import ORIGIN_CONSOLIDATION, ORIGIN_MIXED, wrap_priming
+    from core.trust import ORIGIN_CONSOLIDATION, ORIGIN_MIXED, wrap_priming
 
     content_fields = (
         result.sender_profile,

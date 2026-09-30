@@ -442,7 +442,7 @@ class TestOneShotCompletion:
         response.choices[0].message.content = "completion"
         with (
             patch.object(llm_utils, "get_memory_llm_kwargs_for_model", return_value=memory_kwargs) as resolver,
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("litellm.acompletion", new_callable=AsyncMock, return_value=response) as litellm_call,
         ):
             result = await llm_utils.one_shot_completion(
@@ -470,7 +470,7 @@ class TestOneShotCompletion:
 
         with (
             patch.object(llm_utils, "get_llm_kwargs_for_model", return_value={"model": "openai/test-model"}),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch.object(llm_utils, "_try_litellm", new_callable=AsyncMock) as litellm_call,
         ):
             result = await llm_utils.one_shot_completion("prompt", model="openai/test-model")

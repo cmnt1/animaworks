@@ -98,7 +98,7 @@ class ReconsolidationEngine:
         if activity_logger is not None:
             self.activity_logger = activity_logger
         else:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             self.activity_logger = ActivityLogger(anima_dir)
 
@@ -250,7 +250,7 @@ class ReconsolidationEngine:
 
         # Collect resolved events
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(days=days, limit=50, types=["issue_resolved"])

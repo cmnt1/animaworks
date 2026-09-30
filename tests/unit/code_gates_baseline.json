@@ -2,6 +2,7 @@
   "write_text_json_dumps": {},
   "status_json_literal_files": [
     "cli/commands/anima_mgmt.py",
+    "core/activity/audit.py",
     "core/agent/agent_core.py",
     "core/anima/bootstrap_state.py",
     "core/anima/factory.py",
@@ -14,7 +15,6 @@
     "core/infra/execution_sdk_preflight.py",
     "core/integrations/_anima_icon_url.py",
     "core/lifecycle/system_consolidation.py",
-    "core/memory/activity/audit.py",
     "core/memory/facts/config.py",
     "core/memory/facts/invalidation_llm.py",
     "core/memory/facts/ontology.py",

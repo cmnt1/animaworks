@@ -7,7 +7,7 @@
 ## 신뢰 수준(trust level)
 
 도구 결과와 프라이밍(자동 회상) 데이터에는 시스템이 자동으로 신뢰 수준을 부여한다.
-(구현: `core/execution/_sanitize.py` 의 `TOOL_TRUST_LEVELS`·`wrap_tool_result`·`wrap_priming`,
+(구현: `core/trust.py` 의 `TOOL_TRUST_LEVELS`·`wrap_tool_result`·`wrap_priming`,
 `core/memory/priming.py` 의 `format_priming_section`. `core/prompt/builder.py` 은
 `behavior_rules.md` 을 Group 1에 주입하고, 프라이밍 섹션을 Group 3에 주입한다.)
 
@@ -73,7 +73,7 @@
 ## origin / origin_chain 처리
 
 `origin` 또는 `origin_chain` 속성이 있는 경우, 해당 데이터의 출처가 명시되어 있다.
-(구현: `core/execution/_sanitize.py` 의 `resolve_trust()`)
+(구현: `core/trust.py` 의 `resolve_trust()`)
 
 `origin` 의 예: `human`, `anima`, `system`, `consolidation`, `external_platform`, `external_web` 등.
 

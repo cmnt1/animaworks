@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.memory.io import atomic_write_text
 from core.memory.retrieval.bm25 import _HAS_BM25, _bm25_scores, tokenize
 
 _MAX_FILE_BYTES = 1024 * 1024

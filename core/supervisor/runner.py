@@ -234,7 +234,7 @@ class AnimaRunner:
         """
         try:
             self._event_bus.bind_loop()
-            from core.memory.activity.logger import set_live_event_sink
+            from core.activity.logger import set_live_event_sink
 
             set_live_event_sink(self._event_bus.publish)
             self._acquire_process_lock()
@@ -303,7 +303,7 @@ class AnimaRunner:
             self._recover_streaming_journal()
 
             # Clean up stale .tmp files left by interrupted atomic writes
-            from core.memory._io import cleanup_tmp_files
+            from core.platform.atomic_io import cleanup_tmp_files
 
             cleanup_tmp_files(self._anima_dir / "state")
             cleanup_tmp_files(self._anima_dir / "knowledge")
@@ -368,7 +368,7 @@ class AnimaRunner:
             try:
                 await self._cleanup()
             finally:
-                from core.memory.activity.logger import set_live_event_sink
+                from core.activity.logger import set_live_event_sink
 
                 set_live_event_sink(None)
 
@@ -547,7 +547,7 @@ class AnimaRunner:
                 # Record crash event in activity log
                 recovery_already_logged = False
                 try:
-                    from core.memory.activity.logger import ActivityLogger
+                    from core.activity.logger import ActivityLogger
 
                     activity = ActivityLogger(self._anima_dir)
                     recovery_already_logged = self._activity_contains_recovery(
@@ -601,7 +601,7 @@ class AnimaRunner:
                 # Record tool_use events in activity log
                 if recovery.tool_calls and not recovery_already_logged:
                     try:
-                        from core.memory.activity.logger import ActivityLogger as _AL
+                        from core.activity.logger import ActivityLogger as _AL
 
                         _activity = _AL(self._anima_dir)
                         for tc in recovery.tool_calls:

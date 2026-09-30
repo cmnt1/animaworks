@@ -50,7 +50,7 @@ def memory_manager(anima_dir: Path):
 @pytest.fixture
 def activity_logger(anima_dir: Path):
     """Create an ActivityLogger for the test anima."""
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     return ActivityLogger(anima_dir)
 
@@ -726,7 +726,7 @@ class TestCreateProceduresFromResolved:
         """No issue_resolved events should return zeros."""
         # ActivityLogger.recent() returns empty list
         with patch(
-            "core.memory.activity.logger.ActivityLogger.recent",
+            "core.activity.logger.ActivityLogger.recent",
             return_value=[],
         ):
             result = await engine.create_procedures_from_resolved(
@@ -774,7 +774,7 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.logger.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
@@ -822,7 +822,7 @@ class TestCreateProceduresFromResolved:
         fake_entry = FakeEntry()
 
         with patch(
-            "core.memory.activity.logger.ActivityLogger.recent",
+            "core.activity.logger.ActivityLogger.recent",
             return_value=[fake_entry],
         ):
             result = await engine.create_procedures_from_resolved(
@@ -856,7 +856,7 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.logger.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
@@ -894,7 +894,7 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.logger.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
@@ -950,7 +950,7 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.logger.ActivityLogger.recent",
+                "core.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(

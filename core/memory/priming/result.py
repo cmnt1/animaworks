@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 
 @dataclass

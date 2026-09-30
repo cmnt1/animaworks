@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.platform.atomic_io import atomic_write_text
 from core.memory.facts.store import FactRecord
 
 

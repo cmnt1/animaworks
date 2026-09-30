@@ -95,7 +95,7 @@ class TestModeCFallback:
 
         with (
             patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
             patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor", return_value=sentinel) as litellm,
@@ -174,7 +174,7 @@ class TestModeXExecutor:
 
         with (
             patch("core.execution.engines.grok.grok_cli.is_grok_cli_available", return_value=False),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
             patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor", return_value=sentinel) as litellm,

@@ -116,7 +116,7 @@ class TestTaskExecLaneIsolation:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
         ):
             mock_activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task_desc)
@@ -173,7 +173,7 @@ class TestTaskExecLaneIsolation:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
         ):
             mock_activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task({"description": "Synthetic task title\nmore detail"})
@@ -276,7 +276,7 @@ class TestStreamErrorSuppression:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
@@ -315,7 +315,7 @@ class TestStreamErrorSuppression:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
@@ -351,7 +351,7 @@ class TestStreamErrorSuppression:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
@@ -387,7 +387,7 @@ class TestStreamErrorSuppression:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
@@ -425,7 +425,7 @@ class TestStreamErrorSuppression:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
         ):
             mock_activity.return_value.alog = AsyncMock()
@@ -463,7 +463,7 @@ class TestLlmTaskFailurePropagation:
 
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
         ):
             mock_activity.return_value.alog = AsyncMock()

@@ -20,8 +20,8 @@ import time
 from typing import Any
 
 from core.config.models import load_config
+from core.credentials import _lookup_shared_credentials, _lookup_vault_credential, get_credential
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
-from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential, get_credential
 from core.messaging.messenger import Messenger
 from core.notification.slack_names import (
     cache_user_name,

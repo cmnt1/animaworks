@@ -250,7 +250,7 @@ class TestMinTrustSeenSDKHook:
 
     def test_sdk_hook_trust_tracking(self):
         """SDK and MCP tools resolve through the canonical trust table."""
-        from core.execution._sanitize import resolve_tool_trust
+        from core.trust import resolve_tool_trust
 
         assert resolve_tool_trust("WebSearch") == "untrusted"
         assert resolve_tool_trust("mcp__aw__search_memory") == "trusted"
@@ -258,7 +258,7 @@ class TestMinTrustSeenSDKHook:
 
     @pytest.mark.asyncio
     async def test_sdk_hook_persists_trust_by_runtime_session(self, tmp_path):
-        from core.execution._sanitize import read_session_trust
+        from core.trust import read_session_trust
         from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
         from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 
@@ -382,7 +382,7 @@ class TestKnowledgeOriginFrontmatter:
 
     def test_mode_s_file_trust_fallback(self, tmp_path):
         """A session's isolated trust-state file contributes to the write origin."""
-        from core.execution._sanitize import record_session_trust
+        from core.trust import record_session_trust
         from core.execution.session_context import RuntimeSessionContext
 
         handler = _make_handler(tmp_path)

@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from core.i18n import t
-from core.memory._io import atomic_write_text
 from core.memory.conversation.compression import (
     CompressionResult,
 )
@@ -70,6 +69,7 @@ from core.memory.conversation.prompt import (
 from core.memory.conversation.prompt import (
     build_structured_messages as _build_structured_messages,
 )
+from core.memory.io import atomic_write_text
 from core.schemas import ModelConfig
 from core.time_utils import today_local
 

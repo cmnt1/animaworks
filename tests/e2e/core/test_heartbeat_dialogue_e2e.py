@@ -133,7 +133,7 @@ class TestCrossContextFlow:
 
     def test_activity_log_records_heartbeat(self, dp, anima_dir):
         """ActivityLogger records heartbeat_end to activity_log/."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log("heartbeat_end", summary="Checked Slack, found 3 unread messages")
@@ -307,7 +307,7 @@ class TestCrossContextFlow:
         4. Verify load_recent_heartbeat_summary returns formatted data
         5. Verify episode recording
         """
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         # Step 1: Write dialogue turns
         config = _make_model_config()
@@ -665,7 +665,7 @@ class TestCurrentStateEmphasis:
         anima_dir = _setup_anima_dir(tmp_path, "tester")
 
         # Write unified activity log entries (replaces heartbeat_history)
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log(

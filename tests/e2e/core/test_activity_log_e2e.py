@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section
 from core.time_utils import today_local
 

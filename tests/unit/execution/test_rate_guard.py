@@ -2,7 +2,7 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.execution.rate_guard — file-backed fail-open guard."""
+"""Unit tests for core.llm.guard.rate_guard — file-backed fail-open guard."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ import threading
 import time
 from pathlib import Path
 
-import core.execution.rate_guard as rate_guard
+import core.llm.guard.rate_guard as rate_guard
 from core.config.schemas import LlmRateGuardConfig
-from core.execution.rate_guard import LlmRateGuard, _load_guard_config
+from core.llm.guard.rate_guard import LlmRateGuard, _load_guard_config
 
 
 def _guard(tmp_path: Path, **cfg_overrides) -> LlmRateGuard:

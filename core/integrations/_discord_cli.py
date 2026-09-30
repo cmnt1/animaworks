@@ -42,7 +42,7 @@ def _resolve_cli_token() -> str | None:
     spawning Anima subprocesses (Mode S / Mode A).
     """
     from core.channels.tokens import resolve_per_anima_token
-    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+    from core.credentials import _lookup_shared_credentials, _lookup_vault_credential
 
     return resolve_per_anima_token(
         "discord",

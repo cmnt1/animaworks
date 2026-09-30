@@ -91,7 +91,7 @@ async def _run_reconsolidation_stage(
     limits: KnowledgeCorrectionLimits,
     summary: dict[str, Any],
 ) -> None:
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.memory.maintenance.reconsolidation import ReconsolidationEngine
     from core.memory.manager import MemoryManager
 

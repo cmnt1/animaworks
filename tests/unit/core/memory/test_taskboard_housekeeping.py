@@ -105,7 +105,7 @@ def test_current_state_archive_failure_leaves_original_unchanged(
     def fail_atomic_write(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr("core.memory._io.atomic_write_text", fail_atomic_write)
+    monkeypatch.setattr("core.platform.atomic_io.atomic_write_text", fail_atomic_write)
 
     assert _archive_current_state_for_housekeeping(anima_dir, state_path, "status: working\nkeep me") == "error"
     assert state_path.read_text(encoding="utf-8") == "status: working\nkeep me"

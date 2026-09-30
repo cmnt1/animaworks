@@ -14,8 +14,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
 from core.memory.facts.store import FactRecord, fact_entity_names, iter_fact_records
+from core.memory.io import atomic_write_text
 from core.platform.locks import locked_path
 from core.time_utils import now_iso
 

@@ -30,7 +30,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 from core.memory.priming import PrimingEngine
 from core.messaging.messenger import Messenger
 from core.time_utils import now_jst, today_local

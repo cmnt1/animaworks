@@ -125,7 +125,7 @@ class TestActivityLoggerErrorHandling:
 
     @pytest.fixture
     def activity_logger(self, tmp_path: Path):
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         al = ActivityLogger(anima_dir=tmp_path)
         (tmp_path / "activity_log").mkdir(parents=True, exist_ok=True)
@@ -133,7 +133,7 @@ class TestActivityLoggerErrorHandling:
 
     def test_append_raises_memory_write_error_on_os_error(self, activity_logger, tmp_path):
         """OSError during append should raise MemoryWriteError."""
-        from core.memory.activity.logger import ActivityEntry
+        from core.activity.logger import ActivityEntry
 
         entry = ActivityEntry(
             ts="2026-01-01T00:00:00+09:00",

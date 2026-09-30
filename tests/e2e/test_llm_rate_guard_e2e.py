@@ -26,7 +26,7 @@ from core.config.schemas import (
     LlmRateGuardConfig,
 )
 from core.exceptions import LLMAPIError
-from core.execution.rate_guard import LlmRateGuard
+from core.llm.guard.rate_guard import LlmRateGuard
 from core.schemas import ModelConfig
 from tests.helpers.mocks import make_litellm_response
 
@@ -40,7 +40,7 @@ class _RateLimit429(Exception):
 @pytest.fixture
 def shared_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect the runtime data dir and reset the guard singleton/config cache."""
-    import core.execution.rate_guard as rate_guard
+    import core.llm.guard.rate_guard as rate_guard
     from core.config import invalidate_cache
 
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
@@ -111,7 +111,7 @@ async def test_guarded_family_start_continues_not_deferred(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # A peer process has already recorded a block on the API realm.
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     get_rate_guard().report_block("anthropic:api", 300, "rate_limit")
     assert get_rate_guard().blocked_remaining("anthropic:api") > 0
@@ -140,7 +140,7 @@ def test_cross_process_writes_stay_valid(shared_data_dir: Path) -> None:
         from pathlib import Path
         sys.path.insert(0, {str(Path.cwd())!r})
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         family = sys.argv[1]
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=Path({str(guard_path)!r}))

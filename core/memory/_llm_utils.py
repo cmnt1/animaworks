@@ -287,7 +287,7 @@ def supports_structured_output(model: str) -> bool:
     gateway, so it is excluded here using the same predicate that routes its
     credential in ``core.config.model_config``.
     """
-    from core.execution.error_classifier import provider_family_of
+    from core.llm.guard.error_classifier import provider_family_of
 
     family = provider_family_of(model)
     if family == "openai" and model.split("/", 1)[-1].startswith("deepseek-"):
@@ -575,8 +575,8 @@ async def _litellm_stage_with_guard(
       - ``"fallback"`` — caller proceeds to the next backend (current
         blind-fallback behavior; used for skipped/blocked/rate/unknown paths).
     """
-    from core.execution.backoff import decorrelated_jitter
-    from core.execution.error_classifier import FailoverReason, classify_llm_error
+    from core.llm.guard.backoff import decorrelated_jitter
+    from core.llm.guard.error_classifier import FailoverReason, classify_llm_error
 
     blocked = guard.blocked_remaining(guard_key)
     if blocked > 0:
@@ -721,8 +721,8 @@ async def one_shot_completion(
     if structured_output and supports_structured_output(resolved_model):
         llm_kwargs.setdefault("response_format", {"type": "json_object"})
 
-    from core.execution.error_classifier import guard_key, litellm_realm_of, provider_family_of
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.error_classifier import guard_key, litellm_realm_of, provider_family_of
+    from core.llm.guard.rate_guard import get_rate_guard
 
     guard = get_rate_guard()
     family = provider_family_of(resolved_model)
@@ -828,8 +828,8 @@ async def one_shot_completion_with_model_config(
     if structured_output and supports_structured_output(resolved_model):
         llm_kwargs.setdefault("response_format", {"type": "json_object"})
 
-    from core.execution.error_classifier import guard_key, litellm_realm_of, provider_family_of
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.error_classifier import guard_key, litellm_realm_of, provider_family_of
+    from core.llm.guard.rate_guard import get_rate_guard
 
     guard = get_rate_guard()
     family = provider_family_of(resolved_model)

@@ -1,4 +1,5 @@
 # Required Japanese descriptions for direct packages under core/.
+core.activity: アクティビティログの記録、再生、タイムライン表示。
 core.agent: LLM エージェントの実行、会話制御、エンジン連携。
 core.anima: Digital Anima のライフサイクルと実行時オブジェクト。
 core.auth: ユーザー認証、セッション、認証情報の管理。
@@ -9,6 +10,7 @@ core.i18n: 翻訳カタログと言語選択。
 core.infra: ログ、データベース、キャッシュなどの基盤機能。
 core.integrations: 外部サービス連携と animaworks-tool の実装。
 core.lifecycle: anima の起動、停止、初期化のライフサイクル。
+core.llm: LLM エラー分類、レート制御、リトライの共通機能。
 core.mcp: Model Context Protocol サーバーとクライアント。
 core.memory: 会話・エピソード記憶の保存、検索、整理。
 core.messaging: anima 間および外部とのメッセージ配送。
@@ -20,6 +22,7 @@ core.prompt: システムプロンプトとコンテキストの構築。
 core.skills: スキルの発見、読み込み、実行支援。
 core.supervisor: anima の監督、委任、実行調整。
 core.tasks: タスクの登録、状態管理、実行制御。
+core.text: テキストのトークン見積もりと予算内切り詰め。
 core.tooling: ツールのスキーマ、権限、実行基盤。
 core.usage: LLM 利用量とコストの記録・集計。
 core.voice: 音声入出力と音声対話。

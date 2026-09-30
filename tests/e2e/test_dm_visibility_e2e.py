@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.time_utils import now_jst
 
 # ── Helpers ────────────────────────────────────────────────────

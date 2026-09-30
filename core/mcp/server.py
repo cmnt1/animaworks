@@ -355,7 +355,7 @@ def _wrap_result(tool_name: str, result: str) -> str:
     MCP server resilient).
     """
     try:
-        from core.execution._sanitize import wrap_tool_result
+        from core.trust import wrap_tool_result
 
         return wrap_tool_result(tool_name, result)
     except Exception:

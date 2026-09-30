@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.i18n import t
-from core.memory._io import archive_episode_before_write
+from core.memory.io import archive_episode_before_write
 from core.memory.retrieval.search_metadata import format_result_metadata_line
 from core.tooling.handler_base import (
     _error_result,
@@ -28,8 +28,8 @@ from core.tooling.handler_base import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from core.activity.logger import ActivityLogger
     from core.memory import MemoryManager
-    from core.memory.activity.logger import ActivityLogger
     from core.memory.state_lock import StateFileLock
 
 logger = logging.getLogger("animaworks.tool_handler")
@@ -736,7 +736,7 @@ class MemoryToolsMixin:
 
     def _resolve_write_origin(self) -> str:
         """Return the conservative origin for knowledge written this session."""
-        from core.execution._sanitize import read_session_trust
+        from core.trust import read_session_trust
 
         min_trust = getattr(self, "_min_trust_seen", 2)
         runtime_context = getattr(self, "_runtime_session_context", None)
@@ -1001,8 +1001,8 @@ class MemoryToolsMixin:
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(content)
                 if write_origin and path.is_file():
-                    from core.execution._sanitize import ORIGIN_TRUST_MAP, TRUST_RANK
                     from core.memory.frontmatter import parse_frontmatter
+                    from core.trust import ORIGIN_TRUST_MAP, TRUST_RANK
 
                     current_text = path.read_text(encoding="utf-8")
                     if current_text.startswith("---"):

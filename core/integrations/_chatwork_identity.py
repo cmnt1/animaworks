@@ -13,8 +13,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.credentials import resolve_env_style_credential
 from core.exceptions import ToolConfigError
-from core.integrations._base import resolve_env_style_credential
 
 
 @dataclass(frozen=True)

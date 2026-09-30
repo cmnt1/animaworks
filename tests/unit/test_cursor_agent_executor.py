@@ -1145,7 +1145,7 @@ class TestModeDResolution:
 class TestCursorErrorMetadata:
     def test_quota_error_records_real_guard_block(self, tmp_path: Path) -> None:
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
@@ -1162,7 +1162,7 @@ class TestCursorErrorMetadata:
 
     def test_unknown_error_does_not_register_block(self, tmp_path: Path) -> None:
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)

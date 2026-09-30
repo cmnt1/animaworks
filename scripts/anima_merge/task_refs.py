@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.platform.atomic_io import atomic_write_text
 from core.tasks.board.tasks import TaskStore, task_database_path
 
 from .taskboard_refs import rewrite_taskboard, taskboard_ids

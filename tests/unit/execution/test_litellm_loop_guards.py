@@ -136,7 +136,7 @@ class TestInLoopRetry:
 
     async def test_streaming_reporter_blocks_quota_and_auth(self):
         from core.execution.engines.litellm.litellm_loop import _make_rate_guard_reporter
-        from core.execution.error_classifier import classify_llm_error_message
+        from core.llm.guard.error_classifier import classify_llm_error_message
 
         guard = MagicMock()
         guard.config.quota_block_seconds = 1800

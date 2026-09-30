@@ -218,7 +218,7 @@ class TestBudgetIntegration:
                 execution_mode="a",
                 context_window=context_window,
             )
-        from core.prompt.tokens import estimate_tokens
+        from core.text.tokens import estimate_tokens
 
         # XML boundary tags add a small amount beyond section-content accounting.
         assert estimate_tokens(result.system_prompt) <= budget.ceiling + 500, (

@@ -57,7 +57,7 @@ def _get_bot_token(channel_cfg: dict) -> str:
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
     if anima_dir:
         from core.channels.tokens import resolve_per_anima_token
-        from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+        from core.credentials import _lookup_shared_credentials, _lookup_vault_credential
 
         token = resolve_per_anima_token(
             "slack",
@@ -68,7 +68,7 @@ def _get_bot_token(channel_cfg: dict) -> str:
             return token
 
     # Fall back to credentials.json / vault / env
-    from core.integrations._base import get_credential
+    from core.credentials import get_credential
 
     try:
         return get_credential("slack", "call_human", env_var="SLACK_BOT_TOKEN")

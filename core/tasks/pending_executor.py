@@ -255,7 +255,7 @@ class PendingTaskExecutor:
 
     def _save_task_result(self, task_id: str, summary: str) -> None:
         """Save under the attempt token, falling back to a flat legacy path."""
-        from core.memory._io import atomic_write_text
+        from core.platform.atomic_io import atomic_write_text
         from core.tasks.board.tasks import current_attempt_identity
 
         results_dir = self._anima_dir / "state" / "task_results"
@@ -318,7 +318,7 @@ class PendingTaskExecutor:
         visible again in its owner's pending list, the requester is told once,
         and no runnable input is re-enqueued.
         """
-        from core.execution._sanitize import ORIGIN_ANIMA
+        from core.trust import ORIGIN_ANIMA
 
         task_id, title, _description = _task_activity_identity(task_desc)
         # A queue entry that was already cancelled (e.g. superseded by a newer
@@ -750,7 +750,7 @@ class PendingTaskExecutor:
         worker_slot: BackgroundWorkerSlot | None = None,
     ) -> str:
         """Run an LLM task and record its complete activity lifecycle."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         task_id, title, _description = _task_activity_identity(task_desc)
         submitted_by = str(task_desc.get("submitted_by") or "unknown")
@@ -827,7 +827,7 @@ class PendingTaskExecutor:
         default and is never failed.  Returns ``None`` when no override
         applies.
         """
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         requested = task_desc.get("model")
         if not isinstance(requested, str) or not requested.strip():
@@ -1182,7 +1182,7 @@ class PendingTaskExecutor:
                     title=title,
                     result_summary=result_summary[:_TASK_COMPLETE_NOTIFY_MAX_CHARS],
                 )
-                from core.execution._sanitize import ORIGIN_ANIMA
+                from core.trust import ORIGIN_ANIMA
 
                 for _attempt in range(2):
                     try:

@@ -322,7 +322,7 @@ def test_chatwork_collects_open_tasks() -> None:
 
     with (
         patch(
-            "core.integrations._base.resolve_env_style_credential",
+            "core.credentials.resolve_env_style_credential",
             return_value="owner-token",
         ) as resolve_cred,
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client) as client_cls,
@@ -365,7 +365,7 @@ def test_chatwork_no_limit_time_uses_epoch() -> None:
     mock_cache.find_unreplied.return_value = []
 
     with (
-        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.credentials.resolve_env_style_credential", return_value="owner-token"),
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
         patch(
             "core.integrations._chatwork_cache.resolve_cache_db_path",
@@ -400,7 +400,7 @@ def test_chatwork_collects_unreplied_mentions() -> None:
     ]
 
     with (
-        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.credentials.resolve_env_style_credential", return_value="owner-token"),
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
         patch(
             "core.integrations._chatwork_cache.resolve_cache_db_path",
@@ -421,7 +421,7 @@ def test_chatwork_collects_unreplied_mentions() -> None:
 def test_chatwork_credential_missing() -> None:
     with (
         patch(
-            "core.integrations._base.resolve_env_style_credential",
+            "core.credentials.resolve_env_style_credential",
             return_value=None,
         ),
         pytest.raises(CredentialNotFoundError, match="CHATWORK_API_TOKEN__owner"),
@@ -434,7 +434,7 @@ def test_chatwork_api_error_propagates() -> None:
     mock_client.my_tasks.side_effect = RuntimeError("chatwork 500")
 
     with (
-        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.credentials.resolve_env_style_credential", return_value="owner-token"),
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
     ):
         with pytest.raises(RuntimeError, match="chatwork 500"):
@@ -447,7 +447,7 @@ def test_chatwork_mentions_skipped_when_me_fails() -> None:
     mock_client.me.side_effect = RuntimeError("me failed")
 
     with (
-        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.credentials.resolve_env_style_credential", return_value="owner-token"),
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
     ):
         tasks = chatwork_src.collect_chatwork()
@@ -461,7 +461,7 @@ def test_chatwork_mentions_skipped_when_account_id_empty() -> None:
     mock_client.me.return_value = {}
 
     with (
-        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.credentials.resolve_env_style_credential", return_value="owner-token"),
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
     ):
         tasks = chatwork_src.collect_chatwork()
@@ -487,7 +487,7 @@ def test_chatwork_mentions_filter_old_and_incomplete_rows() -> None:
     ]
 
     with (
-        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.credentials.resolve_env_style_credential", return_value="owner-token"),
         patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
         patch(
             "core.integrations._chatwork_cache.resolve_cache_db_path",

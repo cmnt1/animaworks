@@ -273,7 +273,7 @@ class TestActivityLoggerFsync:
     @pytest.fixture
     def activity_logger(self, anima_dir: Path):
         """Create an ActivityLogger bound to the temp anima directory."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         return ActivityLogger(anima_dir)
 
@@ -283,7 +283,7 @@ class TestActivityLoggerFsync:
         anima_dir: Path,
     ):
         """Every single append should trigger fsync."""
-        with patch("core.memory.activity.logger.os.fsync") as mock_fsync:
+        with patch("core.activity.logger.os.fsync") as mock_fsync:
             activity_logger.log("message_received", content="single entry")
 
         mock_fsync.assert_called_once()
@@ -294,7 +294,7 @@ class TestActivityLoggerFsync:
         anima_dir: Path,
     ):
         """Each append call should produce its own fsync."""
-        with patch("core.memory.activity.logger.os.fsync") as mock_fsync:
+        with patch("core.activity.logger.os.fsync") as mock_fsync:
             for i in range(5):
                 activity_logger.log(
                     "message_received",
@@ -472,7 +472,7 @@ class TestRunnerToolUseRecovery:
                 return_value=MagicMock(),
             ),
             patch(
-                "core.memory.activity.logger.ActivityLogger",
+                "core.activity.logger.ActivityLogger",
                 return_value=mock_activity,
             ),
         ):
@@ -516,7 +516,7 @@ class TestRunnerToolUseRecovery:
                 return_value=mock_conv,
             ),
             patch(
-                "core.memory.activity.logger.ActivityLogger",
+                "core.activity.logger.ActivityLogger",
                 return_value=MagicMock(),
             ),
             patch.object(
@@ -558,7 +558,7 @@ class TestRunnerToolUseRecovery:
         assert journal_path.exists()
 
         with patch(
-            "core.memory.activity.logger.ActivityLogger",
+            "core.activity.logger.ActivityLogger",
             return_value=MagicMock(),
         ):
             runner._recover_streaming_journal()
@@ -603,7 +603,7 @@ class TestStartupTmpCleanup:
         # Also create a non-.tmp file that should NOT be removed
         (state_dir / "conversation.json").write_text("{}")
 
-        from core.memory._io import cleanup_tmp_files
+        from core.platform.atomic_io import cleanup_tmp_files
 
         removed_state = cleanup_tmp_files(state_dir)
         removed_knowledge = cleanup_tmp_files(knowledge_dir)

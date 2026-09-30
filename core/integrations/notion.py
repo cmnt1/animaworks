@@ -24,8 +24,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from core.credentials import get_credential
 from core.i18n import t
-from core.integrations._base import ToolConfigError, dispatch_by_table, get_credential, logger
+from core.integrations._base import ToolConfigError, dispatch_by_table, logger
 from core.integrations._comm_cli import cli_main_safely
 from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
@@ -509,7 +510,7 @@ def _resolve_token(args: dict[str, Any]) -> str:
     """Resolve Notion token: per-Anima NOTION_API_TOKEN__{name} → shared."""
     anima_dir = args.get("anima_dir")
     if anima_dir:
-        from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+        from core.credentials import _lookup_shared_credentials, _lookup_vault_credential
 
         anima_name = Path(anima_dir).name
         per_key = f"NOTION_API_TOKEN__{anima_name}"

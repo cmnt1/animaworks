@@ -52,7 +52,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 def _resolve_discord_token(args: dict[str, Any]) -> str | None:
     """Resolve per-Anima Discord bot token from tool dispatch args."""
     from core.channels.tokens import resolve_per_anima_token
-    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+    from core.credentials import _lookup_shared_credentials, _lookup_vault_credential
 
     return resolve_per_anima_token(
         "discord",

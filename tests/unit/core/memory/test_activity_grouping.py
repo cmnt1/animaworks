@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from core.memory.activity.logger import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 
 # ── Helpers ───────────────────────────────────────────────
 

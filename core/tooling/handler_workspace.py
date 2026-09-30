@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from core.config.file_access_policy import effective_write_roots
-from core.execution._sanitize import ORIGIN_HUMAN
 from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import resolve_anima_name
+from core.trust import ORIGIN_HUMAN
 
 logger = logging.getLogger("animaworks.tool_handler")
 

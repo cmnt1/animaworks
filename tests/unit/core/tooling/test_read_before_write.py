@@ -217,7 +217,7 @@ class TestEpisodeOverwriteArchive:
         episode = anima_dir / "episodes" / "2026-03-15.md"
         episode.write_text("original episode", encoding="utf-8")
 
-        with patch("core.memory._io.shutil.copy2", side_effect=OSError("archive unavailable")):
+        with patch("core.memory.io.shutil.copy2", side_effect=OSError("archive unavailable")):
             result = handler.handle(
                 "write_memory_file",
                 {"path": "episodes/2026-03-15.md", "content": "compressed episode", "mode": "overwrite"},

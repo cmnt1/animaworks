@@ -25,7 +25,7 @@ from core.tooling.handler_base import (
 )
 
 if TYPE_CHECKING:
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.messaging.messenger import Messenger
     from core.notification.notifier import HumanNotifier
 
@@ -281,7 +281,7 @@ class CommsToolsMixin:
         try:
             from datetime import datetime, timedelta
 
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
             from core.time_utils import ensure_aware, now_local
 
             activity = ActivityLogger(self._anima_dir)

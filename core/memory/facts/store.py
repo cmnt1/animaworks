@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.memory.io import atomic_write_text
 from core.platform.locks import locked_path
 from core.time_utils import ensure_aware, now_iso, now_local, today_local
 

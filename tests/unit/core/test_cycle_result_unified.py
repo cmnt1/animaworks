@@ -119,7 +119,7 @@ async def test_success_result_and_preflight_are_common_to_every_engine(cycle_age
 
 
 async def test_error_category_falls_back_to_message_classification(cycle_agent):
-    from core.execution.error_classifier import classify_llm_error_message
+    from core.llm.guard.error_classifier import classify_llm_error_message
 
     agent, anima_dir = cycle_agent
     text = "[Cursor Agent Error: 429 Too Many Requests]"

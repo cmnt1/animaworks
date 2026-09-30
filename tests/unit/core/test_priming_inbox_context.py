@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.memory.activity.logger import ActivityEntry
+from core.activity.logger import ActivityEntry
 
 
 def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-20250514"):
@@ -64,7 +64,7 @@ class TestGetRecentHumanMessagesInbox:
             ),
         ]
 
-        with patch("core.memory.activity.logger.ActivityLogger.recent", return_value=entries) as recent:
+        with patch("core.activity.logger.ActivityLogger.recent", return_value=entries) as recent:
             result = agent._get_recent_human_messages("inbox:alice")
 
         assert result == ["latest", ("new" * 100)[:200], "middle"]
@@ -173,7 +173,7 @@ class TestGetRecentHumanMessagesInbox:
             patch("core.memory.priming.PrimingEngine", return_value=mock_engine),
             patch("core.memory.priming.format_priming_section", return_value=""),
             patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.activity.logger.ActivityLogger.recent", return_value=[inbox_entry]),
+            patch("core.activity.logger.ActivityLogger.recent", return_value=[inbox_entry]),
             patch("core.paths.get_shared_dir", return_value=tmp_path / "shared"),
         ):
             result = await agent._run_priming(

@@ -294,7 +294,7 @@ def _resolve_outbound_icon(anima_name: str) -> str:
 def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
     """Send a DM via Slack API."""
     from core.channels.tokens import resolve_per_anima_token
-    from core.integrations._base import resolve_env_style_credential
+    from core.credentials import resolve_env_style_credential
     from core.integrations.slack import SlackClient, md_to_slack_mrkdwn
 
     token = resolve_per_anima_token(
@@ -336,7 +336,7 @@ def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: st
 def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
     """Send a DM via Discord API using the bot token."""
     from core.channels.discord import DiscordClient
-    from core.integrations._base import get_credential
+    from core.credentials import get_credential
     from core.integrations._discord_markdown import md_to_discord
 
     token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")

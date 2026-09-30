@@ -15,7 +15,7 @@ from pathlib import Path
 
 from core.i18n import t
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger("animaworks.priming")
@@ -39,7 +39,7 @@ async def collect_recent_outbound(anima_dir: Path, max_entries: int = 3) -> str:
     ensuring builder.py never reads ActivityLogger directly (hippocampus model).
     """
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(
@@ -102,7 +102,7 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
     if channel not in HUMAN_NOTIFICATION_CHANNELS:
         return ""
 
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.notification import notification_key_for
 
     activity = ActivityLogger(anima_dir)

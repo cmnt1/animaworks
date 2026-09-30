@@ -31,7 +31,6 @@ from core.execution._streaming import (
     stream_error_boundary,
     try_parse_text_tool_call,
 )
-from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,
@@ -56,13 +55,6 @@ from core.execution.engines.litellm._llm_call import (
     StreamingCall,
     load_ollama_total_timeout,
 )
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error,
-    guard_key,
-    litellm_realm_of,
-    provider_family_of,
-)
 from core.execution.events import (
     context_update_event,
     done_event,
@@ -82,7 +74,6 @@ from core.execution.loop_guards import (
     strip_tool_protocol_messages,
     tool_call_signature,
 )
-from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
@@ -92,6 +83,15 @@ from core.execution.reminder import (
     msg_tool_loop_halt,
     msg_tool_loop_warning,
 )
+from core.llm.guard.backoff import decorrelated_jitter
+from core.llm.guard.error_classifier import (
+    FailoverReason,
+    classify_llm_error,
+    guard_key,
+    litellm_realm_of,
+    provider_family_of,
+)
+from core.llm.guard.rate_guard import get_rate_guard
 from core.memory import MemoryManager
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker

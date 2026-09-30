@@ -35,7 +35,7 @@ from core.messaging.outbound import ResolvedRecipient, _send_via_slack, send_ext
 class TestResolveSlackToken:
     """Tests for core.integrations.slack._resolve_slack_token."""
 
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-vault-token")
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-vault-token")
     def test_returns_per_anima_token_from_vault(self, mock_resolve):
         from core.integrations.slack import _resolve_slack_token
 
@@ -44,7 +44,7 @@ class TestResolveSlackToken:
         assert result == "xoxb-vault-token"
         mock_resolve.assert_called_once_with("SLACK_BOT_TOKEN__sumire")
 
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-shared-token")
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-shared-token")
     def test_returns_per_anima_token_from_shared_credentials(self, mock_resolve):
         from core.integrations.slack import _resolve_slack_token
 
@@ -57,11 +57,11 @@ class TestResolveSlackToken:
         from core.integrations.slack import _resolve_slack_token
 
         args = {}
-        with patch("core.integrations._base.resolve_env_style_credential", return_value=None):
+        with patch("core.credentials.resolve_env_style_credential", return_value=None):
             result = _resolve_slack_token(args)
         assert result is None
 
-    @patch("core.integrations._base.resolve_env_style_credential", return_value=None)
+    @patch("core.credentials.resolve_env_style_credential", return_value=None)
     def test_returns_none_when_anima_dir_present_but_no_per_anima_token(self, mock_resolve):
         from core.integrations.slack import _resolve_slack_token
 
@@ -70,7 +70,7 @@ class TestResolveSlackToken:
         assert result is None
         mock_resolve.assert_called_once_with("SLACK_BOT_TOKEN__sakura")
 
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-vault")
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-vault")
     def test_vault_takes_priority_over_shared_credentials(self, mock_resolve):
         from core.integrations.slack import _resolve_slack_token
 
@@ -79,7 +79,7 @@ class TestResolveSlackToken:
         assert result == "xoxb-vault"
         mock_resolve.assert_called_once_with("SLACK_BOT_TOKEN__sumire")
 
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-env-token")
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-env-token")
     def test_returns_per_anima_token_from_env_style_helper(self, mock_resolve):
         from core.integrations.slack import _resolve_slack_token
 
@@ -98,7 +98,7 @@ class TestSendViaSlackPerAnima:
 
     @patch("core.messaging.outbound._resolve_outbound_icon", return_value="https://example.com/sakura.png")
     @patch("core.integrations.slack.SlackClient")
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-per-anima")
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-per-anima")
     def test_uses_per_anima_token_when_anima_name_has_token(self, mock_resolve, mock_client_cls, mock_icon):
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ts": "123.456", "channel": "U1"}
@@ -118,7 +118,7 @@ class TestSendViaSlackPerAnima:
 
     @patch("core.messaging.outbound._resolve_outbound_icon", return_value="")
     @patch("core.integrations.slack.SlackClient")
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-per")
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-per")
     def test_omits_sender_prefix_when_per_anima_token_used(self, mock_resolve, mock_client_cls, mock_icon):
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ts": "1.1", "channel": "U1"}
@@ -135,7 +135,7 @@ class TestSendViaSlackPerAnima:
 
     @patch("core.messaging.outbound._resolve_outbound_icon", return_value="")
     @patch("core.integrations.slack.SlackClient")
-    @patch("core.integrations._base.resolve_env_style_credential", return_value=None)
+    @patch("core.credentials.resolve_env_style_credential", return_value=None)
     def test_includes_sender_prefix_when_fallback_to_shared_token(self, mock_resolve, mock_client_cls, mock_icon):
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ts": "1.1", "channel": "U1"}
@@ -224,8 +224,8 @@ class TestWebhookPerAnimaRouting:
 
         return TestClient(app)
 
-    @patch("core.integrations._base._lookup_shared_credentials", return_value=None)
-    @patch("core.integrations._base._lookup_vault_credential", return_value="per_anima_secret")
+    @patch("core.credentials._lookup_shared_credentials", return_value=None)
+    @patch("core.credentials._lookup_vault_credential", return_value="per_anima_secret")
     @patch("server.routes.webhooks.get_data_dir")
     @patch("server.routes.webhooks.load_config")
     def test_api_app_id_in_mapping_uses_per_anima_signing_secret(
@@ -308,8 +308,8 @@ class TestWebhookPerAnimaRouting:
             resp = client.post("/api/webhooks/slack/events", content=body, headers=headers)
         assert resp.status_code == 200
 
-    @patch("core.integrations._base._lookup_shared_credentials", return_value=None)
-    @patch("core.integrations._base._lookup_vault_credential", return_value="per_secret")
+    @patch("core.credentials._lookup_shared_credentials", return_value=None)
+    @patch("core.credentials._lookup_vault_credential", return_value="per_secret")
     @patch("server.routes.webhooks.get_data_dir")
     @patch("server.routes.webhooks.load_config")
     def test_api_app_id_routing_sets_correct_anima_name_for_delivery(
@@ -548,8 +548,8 @@ class TestSlackNotificationChannelPerAnima:
         return SlackChannel(config={"channel": "C123", "bot_token": ""})
 
     @patch("core.notification.channels.slack.SlackChannel._send_via_bot")
-    @patch("core.integrations._base.get_credential", side_effect=Exception("no shared"))
-    @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-per")
+    @patch("core.credentials.get_credential", side_effect=Exception("no shared"))
+    @patch("core.credentials.resolve_env_style_credential", return_value="xoxb-per")
     async def test_send_uses_per_anima_token_when_anima_name_set_and_token_exists(
         self, mock_resolve, mock_cred, mock_send_bot, slack_channel
     ):
@@ -569,8 +569,8 @@ class TestSlackNotificationChannelPerAnima:
         assert call_kwargs[0][0] == "xoxb-per"
 
     @patch("core.notification.channels.slack.SlackChannel._send_via_bot")
-    @patch("core.integrations._base.get_credential", return_value="xoxb-shared")
-    @patch("core.integrations._base.resolve_env_style_credential", return_value=None)
+    @patch("core.credentials.get_credential", return_value="xoxb-shared")
+    @patch("core.credentials.resolve_env_style_credential", return_value=None)
     async def test_send_falls_back_to_shared_token_when_no_per_anima_token(
         self, mock_resolve, mock_cred, mock_send_bot, slack_channel
     ):

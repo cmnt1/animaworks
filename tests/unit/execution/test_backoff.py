@@ -2,11 +2,11 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.execution.backoff — decorrelated jitter."""
+"""Unit tests for core.llm.guard.backoff — decorrelated jitter."""
 
 from __future__ import annotations
 
-from core.execution.backoff import decorrelated_jitter
+from core.llm.guard.backoff import decorrelated_jitter
 
 
 def test_first_backoff_within_default_range() -> None:

@@ -18,7 +18,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.execution._sanitize import (
+from core.execution.fallback_activity import run_with_model_fallback
+from core.i18n import t
+from core.llm.guard.error_classifier import classify_llm_error
+from core.memory.conversation.streaming_journal import StreamingJournal
+from core.messaging.messenger import InboxItem
+from core.paths import load_prompt
+from core.platform.atomic_io import atomic_write_json
+from core.schemas import CycleResult
+from core.time_utils import now_local
+from core.trust import (
     ORIGIN_ANIMA,
     ORIGIN_EXTERNAL_PLATFORM,
     ORIGIN_HUMAN,
@@ -26,15 +35,6 @@ from core.execution._sanitize import (
     resolve_trust,
     wrap_inbox_message,
 )
-from core.execution.error_classifier import classify_llm_error
-from core.execution.fallback_activity import run_with_model_fallback
-from core.i18n import t
-from core.memory.conversation.streaming_journal import StreamingJournal
-from core.messaging.messenger import InboxItem
-from core.paths import load_prompt
-from core.platform.atomic_io import atomic_write_json
-from core.schemas import CycleResult
-from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")
 
@@ -329,7 +329,7 @@ class InboxMixin:
         if not items or not path.exists():
             return
         try:
-            from core.memory._io import atomic_write_text
+            from core.platform.atomic_io import atomic_write_text
 
             counts = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(counts, dict):

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config.anima_registry import read_anima_supervisor
-from core.memory._io import atomic_write_text
+from core.platform.atomic_io import atomic_write_text
 from core.platform.locks import file_lock
 
 from .credential_refs import discover_slack_credential_candidates

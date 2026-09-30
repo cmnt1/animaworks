@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 
 # ── Fixtures ──────────────────────────────────────────────────
 

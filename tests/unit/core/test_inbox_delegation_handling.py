@@ -26,7 +26,7 @@ from core.anima.inbox import (
     _handle_delegation_dms,
     _split_delegation_items,
 )
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.messaging.messenger import InboxItem
 from core.schemas import Message
 

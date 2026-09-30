@@ -244,7 +244,7 @@ class TestCollectActivityChunks:
     """Tests for ConsolidationEngine.collect_activity_chunks."""
 
     @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.logger.ActivityLogger")
+    @patch("core.activity.logger.ActivityLogger")
     @patch("core.memory.maintenance.consolidation.now_local")
     def test_collect_respects_exclusions_and_formats(
         self,
@@ -282,7 +282,7 @@ class TestCollectActivityChunks:
         assert "skip" not in text
 
     @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.logger.ActivityLogger")
+    @patch("core.activity.logger.ActivityLogger")
     @patch("core.memory.maintenance.consolidation.now_local")
     def test_collect_empty_returns_empty(
         self,
@@ -301,7 +301,7 @@ class TestCollectActivityChunks:
         assert engine.collect_activity_chunks(hours=24, model="m") == []
 
     @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.logger.ActivityLogger")
+    @patch("core.activity.logger.ActivityLogger")
     def test_collect_uses_fixed_date_window(
         self,
         mock_logger_cls: MagicMock,

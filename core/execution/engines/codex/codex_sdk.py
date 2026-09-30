@@ -39,8 +39,8 @@ from core.execution.session_types import is_persistent_codex_session
 from core.execution.tool_evidence import ToolEvidence
 from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import ContextTracker
-from core.prompt.tokens import estimate_tokens
 from core.schemas import ImageData, ModelConfig
+from core.text.tokens import estimate_tokens
 
 from . import events, setup
 

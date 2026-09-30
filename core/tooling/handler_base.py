@@ -118,7 +118,7 @@ def build_outgoing_origin_chain(
     Appends the session origin and ORIGIN_ANIMA to the chain,
     deduplicating and truncating to MAX_ORIGIN_CHAIN_LENGTH.
     """
-    from core.execution._sanitize import MAX_ORIGIN_CHAIN_LENGTH, ORIGIN_ANIMA
+    from core.trust import MAX_ORIGIN_CHAIN_LENGTH, ORIGIN_ANIMA
 
     chain = list(session_origin_chain)
     if session_origin and session_origin not in chain:

@@ -20,7 +20,8 @@ from typing import Any
 
 import httpx
 
-from core.integrations._base import dispatch_by_table, get_credential
+from core.credentials import get_credential
+from core.integrations._base import dispatch_by_table
 from core.integrations._comm_cli import cli_main_safely
 
 # ── Execution Profile ─────────────────────────────────────

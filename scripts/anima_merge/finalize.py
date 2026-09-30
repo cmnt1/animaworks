@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core.anima.factory import validate_anima_name
-from core.memory._io import atomic_write_text
+from core.platform.atomic_io import atomic_write_text
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import ensure_aware, now_local
 

@@ -89,7 +89,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "common_knowledge/communication/sending-limits.md": [
         "core/messaging/outbound.py",
-        "core/memory/activity/logger.py",
+        "core/activity/logger.py",
     ],
     # ── common_knowledge — operations ──
     "reference/operations/task-management.md": [
@@ -167,7 +167,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — security ──
     "common_knowledge/security/prompt-injection-awareness.md": [
         "core/prompt/builder.py",
-        "core/execution/_sanitize.py",
+        "core/trust.py",
     ],
     # ── common_knowledge — troubleshooting ──
     "reference/troubleshooting/common-issues.md": ["core/"],
@@ -222,7 +222,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     "docs/memory": ["core/memory/"],
     "docs/brain-mapping": ["core/memory/", "core/prompt/"],
     "docs/security": [
-        "core/execution/_sanitize.py",
+        "core/trust.py",
         "core/execution/engines/claude/_sdk_security.py",
         "core/tooling/handler.py",
         "core/prompt/builder.py",

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.messaging.messenger import InboxItem
 from core.schemas import CycleResult
 from core.time_utils import now_jst

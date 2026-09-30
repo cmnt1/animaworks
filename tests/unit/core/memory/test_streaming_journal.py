@@ -410,7 +410,7 @@ class TestRecoverStreamingJournal:
                 return_value=mock_conv,
             ) as conv_cls,
             patch(
-                "core.memory.activity.logger.ActivityLogger",
+                "core.activity.logger.ActivityLogger",
             ),
         ):
             runner._recover_streaming_journal()
@@ -458,7 +458,7 @@ class TestRecoverStreamingJournal:
                 return_value=MagicMock(),
             ),
             patch(
-                "core.memory.activity.logger.ActivityLogger",
+                "core.activity.logger.ActivityLogger",
                 return_value=mock_activity,
             ) as activity_cls,
         ):
@@ -503,7 +503,7 @@ class TestRecoverStreamingJournal:
                 "core.memory.conversation.memory.ConversationMemory",
             ) as conv_cls,
             patch(
-                "core.memory.activity.logger.ActivityLogger",
+                "core.activity.logger.ActivityLogger",
             ) as activity_cls,
         ):
             runner._recover_streaming_journal()
@@ -526,7 +526,7 @@ class TestRecoverStreamingJournal:
                 "core.memory.conversation.memory.ConversationMemory",
             ) as conv_cls,
             patch(
-                "core.memory.activity.logger.ActivityLogger",
+                "core.activity.logger.ActivityLogger",
             ) as activity_cls,
         ):
             runner._recover_streaming_journal()
@@ -541,7 +541,7 @@ class TestRecoverStreamingJournal:
     ):
         """A repeated recovery pass must not duplicate conversation or activity entries."""
         from core.i18n import t
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.memory.conversation.memory import ConversationMemory
 
         (anima_dir / "state").mkdir(exist_ok=True)

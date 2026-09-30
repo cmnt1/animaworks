@@ -4,7 +4,7 @@ import json
 import multiprocessing
 from pathlib import Path
 
-from core.memory.activity.logger import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 
 
 def _append_large_activity_rows(anima_dir: str, process_id: int, barrier) -> None:

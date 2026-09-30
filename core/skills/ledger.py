@@ -15,9 +15,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
 from core.memory.frontmatter import parse_frontmatter
 from core.paths import get_common_skills_dir, get_data_dir
+from core.platform.atomic_io import atomic_write_text
 
 logger = logging.getLogger("animaworks.skill_ledger")
 

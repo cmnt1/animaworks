@@ -57,7 +57,7 @@ _ddg_last_request: float = 0.0
 def _resolve_backend() -> str:
     """Return ``"brave"`` if an API key is available, else ``"duckduckgo"``."""
     try:
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         get_credential("brave", "web_search", env_var="BRAVE_API_KEY")
         return "brave"
@@ -75,7 +75,7 @@ def _search_brave(
     country: str = "US",
     freshness: str | None = None,
 ) -> list[dict[str, str]]:
-    from core.integrations._base import get_credential
+    from core.credentials import get_credential
 
     api_key = get_credential("brave", "web_search", env_var="BRAVE_API_KEY")
     search_lang = _BRAVE_LANG_MAP.get(lang, lang)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from core.memory.activity.logger import ActivityEntry, ActivityLogger
+from core.activity.logger import ActivityEntry, ActivityLogger
 from core.time_utils import now_jst
 
 # ── Fix 3: JSONL field name unification ────────────────────
