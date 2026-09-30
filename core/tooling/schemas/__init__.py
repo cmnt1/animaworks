@@ -11,13 +11,8 @@ to Anthropic or LiteLLM/OpenAI formats on demand.
 from __future__ import annotations
 
 from core.prompt.tool_content import apply_prompt_descriptions
-from core.tooling.schemas.admin import _AW_CORE_NAMES, ADMIN_TOOLS, CC_TOOLS
-from core.tooling.schemas.builder import (
-    _COMPACT_COMM_TOOLS,
-    _CONSOLIDATION_BLOCKED_TOOLS,
-    build_unified_tool_list,
-    submit_tasks_enabled_for_trigger,
-)
+from core.tooling.schemas.admin import ADMIN_TOOLS, CC_TOOLS
+from core.tooling.schemas.builder import build_unified_tool_list
 from core.tooling.schemas.channel import _channel_tools
 from core.tooling.schemas.converters import to_litellm_format
 from core.tooling.schemas.loader import (
@@ -55,9 +50,6 @@ __all__ = [
     "SUBMIT_TASKS_TOOLS",
     "_submit_tasks_tools",
     "WORKSPACE_TOOLS",
-    "_AW_CORE_NAMES",
-    "_COMPACT_COMM_TOOLS",
-    "_CONSOLIDATION_BLOCKED_TOOLS",
     "_background_task_tools",
     "_channel_tools",
     "_check_permissions_tools",
@@ -75,5 +67,4 @@ __all__ = [
     "load_external_schemas_by_category",
     "load_personal_tool_schemas",
     "to_litellm_format",
-    "submit_tasks_enabled_for_trigger",
 ]

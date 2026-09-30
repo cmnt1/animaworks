@@ -17,12 +17,12 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 
 | 구분 | 도구 목록의 구성 |
 |------|----------------------|
-| **Mode S(Agent SDK)** | Claude Code 내장(Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch 등) + MCP `mcp__aw__*`(`core/mcp/server.py`의 `_EXPOSED_TOOL_NAMES`). |
-| **Mode A(LiteLLM)** | `build_unified_tool_list`(`core/tooling/schemas/builder.py`)이 실행 모드·트리거·설정에 따라 도구 목록을 구성합니다. Claude Code 호환 도구에 더해, AnimaWorks의 기억·절차/지식·작업 공간·통신·작업 관리 도구가 포함됩니다. `call_human`은 알림 설정 시, `delegate_task`은 부하가 있을 때 포함되고, `submit_tasks`는 `background` / `submit_tasks` / `heartbeat` 트리거로 이용할 수 있습니다. `consolidation:*`에서는 `send_message` / `post_channel` / `delegate_task` / `submit_tasks`이 제외됩니다. |
+| **MCP 사용 모드(S / C / D / G / X)** | 엔진 내장 도구 외에 MCP를 통해 AnimaWorks 도구를 사용합니다. `MCP_TOOL_NAMES` 허용 목록과 `resolve_tool_surface`의 트리거·역할 판정은 `core/tooling/surface.py`에 모여 있습니다. |
+| **Mode A(LiteLLM, 구 B도 같은 surface)** | `build_unified_tool_list`(`core/tooling/schemas/builder.py`)은 `resolve_tool_surface`가 선택한 스키마를 조립합니다. `call_human`은 알림 설정 시, `delegate_task` / `ping_subordinate`은 부하가 있을 때 포함되고, `submit_tasks`는 `background` / `submit_tasks` / `heartbeat` 트리거로 이용할 수 있습니다. 스킬 관리 도구는 heartbeat / consolidation으로 제한됩니다. `consolidation:*`에서는 통신·위임·태스크 등록·워크스페이스 권한 도구를 숨깁니다. |
 
-### Mode S(MCP)로 공개되는 AnimaWorks 도구
+### MCP(Mode S / C / D / G / X)로 공개되는 AnimaWorks 도구
 
-`core/mcp/server.py`의 `_EXPOSED_TOOL_NAMES`에 열거된 것만 MCP를 통해 전달됩니다. 1차 정보는 같은 파일의 `_EXPOSED_TOOL_NAMES`입니다.
+전체 허용 목록 `MCP_TOOL_NAMES`는 `core/tooling/surface.py`에 정의되어 있습니다. `resolve_tool_surface(ctx, trigger, mode)`가 트리거와 역할에 따른 최종 목록을 반환하고, MCP 서버가 해당 스키마를 공개합니다.
 
 - **기억**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
 - **메시지**: `send_message`, `post_channel`
@@ -33,7 +33,7 @@ description: "도구 체계의 전체 모습과 사용 가이드"
 - **스킬 관리**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
 - **고용**: `create_anima`
 
-MCP에 등재되는 스키마는 `_EXPOSED_TOOL_NAMES`에서 선택됩니다. `mcp.trigger_scoped_tools`이 유효한 경우, 트리거에 따라 목록이 좁혀집니다. 스킬 관리 계열 도구(`promote_procedure_to_skill`나 라이프사이클 관리 등)는 heartbeat·consolidation 때만 표시되고, `create_skill`은 이 제한의 대상이 아닙니다. `delegate_task`은 직속 부하가 있을 때만 표시되며, `create_anima`는 `newstaff` 스킬을 가진 경우에 이용할 수 있습니다.
+`mcp.trigger_scoped_tools`가 활성화된 경우 스킬 관리 도구(`promote_procedure_to_skill` 및 라이프사이클 관리 등)는 heartbeat·consolidation 때만 표시되며, `create_skill`은 이 제한의 대상이 아닙니다. `call_human`은 알림 채널 설정 시, `delegate_task`은 직속 부하가 있을 때만 표시되며, `create_anima`는 `newstaff` 스킬이 필요합니다. Mode A의 더 엄격한 기준에 맞춰 `grant_workspace_access`는 consolidation 중 숨겨집니다.
 
 ### Mode A의 도구 목록에 포함되지 않는 예
 

@@ -147,16 +147,22 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                 except (json.JSONDecodeError, OSError):
                     pass
 
+        mcp_env = {
+            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
+            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
+            "PYTHONPATH": str(PROJECT_DIR),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        }
+        from core.execution.session_context import current_runtime_session
+
+        runtime_ctx = current_runtime_session()
+        if runtime_ctx is not None:
+            mcp_env.update(runtime_ctx.to_env())
         existing["mcpServers"] = {
             "aw": {
                 "command": sys.executable,
                 "args": ["-m", "core.mcp.server"],
-                "env": {
-                    "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-                    "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-                    "PYTHONPATH": str(PROJECT_DIR),
-                    "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                },
+                "env": mcp_env,
             }
         }
 

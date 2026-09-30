@@ -17,12 +17,12 @@ The tool system consists of the following three layers:
 
 | Category | Tool List Assembly |
 |------|----------------------|
-| **Mode S (Agent SDK)** | Claude Code built-in (Read / Write / Edit / Bash / Grep / Glob / WebSearch / WebFetch, etc.) + MCP `mcp__aw__*` (see `core/mcp/server.py` under `_EXPOSED_TOOL_NAMES`). |
-| **Mode A (LiteLLM)** | `build_unified_tool_list` (see `core/tooling/schemas/builder.py`) assembles the tool list based on execution mode, triggers, and configuration. In addition to Claude Code-compatible tools, AnimaWorks memory, procedure/knowledge, workspace, communication, and task management tools are included. `call_human` is included when notifications are configured, `delegate_task` is included when there are subordinates, and `submit_tasks` is available via `background` / `submit_tasks` / `heartbeat` triggers. In `consolidation:*`, `send_message` / `post_channel` / `delegate_task` / `submit_tasks` are excluded. |
+| **MCP-backed modes (S / C / D / G / X)** | The engine's native tools plus AnimaWorks tools from MCP. `core/tooling/surface.py` owns the `MCP_TOOL_NAMES` allowlist and `resolve_tool_surface` applies trigger and Anima-role gates. |
+| **Mode A (LiteLLM; legacy B uses the same surface)** | `build_unified_tool_list` (see `core/tooling/schemas/builder.py`) assembles schemas selected by `resolve_tool_surface`. `call_human` requires configured notifications, `delegate_task` / `ping_subordinate` require subordinates, and `submit_tasks` is available via `background` / `submit_tasks` / `heartbeat` triggers. Skill-management tools are scoped to heartbeat/consolidation. During `consolidation:*`, messaging, delegation, task submission, and workspace-access tools are hidden. |
 
-### AnimaWorks Tools Exposed via Mode S (MCP)
+### AnimaWorks Tools Exposed via MCP (Modes S / C / D / G / X)
 
-Only those listed in `core/mcp/server.py` under `_EXPOSED_TOOL_NAMES` are passed through MCP. The primary source is `_EXPOSED_TOOL_NAMES` in the same file.
+`core/tooling/surface.py` defines the full `MCP_TOOL_NAMES` allowlist. `resolve_tool_surface(ctx, trigger, mode)` applies trigger scope and role gates before the MCP server advertises tools.
 
 - **Memory**: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `report_procedure_outcome`, `report_knowledge_outcome`
 - **Messages**: `send_message`, `post_channel`
@@ -33,7 +33,7 @@ Only those listed in `core/mcp/server.py` under `_EXPOSED_TOOL_NAMES` are passed
 - **Skill management**: `promote_procedure_to_skill`, `curate_skills`, `archive_skill`, `restore_skill`, `block_skill`, `unblock_skill`, `delete_skill`, `set_skill_lifecycle`
 - **Hiring**: `create_anima`
 
-The schemas exposed via MCP are selected by `_EXPOSED_TOOL_NAMES`. When `mcp.trigger_scoped_tools` is enabled, the list is narrowed based on triggers. Skill management tools (such as `promote_procedure_to_skill` and lifecycle management) are only shown during heartbeat and consolidation, and `create_skill` is not subject to this restriction. `delegate_task` is only shown when there are direct subordinates, and `create_anima` is available when the `newstaff` skill is held.
+When `mcp.trigger_scoped_tools` is enabled, skill-management tools (such as `promote_procedure_to_skill` and lifecycle management) are shown only during heartbeat and consolidation; `create_skill` is not subject to this restriction. `call_human` requires an enabled notification channel, `delegate_task` requires subordinates, and `create_anima` requires the `newstaff` skill. `grant_workspace_access` is hidden during consolidation to match the stricter Mode A surface.
 
 ### Examples Not Included in the Mode A Tool List
 

@@ -325,6 +325,15 @@ class TestGrokFailureMetadata:
 
 
 class TestDiscoveryAndHelperEnvironment:
+    def test_mcp_env_propagates_runtime_trigger(self, executor: GrokCLIExecutor):
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
+        with runtime_session_scope(ctx):
+            servers = executor._mcp_servers()
+        env_map = {item["name"]: item["value"] for item in servers[0]["env"]}
+        assert env_map["ANIMAWORKS_TRIGGER"] == "cron:daily"
+
     def test_mcp_env_passes_embed_and_vector_urls(self, executor: GrokCLIExecutor):
         """MCP server env must include embed/vector/rerank URLs so it delegates
         over HTTP instead of loading models in-process

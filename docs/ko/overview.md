@@ -65,4 +65,4 @@ server와 supervisor가 Anima root, task runner 시작, 통신, 재시작을 관
 
 ## MCP
 
-MCP server는 `_EXPOSED_TOOL_NAMES`에 정의된 24종류의 도구를 공개하고, trigger별로 목록을 추린다. 사용할 수 있는 도구는 Anima의 실행 조건에 따라 다르다.
+MCP 허용 목록 `MCP_TOOL_NAMES`와 트리거·역할에 따른 `resolve_tool_surface` 정책은 `core/tooling/surface.py`에 모여 있다. 실제 공개 목록은 트리거와 Anima의 실행 조건에 따라 달라진다.

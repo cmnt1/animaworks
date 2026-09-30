@@ -409,8 +409,7 @@ Model Context Protocol 서버 및 클라이언트.
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 739 | — |
-| `core.mcp.trigger_tools` | 84 | — |
+| `core.mcp.server` | 688 | — |
 
 ## `core.memory`
 
@@ -849,8 +848,8 @@ Anima 감독, 위임 및 실행 조정.
 | `core.tooling.handler_workspace` | 252 | — |
 | `core.tooling.org_helpers` | 154 | — |
 | `core.tooling.permissions` | 331 | — |
-| `core.tooling.schemas.admin` | 238 | — |
-| `core.tooling.schemas.builder` | 155 | — |
+| `core.tooling.schemas.admin` | 221 | — |
+| `core.tooling.schemas.builder` | 77 | — |
 | `core.tooling.schemas.channel` | 118 | — |
 | `core.tooling.schemas.converters` | 27 | — |
 | `core.tooling.schemas.loader` | 101 | — |
@@ -864,6 +863,7 @@ Anima 감독, 위임 및 실행 조정.
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
 | `core.tooling.standalone` | 187 | — |
+| `core.tooling.surface` | 247 | Single source of truth for runtime tool visibility. |
 
 ## `core.tooling.schemas`
 
@@ -871,7 +871,7 @@ Anima 감독, 위임 및 실행 조정.
 
 | 모듈 | 행 수 | docstring 첫 줄 |
 |---|---:|---|
-| `core.tooling.schemas` | 79 | Canonical tool schema definitions and format converters. |
+| `core.tooling.schemas` | 70 | Canonical tool schema definitions and format converters. |
 
 ## `core.usage`
 

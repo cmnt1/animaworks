@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from core.tooling.schemas import (
-    _CONSOLIDATION_BLOCKED_TOOLS,
-    build_unified_tool_list,
-)
+from core.tooling.schemas import build_unified_tool_list
+from core.tooling.surface import CONSOLIDATION_BLOCKED_TOOL_NAMES
 
 
 def _tool_names(tools: list[dict]) -> set[str]:
@@ -42,7 +40,7 @@ class TestConsolidationToolFilter:
             trigger="consolidation:daily",
         )
         names = _tool_names(tools)
-        for blocked in _CONSOLIDATION_BLOCKED_TOOLS:
+        for blocked in CONSOLIDATION_BLOCKED_TOOL_NAMES:
             assert blocked not in names, f"{blocked} should be hidden during consolidation"
 
     def test_consolidation_weekly_also_excludes(self):

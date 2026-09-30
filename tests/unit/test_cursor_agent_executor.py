@@ -125,6 +125,17 @@ class TestWorkspace:
         assert "core.mcp.server" in aw_conf["args"]
         assert "ANIMAWORKS_ANIMA_DIR" in aw_conf["env"]
 
+    def test_write_mcp_config_propagates_runtime_trigger(self, executor):
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor._ensure_workspace()
+        ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
+        with runtime_session_scope(ctx):
+            executor._write_mcp_config()
+
+        config = json.loads((executor._workspace / ".cursor" / "mcp.json").read_text())
+        assert config["mcpServers"]["aw"]["env"]["ANIMAWORKS_TRIGGER"] == "cron:daily"
+
     def test_workspace_location(self, executor, anima_dir):
         assert executor._workspace == anima_dir / ".cursor-workspace"
 

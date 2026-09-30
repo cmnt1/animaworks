@@ -12,62 +12,16 @@ from __future__ import annotations
 from typing import Any
 
 from core.prompt.tool_content import apply_prompt_descriptions
-from core.skills.trust_gate import trust_skill_enabled_for_trigger
-from core.tooling.schemas.admin import _AW_CORE_NAMES, CC_TOOLS
+from core.tooling.schemas.admin import CC_TOOLS
 from core.tooling.schemas.channel import _channel_tools
-from core.tooling.schemas.memory import (
-    KNOWLEDGE_TOOLS,
-    MEMORY_TOOLS,
-    PROCEDURE_TOOLS,
-)
+from core.tooling.schemas.memory import KNOWLEDGE_TOOLS, MEMORY_TOOLS, PROCEDURE_TOOLS
 from core.tooling.schemas.notification import _notification_tools
 from core.tooling.schemas.session_todo import _session_todo_tools
-from core.tooling.schemas.skill import (
-    _create_skill_schemas,
-    _curator_skill_schemas,
-)
+from core.tooling.schemas.skill import _create_skill_schemas, _curator_skill_schemas
 from core.tooling.schemas.supervisor import _supervisor_tools
 from core.tooling.schemas.task import _submit_tasks_tools, _task_tools
 from core.tooling.schemas.workspace import WORKSPACE_TOOLS
-
-_CONSOLIDATION_BLOCKED_TOOLS: frozenset[str] = frozenset(
-    {"delegate_task", "submit_tasks", "send_message", "post_channel"}
-)
-
-_COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
-    {
-        "Read",
-        "Write",
-        "Edit",
-        "Bash",
-        "Grep",
-        "Glob",
-        "search_memory",
-        "read_memory_file",
-        "write_memory_file",
-        "send_message",
-        "post_channel",
-    }
-)
-
-_SUBMIT_TASKS_ALLOWED_TRIGGERS: frozenset[str] = frozenset({"background", "submit_tasks", "heartbeat"})
-_SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:")
-
-
-def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
-    """Return True for explicit background task-authoring sessions and heartbeat.
-
-    Heartbeat is included because the harness never re-executes a ledger
-    ``pending`` task on the anima's behalf: the anima re-submits its own
-    pending work via ``submit_tasks`` during heartbeat (2026-09-03).
-    """
-    normalized = (trigger or "").strip()
-    return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(_SUBMIT_TASKS_ALLOWED_PREFIXES)
-
-
-def _skill_authoring_schemas_for_trigger(trigger: str) -> list[dict[str, Any]]:
-    allow_trust = trust_skill_enabled_for_trigger(trigger)
-    return [t for t in _create_skill_schemas() if allow_trust or t["name"] != "trust_skill"]
+from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
 
 
 def build_unified_tool_list(
@@ -78,78 +32,46 @@ def build_unified_tool_list(
     trigger: str = "",
     compact: bool = False,
 ) -> list[dict[str, Any]]:
-    """Build the unified runtime tool list.
+    """Build the Mode A/B unified runtime tool list from the shared surface.
 
-    Used by Mode A (LiteLLM) and Mode B (Assisted) executors.
-    Mode S/C get the CC tools from the Agent SDK built-ins and the AW tools
-    from MCP, so they do NOT call this function.
+    Schema assembly remains provider-neutral; all name-based visibility is
+    decided by :func:`resolve_tool_surface`.
 
     Args:
-        include_notification_tools: Include call_human (when HumanNotifier is configured).
-        include_supervisor_tools: Include delegate_task (when Anima has subordinates).
-        include_create_skill: Include create_skill tool (default True).
-        trigger: Execution trigger (e.g. ``"consolidation:daily"``).
-            When the trigger starts with ``consolidation:``, delegation and
-            messaging tools are excluded.
-        compact: When True, filter to the ``_COMPACT_COMM_TOOLS`` subset
-            (12 essential tools) for small context windows (<8K).
-
-    Returns:
-        Combined list in canonical format (up to 18 tools).
+        include_notification_tools: Include ``call_human`` when notifications are configured.
+        include_supervisor_tools: Include subordinate tools when the Anima has subordinates.
+        include_create_skill: Include skill authoring and curation tools.
+        trigger: Execution trigger (for example ``"consolidation:daily"``).
+        compact: Restrict the surface to the small-context communication tools.
     """
-    is_consolidation = trigger.startswith("consolidation:")
-
-    tools: list[dict[str, Any]] = list(CC_TOOLS)
-
-    # AW-essential: memory + messaging (always present, but filtered during consolidation)
-    for t in MEMORY_TOOLS:
-        if t["name"] in _AW_CORE_NAMES:
-            if is_consolidation and t["name"] in _CONSOLIDATION_BLOCKED_TOOLS:
-                continue
-            tools.append(t)
-    tools.extend(PROCEDURE_TOOLS)
-    tools.extend(KNOWLEDGE_TOOLS)
-
-    if not is_consolidation:
-        tools.extend(WORKSPACE_TOOLS)
-        for t in _channel_tools():
-            if t["name"] == "post_channel":
-                tools.append(t)
-                break
-
-    # AW-essential: notification (conditional)
-    if include_notification_tools:
-        tools.extend(_notification_tools())
-
-    # AW-essential: supervisor delegation + status check (conditional, blocked during consolidation)
-    if include_supervisor_tools and not is_consolidation:
-        _sup_include = {"delegate_task", "ping_subordinate"}
-        for t in _supervisor_tools():
-            if t["name"] in _sup_include:
-                tools.append(t)
-
-    # AW-essential: task management. submit_tasks is withheld from normal
-    # chat/cron/task sessions to avoid duplicate self-execution; heartbeat
-    # gets it so the anima can re-submit its own pending tasks.
-    if not is_consolidation:
-        if submit_tasks_enabled_for_trigger(trigger):
-            tools.extend(_submit_tasks_tools())
-    for t in _task_tools():
-        if t["name"] in {"update_task", "list_tasks"}:
-            tools.append(t)
-
-    # AW-essential: session todo (planning aid for Mode A)
-    tools.extend(_session_todo_tools())
-
-    tools = apply_prompt_descriptions(tools)
-
-    if include_create_skill:
-        tools.extend(
-            t for t in _skill_authoring_schemas_for_trigger(trigger) if t["name"] in {"create_skill", "trust_skill"}
+    visible_names = set(
+        resolve_tool_surface(
+            ToolSurfaceContext(
+                has_subordinates=include_supervisor_tools,
+                include_notification_tools=include_notification_tools,
+                include_create_skill=include_create_skill,
+                compact=compact,
+            ),
+            trigger,
+            "A",
         )
-        tools.extend(_curator_skill_schemas())
+    )
 
-    if compact:
-        tools = [t for t in tools if t["name"] in _COMPACT_COMM_TOOLS]
+    candidate_tools: list[dict[str, Any]] = [
+        *CC_TOOLS,
+        *MEMORY_TOOLS,
+        *PROCEDURE_TOOLS,
+        *KNOWLEDGE_TOOLS,
+        *WORKSPACE_TOOLS,
+        *_channel_tools(),
+        *_notification_tools(),
+        *_supervisor_tools(),
+        *_submit_tasks_tools(),
+        *_task_tools(),
+        *_session_todo_tools(),
+    ]
+    tools = apply_prompt_descriptions([tool for tool in candidate_tools if tool["name"] in visible_names])
 
+    skill_tools = [*_create_skill_schemas(), *_curator_skill_schemas()]
+    tools.extend(tool for tool in skill_tools if tool["name"] in visible_names)
     return tools

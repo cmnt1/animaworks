@@ -177,7 +177,8 @@ def test_grant_workspace_access_is_exposed_in_tool_schemas() -> None:
 
 
 def test_grant_workspace_access_is_exposed_via_mcp() -> None:
-    from core.mcp.server import _EXPOSED_TOOL_NAMES, MCP_TOOLS
+    from core.mcp.server import MCP_TOOLS
+    from core.tooling.surface import MCP_TOOL_NAMES
 
-    assert "grant_workspace_access" in _EXPOSED_TOOL_NAMES
+    assert "grant_workspace_access" in MCP_TOOL_NAMES
     assert any(tool.name == "grant_workspace_access" for tool in MCP_TOOLS)

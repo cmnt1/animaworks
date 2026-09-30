@@ -159,17 +159,23 @@ class CursorAgentExecutor(CLIStreamExecutor):
         mcp_dir = self._workspace / ".cursor"
         mcp_dir.mkdir(parents=True, exist_ok=True)
         mcp_path = mcp_dir / "mcp.json"
+        mcp_env = {
+            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
+            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
+            "PYTHONPATH": str(PROJECT_DIR),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        }
+        from core.execution.session_context import current_runtime_session
+
+        runtime_ctx = current_runtime_session()
+        if runtime_ctx is not None:
+            mcp_env.update(runtime_ctx.to_env())
         config = {
             "mcpServers": {
                 "aw": {
                     "command": sys.executable,
                     "args": ["-m", "core.mcp.server"],
-                    "env": {
-                        "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-                        "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-                        "PYTHONPATH": str(PROJECT_DIR),
-                        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                    },
+                    "env": mcp_env,
                 }
             }
         }

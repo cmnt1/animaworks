@@ -129,6 +129,18 @@ class TestWorkspace:
     def test_workspace_location(self, executor, anima_dir):
         assert executor._workspace == anima_dir / ".gemini-workspace"
 
+    def test_write_settings_propagates_runtime_trigger(self, executor):
+        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+
+        executor._ensure_workspace()
+        ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
+        with runtime_session_scope(ctx):
+            executor._write_settings()
+
+        settings_path = executor._workspace / ".gemini" / "settings.json"
+        config = json.loads(settings_path.read_text())
+        assert config["mcpServers"]["aw"]["env"]["ANIMAWORKS_TRIGGER"] == "cron:daily"
+
     def test_write_settings(self, executor):
         executor._ensure_workspace()
         executor._write_settings()

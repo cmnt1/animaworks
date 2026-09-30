@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 1f9b2a7226f472dfdc648384d270114a3d8b2b2cd3086f5d83db31f9e9265dc2 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: ee42576dc50df204d9fb8b648cabc611c298d8c883eb4cb1d9bce79537a165b5 -->
 
 # モジュール一覧
 
@@ -126,12 +126,12 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 773 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
-| `core.anima.heartbeat` | 944 | — |
+| `core.anima.heartbeat` | 959 | — |
 | `core.anima.image_artifacts` | 219 | — |
-| `core.anima.inbox` | 1007 | — |
+| `core.anima.inbox` | 1013 | — |
 | `core.anima.inbox_overflow` | 130 | — |
 | `core.anima.lifecycle` | 1359 | — |
-| `core.anima.messaging` | 1609 | — |
+| `core.anima.messaging` | 1612 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
 | `core.anima.skills_check` | 15 | — |
@@ -168,7 +168,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
 | `core.config.cli` | 340 | CLI handlers for the ``animaworks config`` subcommand. |
 | `core.config.env_slots` | 118 | — |
-| `core.config.file_access_policy` | 310 | — |
+| `core.config.file_access_policy` | 536 | — |
 | `core.config.global_permissions` | 251 | — |
 | `core.config.io` | 303 | Configuration I/O: singleton cache, load, and save. |
 | `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
@@ -194,7 +194,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 102 | — |
 | `core.execution.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
-| `core.execution.base` | 874 | — |
+| `core.execution.base` | 902 | — |
 | `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 295 | — |
 | `core.execution.engine_base` | 75 | — |
@@ -203,16 +203,16 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 106 | — |
 | `core.execution.engines.claude._sdk_options（非公開）` | 556 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
-| `core.execution.engines.claude._sdk_security（非公開）` | 319 | — |
+| `core.execution.engines.claude._sdk_security（非公開）` | 294 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 524 | — |
 | `core.execution.engines.claude._sdk_stream（非公開）` | 461 | — |
 | `core.execution.engines.claude.agent_sdk` | 896 | — |
 | `core.execution.engines.codex.codex_sdk` | 847 | — |
 | `core.execution.engines.codex.events` | 667 | — |
-| `core.execution.engines.codex.setup` | 952 | — |
-| `core.execution.engines.cursor.cursor_agent` | 711 | — |
-| `core.execution.engines.gemini.gemini_cli` | 468 | — |
-| `core.execution.engines.grok.grok_cli` | 1087 | — |
+| `core.execution.engines.codex.setup` | 960 | — |
+| `core.execution.engines.cursor.cursor_agent` | 717 | — |
+| `core.execution.engines.gemini.gemini_cli` | 474 | — |
+| `core.execution.engines.grok.grok_cli` | 1089 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 524 | — |
 | `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
@@ -422,8 +422,7 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 739 | — |
-| `core.mcp.trigger_tools` | 84 | — |
+| `core.mcp.server` | 688 | — |
 
 ## `core.memory`
 
@@ -438,7 +437,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.activity.audit` | 290 | — |
 | `core.memory.activity.conversation` | 492 | — |
 | `core.memory.activity.format` | 567 | — |
-| `core.memory.activity.logger` | 583 | — |
+| `core.memory.activity.logger` | 588 | — |
 | `core.memory.activity.models` | 202 | — |
 | `core.memory.activity.replay` | 537 | — |
 | `core.memory.activity.rotation` | 187 | — |
@@ -808,7 +807,7 @@ anima の監督、委任、実行調整。
 | `core.tasks.external.sources.gmail` | 124 | Gmail external tasks collector (unread inbox, last 7 days). |
 | `core.tasks.external.sources.slack` | 184 | Slack external tasks collector (unreplied mentions via message cache). |
 | `core.tasks.external.store` | 51 | Atomic JSON snapshot store for external tasks. |
-| `core.tasks.pending_executor` | 1856 | Pending task watcher and executor. |
+| `core.tasks.pending_executor` | 1943 | Pending task watcher and executor. |
 | `core.tasks.pending_housekeeping` | 49 | — |
 | `core.tasks.queue` | 489 | — |
 | `core.tasks.wake` | 70 | Cross-process wake fan-out for the PendingTaskExecutor. |
@@ -849,7 +848,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.command_policy` | 455 | — |
 | `core.tooling.dispatch` | 255 | — |
 | `core.tooling.handler` | 865 | — |
-| `core.tooling.handler_base` | 367 | — |
+| `core.tooling.handler_base` | 335 | — |
 | `core.tooling.handler_comms` | 902 | — |
 | `core.tooling.handler_create_anima` | 240 | — |
 | `core.tooling.handler_delegation` | 260 | — |
@@ -857,14 +856,14 @@ anima の監督、委任、実行調整。
 | `core.tooling.handler_memory` | 1253 | — |
 | `core.tooling.handler_org` | 39 | — |
 | `core.tooling.handler_org_dashboard` | 199 | — |
-| `core.tooling.handler_perms` | 453 | — |
+| `core.tooling.handler_perms` | 384 | — |
 | `core.tooling.handler_skills` | 879 | — |
 | `core.tooling.handler_subordinate_control` | 410 | — |
 | `core.tooling.handler_workspace` | 250 | — |
 | `core.tooling.org_helpers` | 154 | — |
 | `core.tooling.permissions` | 331 | — |
-| `core.tooling.schemas.admin` | 238 | — |
-| `core.tooling.schemas.builder` | 155 | — |
+| `core.tooling.schemas.admin` | 221 | — |
+| `core.tooling.schemas.builder` | 77 | — |
 | `core.tooling.schemas.channel` | 118 | — |
 | `core.tooling.schemas.converters` | 27 | — |
 | `core.tooling.schemas.loader` | 101 | — |
@@ -878,6 +877,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.skill_creator` | 120 | — |
 | `core.tooling.skill_promotion_tool` | 176 | — |
 | `core.tooling.standalone` | 187 | — |
+| `core.tooling.surface` | 247 | — |
 
 ## `core.tooling.schemas`
 
@@ -885,7 +885,7 @@ anima の監督、委任、実行調整。
 
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
-| `core.tooling.schemas` | 79 | Canonical tool schema definitions and format converters. |
+| `core.tooling.schemas` | 70 | Canonical tool schema definitions and format converters. |
 
 ## `core.usage`
 
@@ -904,7 +904,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.voice` | 7 | Voice chat subsystem — STT, TTS, and session orchestration. |
-| `core.voice.front` | 365 | Voice front lane — lightweight speech-first chat path via a local LLM. |
+| `core.voice.front` | 368 | Voice front lane — lightweight speech-first chat path via a local LLM. |
 | `core.voice.sentence_splitter` | 73 | Japanese-aware sentence splitting for streaming TTS. |
 | `core.voice.session` | 1839 | Voice session — STT -> Chat -> TTS orchestration. |
 | `core.voice.stt` | 137 | Voice STT — in-memory PCM transcription via faster-whisper. |
@@ -955,7 +955,7 @@ LLM 利用量とコストの記録・集計。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `server.routes` | 61 | — |
-| `server.routes.animas` | 903 | — |
+| `server.routes.animas` | 906 | — |
 | `server.routes.approve` | 89 | — |
 | `server.routes.assets` | 1456 | — |
 | `server.routes.auth` | 133 | — |

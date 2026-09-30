@@ -65,4 +65,4 @@ Provides startup preparation, log checking, data maintenance, and troubleshootin
 
 ## MCP
 
-The MCP server exposes 24 types of tools defined in `_EXPOSED_TOOL_NAMES`, and narrows the list by trigger. Available tools vary depending on Anima's execution conditions.
+The MCP server's `MCP_TOOL_NAMES` allowlist and the trigger/role-aware `resolve_tool_surface` policy are defined in `core/tooling/surface.py`. The final advertised list varies by trigger and Anima's execution conditions.

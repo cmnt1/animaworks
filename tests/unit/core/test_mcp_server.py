@@ -105,21 +105,24 @@ class TestBuildMcpTools:
             assert isinstance(tool, Tool)
 
     def test_internal_tools_always_included(self) -> None:
-        """Internal tools from _EXPOSED_TOOL_NAMES are always returned."""
-        from core.mcp.server import _EXPOSED_TOOL_NAMES, _build_mcp_tools
+        """The shared MCP profile is materialized by the MCP server."""
+        from core.mcp.server import _build_mcp_tools
+        from core.tooling.surface import MCP_TOOL_NAMES
 
         tools, exposed = _build_mcp_tools()
+        expected = frozenset(MCP_TOOL_NAMES)
         actual_names = {t.name for t in tools}
-        assert actual_names >= _EXPOSED_TOOL_NAMES
-        assert exposed >= _EXPOSED_TOOL_NAMES
+        assert actual_names >= expected
+        assert exposed >= expected
 
     def test_outcome_tools_are_exposed(self) -> None:
-        from core.mcp.server import _EXPOSED_TOOL_NAMES, _build_mcp_tools
+        from core.mcp.server import _build_mcp_tools
+        from core.tooling.surface import MCP_TOOL_NAMES
 
         tools, _ = _build_mcp_tools()
         actual_names = {t.name for t in tools}
-        assert "report_procedure_outcome" in _EXPOSED_TOOL_NAMES
-        assert "report_knowledge_outcome" in _EXPOSED_TOOL_NAMES
+        assert "report_procedure_outcome" in MCP_TOOL_NAMES
+        assert "report_knowledge_outcome" in MCP_TOOL_NAMES
         assert "report_procedure_outcome" in actual_names
         assert "report_knowledge_outcome" in actual_names
 
@@ -130,14 +133,16 @@ class TestBuildMcpTools:
 class TestListToolsHandler:
     """Tests for the list_tools() MCP handler with dynamic supervisor filtering."""
 
-    async def test_filters_submit_tasks_in_normal_supervisor_session(self) -> None:
+    async def test_filters_submit_tasks_in_normal_supervisor_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """list_tools() hides submit_tasks even when Anima has subordinates."""
         import core.mcp.server as mcp_mod
         from core.mcp.server import MCP_TOOLS, list_tools
 
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "")
         with (
             patch.object(mcp_mod, "_is_supervisor", True),
             patch.object(mcp_mod, "_has_newstaff", True),
+            patch.object(mcp_mod, "_has_notification_channels_for_anima", return_value=True),
         ):
             result = await list_tools()
 
@@ -164,13 +169,16 @@ class TestListToolsHandler:
         result_names = {t.name for t in result}
         assert "submit_tasks" in result_names
         # background is a scoped trigger -> skill-management tools are omitted
-        assert not result_names & mcp_mod._SKILL_MANAGEMENT_TOOL_NAMES
+        from core.tooling.surface import SKILL_MANAGEMENT_TOOL_NAMES
 
-    async def test_filters_supervisor_tools_when_non_supervisor(self) -> None:
-        """list_tools() excludes supervisor tools when Anima has no subordinates."""
+        assert not result_names & SKILL_MANAGEMENT_TOOL_NAMES
+
+    async def test_filters_supervisor_tools_when_non_supervisor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """list_tools() excludes delegate_task when Anima has no subordinates."""
         import core.mcp.server as mcp_mod
-        from core.mcp.server import _SUPERVISOR_TOOL_NAMES, MCP_TOOLS, list_tools
+        from core.mcp.server import MCP_TOOLS, list_tools
 
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "")
         with (
             patch.object(mcp_mod, "_is_supervisor", False),
             patch.object(mcp_mod, "_has_newstaff", True),
@@ -178,11 +186,10 @@ class TestListToolsHandler:
             result = await list_tools()
 
         result_names = {t.name for t in result}
-        assert result_names & _SUPERVISOR_TOOL_NAMES == set()
-        non_supervisor_names = {
-            t.name for t in MCP_TOOLS if t.name not in _SUPERVISOR_TOOL_NAMES and t.name != "submit_tasks"
+        assert "delegate_task" not in result_names
+        assert result_names == {
+            t.name for t in MCP_TOOLS if t.name not in {"delegate_task", "submit_tasks", "call_human"}
         }
-        assert result_names == non_supervisor_names
 
     async def test_includes_create_anima_when_newstaff_skill(self) -> None:
         """list_tools() exposes create_anima when anima has newstaff skill."""
@@ -210,13 +217,14 @@ class TestListToolsHandler:
 
         assert "create_anima" not in {t.name for t in result}
 
-    async def test_supervisor_tool_names_from_schemas(self) -> None:
-        """_SUPERVISOR_TOOL_NAMES matches SUPERVISOR_TOOLS from schemas.py."""
-        from core.mcp.server import _SUPERVISOR_TOOL_NAMES
-        from core.tooling.schemas import _supervisor_tools
+    def test_mcp_surface_has_only_delegate_task_for_supervisors(self) -> None:
+        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
 
-        expected = frozenset(t["name"] for t in _supervisor_tools())
-        assert expected == _SUPERVISOR_TOOL_NAMES
+        regular = set(resolve_tool_surface(ToolSurfaceContext(), "chat", "S"))
+        supervisor = set(resolve_tool_surface(ToolSurfaceContext(has_subordinates=True), "chat", "S"))
+        assert "delegate_task" not in regular
+        assert "delegate_task" in supervisor
+        assert "ping_subordinate" not in supervisor
 
     def test_list_tools_is_async(self) -> None:
         """list_tools should be a coroutine function."""
@@ -229,6 +237,7 @@ class TestListToolsHandler:
     async def test_environment_whitelist_limits_list_tools(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import core.mcp.server as mcp_mod
 
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "")
         monkeypatch.setenv(
             "ANIMAWORKS_MCP_TOOLS",
             "search_memory,read_memory_file,not_exposed",
@@ -253,7 +262,7 @@ class TestCallToolHandler:
     """Tests for the call_tool() MCP handler."""
 
     async def test_rejects_tool_not_in_exposed_set(self) -> None:
-        """call_tool() rejects tool names not in _EXPOSED_TOOL_NAMES."""
+        """call_tool() rejects tool names outside the resolved MCP surface."""
         import core.mcp.server as mcp_mod
 
         result = await mcp_mod.call_tool("nonexistent_tool", {"arg": "val"})
@@ -305,6 +314,16 @@ class TestCallToolHandler:
         payload = json.loads(result[0].text)
         assert payload["status"] == "error"
         assert payload["error_type"] == "ToolBlocked"
+
+    async def test_blocks_workspace_access_during_consolidation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        monkeypatch.setenv("ANIMAWORKS_TRIGGER", "consolidation:daily")
+        result = await mcp_mod.call_tool("grant_workspace_access", {"alias": "x", "path": "/tmp/x"})
+
+        payload = json.loads(result[0].text)
+        assert payload["error_type"] == "ToolBlocked"
+        assert "consolidation" in payload["message"]
 
     async def test_blocks_create_anima_without_newstaff(self) -> None:
         """call_tool() blocks create_anima when newstaff skill is missing."""
@@ -486,43 +505,35 @@ class TestCallToolHandler:
 class TestTriggerScopedTools:
     """Tests for trigger-based aw MCP tool set selection."""
 
-    SKILL_MANAGEMENT = frozenset(
-        {
-            "curate_skills",
-            "archive_skill",
-            "restore_skill",
-            "block_skill",
-            "unblock_skill",
-            "delete_skill",
-            "set_skill_lifecycle",
-            "promote_procedure_to_skill",
-        }
-    )
+    from core.tooling.surface import SKILL_MANAGEMENT_TOOL_NAMES as SKILL_MANAGEMENT
 
     def test_default_triggers_omit_skill_management(self) -> None:
         """chat / inbox / cron / task (and friends) drop skill-management tools."""
-        from core.mcp.server import _trigger_scoped_tool_names
+        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
 
+        context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
         for trigger in ("chat", "inbox", "cron", "task", "message", "background:manual"):
-            names = _trigger_scoped_tool_names(trigger)
+            names = set(resolve_tool_surface(context, trigger, "S"))
             assert not names & self.SKILL_MANAGEMENT, trigger
             assert "search_memory" in names
             assert "send_message" in names
 
     def test_heartbeat_keeps_skill_management(self) -> None:
         """heartbeat and consolidation keep every tool."""
-        from core.mcp.server import _trigger_scoped_tool_names
+        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
 
+        context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
         for trigger in ("heartbeat", "heartbeat:seeded", "consolidation", "consolidation:cc"):
-            names = _trigger_scoped_tool_names(trigger)
+            names = set(resolve_tool_surface(context, trigger, "S"))
             assert names >= self.SKILL_MANAGEMENT, trigger
             assert "curate_skills" in names
 
     def test_empty_trigger_keeps_everything(self) -> None:
         """An unknown/empty trigger keeps the full default set (safe default)."""
-        from core.mcp.server import _EXPOSED_TOOL_NAMES, _trigger_scoped_tool_names
+        from core.tooling.surface import MCP_TOOL_NAMES, ToolSurfaceContext, resolve_tool_surface
 
-        assert _trigger_scoped_tool_names("") == _EXPOSED_TOOL_NAMES
+        context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
+        assert set(resolve_tool_surface(context, "", "S")) == set(MCP_TOOL_NAMES) - {"submit_tasks"}
 
     def test_mcp_tools_env_for_trigger_scoped(self) -> None:
         """A scoped trigger pins an explicit reduced ANIMAWORKS_MCP_TOOLS value."""
@@ -560,7 +571,7 @@ class TestTriggerScopedTools:
         ):
             result = await list_tools()
         result_names = {t.name for t in result}
-        assert result_names & mcp_mod._SKILL_MANAGEMENT_TOOL_NAMES
+        assert result_names & self.SKILL_MANAGEMENT
 
     async def test_trigger_scoped_tools_true_excludes_skill_management(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """mcp.trigger_scoped_tools=true keeps scoping (skill tools hidden for chat)."""
@@ -575,7 +586,7 @@ class TestTriggerScopedTools:
         ):
             result = await list_tools()
         result_names = {t.name for t in result}
-        assert not result_names & mcp_mod._SKILL_MANAGEMENT_TOOL_NAMES
+        assert not result_names & self.SKILL_MANAGEMENT
 
     def test_inbox_tool_json_total_under_12000(self) -> None:
         """Inbox-trigger aw MCP tool definitions stay under 12,000 chars.
@@ -585,13 +596,11 @@ class TestTriggerScopedTools:
         + the runtime submit_tasks block.
         """
         import core.mcp.server as mcp_mod
+        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
 
         tools, _exposed = mcp_mod._build_mcp_tools()
         by_name = {t.name: t for t in tools}
-        names = set(mcp_mod._trigger_scoped_tool_names("inbox"))
-        names -= set(mcp_mod._SUPERVISOR_TOOL_NAMES)  # not a supervisor
-        names -= {"create_anima"}  # no newstaff skill
-        names -= {"submit_tasks"}  # blocked outside explicit bg sessions
+        names = set(resolve_tool_surface(ToolSurfaceContext(), "inbox", "S"))
 
         total = sum(
             len(
