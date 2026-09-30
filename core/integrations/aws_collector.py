@@ -24,7 +24,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from core.integrations._base import logger
+from core.integrations._base import dispatch_by_table, logger
+from core.integrations._comm_cli import cli_main_safely
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -312,6 +313,7 @@ animaworks-tool aws_collector metrics --cluster <クラスタ> --service <サー
 ```"""
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI for AWS data collection.
 
@@ -366,27 +368,40 @@ def cli_main(argv: list[str] | None = None) -> None:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_ecs_status(args: dict[str, Any]) -> Any:
+    collector = AWSCollector(region=args.get("region"))
+    return collector.get_ecs_status(args["cluster"], args["service"])
+
+
+def _dispatch_error_logs(args: dict[str, Any]) -> Any:
+    collector = AWSCollector(region=args.get("region"))
+    return collector.get_error_logs(
+        log_group=args["log_group"],
+        hours=args.get("hours", 1),
+        patterns=args.get("patterns"),
+    )
+
+
+def _dispatch_metrics(args: dict[str, Any]) -> Any:
+    collector = AWSCollector(region=args.get("region"))
+    return collector.get_metrics(
+        cluster=args["cluster"],
+        service=args["service"],
+        metric=args.get("metric", "CPUUtilization"),
+        hours=args.get("hours", 1),
+    )
+
+
+_DISPATCH_HANDLERS = {
+    "aws_ecs_status": _dispatch_ecs_status,
+    "aws_error_logs": _dispatch_error_logs,
+    "aws_metrics": _dispatch_metrics,
+}
+
+
 def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call to the appropriate handler."""
-    if tool_name == "aws_ecs_status":
-        collector = AWSCollector(region=args.get("region"))
-        return collector.get_ecs_status(args["cluster"], args["service"])
-    if tool_name == "aws_error_logs":
-        collector = AWSCollector(region=args.get("region"))
-        return collector.get_error_logs(
-            log_group=args["log_group"],
-            hours=args.get("hours", 1),
-            patterns=args.get("patterns"),
-        )
-    if tool_name == "aws_metrics":
-        collector = AWSCollector(region=args.get("region"))
-        return collector.get_metrics(
-            cluster=args["cluster"],
-            service=args["service"],
-            metric=args.get("metric", "CPUUtilization"),
-            hours=args.get("hours", 1),
-        )
-    raise ValueError(f"Unknown tool: {tool_name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, tool_name, args)
 
 
 if __name__ == "__main__":

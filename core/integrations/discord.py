@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from core.integrations._base import logger
+from core.integrations._base import dispatch_by_table, logger
 
 # Re-exports (also used by :func:`dispatch`)
 from core.integrations._discord_cache import MessageCache
@@ -134,127 +134,150 @@ def get_tool_schemas() -> list[dict]:
 # ── Dispatch ───────────────────────────────────────────────
 
 
-def dispatch(name: str, args: dict[str, Any]) -> Any:
-    """Dispatch a tool call by schema name."""
-    if name == "discord_send":
-        client = DiscordClient(token=_resolve_discord_token(args))
-        try:
-            return client.send_message(
-                args["channel_id"],
-                args["message"],
-                reply_to=args.get("reply_to"),
-            )
-        finally:
-            client.close()
-    if name == "discord_messages":
-        client = DiscordClient(token=_resolve_discord_token(args))
-        cache = MessageCache()
-        try:
-            channel_id = args["channel_id"]
-            limit = int(args.get("limit", 20))
-            msgs = client.channel_history(channel_id, limit=limit)
-            if msgs:
-                for m in msgs:
-                    author = m.get("author")
-                    if isinstance(author, dict):
-                        uid = author.get("id", "")
-                        if uid and not m.get("user_id"):
-                            m["user_id"] = uid
-                        uname = author.get("global_name") or author.get("username", "")
-                        if uname and not m.get("user_name"):
-                            m["user_name"] = uname
-                cache.upsert_messages(channel_id, msgs)
-                cache.update_sync_state(channel_id)
-            return cache.get_recent(channel_id, limit=limit)
-        finally:
-            client.close()
-            cache.close()
-    if name == "discord_search":
-        cache = MessageCache()
-        try:
-            channel_id = args.get("channel_id")
-            return cache.search(
-                args["keyword"],
-                channel_id=channel_id,
-                limit=int(args.get("limit", 50)),
-            )
-        finally:
-            cache.close()
-    if name == "discord_guilds":
-        client = DiscordClient(token=_resolve_discord_token(args))
-        try:
-            return client.guilds()
-        finally:
-            client.close()
-    if name == "discord_channels":
-        client = DiscordClient(token=_resolve_discord_token(args))
-        try:
-            return client.channels(args["guild_id"])
-        finally:
-            client.close()
-    if name == "discord_react":
-        client = DiscordClient(token=_resolve_discord_token(args))
-        try:
-            return client.add_reaction(
-                args["channel_id"],
-                args["message_id"],
-                args["emoji"],
-            )
-        finally:
-            client.close()
-    if name == "discord_channel_post":
-        # Block during inbox processing — auto-responder handles posting
-        _trigger = args.get("_trigger", "")
-        if _trigger.startswith("inbox"):
-            return {
-                "status": "blocked",
-                "message": "discord_channel_post is blocked during inbox processing. "
-                "Your response is auto-posted by the framework.",
-            }
+def _dispatch_discord_send(args: dict[str, Any]) -> Any:
+    client = DiscordClient(token=_resolve_discord_token(args))
+    try:
+        return client.send_message(
+            args["channel_id"],
+            args["message"],
+            reply_to=args.get("reply_to"),
+        )
+    finally:
+        client.close()
 
-        discord_text = md_to_discord(args["text"])
+
+def _dispatch_discord_messages(args: dict[str, Any]) -> Any:
+    client = DiscordClient(token=_resolve_discord_token(args))
+    cache = MessageCache()
+    try:
+        channel_id = args["channel_id"]
+        limit = int(args.get("limit", 20))
+        messages = client.channel_history(channel_id, limit=limit)
+        if messages:
+            for message in messages:
+                author = message.get("author")
+                if isinstance(author, dict):
+                    user_id = author.get("id", "")
+                    if user_id and not message.get("user_id"):
+                        message["user_id"] = user_id
+                    username = author.get("global_name") or author.get("username", "")
+                    if username and not message.get("user_name"):
+                        message["user_name"] = username
+            cache.upsert_messages(channel_id, messages)
+            cache.update_sync_state(channel_id)
+        return cache.get_recent(channel_id, limit=limit)
+    finally:
+        client.close()
+        cache.close()
+
+
+def _dispatch_discord_search(args: dict[str, Any]) -> Any:
+    cache = MessageCache()
+    try:
+        return cache.search(
+            args["keyword"],
+            channel_id=args.get("channel_id"),
+            limit=int(args.get("limit", 50)),
+        )
+    finally:
+        cache.close()
+
+
+def _dispatch_discord_guilds(args: dict[str, Any]) -> Any:
+    client = DiscordClient(token=_resolve_discord_token(args))
+    try:
+        return client.guilds()
+    finally:
+        client.close()
+
+
+def _dispatch_discord_channels(args: dict[str, Any]) -> Any:
+    client = DiscordClient(token=_resolve_discord_token(args))
+    try:
+        return client.channels(args["guild_id"])
+    finally:
+        client.close()
+
+
+def _dispatch_discord_react(args: dict[str, Any]) -> Any:
+    client = DiscordClient(token=_resolve_discord_token(args))
+    try:
+        return client.add_reaction(
+            args["channel_id"],
+            args["message_id"],
+            args["emoji"],
+        )
+    finally:
+        client.close()
+
+
+def _dispatch_discord_channel_post(args: dict[str, Any]) -> Any:
+    # Block during inbox processing — auto-responder handles posting
+    trigger = args.get("_trigger", "")
+    if trigger.startswith("inbox"):
+        return {
+            "status": "blocked",
+            "message": "discord_channel_post is blocked during inbox processing. "
+            "Your response is auto-posted by the framework.",
+        }
+
+    discord_text = md_to_discord(args["text"])
+    anima_name = ""
+    anima_dir = args.get("anima_dir")
+    if anima_dir:
+        anima_name = Path(anima_dir).name
+
+    # Use webhook manager for Anima identity if available
+    if anima_name:
+        try:
+            from core.messaging.discord_webhooks import get_webhook_manager
+
+            wm = get_webhook_manager()
+            message_id = wm.send_as_anima(args["channel_id"], anima_name, discord_text)
+            return {"status": "ok", "channel_id": args["channel_id"], "message_id": message_id}
+        except Exception:
+            logger.debug("Webhook send failed, falling back to bot token", exc_info=True)
+
+    # Bot-token fallback removed: sending as the bot account (AnimaWorks)
+    # instead of the Anima's identity is confusing to users.
+    # If webhook failed, report the error rather than falling back.
+    return {"status": "error", "message": "Webhook send failed; cannot post as Anima identity"}
+
+
+def _dispatch_discord_unreplied(args: dict[str, Any]) -> Any:
+    cache = MessageCache()
+    try:
         anima_name = ""
         anima_dir = args.get("anima_dir")
         if anima_dir:
             anima_name = Path(anima_dir).name
+        if not anima_name:
+            return {"status": "error", "message": "Cannot determine Anima name"}
 
-        # Use webhook manager for Anima identity if available
-        if anima_name:
-            try:
-                from core.messaging.discord_webhooks import get_webhook_manager
+        return cache.find_unreplied(
+            anima_name,
+            channel_id=args.get("channel_id"),
+            limit=int(args.get("limit", 10)),
+        )
+    finally:
+        cache.close()
 
-                wm = get_webhook_manager()
-                msg_id = wm.send_as_anima(args["channel_id"], anima_name, discord_text)
-                return {"status": "ok", "channel_id": args["channel_id"], "message_id": msg_id}
-            except Exception:
-                logger.debug("Webhook send failed, falling back to bot token", exc_info=True)
 
-        # Bot-token fallback removed: sending as the bot account (AnimaWorks)
-        # instead of the Anima's identity is confusing to users.
-        # If webhook failed, report the error rather than falling back.
-        return {"status": "error", "message": "Webhook send failed; cannot post as Anima identity"}
+_DISPATCH_HANDLERS = {
+    "discord_send": _dispatch_discord_send,
+    "discord_messages": _dispatch_discord_messages,
+    "discord_search": _dispatch_discord_search,
+    "discord_guilds": _dispatch_discord_guilds,
+    "discord_channels": _dispatch_discord_channels,
+    "discord_react": _dispatch_discord_react,
+    "discord_channel_post": _dispatch_discord_channel_post,
+    "discord_unreplied": _dispatch_discord_unreplied,
+}
 
-    if name == "discord_unreplied":
-        cache = MessageCache()
-        try:
-            anima_name = ""
-            anima_dir = args.get("anima_dir")
-            if anima_dir:
-                anima_name = Path(anima_dir).name
-            if not anima_name:
-                return {"status": "error", "message": "Cannot determine Anima name"}
 
-            channel_id = args.get("channel_id")
-            limit = int(args.get("limit", 10))
-            return cache.find_unreplied(
-                anima_name,
-                channel_id=channel_id,
-                limit=limit,
-            )
-        finally:
-            cache.close()
-
-    raise ValueError(f"Unknown tool: {name}")
+def dispatch(name: str, args: dict[str, Any]) -> Any:
+    """Dispatch a tool call by schema name."""
+    return dispatch_by_table(_DISPATCH_HANDLERS, name, args)
 
 
 if __name__ == "__main__":

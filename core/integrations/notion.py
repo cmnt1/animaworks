@@ -20,11 +20,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from core.i18n import t
-from core.integrations._base import ToolConfigError, get_credential, logger
+from core.integrations._base import ToolConfigError, dispatch_by_table, get_credential, logger
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
 # ── Execution Profile ─────────────────────────────────────
@@ -549,6 +551,7 @@ animaworks-tool notion create-database --parent-page-id <id> --title "..." --pro
 ```"""
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI entry point for the Notion tool."""
     parser = argparse.ArgumentParser(
@@ -750,75 +753,108 @@ def _run_cli_command(client: NotionClient, args: argparse.Namespace) -> None:
 # ── Dispatch ──────────────────────────────────────────────
 
 
+def _dispatch_notion_search(args: dict[str, Any], *, client: NotionClient) -> Any:
+    return client.search(
+        query=args.get("query", ""),
+        filter=args.get("filter"),
+        sort=args.get("sort"),
+        page_size=args.get("page_size", 10),
+        start_cursor=args.get("start_cursor"),
+    )
+
+
+def _dispatch_notion_get_page(args: dict[str, Any], *, client: NotionClient) -> Any:
+    page_id = args.get("page_id")
+    if not page_id:
+        raise ValueError(t("notion.page_id_required"))
+    return client.get_page(page_id)
+
+
+def _dispatch_notion_get_page_content(args: dict[str, Any], *, client: NotionClient) -> Any:
+    page_id = args.get("page_id")
+    if not page_id:
+        raise ValueError(t("notion.page_id_required"))
+    return client.get_page_content(page_id, page_size=args.get("page_size", 100))
+
+
+def _dispatch_notion_get_database(args: dict[str, Any], *, client: NotionClient) -> Any:
+    database_id = args.get("database_id")
+    if not database_id:
+        raise ValueError(t("notion.database_id_required"))
+    return client.get_database(database_id)
+
+
+def _dispatch_notion_query(args: dict[str, Any], *, client: NotionClient) -> Any:
+    database_id = args.get("database_id")
+    if not database_id:
+        raise ValueError(t("notion.database_id_required"))
+    return client.query_database(
+        database_id,
+        filter=args.get("filter"),
+        sorts=args.get("sorts"),
+        page_size=args.get("page_size", 10),
+        start_cursor=args.get("start_cursor"),
+    )
+
+
+def _dispatch_notion_create_page(args: dict[str, Any], *, client: NotionClient) -> Any:
+    parent_page_id = args.get("parent_page_id")
+    parent_database_id = args.get("parent_database_id")
+    if not parent_page_id and not parent_database_id:
+        raise ValueError(t("notion.parent_required"))
+    parent = (
+        {"type": "page_id", "page_id": parent_page_id}
+        if parent_page_id
+        else {"type": "database_id", "database_id": parent_database_id}
+    )
+    return client.create_page(
+        parent=parent,
+        properties=args.get("properties", {}),
+        children=args.get("children"),
+    )
+
+
+def _dispatch_notion_update_page(args: dict[str, Any], *, client: NotionClient) -> Any:
+    page_id = args.get("page_id")
+    if not page_id:
+        raise ValueError(t("notion.page_id_required"))
+    return client.update_page(page_id, args.get("properties", {}))
+
+
+def _dispatch_notion_create_database(args: dict[str, Any], *, client: NotionClient) -> Any:
+    parent_page_id = args.get("parent_page_id")
+    if not parent_page_id:
+        raise ValueError(t("notion.parent_page_id_required"))
+    return client.create_database(
+        parent_page_id=parent_page_id,
+        title=args.get("title", ""),
+        properties=args.get("properties", {}),
+    )
+
+
+_DISPATCH_HANDLERS = {
+    "notion_search": _dispatch_notion_search,
+    "notion_get_page": _dispatch_notion_get_page,
+    "notion_get_page_content": _dispatch_notion_get_page_content,
+    "notion_get_database": _dispatch_notion_get_database,
+    "notion_query": _dispatch_notion_query,
+    "notion_create_page": _dispatch_notion_create_page,
+    "notion_update_page": _dispatch_notion_update_page,
+    "notion_create_database": _dispatch_notion_create_database,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
     token = _resolve_token(args)
     client = NotionClient(token=token)
-
-    if name == "notion_search":
-        return client.search(
-            query=args.get("query", ""),
-            filter=args.get("filter"),
-            sort=args.get("sort"),
-            page_size=args.get("page_size", 10),
-            start_cursor=args.get("start_cursor"),
-        )
-    if name == "notion_get_page":
-        page_id = args.get("page_id")
-        if not page_id:
-            raise ValueError(t("notion.page_id_required"))
-        return client.get_page(page_id)
-    if name == "notion_get_page_content":
-        page_id = args.get("page_id")
-        if not page_id:
-            raise ValueError(t("notion.page_id_required"))
-        return client.get_page_content(page_id, page_size=args.get("page_size", 100))
-    if name == "notion_get_database":
-        database_id = args.get("database_id")
-        if not database_id:
-            raise ValueError(t("notion.database_id_required"))
-        return client.get_database(database_id)
-    if name == "notion_query":
-        database_id = args.get("database_id")
-        if not database_id:
-            raise ValueError(t("notion.database_id_required"))
-        return client.query_database(
-            database_id,
-            filter=args.get("filter"),
-            sorts=args.get("sorts"),
-            page_size=args.get("page_size", 10),
-            start_cursor=args.get("start_cursor"),
-        )
-    if name == "notion_create_page":
-        parent_page_id = args.get("parent_page_id")
-        parent_database_id = args.get("parent_database_id")
-        if not parent_page_id and not parent_database_id:
-            raise ValueError(t("notion.parent_required"))
-        parent = (
-            {"type": "page_id", "page_id": parent_page_id}
-            if parent_page_id
-            else {"type": "database_id", "database_id": parent_database_id}
-        )
-        return client.create_page(
-            parent=parent,
-            properties=args.get("properties", {}),
-            children=args.get("children"),
-        )
-    if name == "notion_update_page":
-        page_id = args.get("page_id")
-        if not page_id:
-            raise ValueError(t("notion.page_id_required"))
-        return client.update_page(page_id, args.get("properties", {}))
-    if name == "notion_create_database":
-        parent_page_id = args.get("parent_page_id")
-        if not parent_page_id:
-            raise ValueError(t("notion.parent_page_id_required"))
-        return client.create_database(
-            parent_page_id=parent_page_id,
-            title=args.get("title", ""),
-            properties=args.get("properties", {}),
-        )
-    raise ValueError(t("notion.unknown_action", name=name))
+    handlers = {key: partial(handler, client=client) for key, handler in _DISPATCH_HANDLERS.items()}
+    return dispatch_by_table(
+        handlers,
+        name,
+        args,
+        unknown_error=lambda action: ValueError(t("notion.unknown_action", name=action)),
+    )
 
 
 if __name__ == "__main__":

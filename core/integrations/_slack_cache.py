@@ -13,7 +13,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from core.integrations._cache import BaseMessageCache
+from core.integrations._cache import BaseMessageCache, CacheTable
 from core.integrations._slack_client import JST
 from core.integrations._slack_markdown import format_slack_ts
 
@@ -67,6 +67,42 @@ CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(channel_id, thread_ts);
 """
 
+_SLACK_CHANNELS_TABLE = CacheTable(
+    name="channels",
+    columns=("channel_id", "name", "type", "is_member", "updated_at"),
+    primary_key=("channel_id",),
+)
+_SLACK_USERS_TABLE = CacheTable(
+    name="users",
+    columns=("user_id", "name", "real_name", "is_bot", "updated_at"),
+    primary_key=("user_id",),
+)
+_SLACK_MESSAGES_TABLE = CacheTable(
+    name="messages",
+    columns=(
+        "channel_id",
+        "ts",
+        "user_id",
+        "user_name",
+        "text",
+        "thread_ts",
+        "reply_count",
+        "ts_epoch",
+        "send_time_jst",
+    ),
+    primary_key=("channel_id", "ts"),
+    search_column="m.text",
+    scope_column="m.channel_id",
+    order_by="m.ts_epoch",
+    from_clause="messages m LEFT JOIN channels c ON m.channel_id = c.channel_id",
+    select_columns="m.*, c.name as channel_name",
+)
+_SLACK_SYNC_STATE_TABLE = CacheTable(
+    name="sync_state",
+    columns=("channel_id", "last_synced", "oldest_ts", "newest_ts"),
+    primary_key=("channel_id",),
+)
+
 
 class MessageCache(BaseMessageCache):
     """SQLite-backed cache for Slack messages, enabling offline search and
@@ -102,13 +138,18 @@ class MessageCache(BaseMessageCache):
         if ch_type in ("im", "mpim"):
             is_member = 1
 
-        self.conn.execute(
-            """INSERT OR REPLACE INTO channels
-               (channel_id, name, type, is_member, updated_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (channel_id, name, ch_type, is_member, datetime.now(JST).isoformat()),
+        self.upsert_records(
+            _SLACK_CHANNELS_TABLE,
+            [
+                {
+                    "channel_id": channel_id,
+                    "name": name,
+                    "type": ch_type,
+                    "is_member": is_member,
+                    "updated_at": datetime.now(JST).isoformat(),
+                }
+            ],
         )
-        self.conn.commit()
 
     def upsert_user(self, user: dict):
         """Save/update user info."""
@@ -119,45 +160,52 @@ class MessageCache(BaseMessageCache):
         real_name = user.get("real_name", "")
         is_bot = 1 if user.get("is_bot", False) else 0
 
-        self.conn.execute(
-            """INSERT OR REPLACE INTO users
-               (user_id, name, real_name, is_bot, updated_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (user_id, display_name, real_name, is_bot, datetime.now(JST).isoformat()),
+        self.upsert_records(
+            _SLACK_USERS_TABLE,
+            [
+                {
+                    "user_id": user_id,
+                    "name": display_name,
+                    "real_name": real_name,
+                    "is_bot": is_bot,
+                    "updated_at": datetime.now(JST).isoformat(),
+                }
+            ],
         )
-        self.conn.commit()
 
     def upsert_messages(self, channel_id: str, messages: list[dict]):
         """Save/update messages to DB."""
-        for m in messages:
-            ts = m.get("ts", "")
-            user_id = m.get("user", m.get("bot_id", ""))
-            user_name = m.get("user_name", "")
-            # Resolve user_name from users table if empty
-            if not user_name and user_id:
-                row = self.conn.execute(
-                    "SELECT name FROM users WHERE user_id = ?",
-                    (user_id,),
-                ).fetchone()
-                if row:
-                    user_name = row["name"]
-            text = m.get("text", "")
-            thread_ts = m.get("thread_ts", "")
-            reply_count = m.get("reply_count", 0)
-            try:
-                ts_epoch = float(ts)
-            except (ValueError, TypeError):
-                ts_epoch = 0.0
-            send_time_jst = format_slack_ts(ts)
 
-            self.conn.execute(
-                """INSERT OR REPLACE INTO messages
-                   (channel_id, ts, user_id, user_name, text, thread_ts,
-                    reply_count, ts_epoch, send_time_jst)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (channel_id, ts, user_id, user_name, text, thread_ts, reply_count, ts_epoch, send_time_jst),
-            )
-        self.conn.commit()
+        def _records():
+            for message in messages:
+                ts = message.get("ts", "")
+                user_id = message.get("user", message.get("bot_id", ""))
+                user_name = message.get("user_name", "")
+                # Resolve user_name from users table if empty
+                if not user_name and user_id:
+                    row = self.conn.execute(
+                        "SELECT name FROM users WHERE user_id = ?",
+                        (user_id,),
+                    ).fetchone()
+                    if row:
+                        user_name = row["name"]
+                try:
+                    ts_epoch = float(ts)
+                except (ValueError, TypeError):
+                    ts_epoch = 0.0
+                yield {
+                    "channel_id": channel_id,
+                    "ts": ts,
+                    "user_id": user_id,
+                    "user_name": user_name,
+                    "text": message.get("text", ""),
+                    "thread_ts": message.get("thread_ts", ""),
+                    "reply_count": message.get("reply_count", 0),
+                    "ts_epoch": ts_epoch,
+                    "send_time_jst": format_slack_ts(ts),
+                }
+
+        self.upsert_records(_SLACK_MESSAGES_TABLE, _records())
 
     def update_sync_state(self, channel_id: str):
         """Update sync state with oldest/newest timestamps."""
@@ -169,13 +217,17 @@ class MessageCache(BaseMessageCache):
         oldest_ts = row["oldest"] if row else None
         newest_ts = row["newest"] if row else None
 
-        self.conn.execute(
-            """INSERT OR REPLACE INTO sync_state
-               (channel_id, last_synced, oldest_ts, newest_ts)
-               VALUES (?, ?, ?, ?)""",
-            (channel_id, datetime.now(JST).isoformat(), oldest_ts, newest_ts),
+        self.upsert_records(
+            _SLACK_SYNC_STATE_TABLE,
+            [
+                {
+                    "channel_id": channel_id,
+                    "last_synced": datetime.now(JST).isoformat(),
+                    "oldest_ts": oldest_ts,
+                    "newest_ts": newest_ts,
+                }
+            ],
         )
-        self.conn.commit()
 
     def search(
         self,
@@ -184,32 +236,16 @@ class MessageCache(BaseMessageCache):
         limit: int = 50,
     ) -> list[dict]:
         """Search cached messages by keyword."""
-        query = """
-            SELECT m.*, c.name as channel_name
-            FROM messages m
-            LEFT JOIN channels c ON m.channel_id = c.channel_id
-            WHERE m.text LIKE ?
-        """
-        params: list = [f"%{keyword}%"]
-        if channel_id:
-            query += " AND m.channel_id = ?"
-            params.append(channel_id)
-        query += " ORDER BY m.ts_epoch DESC LIMIT ?"
-        params.append(limit)
-        rows = self.conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+        return self.search_records(
+            _SLACK_MESSAGES_TABLE,
+            keyword,
+            scope_value=channel_id,
+            limit=limit,
+        )
 
     def get_recent(self, channel_id: str, limit: int = 20) -> list[dict]:
         """Get the most recent messages from a channel."""
-        rows = self.conn.execute(
-            """SELECT m.*, c.name as channel_name
-               FROM messages m
-               LEFT JOIN channels c ON m.channel_id = c.channel_id
-               WHERE m.channel_id = ?
-               ORDER BY m.ts_epoch DESC LIMIT ?""",
-            (channel_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return self.get_recent_records(_SLACK_MESSAGES_TABLE, channel_id, limit=limit)
 
     def find_mentions(
         self,

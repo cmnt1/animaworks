@@ -19,7 +19,8 @@ import subprocess
 import sys
 from typing import Any
 
-from core.integrations._base import logger
+from core.integrations._base import dispatch_by_table, logger
+from core.integrations._comm_cli import cli_main_safely
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -285,6 +286,7 @@ animaworks-tool github create-pr --title "タイトル" --body "本文" --head �
 ```"""
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI for GitHub operations.
 
@@ -362,38 +364,54 @@ def cli_main(argv: list[str] | None = None) -> None:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_list_issues(args: dict[str, Any]) -> Any:
+    client = GitHubClient(repo=args.get("repo"))
+    return client.list_issues(
+        state=args.get("state", "open"),
+        labels=args.get("labels"),
+        limit=args.get("limit", 20),
+    )
+
+
+def _dispatch_create_issue(args: dict[str, Any]) -> Any:
+    client = GitHubClient(repo=args.get("repo"))
+    return client.create_issue(
+        title=args["title"],
+        body=args.get("body", ""),
+        labels=args.get("labels"),
+    )
+
+
+def _dispatch_list_prs(args: dict[str, Any]) -> Any:
+    client = GitHubClient(repo=args.get("repo"))
+    return client.list_prs(
+        state=args.get("state", "open"),
+        limit=args.get("limit", 20),
+    )
+
+
+def _dispatch_create_pr(args: dict[str, Any]) -> Any:
+    client = GitHubClient(repo=args.get("repo"))
+    return client.create_pr(
+        title=args["title"],
+        body=args.get("body", ""),
+        head=args["head"],
+        base=args.get("base", "main"),
+        draft=args.get("draft", False),
+    )
+
+
+_DISPATCH_HANDLERS = {
+    "github_list_issues": _dispatch_list_issues,
+    "github_create_issue": _dispatch_create_issue,
+    "github_list_prs": _dispatch_list_prs,
+    "github_create_pr": _dispatch_create_pr,
+}
+
+
 def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call to the appropriate handler."""
-    if tool_name == "github_list_issues":
-        client = GitHubClient(repo=args.get("repo"))
-        return client.list_issues(
-            state=args.get("state", "open"),
-            labels=args.get("labels"),
-            limit=args.get("limit", 20),
-        )
-    if tool_name == "github_create_issue":
-        client = GitHubClient(repo=args.get("repo"))
-        return client.create_issue(
-            title=args["title"],
-            body=args.get("body", ""),
-            labels=args.get("labels"),
-        )
-    if tool_name == "github_list_prs":
-        client = GitHubClient(repo=args.get("repo"))
-        return client.list_prs(
-            state=args.get("state", "open"),
-            limit=args.get("limit", 20),
-        )
-    if tool_name == "github_create_pr":
-        client = GitHubClient(repo=args.get("repo"))
-        return client.create_pr(
-            title=args["title"],
-            body=args.get("body", ""),
-            head=args["head"],
-            base=args.get("base", "main"),
-            draft=args.get("draft", False),
-        )
-    raise ValueError(f"Unknown tool: {tool_name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, tool_name, args)
 
 
 if __name__ == "__main__":

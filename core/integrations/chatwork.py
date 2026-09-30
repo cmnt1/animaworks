@@ -16,10 +16,11 @@ Provides:
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import Any
 
-from core.integrations._base import ToolConfigError
+from core.integrations._base import ToolConfigError, dispatch_by_table
 from core.integrations._chatwork_cache import (  # noqa: F401
     MessageCache,
     _format_timestamp,
@@ -91,101 +92,189 @@ def _sync_rooms(client: ChatworkClient, cache: MessageCache, sync_limit: int = 3
 # ── Dispatch ─────────────────────────────────────────────────
 
 
+def _dispatch_chatwork_send(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    check_write_allowed(as_identity, anima_dir=anima_dir)
+    room_id = client.resolve_room_id(args["room"])
+    message = md_to_chatwork(args["message"])
+    return client.post_message(room_id, message)
+
+
+def _dispatch_chatwork_upload(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    check_write_allowed(as_identity, anima_dir=anima_dir)
+    room_id = client.resolve_room_id(args["room"])
+    message = md_to_chatwork(args["message"]) if args.get("message") else None
+    return client.upload_file(room_id, Path(args["file"]).expanduser(), message)
+
+
+def _dispatch_chatwork_messages(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    room_id = client.resolve_room_id(args["room"])
+    cache = MessageCache(db_path=resolve_cache_db_path(client))
+    try:
+        messages = client.get_messages(room_id, force=True)
+        if messages:
+            cache.upsert_messages(room_id, messages)
+            cache.update_sync_state(room_id)
+        return cache.get_recent(room_id, limit=args.get("limit", 20))
+    finally:
+        cache.close()
+
+
+def _dispatch_chatwork_search(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    cache = MessageCache(db_path=resolve_cache_db_path(client))
+    try:
+        room_id = None
+        if args.get("room"):
+            room_id = client.resolve_room_id(args["room"])
+        return cache.search(
+            args["keyword"],
+            room_id=room_id,
+            limit=args.get("limit", 50),
+        )
+    finally:
+        cache.close()
+
+
+def _dispatch_chatwork_unreplied(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    cache = MessageCache(db_path=resolve_cache_db_path(client))
+    try:
+        my_info = client.me()
+        my_id = str(my_info["account_id"])
+        cli_config = _load_chatwork_tool_config()
+        return cache.find_unreplied(
+            my_id,
+            exclude_toall=not args.get("include_toall", False),
+            config=cli_config,
+        )
+    finally:
+        cache.close()
+
+
+def _dispatch_chatwork_delete(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    check_write_allowed(as_identity, anima_dir=anima_dir)
+    room_id = client.resolve_room_id(args["room"])
+    message_id = args["message_id"]
+    # Ownership check: only allow deleting own messages
+    my_info = client.me()
+    my_account_id = str(my_info["account_id"])
+    message = client.get_message(room_id, message_id)
+    message_account_id = str(message["account"]["account_id"])
+    if message_account_id != my_account_id:
+        raise ToolConfigError(
+            f"Cannot delete message {message_id}: it was posted by "
+            f"'{message['account']['name']}' (account_id={message_account_id}), "
+            f"not by you (account_id={my_account_id}). "
+            f"You can only delete your own messages."
+        )
+    client.delete_message(room_id, message_id)
+    return {"deleted": True, "message_id": message_id, "room_id": room_id}
+
+
+def _dispatch_chatwork_rooms(
+    _args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    return client.rooms()
+
+
+def _dispatch_chatwork_sync(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    cache = MessageCache(db_path=resolve_cache_db_path(client))
+    try:
+        return _sync_rooms(client, cache, sync_limit=args.get("limit", 30))
+    finally:
+        cache.close()
+
+
+def _dispatch_chatwork_mentions(
+    args: dict[str, Any],
+    *,
+    client: ChatworkClient,
+    as_identity: str | None,
+    anima_dir: str | None,
+) -> Any:
+    cache = MessageCache(db_path=resolve_cache_db_path(client))
+    try:
+        my_info = client.me()
+        my_id = str(my_info["account_id"])
+        cli_config = _load_chatwork_tool_config()
+        return cache.find_mentions(
+            my_id,
+            exclude_toall=not args.get("include_toall", False),
+            limit=args.get("limit", 200),
+            config=cli_config,
+        )
+    finally:
+        cache.close()
+
+
+_DISPATCH_HANDLERS = {
+    "chatwork_send": _dispatch_chatwork_send,
+    "chatwork_upload": _dispatch_chatwork_upload,
+    "chatwork_messages": _dispatch_chatwork_messages,
+    "chatwork_search": _dispatch_chatwork_search,
+    "chatwork_unreplied": _dispatch_chatwork_unreplied,
+    "chatwork_delete": _dispatch_chatwork_delete,
+    "chatwork_rooms": _dispatch_chatwork_rooms,
+    "chatwork_sync": _dispatch_chatwork_sync,
+    "chatwork_mentions": _dispatch_chatwork_mentions,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
     as_identity = args.get("as")
     anima_dir = args.get("anima_dir")
     identity = resolve_identity(as_identity, anima_dir=anima_dir)
     client = ChatworkClient(api_token=identity.token)
-
-    if name == "chatwork_send":
-        check_write_allowed(as_identity, anima_dir=anima_dir)
-        room_id = client.resolve_room_id(args["room"])
-        message = md_to_chatwork(args["message"])
-        return client.post_message(room_id, message)
-    if name == "chatwork_upload":
-        check_write_allowed(as_identity, anima_dir=anima_dir)
-        room_id = client.resolve_room_id(args["room"])
-        message = md_to_chatwork(args["message"]) if args.get("message") else None
-        return client.upload_file(room_id, Path(args["file"]).expanduser(), message)
-    if name == "chatwork_messages":
-        room_id = client.resolve_room_id(args["room"])
-        cache = MessageCache(db_path=resolve_cache_db_path(client))
-        try:
-            msgs = client.get_messages(room_id, force=True)
-            if msgs:
-                cache.upsert_messages(room_id, msgs)
-                cache.update_sync_state(room_id)
-            return cache.get_recent(room_id, limit=args.get("limit", 20))
-        finally:
-            cache.close()
-    if name == "chatwork_search":
-        cache = MessageCache(db_path=resolve_cache_db_path(client))
-        try:
-            room_id = None
-            if args.get("room"):
-                room_id = client.resolve_room_id(args["room"])
-            return cache.search(
-                args["keyword"],
-                room_id=room_id,
-                limit=args.get("limit", 50),
-            )
-        finally:
-            cache.close()
-    if name == "chatwork_unreplied":
-        cache = MessageCache(db_path=resolve_cache_db_path(client))
-        try:
-            my_info = client.me()
-            my_id = str(my_info["account_id"])
-            cli_config = _load_chatwork_tool_config()
-            return cache.find_unreplied(
-                my_id,
-                exclude_toall=not args.get("include_toall", False),
-                config=cli_config,
-            )
-        finally:
-            cache.close()
-    if name == "chatwork_delete":
-        check_write_allowed(as_identity, anima_dir=anima_dir)
-        room_id = client.resolve_room_id(args["room"])
-        message_id = args["message_id"]
-        # Ownership check: only allow deleting own messages
-        my_info = client.me()
-        my_account_id = str(my_info["account_id"])
-        msg = client.get_message(room_id, message_id)
-        msg_account_id = str(msg["account"]["account_id"])
-        if msg_account_id != my_account_id:
-            raise ToolConfigError(
-                f"Cannot delete message {message_id}: it was posted by "
-                f"'{msg['account']['name']}' (account_id={msg_account_id}), "
-                f"not by you (account_id={my_account_id}). "
-                f"You can only delete your own messages."
-            )
-        client.delete_message(room_id, message_id)
-        return {"deleted": True, "message_id": message_id, "room_id": room_id}
-    if name == "chatwork_rooms":
-        return client.rooms()
-    if name == "chatwork_sync":
-        cache = MessageCache(db_path=resolve_cache_db_path(client))
-        try:
-            return _sync_rooms(client, cache, sync_limit=args.get("limit", 30))
-        finally:
-            cache.close()
-    if name == "chatwork_mentions":
-        cache = MessageCache(db_path=resolve_cache_db_path(client))
-        try:
-            my_info = client.me()
-            my_id = str(my_info["account_id"])
-            cli_config = _load_chatwork_tool_config()
-            return cache.find_mentions(
-                my_id,
-                exclude_toall=not args.get("include_toall", False),
-                limit=args.get("limit", 200),
-                config=cli_config,
-            )
-        finally:
-            cache.close()
-    raise ValueError(f"Unknown tool: {name}")
+    handlers = {
+        key: partial(handler, client=client, as_identity=as_identity, anima_dir=anima_dir)
+        for key, handler in _DISPATCH_HANDLERS.items()
+    }
+    return dispatch_by_table(handlers, name, args)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ from typing import Any
 
 import httpx
 
-from core.integrations._base import logger
+from core.integrations._base import dispatch_by_table, logger
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._retry import retry_with_backoff
 
 # ── Execution Profile ─────────────────────────────────────
@@ -331,6 +332,7 @@ animaworks-tool local_llm status -j
 ```"""
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI for local LLM operations."""
     parser = argparse.ArgumentParser(
@@ -493,41 +495,57 @@ def cli_main(argv: list[str] | None = None) -> None:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_generate(args: dict[str, Any]) -> Any:
+    client = OllamaClient(
+        server=args.get("server", "auto"),
+        model=args.get("model"),
+        hint=args.get("hint"),
+    )
+    return client.generate(
+        prompt=args["prompt"],
+        system=args.get("system", ""),
+        temperature=args.get("temperature", 0.7),
+        max_tokens=args.get("max_tokens", 4096),
+        think=args.get("think", "off"),
+    )
+
+
+def _dispatch_chat(args: dict[str, Any]) -> Any:
+    client = OllamaClient(
+        server=args.get("server", "auto"),
+        model=args.get("model"),
+        hint=args.get("hint"),
+    )
+    return client.chat(
+        messages=args["messages"],
+        system=args.get("system", ""),
+        temperature=args.get("temperature", 0.7),
+        max_tokens=args.get("max_tokens", 4096),
+        think=args.get("think", "off"),
+    )
+
+
+def _dispatch_models(args: dict[str, Any]) -> Any:
+    client = OllamaClient(server=args.get("server", "auto"))
+    return client.list_models()
+
+
+def _dispatch_status(_args: dict[str, Any]) -> Any:
+    client = OllamaClient()
+    return client.server_status()
+
+
+_DISPATCH_HANDLERS = {
+    "local_llm_generate": _dispatch_generate,
+    "local_llm_chat": _dispatch_chat,
+    "local_llm_models": _dispatch_models,
+    "local_llm_status": _dispatch_status,
+}
+
+
 def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call to the appropriate handler."""
-    if tool_name == "local_llm_generate":
-        client = OllamaClient(
-            server=args.get("server", "auto"),
-            model=args.get("model"),
-            hint=args.get("hint"),
-        )
-        return client.generate(
-            prompt=args["prompt"],
-            system=args.get("system", ""),
-            temperature=args.get("temperature", 0.7),
-            max_tokens=args.get("max_tokens", 4096),
-            think=args.get("think", "off"),
-        )
-    if tool_name == "local_llm_chat":
-        client = OllamaClient(
-            server=args.get("server", "auto"),
-            model=args.get("model"),
-            hint=args.get("hint"),
-        )
-        return client.chat(
-            messages=args["messages"],
-            system=args.get("system", ""),
-            temperature=args.get("temperature", 0.7),
-            max_tokens=args.get("max_tokens", 4096),
-            think=args.get("think", "off"),
-        )
-    if tool_name == "local_llm_models":
-        client = OllamaClient(server=args.get("server", "auto"))
-        return client.list_models()
-    if tool_name == "local_llm_status":
-        client = OllamaClient()
-        return client.server_status()
-    raise ValueError(f"Unknown tool: {tool_name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, tool_name, args)
 
 
 if __name__ == "__main__":

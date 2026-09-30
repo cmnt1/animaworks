@@ -18,9 +18,12 @@ import argparse
 import json
 import sys
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any
 
+from core.integrations._base import dispatch_by_table, without_anima_dir
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._google_auth import GoogleOAuth
 
 # ── Execution Profile ─────────────────────────────────────
@@ -337,87 +340,106 @@ def get_tool_schemas() -> list[dict]:
 # ── Dispatch ──────────────────────────────────────────────
 
 
+def _dispatch_calendar_list(args: dict[str, Any], *, client: GoogleCalendarClient) -> Any:
+    return client.list_events(
+        max_results=args.get("max_results", 20),
+        days=args.get("days", 7),
+        calendar_id=args.get("calendar_id", "primary"),
+    )
+
+
+def _dispatch_calendar_add(args: dict[str, Any], *, client: GoogleCalendarClient) -> Any:
+    summary = args.get("summary", "")
+    start = args.get("start", "")
+    end = args.get("end", "")
+    if not summary or not start or not end:
+        return {"error": "summary, start, and end are required"}
+    raw_attendees = args.get("attendees")
+    if isinstance(raw_attendees, str):
+        raw_attendees = [raw_attendees]
+    elif not isinstance(raw_attendees, list):
+        raw_attendees = None
+    return client.add_event(
+        summary=summary,
+        start=start,
+        end=end,
+        description=args.get("description", ""),
+        location=args.get("location", ""),
+        calendar_id=args.get("calendar_id", "primary"),
+        attendees=raw_attendees,
+    )
+
+
+def _dispatch_calendar_get(args: dict[str, Any], *, client: GoogleCalendarClient) -> Any:
+    event_id = args.get("event_id", "")
+    if not event_id:
+        return {"error": "event_id is required"}
+    return client.get_event(
+        event_id=event_id,
+        calendar_id=args.get("calendar_id", "primary"),
+    )
+
+
+def _dispatch_calendar_update(args: dict[str, Any], *, client: GoogleCalendarClient) -> Any:
+    event_id = args.get("event_id", "")
+    if not event_id:
+        return {"error": "event_id is required"}
+    try:
+        return client.update_event(
+            event_id=event_id,
+            calendar_id=args.get("calendar_id", "primary"),
+            summary=args.get("summary"),
+            start=args.get("start"),
+            end=args.get("end"),
+            description=args.get("description"),
+            location=args.get("location"),
+            send_updates=args.get("send_updates", "none"),
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+def _dispatch_calendar_delete(args: dict[str, Any], *, client: GoogleCalendarClient) -> Any:
+    event_id = args.get("event_id", "")
+    if not event_id:
+        return {"error": "event_id is required"}
+    if not args.get("confirm"):
+        return {"error": "delete requires confirm=true"}
+    try:
+        return client.delete_event(
+            event_id=event_id,
+            calendar_id=args.get("calendar_id", "primary"),
+            send_updates=args.get("send_updates", "none"),
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+_DISPATCH_HANDLERS = {
+    "google_calendar_list": _dispatch_calendar_list,
+    "google_calendar_add": _dispatch_calendar_add,
+    "google_calendar_get": _dispatch_calendar_get,
+    "google_calendar_update": _dispatch_calendar_update,
+    "google_calendar_delete": _dispatch_calendar_delete,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
-    _args = {k: v for k, v in args.items() if k != "anima_dir"}
     client = GoogleCalendarClient()
-
-    if name == "google_calendar_list":
-        return client.list_events(
-            max_results=_args.get("max_results", 20),
-            days=_args.get("days", 7),
-            calendar_id=_args.get("calendar_id", "primary"),
-        )
-
-    if name == "google_calendar_add":
-        summary = _args.get("summary", "")
-        start = _args.get("start", "")
-        end = _args.get("end", "")
-        if not summary or not start or not end:
-            return {"error": "summary, start, and end are required"}
-        raw_attendees = _args.get("attendees")
-        if isinstance(raw_attendees, str):
-            raw_attendees = [raw_attendees]
-        elif not isinstance(raw_attendees, list):
-            raw_attendees = None
-        return client.add_event(
-            summary=summary,
-            start=start,
-            end=end,
-            description=_args.get("description", ""),
-            location=_args.get("location", ""),
-            calendar_id=_args.get("calendar_id", "primary"),
-            attendees=raw_attendees,
-        )
-
-    if name == "google_calendar_get":
-        event_id = _args.get("event_id", "")
-        if not event_id:
-            return {"error": "event_id is required"}
-        return client.get_event(
-            event_id=event_id,
-            calendar_id=_args.get("calendar_id", "primary"),
-        )
-
-    if name == "google_calendar_update":
-        event_id = _args.get("event_id", "")
-        if not event_id:
-            return {"error": "event_id is required"}
-        try:
-            return client.update_event(
-                event_id=event_id,
-                calendar_id=_args.get("calendar_id", "primary"),
-                summary=_args.get("summary"),
-                start=_args.get("start"),
-                end=_args.get("end"),
-                description=_args.get("description"),
-                location=_args.get("location"),
-                send_updates=_args.get("send_updates", "none"),
-            )
-        except ValueError as e:
-            return {"error": str(e)}
-
-    if name == "google_calendar_delete":
-        event_id = _args.get("event_id", "")
-        if not event_id:
-            return {"error": "event_id is required"}
-        if not _args.get("confirm"):
-            return {"error": "delete requires confirm=true"}
-        try:
-            return client.delete_event(
-                event_id=event_id,
-                calendar_id=_args.get("calendar_id", "primary"),
-                send_updates=_args.get("send_updates", "none"),
-            )
-        except ValueError as e:
-            return {"error": str(e)}
-
-    return {"error": f"Unknown action: {name}"}
+    handlers = {key: partial(handler, client=client) for key, handler in _DISPATCH_HANDLERS.items()}
+    return dispatch_by_table(
+        handlers,
+        name,
+        without_anima_dir(args),
+        unknown_result=lambda action: {"error": f"Unknown action: {action}"},
+    )
 
 
 # ── CLI ───────────────────────────────────────────────────
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """CLI entry point for the Google Calendar tool."""
     parser = argparse.ArgumentParser(

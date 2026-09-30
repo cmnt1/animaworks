@@ -19,6 +19,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from core.integrations._base import dispatch_by_table
+
 # Re-exports for backward compatibility
 from core.integrations._slack_cache import MessageCache  # noqa: F401
 from core.integrations._slack_cli import cli_main, get_cli_guide  # noqa: F401
@@ -137,94 +139,122 @@ def get_tool_schemas() -> list[dict]:
 # ── Dispatch ───────────────────────────────────────────────
 
 
+def _dispatch_slack_send(args: dict[str, Any]) -> Any:
+    client = SlackClient(token=_resolve_slack_token(args))
+    channel_id = client.resolve_channel(args["channel"])
+    username, icon_url = _resolve_slack_identity(args)
+    return client.post_message(
+        channel_id,
+        md_to_slack_mrkdwn(args["message"]),
+        thread_ts=args.get("thread_ts"),
+        username=username,
+        icon_url=icon_url,
+    )
+
+
+def _dispatch_slack_messages(args: dict[str, Any]) -> Any:
+    from core.integrations._slack_cache import MessageCache  # noqa: F811
+
+    client = SlackClient(token=_resolve_slack_token(args))
+    channel_id = client.resolve_channel(args["channel"])
+    cache = MessageCache()
+    try:
+        limit = args.get("limit", 20)
+        messages = client.channel_history(channel_id, limit=limit)
+        if messages:
+            for message in messages:
+                user_id = message.get("user", message.get("bot_id", ""))
+                if user_id:
+                    message["user_name"] = client.resolve_user_name(user_id)
+            cache.upsert_messages(channel_id, messages)
+            cache.update_sync_state(channel_id)
+        return cache.get_recent(channel_id, limit=limit)
+    finally:
+        cache.close()
+
+
+def _dispatch_slack_search(args: dict[str, Any]) -> Any:
+    from core.integrations._slack_cache import MessageCache  # noqa: F811
+
+    client = SlackClient(token=_resolve_slack_token(args))
+    cache = MessageCache()
+    try:
+        channel_id = None
+        if args.get("channel"):
+            channel_id = client.resolve_channel(args["channel"])
+        return cache.search(
+            args["keyword"],
+            channel_id=channel_id,
+            limit=args.get("limit", 50),
+        )
+    finally:
+        cache.close()
+
+
+def _dispatch_slack_unreplied(args: dict[str, Any]) -> Any:
+    from core.integrations._slack_cache import MessageCache  # noqa: F811
+
+    client = SlackClient(token=_resolve_slack_token(args))
+    cache = MessageCache()
+    try:
+        client.auth_test()
+        return cache.find_unreplied(client.my_user_id or "")
+    finally:
+        cache.close()
+
+
+def _dispatch_slack_channels(args: dict[str, Any]) -> Any:
+    client = SlackClient(token=_resolve_slack_token(args))
+    return client.channels()
+
+
+def _dispatch_slack_react(args: dict[str, Any]) -> Any:
+    client = SlackClient(token=_resolve_slack_token(args))
+    channel_id = client.resolve_channel(args["channel"])
+    return client.add_reaction(
+        channel_id,
+        args["emoji"],
+        args["message_ts"],
+    )
+
+
+def _dispatch_slack_channel_post(args: dict[str, Any]) -> Any:
+    client = SlackClient(token=_resolve_slack_token(args))
+    slack_text = md_to_slack_mrkdwn(args["text"])
+    username, icon_url = _resolve_slack_identity(args)
+    response = client.post_message(
+        args["channel_id"],
+        slack_text,
+        thread_ts=args.get("thread_ts"),
+        username=username,
+        icon_url=icon_url,
+    )
+    timestamp = response.get("ts", "") if response is not None else ""
+    return {"status": "ok", "channel": args["channel_id"], "ts": timestamp}
+
+
+def _dispatch_slack_channel_update(args: dict[str, Any]) -> Any:
+    client = SlackClient(token=_resolve_slack_token(args))
+    slack_text = md_to_slack_mrkdwn(args["text"])
+    client.update_message(args["channel_id"], args["ts"], slack_text)
+    return {"status": "ok", "channel": args["channel_id"], "ts": args["ts"]}
+
+
+_DISPATCH_HANDLERS = {
+    "slack_send": _dispatch_slack_send,
+    "slack_messages": _dispatch_slack_messages,
+    "slack_search": _dispatch_slack_search,
+    "slack_unreplied": _dispatch_slack_unreplied,
+    "slack_channels": _dispatch_slack_channels,
+    "slack_react": _dispatch_slack_react,
+    "slack_channel_post": _dispatch_slack_channel_post,
+    "slack_channel_update": _dispatch_slack_channel_update,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
-    if name == "slack_send":
-        client = SlackClient(token=_resolve_slack_token(args))
-        channel_id = client.resolve_channel(args["channel"])
-        username, icon_url = _resolve_slack_identity(args)
-        return client.post_message(
-            channel_id,
-            md_to_slack_mrkdwn(args["message"]),
-            thread_ts=args.get("thread_ts"),
-            username=username,
-            icon_url=icon_url,
-        )
-    if name == "slack_messages":
-        from core.integrations._slack_cache import MessageCache
-
-        client = SlackClient(token=_resolve_slack_token(args))
-        channel_id = client.resolve_channel(args["channel"])
-        cache = MessageCache()
-        try:
-            limit = args.get("limit", 20)
-            msgs = client.channel_history(channel_id, limit=limit)
-            if msgs:
-                for m in msgs:
-                    uid = m.get("user", m.get("bot_id", ""))
-                    if uid:
-                        m["user_name"] = client.resolve_user_name(uid)
-                cache.upsert_messages(channel_id, msgs)
-                cache.update_sync_state(channel_id)
-            return cache.get_recent(channel_id, limit=limit)
-        finally:
-            cache.close()
-    if name == "slack_search":
-        from core.integrations._slack_cache import MessageCache
-
-        client = SlackClient(token=_resolve_slack_token(args))
-        cache = MessageCache()
-        try:
-            channel_id = None
-            if args.get("channel"):
-                channel_id = client.resolve_channel(args["channel"])
-            return cache.search(
-                args["keyword"],
-                channel_id=channel_id,
-                limit=args.get("limit", 50),
-            )
-        finally:
-            cache.close()
-    if name == "slack_unreplied":
-        from core.integrations._slack_cache import MessageCache
-
-        client = SlackClient(token=_resolve_slack_token(args))
-        cache = MessageCache()
-        try:
-            client.auth_test()
-            return cache.find_unreplied(client.my_user_id or "")
-        finally:
-            cache.close()
-    if name == "slack_channels":
-        client = SlackClient(token=_resolve_slack_token(args))
-        return client.channels()
-    if name == "slack_react":
-        client = SlackClient(token=_resolve_slack_token(args))
-        channel_id = client.resolve_channel(args["channel"])
-        return client.add_reaction(
-            channel_id,
-            args["emoji"],
-            args["message_ts"],
-        )
-    if name == "slack_channel_post":
-        client = SlackClient(token=_resolve_slack_token(args))
-        slack_text = md_to_slack_mrkdwn(args["text"])
-        username, icon_url = _resolve_slack_identity(args)
-        resp = client.post_message(
-            args["channel_id"],
-            slack_text,
-            thread_ts=args.get("thread_ts"),
-            username=username,
-            icon_url=icon_url,
-        )
-        ts = resp.get("ts", "") if resp is not None else ""
-        return {"status": "ok", "channel": args["channel_id"], "ts": ts}
-    if name == "slack_channel_update":
-        client = SlackClient(token=_resolve_slack_token(args))
-        slack_text = md_to_slack_mrkdwn(args["text"])
-        client.update_message(args["channel_id"], args["ts"], slack_text)
-        return {"status": "ok", "channel": args["channel_id"], "ts": args["ts"]}
-    raise ValueError(f"Unknown tool: {name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, name, args)
 
 
 if __name__ == "__main__":

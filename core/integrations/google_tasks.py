@@ -16,9 +16,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from functools import partial
 from pathlib import Path
 from typing import Any
 
+from core.integrations._base import dispatch_by_table, without_anima_dir
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._google_auth import GoogleOAuth
 
 # ── Execution Profile ─────────────────────────────────────
@@ -225,72 +228,93 @@ def get_tool_schemas() -> list[dict]:
 # ── Dispatch ──────────────────────────────────────────────
 
 
+def _dispatch_list_tasklists(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    return client.list_tasklists(max_results=int(args.get("max_results", 50)))
+
+
+def _dispatch_list_tasks(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    if not tasklist_id:
+        return {"error": "tasklist_id is required"}
+    return client.list_tasks(
+        tasklist_id=tasklist_id,
+        max_results=int(args.get("max_results", 50)),
+        show_completed=args.get("show_completed", True),
+    )
+
+
+def _dispatch_insert_task(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    title = args.get("title", "")
+    if not tasklist_id or not title:
+        return {"error": "tasklist_id and title are required"}
+    return client.insert_task(
+        tasklist_id=tasklist_id,
+        title=title,
+        notes=args.get("notes", ""),
+        due=args.get("due") or None,
+    )
+
+
+def _dispatch_insert_tasklist(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    title = args.get("title", "")
+    if not title:
+        return {"error": "title is required"}
+    return client.insert_tasklist(title=title)
+
+
+def _dispatch_update_task(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    task_id = args.get("task_id", "")
+    if not tasklist_id or not task_id:
+        return {"error": "tasklist_id and task_id are required"}
+    try:
+        return client.update_task(
+            tasklist_id=tasklist_id,
+            task_id=task_id,
+            title=args.get("title") or None,
+            notes=args.get("notes") if "notes" in args else None,
+            due=args.get("due") if "due" in args else None,
+            status=args.get("status") if "status" in args else None,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+def _dispatch_update_tasklist(args: dict[str, Any], *, client: GoogleTasksClient) -> Any:
+    tasklist_id = args.get("tasklist_id", "")
+    title = args.get("title", "")
+    if not tasklist_id or not title:
+        return {"error": "tasklist_id and title are required"}
+    return client.update_tasklist(tasklist_id=tasklist_id, title=title)
+
+
+_DISPATCH_HANDLERS = {
+    "google_tasks_list_tasklists": _dispatch_list_tasklists,
+    "google_tasks_list_tasks": _dispatch_list_tasks,
+    "google_tasks_insert_task": _dispatch_insert_task,
+    "google_tasks_insert_tasklist": _dispatch_insert_tasklist,
+    "google_tasks_update_task": _dispatch_update_task,
+    "google_tasks_update_tasklist": _dispatch_update_tasklist,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
-    _args = {k: v for k, v in args.items() if k != "anima_dir"}
     client = GoogleTasksClient()
-
-    if name == "google_tasks_list_tasklists":
-        return client.list_tasklists(max_results=int(_args.get("max_results", 50)))
-
-    if name == "google_tasks_list_tasks":
-        tasklist_id = _args.get("tasklist_id", "")
-        if not tasklist_id:
-            return {"error": "tasklist_id is required"}
-        return client.list_tasks(
-            tasklist_id=tasklist_id,
-            max_results=int(_args.get("max_results", 50)),
-            show_completed=_args.get("show_completed", True),
-        )
-
-    if name == "google_tasks_insert_task":
-        tasklist_id = _args.get("tasklist_id", "")
-        title = _args.get("title", "")
-        if not tasklist_id or not title:
-            return {"error": "tasklist_id and title are required"}
-        return client.insert_task(
-            tasklist_id=tasklist_id,
-            title=title,
-            notes=_args.get("notes", ""),
-            due=_args.get("due") or None,
-        )
-
-    if name == "google_tasks_insert_tasklist":
-        title = _args.get("title", "")
-        if not title:
-            return {"error": "title is required"}
-        return client.insert_tasklist(title=title)
-
-    if name == "google_tasks_update_task":
-        tasklist_id = _args.get("tasklist_id", "")
-        task_id = _args.get("task_id", "")
-        if not tasklist_id or not task_id:
-            return {"error": "tasklist_id and task_id are required"}
-        try:
-            return client.update_task(
-                tasklist_id=tasklist_id,
-                task_id=task_id,
-                title=_args.get("title") or None,
-                notes=_args.get("notes") if "notes" in _args else None,
-                due=_args.get("due") if "due" in _args else None,
-                status=_args.get("status") if "status" in _args else None,
-            )
-        except ValueError as e:
-            return {"error": str(e)}
-
-    if name == "google_tasks_update_tasklist":
-        tasklist_id = _args.get("tasklist_id", "")
-        title = _args.get("title", "")
-        if not tasklist_id or not title:
-            return {"error": "tasklist_id and title are required"}
-        return client.update_tasklist(tasklist_id=tasklist_id, title=title)
-
-    return {"error": f"Unknown action: {name}"}
+    handlers = {key: partial(handler, client=client) for key, handler in _DISPATCH_HANDLERS.items()}
+    return dispatch_by_table(
+        handlers,
+        name,
+        without_anima_dir(args),
+        unknown_result=lambda action: {"error": f"Unknown action: {action}"},
+    )
 
 
 # ── CLI ───────────────────────────────────────────────────
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """CLI entry point for the Google Tasks tool."""
     parser = argparse.ArgumentParser(

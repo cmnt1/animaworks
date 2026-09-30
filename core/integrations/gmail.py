@@ -27,10 +27,13 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.parser import BytesParser
 from email.utils import parseaddr
+from functools import partial
 from html import escape
 from pathlib import Path
 from typing import Any, cast
 
+from core.integrations._base import dispatch_by_table
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._google_auth import GoogleOAuth
 
 try:
@@ -894,6 +897,7 @@ def _print_emails(emails: list[Email], label: str) -> None:
         print()
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI for Gmail operations."""
     parser = argparse.ArgumentParser(
@@ -1124,89 +1128,126 @@ def cli_main(argv: list[str] | None = None) -> None:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_gmail_unread(args: dict[str, Any], *, client: GmailClient) -> Any:
+    emails = client.get_unread_emails(max_results=args.get("max_results", 20))
+    return [email.to_dict() for email in emails]
+
+
+def _dispatch_gmail_inbox(args: dict[str, Any], *, client: GmailClient) -> Any:
+    emails = client.get_inbox_emails(max_results=args.get("max_results", 20))
+    return [email.to_dict() for email in emails]
+
+
+def _dispatch_gmail_sent(args: dict[str, Any], *, client: GmailClient) -> Any:
+    emails = client.get_sent_emails(max_results=args.get("max_results", 20))
+    return [email.to_dict() for email in emails]
+
+
+def _dispatch_gmail_search(args: dict[str, Any], *, client: GmailClient) -> Any:
+    emails = client.search_emails(
+        query=args["query"],
+        max_results=args.get("max_results", 20),
+    )
+    return [email.to_dict() for email in emails]
+
+
+def _dispatch_gmail_read_body(args: dict[str, Any], *, client: GmailClient) -> Any:
+    return client.get_email_body(args["message_id"])
+
+
+def _dispatch_gmail_download(args: dict[str, Any], *, client: GmailClient) -> Any:
+    save_dir = Path(args.get("save_dir", "/tmp/gmail_attachments"))
+    results = client.get_attachments(args["message_id"], save_dir)
+    return {
+        "count": len(results),
+        "attachments": [{"filename": filename, "path": str(save_path)} for filename, save_path in results],
+    }
+
+
+def _dispatch_gmail_draft(args: dict[str, Any], *, client: GmailClient) -> Any:
+    raw_attachments = args.get("attachments")
+    if isinstance(raw_attachments, str):
+        raw_attachments = json.loads(raw_attachments)
+    attach_paths = [Path(path) for path in raw_attachments] if raw_attachments else None
+    result = client.create_draft(
+        to=args["to"],
+        subject=args["subject"],
+        body=args["body"],
+        thread_id=args.get("thread_id"),
+        in_reply_to=args.get("in_reply_to"),
+        attachments=attach_paths,
+    )
+    return {"success": result.success, "draft_id": result.draft_id, "error": result.error}
+
+
+def _dispatch_gmail_drafts(args: dict[str, Any], *, client: GmailClient) -> Any:
+    drafts = client.list_drafts(max_results=args.get("max_results", 20))
+    return [draft.to_dict() for draft in drafts]
+
+
+def _dispatch_gmail_draft_get(args: dict[str, Any], *, client: GmailClient) -> Any:
+    draft = client.get_draft(args["draft_id"])
+    return draft.to_dict() if draft else None
+
+
+def _dispatch_gmail_draft_update(args: dict[str, Any], *, client: GmailClient) -> Any:
+    raw_attachments = args.get("attachments")
+    if isinstance(raw_attachments, str):
+        raw_attachments = json.loads(raw_attachments)
+    attach_paths = [Path(path) for path in raw_attachments] if raw_attachments else None
+    result = client.update_draft(
+        draft_id=args["draft_id"],
+        to=args.get("to"),
+        subject=args.get("subject"),
+        body=args.get("body"),
+        thread_id=args.get("thread_id"),
+        in_reply_to=args.get("in_reply_to"),
+        attachments=attach_paths,
+    )
+    return {"success": result.success, "draft_id": result.draft_id, "error": result.error}
+
+
+def _dispatch_gmail_send(args: dict[str, Any], *, client: GmailClient) -> Any:
+    raw_attachments = args.get("attachments")
+    if isinstance(raw_attachments, str):
+        raw_attachments = json.loads(raw_attachments)
+    attach_paths = [Path(path) for path in raw_attachments] if raw_attachments else None
+    result = client.send_message(
+        to=args["to"],
+        subject=args["subject"],
+        body=args["body"],
+        thread_id=args.get("thread_id"),
+        in_reply_to=args.get("in_reply_to"),
+        attachments=attach_paths,
+    )
+    return {
+        "success": result.success,
+        "message_id": result.message_id,
+        "thread_id": result.thread_id,
+        "error": result.error,
+    }
+
+
+_DISPATCH_HANDLERS = {
+    "gmail_unread": _dispatch_gmail_unread,
+    "gmail_inbox": _dispatch_gmail_inbox,
+    "gmail_sent": _dispatch_gmail_sent,
+    "gmail_search": _dispatch_gmail_search,
+    "gmail_read_body": _dispatch_gmail_read_body,
+    "gmail_download": _dispatch_gmail_download,
+    "gmail_draft": _dispatch_gmail_draft,
+    "gmail_drafts": _dispatch_gmail_drafts,
+    "gmail_draft_get": _dispatch_gmail_draft_get,
+    "gmail_draft_update": _dispatch_gmail_draft_update,
+    "gmail_send": _dispatch_gmail_send,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
     client = GmailClient()
-
-    if name == "gmail_unread":
-        emails = client.get_unread_emails(max_results=args.get("max_results", 20))
-        return [e.to_dict() for e in emails]
-    if name == "gmail_inbox":
-        emails = client.get_inbox_emails(max_results=args.get("max_results", 20))
-        return [e.to_dict() for e in emails]
-    if name == "gmail_sent":
-        emails = client.get_sent_emails(max_results=args.get("max_results", 20))
-        return [e.to_dict() for e in emails]
-    if name == "gmail_search":
-        emails = client.search_emails(
-            query=args["query"],
-            max_results=args.get("max_results", 20),
-        )
-        return [e.to_dict() for e in emails]
-    if name == "gmail_read_body":
-        return client.get_email_body(args["message_id"])
-    if name == "gmail_download":
-        save_dir = Path(args.get("save_dir", "/tmp/gmail_attachments"))
-        results = client.get_attachments(args["message_id"], save_dir)
-        return {
-            "count": len(results),
-            "attachments": [{"filename": filename, "path": str(save_path)} for filename, save_path in results],
-        }
-    if name == "gmail_draft":
-        raw_attachments = args.get("attachments")
-        if isinstance(raw_attachments, str):
-            raw_attachments = json.loads(raw_attachments)
-        attach_paths = [Path(p) for p in raw_attachments] if raw_attachments else None
-        result = client.create_draft(
-            to=args["to"],
-            subject=args["subject"],
-            body=args["body"],
-            thread_id=args.get("thread_id"),
-            in_reply_to=args.get("in_reply_to"),
-            attachments=attach_paths,
-        )
-        return {"success": result.success, "draft_id": result.draft_id, "error": result.error}
-    if name == "gmail_drafts":
-        drafts = client.list_drafts(max_results=args.get("max_results", 20))
-        return [d.to_dict() for d in drafts]
-    if name == "gmail_draft_get":
-        draft = client.get_draft(args["draft_id"])
-        return draft.to_dict() if draft else None
-    if name == "gmail_draft_update":
-        raw_attachments = args.get("attachments")
-        if isinstance(raw_attachments, str):
-            raw_attachments = json.loads(raw_attachments)
-        attach_paths = [Path(p) for p in raw_attachments] if raw_attachments else None
-        result = client.update_draft(
-            draft_id=args["draft_id"],
-            to=args.get("to"),
-            subject=args.get("subject"),
-            body=args.get("body"),
-            thread_id=args.get("thread_id"),
-            in_reply_to=args.get("in_reply_to"),
-            attachments=attach_paths,
-        )
-        return {"success": result.success, "draft_id": result.draft_id, "error": result.error}
-    if name == "gmail_send":
-        raw_attachments = args.get("attachments")
-        if isinstance(raw_attachments, str):
-            raw_attachments = json.loads(raw_attachments)
-        attach_paths = [Path(p) for p in raw_attachments] if raw_attachments else None
-        result = client.send_message(
-            to=args["to"],
-            subject=args["subject"],
-            body=args["body"],
-            thread_id=args.get("thread_id"),
-            in_reply_to=args.get("in_reply_to"),
-            attachments=attach_paths,
-        )
-        return {
-            "success": result.success,
-            "message_id": result.message_id,
-            "thread_id": result.thread_id,
-            "error": result.error,
-        }
-    raise ValueError(f"Unknown tool: {name}")
+    handlers = {key: partial(handler, client=client) for key, handler in _DISPATCH_HANDLERS.items()}
+    return dispatch_by_table(handlers, name, args)
 
 
 if __name__ == "__main__":

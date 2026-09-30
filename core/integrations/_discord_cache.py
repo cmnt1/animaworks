@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from core.integrations._cache import BaseMessageCache
+from core.integrations._cache import BaseMessageCache, CacheTable
 from core.paths import get_data_dir
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,36 @@ CREATE INDEX IF NOT EXISTS idx_messages_content ON messages(content);
 """
 
 
+_DISCORD_GUILDS_TABLE = CacheTable(
+    name="guilds",
+    columns=("id", "name", "icon", "updated_at"),
+    primary_key=("id",),
+)
+_DISCORD_CHANNELS_TABLE = CacheTable(
+    name="channels",
+    columns=("id", "guild_id", "name", "type", "position", "updated_at"),
+    primary_key=("id",),
+)
+_DISCORD_USERS_TABLE = CacheTable(
+    name="users",
+    columns=("id", "username", "display_name", "avatar", "updated_at"),
+    primary_key=("id",),
+)
+_DISCORD_MESSAGES_TABLE = CacheTable(
+    name="messages",
+    columns=("id", "channel_id", "author_id", "content", "timestamp", "edited_timestamp", "reference_id"),
+    primary_key=("id",),
+    search_column="content",
+    scope_column="channel_id",
+    order_by="timestamp",
+)
+_DISCORD_SYNC_STATE_TABLE = CacheTable(
+    name="sync_state",
+    columns=("channel_id", "last_message_id", "synced_at"),
+    primary_key=("channel_id",),
+)
+
+
 # ── MessageCache ───────────────────────────────────────────
 
 
@@ -88,12 +118,10 @@ class MessageCache(BaseMessageCache):
         icon = guild.get("icon")
         icon_s = str(icon) if icon is not None else ""
         now = datetime.now(JST).isoformat()
-        self.conn.execute(
-            """INSERT OR REPLACE INTO guilds (id, name, icon, updated_at)
-               VALUES (?, ?, ?, ?)""",
-            (gid, name, icon_s, now),
+        self.upsert_records(
+            _DISCORD_GUILDS_TABLE,
+            [{"id": gid, "name": name, "icon": icon_s, "updated_at": now}],
         )
-        self.conn.commit()
 
     def upsert_channel(self, channel: dict) -> None:
         """Insert or replace a channel row."""
@@ -105,13 +133,10 @@ class MessageCache(BaseMessageCache):
         ctype = int(channel.get("type", 0))
         pos = int(channel.get("position", 0))
         now = datetime.now(JST).isoformat()
-        self.conn.execute(
-            """INSERT OR REPLACE INTO channels
-               (id, guild_id, name, type, position, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (cid, guild_id, name, ctype, pos, now),
+        self.upsert_records(
+            _DISCORD_CHANNELS_TABLE,
+            [{"id": cid, "guild_id": guild_id, "name": name, "type": ctype, "position": pos, "updated_at": now}],
         )
-        self.conn.commit()
 
     def upsert_messages(self, channel_id: str, messages: list[dict]) -> None:
         """Insert or replace message rows for a channel."""
@@ -130,12 +155,20 @@ class MessageCache(BaseMessageCache):
             if isinstance(ref, dict):
                 ref_id = str(ref.get("message_id", "") or "")
 
-            self.conn.execute(
-                """INSERT OR REPLACE INTO messages
-                   (id, channel_id, author_id, content, timestamp,
-                    edited_timestamp, reference_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (mid, channel_id, author_id, content, ts, edited_s, ref_id or None),
+            self.upsert_records(
+                _DISCORD_MESSAGES_TABLE,
+                [
+                    {
+                        "id": mid,
+                        "channel_id": channel_id,
+                        "author_id": author_id,
+                        "content": content,
+                        "timestamp": ts,
+                        "edited_timestamp": edited_s,
+                        "reference_id": ref_id or None,
+                    }
+                ],
+                commit=False,
             )
 
             if isinstance(author, dict) and author_id:
@@ -145,24 +178,24 @@ class MessageCache(BaseMessageCache):
                 avatar = author.get("avatar")
                 avatar_s = str(avatar) if avatar is not None else ""
                 now_u = datetime.now(JST).isoformat()
-                self.conn.execute(
-                    """INSERT OR REPLACE INTO users
-                       (id, username, display_name, avatar, updated_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (author_id, uname, display, avatar_s, now_u),
+                self.upsert_records(
+                    _DISCORD_USERS_TABLE,
+                    [
+                        {
+                            "id": author_id,
+                            "username": uname,
+                            "display_name": display,
+                            "avatar": avatar_s,
+                            "updated_at": now_u,
+                        }
+                    ],
+                    commit=False,
                 )
         self.conn.commit()
 
     def get_recent(self, channel_id: str, limit: int = 50) -> list[dict]:
         """Return the most recent cached messages for a channel (newest first)."""
-        rows = self.conn.execute(
-            """SELECT * FROM messages
-               WHERE channel_id = ?
-               ORDER BY timestamp DESC
-               LIMIT ?""",
-            (channel_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return self.get_recent_records(_DISCORD_MESSAGES_TABLE, channel_id, limit=limit)
 
     def search(
         self,
@@ -172,26 +205,20 @@ class MessageCache(BaseMessageCache):
         limit: int = 50,
     ) -> list[dict]:
         """Search cached messages by substring match on ``content``."""
-        q = """SELECT * FROM messages WHERE content LIKE ?"""
-        params: list = [f"%{keyword}%"]
-        if channel_id:
-            q += " AND channel_id = ?"
-            params.append(channel_id)
-        q += " ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
-        rows = self.conn.execute(q, params).fetchall()
-        return [dict(r) for r in rows]
+        return self.search_records(
+            _DISCORD_MESSAGES_TABLE,
+            keyword,
+            scope_value=channel_id,
+            limit=limit,
+        )
 
     def update_sync_state(self, channel_id: str, last_message_id: str = "") -> None:
         """Record last synced message id and sync time for a channel."""
         now = datetime.now(JST).isoformat()
-        self.conn.execute(
-            """INSERT OR REPLACE INTO sync_state
-               (channel_id, last_message_id, synced_at)
-               VALUES (?, ?, ?)""",
-            (channel_id, last_message_id, now),
+        self.upsert_records(
+            _DISCORD_SYNC_STATE_TABLE,
+            [{"channel_id": channel_id, "last_message_id": last_message_id, "synced_at": now}],
         )
-        self.conn.commit()
 
     # ── Unreplied detection ─────────────────────────────────
 

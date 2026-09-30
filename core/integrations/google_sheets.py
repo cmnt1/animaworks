@@ -20,10 +20,13 @@ import logging
 import os
 import re
 import sys
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from core.i18n import t
+from core.integrations._base import dispatch_by_table, without_anima_dir
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._google_auth import GoogleOAuth
 
 # ── Execution Profile ─────────────────────────────────────
@@ -315,66 +318,83 @@ def get_tool_schemas() -> list[dict]:
 # ── Dispatch ──────────────────────────────────────────────
 
 
+def _dispatch_sheets_read(args: dict[str, Any], *, client: GoogleSheetsClient) -> Any:
+    spreadsheet_id = args.get("spreadsheet_id", "")
+    if not spreadsheet_id:
+        return {"error": "spreadsheet_id is required"}
+    return client.read_values(
+        spreadsheet_id,
+        range_=args.get("range", "A1:Z1000"),
+    )
+
+
+def _dispatch_sheets_tabs(args: dict[str, Any], *, client: GoogleSheetsClient) -> Any:
+    spreadsheet_id = args.get("spreadsheet_id", "")
+    if not spreadsheet_id:
+        return {"error": "spreadsheet_id is required"}
+    return client.list_tabs(spreadsheet_id)
+
+
+def _dispatch_sheets_write_values(args: dict[str, Any], *, client: GoogleSheetsClient) -> Any:
+    spreadsheet_id = args.get("spreadsheet_id", "")
+    range_a1 = args.get("range", "")
+    values = args.get("values")
+    if not spreadsheet_id:
+        return {"error": "spreadsheet_id is required"}
+    if not range_a1:
+        return {"error": "range is required"}
+    if not isinstance(values, list):
+        return {"error": "values is required (2D list)"}
+    return client.write_values(
+        spreadsheet_id,
+        range_a1,
+        values,
+        value_input_option=args.get("value_input_option", "USER_ENTERED"),
+    )
+
+
+def _dispatch_sheets_append_values(args: dict[str, Any], *, client: GoogleSheetsClient) -> Any:
+    spreadsheet_id = args.get("spreadsheet_id", "")
+    range_a1 = args.get("range", "")
+    values = args.get("values")
+    if not spreadsheet_id:
+        return {"error": "spreadsheet_id is required"}
+    if not range_a1:
+        return {"error": "range is required"}
+    if not isinstance(values, list):
+        return {"error": "values is required (2D list)"}
+    return client.append_values(
+        spreadsheet_id,
+        range_a1,
+        values,
+        value_input_option=args.get("value_input_option", "USER_ENTERED"),
+    )
+
+
+_DISPATCH_HANDLERS = {
+    "google_sheets_read": _dispatch_sheets_read,
+    "google_sheets_tabs": _dispatch_sheets_tabs,
+    "google_sheets_write_values": _dispatch_sheets_write_values,
+    "google_sheets_append_values": _dispatch_sheets_append_values,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
-    _args = {k: v for k, v in args.items() if k != "anima_dir"}
     client = GoogleSheetsClient()
-
-    if name == "google_sheets_read":
-        spreadsheet_id = _args.get("spreadsheet_id", "")
-        if not spreadsheet_id:
-            return {"error": "spreadsheet_id is required"}
-        return client.read_values(
-            spreadsheet_id,
-            range_=_args.get("range", "A1:Z1000"),
-        )
-
-    if name == "google_sheets_tabs":
-        spreadsheet_id = _args.get("spreadsheet_id", "")
-        if not spreadsheet_id:
-            return {"error": "spreadsheet_id is required"}
-        return client.list_tabs(spreadsheet_id)
-
-    if name == "google_sheets_write_values":
-        spreadsheet_id = _args.get("spreadsheet_id", "")
-        range_a1 = _args.get("range", "")
-        values = _args.get("values")
-        if not spreadsheet_id:
-            return {"error": "spreadsheet_id is required"}
-        if not range_a1:
-            return {"error": "range is required"}
-        if not isinstance(values, list):
-            return {"error": "values is required (2D list)"}
-        return client.write_values(
-            spreadsheet_id,
-            range_a1,
-            values,
-            value_input_option=_args.get("value_input_option", "USER_ENTERED"),
-        )
-
-    if name == "google_sheets_append_values":
-        spreadsheet_id = _args.get("spreadsheet_id", "")
-        range_a1 = _args.get("range", "")
-        values = _args.get("values")
-        if not spreadsheet_id:
-            return {"error": "spreadsheet_id is required"}
-        if not range_a1:
-            return {"error": "range is required"}
-        if not isinstance(values, list):
-            return {"error": "values is required (2D list)"}
-        return client.append_values(
-            spreadsheet_id,
-            range_a1,
-            values,
-            value_input_option=_args.get("value_input_option", "USER_ENTERED"),
-        )
-
-    return {"error": f"Unknown action: {name}"}
+    handlers = {key: partial(handler, client=client) for key, handler in _DISPATCH_HANDLERS.items()}
+    return dispatch_by_table(
+        handlers,
+        name,
+        without_anima_dir(args),
+        unknown_result=lambda action: {"error": f"Unknown action: {action}"},
+    )
 
 
 # ── CLI ───────────────────────────────────────────────────
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """CLI entry point for the Google Sheets tool."""
     parser = argparse.ArgumentParser(

@@ -13,6 +13,7 @@ import importlib.util
 import json
 import logging
 import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -43,6 +44,30 @@ class ToolResult:
     data: Any = None
     text: str = ""
     error: str | None = None
+
+
+def dispatch_by_table(
+    handlers: Mapping[str, Callable[[dict[str, Any]], Any]],
+    name: str,
+    args: dict[str, Any],
+    *,
+    unknown_result: Callable[[str], Any] | None = None,
+    unknown_error: Callable[[str], Exception] | None = None,
+) -> Any:
+    """Call the handler registered for *name*, preserving each tool's fallback."""
+    handler = handlers.get(name)
+    if handler is not None:
+        return handler(args)
+    if unknown_result is not None:
+        return unknown_result(name)
+    if unknown_error is not None:
+        raise unknown_error(name)
+    raise ValueError(f"Unknown tool: {name}")
+
+
+def without_anima_dir(args: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy Google tool arguments without the dispatcher-only ``anima_dir``."""
+    return {key: value for key, value in args.items() if key != "anima_dir"}
 
 
 def get_env_or_fail(key: str, tool_name: str) -> str:

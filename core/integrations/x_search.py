@@ -20,7 +20,8 @@ from typing import Any
 
 import httpx
 
-from core.integrations._base import get_credential
+from core.integrations._base import dispatch_by_table, get_credential
+from core.integrations._comm_cli import cli_main_safely
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -229,23 +230,33 @@ def get_tool_schemas() -> list[dict]:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_search(args: dict[str, Any]) -> Any:
+    client = XSearchClient()
+    return client.search_recent(
+        query=args["query"],
+        max_results=args.get("max_results", 10),
+        days=args.get("days", 7),
+    )
+
+
+def _dispatch_user_tweets(args: dict[str, Any]) -> Any:
+    client = XSearchClient()
+    return client.get_user_tweets(
+        username=args["username"],
+        max_results=args.get("max_results", 10),
+        days=args.get("days"),
+    )
+
+
+_DISPATCH_HANDLERS = {
+    "x_search": _dispatch_search,
+    "x_user_tweets": _dispatch_user_tweets,
+}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
-    if name == "x_search":
-        client = XSearchClient()
-        return client.search_recent(
-            query=args["query"],
-            max_results=args.get("max_results", 10),
-            days=args.get("days", 7),
-        )
-    if name == "x_user_tweets":
-        client = XSearchClient()
-        return client.get_user_tweets(
-            username=args["username"],
-            max_results=args.get("max_results", 10),
-            days=args.get("days"),
-        )
-    raise ValueError(f"Unknown tool: {name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, name, args)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +264,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Thin CLI entry point for x_search.
 
