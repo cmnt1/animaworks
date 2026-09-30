@@ -16,14 +16,12 @@ Uses the same OAuth2 credential pattern as the Gmail tool.
 
 import argparse
 import json
-import logging
-import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from core.integrations._google_auth import GoogleOAuth
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -61,8 +59,25 @@ class GoogleCalendarClient:
     ) -> None:
         self.credentials_path = credentials_path or (_DEFAULT_CREDENTIALS_DIR / "credentials.json")
         self.token_path = token_path or (_DEFAULT_CREDENTIALS_DIR / "token.json")
-        self.client_id = client_id or os.environ.get("GOOGLE_CALENDAR_CLIENT_ID")
-        self.client_secret = client_secret or os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET")
+        self._oauth = GoogleOAuth(
+            scopes=SCOPES,
+            env_prefix="GOOGLE_CALENDAR",
+            token_path=self.token_path,
+            credentials_path=self.credentials_path,
+            client_id=client_id,
+            client_secret=client_secret,
+            tool_name="google_calendar",
+            missing_credentials_error=(
+                "No credentials found. Place credentials.json at {credentials_path} or set "
+                "{env_prefix}_CLIENT_ID and {env_prefix}_CLIENT_SECRET environment variables."
+            ),
+            import_error_message=(
+                "google_calendar tool requires google-api packages. "
+                "Install with: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib"
+            ),
+        )
+        self.client_id = self._oauth.client_id
+        self.client_secret = self._oauth.client_secret
         self._service = None
 
     def _persist_token(self, creds: Any) -> None:
@@ -73,61 +88,11 @@ class GoogleCalendarClient:
         are already valid in memory; a stale token.json only costs an
         extra refresh next run, so never let the save kill the call.
         """
-        try:
-            self.token_path.parent.mkdir(parents=True, exist_ok=True)
-            self.token_path.write_text(creds.to_json())
-        except OSError as e:
-            logger.warning("Token persist skipped (%s): %s", self.token_path, e)
+        self._oauth._persist_token(creds)
 
     def _get_credentials(self) -> Any:
         """Obtain valid credentials via OAuth2."""
-        try:
-            from google.auth.transport.requests import Request
-            from google.oauth2.credentials import Credentials
-            from google_auth_oauthlib.flow import InstalledAppFlow
-        except ImportError:
-            raise ImportError(
-                "google_calendar tool requires google-api packages. "
-                "Install with: pip install google-api-python-client "
-                "google-auth-httplib2 google-auth-oauthlib"
-            ) from None
-
-        creds = None
-
-        if self.token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(self.token_path), SCOPES)
-
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                self._persist_token(creds)
-            else:
-                if self.credentials_path.exists():
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        str(self.credentials_path),
-                        SCOPES,
-                    )
-                elif self.client_id and self.client_secret:
-                    client_config = {
-                        "installed": {
-                            "client_id": self.client_id,
-                            "client_secret": self.client_secret,
-                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                            "token_uri": "https://oauth2.googleapis.com/token",
-                            "redirect_uris": ["http://localhost"],
-                        }
-                    }
-                    flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-                else:
-                    raise FileNotFoundError(
-                        f"No credentials found. Place credentials.json at "
-                        f"{self.credentials_path} or set GOOGLE_CALENDAR_CLIENT_ID "
-                        f"and GOOGLE_CALENDAR_CLIENT_SECRET environment variables."
-                    )
-                creds = flow.run_local_server(port=0)
-                self._persist_token(creds)
-
-        return creds
+        return self._oauth.get_credentials()
 
     def _build_service(self) -> Any:
         """Build the Calendar API service."""

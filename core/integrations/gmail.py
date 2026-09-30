@@ -18,7 +18,6 @@ import base64
 import json
 import logging
 import mimetypes
-import os
 import sys
 from dataclasses import asdict, dataclass, field
 from email import encoders, policy
@@ -31,6 +30,8 @@ from email.utils import parseaddr
 from html import escape
 from pathlib import Path
 from typing import Any, cast
+
+from core.integrations._google_auth import GoogleOAuth
 
 try:
     from google.auth.transport.requests import Request
@@ -182,9 +183,25 @@ class GmailClient:
         _require_google_api()
         self.credentials_path = credentials_path or (_DEFAULT_CREDENTIALS_DIR / "credentials.json")
         self.token_path = token_path or (_DEFAULT_CREDENTIALS_DIR / "token.json")
-        self.client_id = client_id or os.environ.get("GMAIL_CLIENT_ID")
-        self.client_secret = client_secret or os.environ.get("GMAIL_CLIENT_SECRET")
         self.mcp_token_path = mcp_token_path or _DEFAULT_MCP_TOKEN_PATH
+        self._oauth = GoogleOAuth(
+            scopes=SCOPES,
+            env_prefix="GMAIL",
+            token_path=self.token_path,
+            credentials_path=self.credentials_path,
+            client_id=client_id,
+            client_secret=client_secret,
+            mcp_token_path=self.mcp_token_path,
+            tool_name="gmail",
+            missing_credentials_error=(
+                "No OAuth credentials found. Place credentials.json or set GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET."
+            ),
+            missing_credentials_exception=ValueError,
+            open_browser=True,
+            import_error_message="gmail tool requires google-api packages. Install with: pip install animaworks[gmail]",
+        )
+        self.client_id = self._oauth.client_id
+        self.client_secret = self._oauth.client_secret
         self._service = None
 
     def _persist_token(self, creds: Credentials) -> None:
@@ -195,75 +212,16 @@ class GmailClient:
         are already valid in memory; a stale token.json only costs an
         extra refresh next run, so never let the save kill the call.
         """
-        try:
-            self.token_path.parent.mkdir(parents=True, exist_ok=True)
-            self.token_path.write_text(creds.to_json())
-        except OSError as e:
-            logger.warning("Token persist skipped (%s): %s", self.token_path, e)
+        self._oauth._persist_token(creds)
 
     def _load_mcp_token(self) -> Credentials | None:
         """Load MCP-GSuite JSON token and convert to Credentials."""
-        if not self.mcp_token_path or not self.mcp_token_path.exists():
-            return None
-
-        try:
-            with open(self.mcp_token_path) as f:
-                token_data = json.load(f)
-
-            creds = Credentials(
-                token=token_data.get("access_token"),
-                refresh_token=token_data.get("refresh_token"),
-                token_uri=token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
-                client_id=token_data.get("client_id") or self.client_id,
-                client_secret=token_data.get("client_secret") or self.client_secret,
-            )
-            logger.info("Loaded MCP-GSuite token")
-            return creds
-        except Exception as e:
-            logger.warning("MCP token load error: %s", e)
-            return None
+        _, credentials_cls, _ = self._oauth._load_auth_dependencies()
+        return self._oauth._load_mcp_token(credentials_cls)
 
     def _get_credentials(self) -> Credentials:
         """Obtain valid credentials."""
-        creds = None
-
-        # 1. Try existing MCP token first
-        if self.mcp_token_path:
-            creds = self._load_mcp_token()
-
-        # 2. Load saved token
-        if not creds and self.token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(self.token_path), SCOPES)
-
-        # Refresh or start new auth flow if needed
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                self._persist_token(creds)
-            else:
-                if self.credentials_path.exists():
-                    flow = InstalledAppFlow.from_client_secrets_file(str(self.credentials_path), SCOPES)
-                elif self.client_id and self.client_secret:
-                    client_config = {
-                        "installed": {
-                            "client_id": self.client_id,
-                            "client_secret": self.client_secret,
-                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                            "token_uri": "https://oauth2.googleapis.com/token",
-                            "redirect_uris": ["http://localhost"],
-                        }
-                    }
-                    flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-                else:
-                    raise ValueError(
-                        "No OAuth credentials found. "
-                        "Place credentials.json or set GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET."
-                    )
-
-                creds = cast(Credentials, flow.run_local_server(port=0, open_browser=True))
-                self._persist_token(creds)
-
-        return creds
+        return cast(Credentials, self._oauth.get_credentials())
 
     @property
     def service(self):

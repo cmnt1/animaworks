@@ -35,7 +35,7 @@ import httpx  # noqa: F401 — patch compatibility
 # These live in _image_glb; we proxy reads and writes so that
 # ``import core.integrations.image_gen as mod; mod._FBX2GLTF_PATH = X`` propagates.
 import core.integrations._image_glb as _glb_mod  # noqa: E402
-from core.integrations._base import get_credential, logger  # noqa: F401 — patch compatibility
+from core.integrations._base import ToolConfigError, get_credential, logger  # noqa: F401 — patch compatibility
 
 # ── Re-exports: _image_cli ─────────────────────────────────
 from core.integrations._image_cli import cli_main
@@ -136,15 +136,23 @@ def _use_diffusers_backend(image_config: Any) -> bool:
     return getattr(image_config, "backend", "api") == "diffusers"
 
 
+def _has_image_credential(credential_name: str, env_var: str) -> bool:
+    """Check a backend credential through the shared vault/config/env resolver."""
+    try:
+        return bool(get_credential(credential_name, "image_gen", env_var=env_var))
+    except ToolConfigError:
+        return False
+
+
 def _build_fullbody_api_client(image_config: Any) -> Any:
     """Select the API fullbody client (NovelAI / Fal). Used as codex fallback."""
     if getattr(image_config, "image_style", "anime") == "realistic":
-        if not os.environ.get("FAL_KEY"):
+        if not _has_image_credential("fal", "FAL_KEY"):
             raise RuntimeError("FAL_KEY required for realistic image generation.")
         return FalTextToImageClient()
-    if os.environ.get("NOVELAI_TOKEN"):
+    if _has_image_credential("novelai", "NOVELAI_TOKEN"):
         return NovelAIClient()
-    if os.environ.get("FAL_KEY"):
+    if _has_image_credential("fal", "FAL_KEY"):
         return FalTextToImageClient()
     raise RuntimeError("No image generation backend configured. Enable Diffusers or set NOVELAI_TOKEN/FAL_KEY.")
 
