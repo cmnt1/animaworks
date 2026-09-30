@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -430,15 +431,29 @@ def _tool_not_found_message(name: str) -> str:
     return _t("mcp.tool_not_exposed", tool=name)
 
 
+# A consolidation run finishes well within this; an older marker was left by a
+# process killed before its ``finally`` ran and must not hide comms tools forever.
+_CONSOLIDATION_MARKER_MAX_AGE_S = 6 * 3600
+
+
 def _is_consolidation_mode() -> bool:
     """Check whether this Anima is currently running memory consolidation.
 
     Reads a flag file written by ``run_consolidation()`` in the main process.
+    Markers older than ``_CONSOLIDATION_MARKER_MAX_AGE_S`` are treated as stale.
     """
     anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
     if not anima_dir_env:
         return False
-    return (Path(anima_dir_env) / "state" / ".consolidation_mode").exists()
+    marker = Path(anima_dir_env) / "state" / ".consolidation_mode"
+    try:
+        age = time.time() - marker.stat().st_mtime
+    except OSError:
+        return False
+    if age > _CONSOLIDATION_MARKER_MAX_AGE_S:
+        logger.warning("Ignoring stale consolidation marker %s (age %.0fs)", marker, age)
+        return False
+    return True
 
 
 def _has_notification_channels_for_anima() -> bool:
