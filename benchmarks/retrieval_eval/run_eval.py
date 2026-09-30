@@ -35,6 +35,8 @@ VARIANT_OVERRIDES: dict[str, dict[str, bool]] = {
         "graph_recency_weight_enabled": False,
     },
 }
+# minimal pipeline with the cross-encoder rerank kept on
+VARIANT_OVERRIDES["minimal_rerank"] = {**VARIANT_OVERRIDES["minimal"], "rerank_enabled": True}
 
 
 def variant_settings(config: Any, variant: str) -> dict[str, Any]:
