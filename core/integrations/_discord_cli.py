@@ -35,34 +35,20 @@ animaworks-tool discord search "キーワード" [-c CHANNEL_ID] [-n 50] -j
 ```"""
 
 
-def _resolve_per_anima_token(anima_dir: str | Path | None) -> str | None:
-    """Resolve per-Anima Discord bot token from anima_dir path.
-
-    Uses ``DISCORD_BOT_TOKEN__<anima_name>`` from vault.json / shared/credentials.json.
-    Returns None to fall back to the shared token.
-    """
-    if not anima_dir:
-        return None
-    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
-
-    anima_name = Path(anima_dir).name
-    per_anima_key = f"DISCORD_BOT_TOKEN__{anima_name}"
-    token = _lookup_vault_credential(per_anima_key)
-    if token:
-        return token
-    token = _lookup_shared_credentials(per_anima_key)
-    if token:
-        return token
-    return None
-
-
 def _resolve_cli_token() -> str | None:
     """Resolve per-Anima Discord bot token for CLI invocations.
 
     Reads ``ANIMAWORKS_ANIMA_DIR`` env var set by the framework when
     spawning Anima subprocesses (Mode S / Mode A).
     """
-    return _resolve_per_anima_token(os.environ.get("ANIMAWORKS_ANIMA_DIR"))
+    from core.channels.tokens import resolve_per_anima_token
+    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+
+    return resolve_per_anima_token(
+        "discord",
+        os.environ.get("ANIMAWORKS_ANIMA_DIR"),
+        credential_lookup=lambda key: _lookup_vault_credential(key) or _lookup_shared_credentials(key),
+    )
 
 
 def _enrich_message_authors(msgs: list[dict]) -> None:

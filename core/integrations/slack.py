@@ -19,8 +19,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from core.integrations._base import logger
-
 # Re-exports for backward compatibility
 from core.integrations._slack_cache import MessageCache  # noqa: F401
 from core.integrations._slack_cli import cli_main, get_cli_guide  # noqa: F401
@@ -50,29 +48,17 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 # ── Token Resolution ───────────────────────────────────────
 
 
-def _resolve_per_anima_token(anima_dir: str | Path | None) -> str | None:
-    """Resolve per-Anima Slack bot token from anima_dir path.
-
-    Uses ``SLACK_BOT_TOKEN__<anima_name>`` from the standard env-style
-    credential cascade (vault/shared/.env/env).
-    Returns None to fall back to the shared token.
-    """
-    if not anima_dir:
-        return None
-    from core.integrations._base import resolve_env_style_credential
-
-    anima_name = Path(anima_dir).name
-    per_anima_key = f"SLACK_BOT_TOKEN__{anima_name}"
-    token = resolve_env_style_credential(per_anima_key)
-    if token:
-        logger.debug("Using per-Anima Slack token for '%s'", anima_name)
-        return token
-    return None
-
-
 def _resolve_slack_token(args: dict[str, Any]) -> str | None:
     """Resolve per-Anima Slack bot token from tool dispatch args."""
-    return _resolve_per_anima_token(args.get("anima_dir"))
+    from core.channels.tokens import resolve_per_anima_token
+    from core.integrations._base import resolve_env_style_credential
+
+    return resolve_per_anima_token(
+        "slack",
+        args.get("anima_dir"),
+        credential_lookup=resolve_env_style_credential,
+        log=True,
+    )
 
 
 def _resolve_slack_identity(args: dict[str, Any]) -> tuple[str, str]:

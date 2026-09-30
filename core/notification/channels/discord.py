@@ -149,18 +149,29 @@ class DiscordChannel(NotificationChannel):
     ) -> str:
         """Send a DM to a Discord user."""
         try:
-            from core.integrations._discord_client import DiscordClient
+            import asyncio
 
-            client = DiscordClient(token=token)
-            dm = client.create_dm(user_id)
-            dm_channel_id = str(dm.get("id", ""))
+            from core.channels.discord import DiscordClient
+
+            def _send() -> tuple[str, dict[str, Any]]:
+                client = DiscordClient(token=token)
+                try:
+                    dm = client.create_dm(user_id)
+                    dm_channel_id = str(dm.get("id", ""))
+                    if not dm_channel_id:
+                        return "", {}
+                    result = client.send_message(
+                        dm_channel_id,
+                        text[:2000],
+                        components=components,
+                    )
+                    return dm_channel_id, result
+                finally:
+                    client.close()
+
+            dm_channel_id, result = await asyncio.to_thread(_send)
             if not dm_channel_id:
                 return f"discord: ERROR - failed to open DM with user {user_id}"
-            result = client.send_message(
-                dm_channel_id,
-                text[:2000],
-                components=components,
-            )
             msg_id = str(result.get("id", ""))
             logger.info("Discord notification sent via DM: user=%s msg=%s", user_id, msg_id)
             if interaction is not None and msg_id:
@@ -182,10 +193,13 @@ class DiscordChannel(NotificationChannel):
     ) -> str:
         """Send to a Discord channel via webhook manager (Anima identity)."""
         try:
+            import asyncio
+
             from core.messaging.discord_webhooks import get_webhook_manager
 
             wm = get_webhook_manager()
-            msg_id = wm.send_as_anima(
+            msg_id = await asyncio.to_thread(
+                wm.send_as_anima,
                 channel_id,
                 anima_name or "AnimaWorks",
                 text,
@@ -210,8 +224,6 @@ class DiscordChannel(NotificationChannel):
     ) -> str:
         """Send via raw webhook URL."""
         try:
-            import httpx
-
             payload: dict[str, Any] = {"content": text[:2000]}
             if anima_name:
                 payload["username"] = anima_name
@@ -226,15 +238,14 @@ class DiscordChannel(NotificationChannel):
             if components:
                 payload["components"] = components
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(webhook_url, json=payload, params={"wait": "true"})
-                resp.raise_for_status()
-                data = resp.json()
-                msg_id = str(data.get("id", "")) if isinstance(data, dict) else ""
-                logger.info("Discord notification sent via webhook")
-                if interaction is not None and msg_id:
-                    await _persist_discord_msg_id(interaction.callback_id, msg_id)
-                return "discord: webhook sent"
+            from core.channels.discord import post_webhook
+
+            data = await post_webhook(webhook_url, payload, params={"wait": "true"})
+            msg_id = str(data.get("id", "")) if isinstance(data, dict) else ""
+            logger.info("Discord notification sent via webhook")
+            if interaction is not None and msg_id:
+                await _persist_discord_msg_id(interaction.callback_id, msg_id)
+            return "discord: webhook sent"
         except Exception as exc:
             logger.exception("Discord webhook notification failed")
             return f"discord: ERROR - {exc}"

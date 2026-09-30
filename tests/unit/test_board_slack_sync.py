@@ -66,7 +66,7 @@ class TestBoardSlackSync:
         with (
             patch("core.config.models.load_config", return_value=cfg),
             patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.messaging.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.channels.slack.httpx.AsyncClient") as mock_client,
         ):
             result = await BoardSlackSync().sync_board_post("general", "hello", "sakura")
 
@@ -83,7 +83,7 @@ class TestBoardSlackSync:
             patch("core.config.models.load_config", return_value=cfg),
             patch("core.messaging.outbound_auto._resolve_bot_token", return_value="xoxb-test"),
             patch("core.messaging.outbound_auto._resolve_avatar_url", return_value=""),
-            patch("core.messaging.outbound_auto.httpx.AsyncClient", return_value=client),
+            patch("core.channels.slack.httpx.AsyncClient", return_value=client),
         ):
             result = await BoardSlackSync().sync_board_post("general", "hello", "sakura")
 
@@ -99,7 +99,7 @@ class TestBoardSlackSync:
             patch("core.config.models.load_config", return_value=cfg),
             patch("core.messaging.outbound_auto._resolve_bot_token", return_value="xoxb-test"),
             patch("core.messaging.outbound_auto._resolve_avatar_url", return_value=""),
-            patch("core.messaging.outbound_auto.httpx.AsyncClient", return_value=client),
+            patch("core.channels.slack.httpx.AsyncClient", return_value=client),
         ):
             result = await BoardSlackSync().sync_board_post("ops", "hello", "sakura")
 
@@ -113,7 +113,7 @@ class TestBoardSlackSync:
         with (
             patch("core.config.models.load_config", return_value=cfg),
             patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.messaging.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.channels.slack.httpx.AsyncClient") as mock_client,
         ):
             result = await BoardSlackSync().sync_board_post("general", "hello", "sakura")
 

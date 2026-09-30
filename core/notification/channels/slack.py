@@ -82,10 +82,17 @@ class SlackChannel(NotificationChannel):
         if not bot_token:
             bot_token = self._resolve_env("bot_token_env")
         if not bot_token and anima_name:
+            from core.channels.tokens import resolve_per_anima_token
             from core.integrations._base import resolve_env_style_credential
 
-            per_key = f"SLACK_BOT_TOKEN__{anima_name}"
-            bot_token = resolve_env_style_credential(per_key) or ""
+            bot_token = (
+                resolve_per_anima_token(
+                    "slack",
+                    anima_name,
+                    credential_lookup=resolve_env_style_credential,
+                )
+                or ""
+            )
         if not bot_token and self._config.get("channel"):
             try:
                 from core.integrations._base import get_credential
@@ -157,69 +164,64 @@ class SlackChannel(NotificationChannel):
             payload["blocks"] = _build_interactive_blocks(text, interaction)
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    "https://slack.com/api/chat.postMessage",
-                    headers={"Authorization": f"Bearer {bot_token}"},
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                if not data.get("ok"):
-                    msg = f"slack: ERROR - {data.get('error', 'unknown')}"
-                    logger.error(msg)
-                    return msg
+            from core.channels.slack import post_message
 
-                if interaction is not None and data.get("ts"):
-                    try:
-                        import asyncio as _asyncio
+            data = await post_message(bot_token, payload)
+            if not data.get("ok"):
+                msg = f"slack: ERROR - {data.get('error', 'unknown')}"
+                logger.error(msg)
+                return msg
 
-                        from core.notification.interactive import (
-                            update_interaction_message_ts_resilient,
-                        )
+            if interaction is not None and data.get("ts"):
+                try:
+                    import asyncio as _asyncio
 
-                        # Server-API-first: direct run/ writes fail inside
-                        # sandboxed MCP servers (read-only filesystem).
-                        await _asyncio.to_thread(
-                            update_interaction_message_ts_resilient,
-                            interaction.callback_id,
-                            "slack",
-                            str(data["ts"]),
-                        )
-                    except Exception:
-                        logger.debug(
-                            "Failed to persist interactive Slack ts",
-                            exc_info=True,
-                        )
+                    from core.notification.interactive import (
+                        update_interaction_message_ts_resilient,
+                    )
 
-                if anima_name and data.get("ts"):
-                    try:
-                        import asyncio
+                    # Server-API-first: direct run/ writes fail inside
+                    # sandboxed MCP servers (read-only filesystem).
+                    await _asyncio.to_thread(
+                        update_interaction_message_ts_resilient,
+                        interaction.callback_id,
+                        "slack",
+                        str(data["ts"]),
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed to persist interactive Slack ts",
+                        exc_info=True,
+                    )
 
-                        from core.notification.reply_routing import (
-                            save_notification_mapping_resilient,
-                        )
+            if anima_name and data.get("ts"):
+                try:
+                    import asyncio
 
-                        # Falls back to the server internal API when the
-                        # direct run/ write fails (sandboxed MCP server).
-                        saved = await asyncio.to_thread(
-                            save_notification_mapping_resilient,
+                    from core.notification.reply_routing import (
+                        save_notification_mapping_resilient,
+                    )
+
+                    # Falls back to the server internal API when the
+                    # direct run/ write fails (sandboxed MCP server).
+                    saved = await asyncio.to_thread(
+                        save_notification_mapping_resilient,
+                        data["ts"],
+                        data.get("channel", channel),
+                        anima_name,
+                        notification_text=f"{subject}\n{body}"[:2000],
+                        callback_id=interaction.callback_id if interaction is not None else "",
+                    )
+                    if not saved:
+                        logger.warning(
+                            "Notification mapping not saved for ts=%s; thread replies will not route back",
                             data["ts"],
-                            data.get("channel", channel),
-                            anima_name,
-                            notification_text=f"{subject}\n{body}"[:2000],
-                            callback_id=interaction.callback_id if interaction is not None else "",
                         )
-                        if not saved:
-                            logger.warning(
-                                "Notification mapping not saved for ts=%s; thread replies will not route back",
-                                data["ts"],
-                            )
-                    except Exception:
-                        logger.debug(
-                            "Failed to save notification mapping",
-                            exc_info=True,
-                        )
+                except Exception:
+                    logger.debug(
+                        "Failed to save notification mapping",
+                        exc_info=True,
+                    )
 
             logger.info("Slack notification sent via bot: %s", subject[:50])
             return "slack: OK"
@@ -245,9 +247,9 @@ class SlackChannel(NotificationChannel):
         text = self._build_text(subject, body, priority, anima_name)
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(webhook_url, json={"text": text})
-                resp.raise_for_status()
+            from core.channels.slack import post_webhook
+
+            await post_webhook(webhook_url, {"text": text})
             logger.info("Slack notification sent via webhook: %s", subject[:50])
             return "slack: OK"
         except httpx.HTTPStatusError as e:

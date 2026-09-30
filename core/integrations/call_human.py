@@ -55,11 +55,14 @@ def _get_bot_token(channel_cfg: dict) -> str:
     # Per-anima vault/shared (Mode S subprocess sets ANIMAWORKS_ANIMA_DIR)
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
     if anima_dir:
+        from core.channels.tokens import resolve_per_anima_token
         from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 
-        anima_name = Path(anima_dir).name
-        per_key = f"SLACK_BOT_TOKEN__{anima_name}"
-        token = _lookup_vault_credential(per_key) or _lookup_shared_credentials(per_key) or ""
+        token = resolve_per_anima_token(
+            "slack",
+            anima_dir,
+            credential_lookup=lambda key: _lookup_vault_credential(key) or _lookup_shared_credentials(key),
+        )
         if token:
             return token
 
@@ -137,44 +140,39 @@ async def _send_slack(
         if interaction is not None:
             payload["blocks"] = _build_slack_blocks(text, interaction)
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://slack.com/api/chat.postMessage",
-                headers={"Authorization": f"Bearer {token}"},
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if not data.get("ok"):
-                return f"ERROR: {data.get('error', 'unknown')}", None
+        from core.channels.slack import post_message
 
-            ts_val: str | None = str(data["ts"]) if data.get("ts") else None
+        data = await post_message(token, payload)
+        if not data.get("ok"):
+            return f"ERROR: {data.get('error', 'unknown')}", None
 
-            # Save ts→anima mapping so Slack thread replies are routed back.
-            # Direct file write fails inside execution sandboxes (read-only
-            # {data_dir}/run/), so fall back to the server internal API.
-            if username and ts_val and notification_text:
-                try:
-                    from core.notification.reply_routing import (
-                        save_notification_mapping_resilient,
+        ts_val: str | None = str(data["ts"]) if data.get("ts") else None
+
+        # Save ts→anima mapping so Slack thread replies are routed back.
+        # Direct file write fails inside execution sandboxes (read-only
+        # {data_dir}/run/), so fall back to the server internal API.
+        if username and ts_val and notification_text:
+            try:
+                from core.notification.reply_routing import (
+                    save_notification_mapping_resilient,
+                )
+
+                saved = save_notification_mapping_resilient(
+                    ts=ts_val,
+                    channel=data.get("channel", channel),
+                    anima_name=username,
+                    notification_text=notification_text[:2000],
+                    callback_id=interaction.callback_id if interaction is not None else "",
+                )
+                if not saved:
+                    print(
+                        "WARNING: notification mapping not saved; Slack thread replies will not be routed back",
+                        file=sys.stderr,
                     )
+            except Exception:
+                logger.debug("Failed to save notification mapping", exc_info=True)
 
-                    saved = save_notification_mapping_resilient(
-                        ts=ts_val,
-                        channel=data.get("channel", channel),
-                        anima_name=username,
-                        notification_text=notification_text[:2000],
-                        callback_id=interaction.callback_id if interaction is not None else "",
-                    )
-                    if not saved:
-                        print(
-                            "WARNING: notification mapping not saved; Slack thread replies will not be routed back",
-                            file=sys.stderr,
-                        )
-                except Exception:
-                    logger.debug("Failed to save notification mapping", exc_info=True)
-
-            return "OK", ts_val
+        return "OK", ts_val
     except Exception as e:
         return f"ERROR: {e}", None
 

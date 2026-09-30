@@ -84,8 +84,6 @@ core.memory.retrieval.reranker -> core.infra.gpu
 core.memory.retrieval.reranker -> core.internal_api
 core.messaging.discord_webhooks -> core.integrations._anima_icon_url
 core.messaging.discord_webhooks -> core.integrations._base
-core.messaging.discord_webhooks -> core.integrations._discord_client
-core.messaging.discord_webhooks -> core.integrations._discord_client
 core.messaging.discord_webhooks -> core.integrations._discord_markdown
 core.messaging.messenger -> core.execution._sanitize
 core.messaging.messenger -> core.internal_api
@@ -94,7 +92,6 @@ core.messaging.outbound -> core.integrations._anima_icon_url
 core.messaging.outbound -> core.integrations._base
 core.messaging.outbound -> core.integrations._base
 core.messaging.outbound -> core.integrations._chatwork_identity
-core.messaging.outbound -> core.integrations._discord_client
 core.messaging.outbound -> core.integrations._discord_markdown
 core.messaging.outbound -> core.integrations.chatwork
 core.messaging.outbound -> core.integrations.chatwork
@@ -109,7 +106,6 @@ core.messaging.outbound_auto -> core.integrations._slack_markdown
 core.notification.channels.chatwork -> core.integrations.chatwork
 core.notification.channels.discord -> core.integrations._anima_icon_url
 core.notification.channels.discord -> core.integrations._base
-core.notification.channels.discord -> core.integrations._discord_client
 core.notification.channels.discord -> core.integrations._discord_markdown
 core.notification.channels.slack -> core.integrations._anima_icon_url
 core.notification.channels.slack -> core.integrations._base

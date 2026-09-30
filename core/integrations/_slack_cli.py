@@ -41,26 +41,14 @@ def _resolve_cli_token() -> str | None:
     Reads ``ANIMAWORKS_ANIMA_DIR`` env var set by the framework when
     spawning Anima subprocesses (Mode S / Mode A).
     """
-    return _resolve_per_anima_token(os.environ.get("ANIMAWORKS_ANIMA_DIR"))
-
-
-def _resolve_per_anima_token(anima_dir: str | Path | None) -> str | None:
-    """Resolve per-Anima Slack bot token from anima_dir path.
-
-    Uses ``SLACK_BOT_TOKEN__<anima_name>`` from the standard env-style
-    credential cascade (vault/shared/.env/env).
-    Returns None to fall back to the shared token.
-    """
-    if not anima_dir:
-        return None
+    from core.channels.tokens import resolve_per_anima_token
     from core.integrations._base import resolve_env_style_credential
 
-    anima_name = Path(anima_dir).name
-    per_anima_key = f"SLACK_BOT_TOKEN__{anima_name}"
-    token = resolve_env_style_credential(per_anima_key)
-    if token:
-        return token
-    return None
+    return resolve_per_anima_token(
+        "slack",
+        os.environ.get("ANIMAWORKS_ANIMA_DIR"),
+        credential_lookup=resolve_env_style_credential,
+    )
 
 
 def _resolve_cli_identity() -> tuple[str, str]:
