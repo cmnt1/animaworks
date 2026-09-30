@@ -415,8 +415,7 @@ When you give tools to autonomous agents, you need to take security seriously. S
 | **Command security** | Shell injection detection (default: log, can enforce) → global blocklist (mandatory; server won't start without `permissions.global.json`) → per-agent blocked commands → per-agent allowlist → path traversal detection |
 | **File sandbox** | Each agent is confined to its own directory via `permissions.json`. Identity and permission files themselves are write-protected |
 | **Process isolation** | Each agent runs as a separate OS process. Communication via local IPC (Unix socket, loopback TCP on Windows) |
-| **Rate limiting** | Per-session destination deduplication and per-role limits → cross-cutting hourly/daily limits (fail-closed if logs can't be read) → self-awareness via prompt injection of recent send history |
-| **Cascade prevention** | Conversation depth limit + cascade detection. 5-minute cooldown and delayed processing |
+| **Message handling** | One DM per recipient per run; file-change Inbox wakeups with one job at a time, batching, and provider backoff. Recent sends inform the prompt; no global send budget or depth-based rejection |
 | **Authentication and session management** | Argon2id hashing, 48-byte random tokens, max 10 sessions, configurable TTL |
 | **Webhook validation** | HMAC signature verification for Slack, Chatwork, Zoom, GitHub (with replay protection) |
 | **SSRF mitigation** | Media proxy blocks private IPs and DNS rebinding, enforces HTTPS, validates Content-Type and magic bytes |
@@ -455,7 +454,7 @@ The CLI is for power users and automation. For daily operations, the Web UI is s
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | Create new |
 | `animaworks anima list / info / status / restart / disable / enable` | Inspect and control |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima-specific configuration |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima-specific configuration |
 | `animaworks anima reload [--all]` | Hot reload from status.json |
 | `animaworks anima delete / rename` | Lifecycle operations |
 | `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | Anima integration script (not maintained as part of the CLI itself) |

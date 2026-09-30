@@ -31,7 +31,7 @@ After reading, follow the table of contents below for details on each topic.
 | I don't know how to use Board (shared channel) | `communication/board-guide.md` |
 | I don't know how to give instructions or report | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
 | I want to check the required items for delegation, completion reports, and escalation | `communication/message-quality-protocol.md` |
-| Message sending was restricted | `communication/sending-limits.md` |
+| Inbox triggering or message delivery behavior | `communication/sending-limits.md` |
 | I don't know how to notify humans | `communication/call-human-guide.md` |
 | I don't know how to configure the Slack bot token | `reference/communication/slack-bot-token-guide.md` ※ Technical reference |
 
@@ -120,12 +120,12 @@ After reading, follow the table of contents below for details on each topic.
 
 | File | Overview |
 |---------|------|
-| `messaging-guide.md` | Complete guide to sending and receiving messages (send_message parameters, thread management, 1-round rule) |
+| `messaging-guide.md` | Complete guide to sending and receiving messages (send_message parameters, thread management, reply guidance) |
 | `board-guide.md` | Board (shared channel) guide (how to use post_channel / read_channel, posting rules) |
 | `instruction-patterns.md` | Instruction patterns collection (how to write clear instructions, delegation patterns, progress checks) |
 | `reporting-guide.md` | Reporting and escalation methods (report timing, format, urgent vs regular) |
 | `message-quality-protocol.md` | Message quality protocol (required checks for 4 delegation items, 3 completion report items, 4 escalation items) |
-| `sending-limits.md` | Details on send restrictions (3-layer rate limits, 30/h・100/day limit, cascade detection, countermeasures) |
+| `sending-limits.md` | Inbox file wakeups, run-level duplicate prevention, diagnostic depth logging, and reply-loop guidance |
 | `call-human-guide.md` | Guide to notifying humans (how to use call_human, receiving replies, notification channel configuration) |
 | `slack-bot-token-guide.md` | → Moved to `reference/communication/slack-bot-token-guide.md`. Slack bot token configuration guide |
 
@@ -183,7 +183,7 @@ After reading, follow the table of contents below for details on each topic.
 | Instructions, Delegation, Task Requests, Delegation | `reference/communication/instruction-patterns.md` |
 | Reports, Daily Reports, Summaries, Completion Reports, Escalation | `reference/communication/reporting-guide.md` |
 | Quality Protocol, Required Items, Validation Evidence, Completion Conditions, Delegation Checks | `communication/message-quality-protocol.md` |
-| Rate Limits, Send Limits, 30 Messages, 100 Messages, 1-Round Rule | `communication/sending-limits.md` |
+| Inbox Wake, Message Batching, Duplicate Prevention, Reply Loops | `communication/sending-limits.md` |
 | call_human, Human Notification, Contact Human, Notification Channel | `communication/call-human-guide.md` |
 | Slack, Bot Token, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | Organization, supervisor, Supervisor, Subordinate, Colleague | `reference/organization/structure.md` |

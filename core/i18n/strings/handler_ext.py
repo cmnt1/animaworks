@@ -181,10 +181,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": " 別のチャネル（{channels}）への投稿、またはsend_message（intent: question/report）は可能です。",
         "en": (" You can post to another channel ({channels}) or use send_message (intent: question/report)."),
     },
-    "handler.post_cooldown": {
-        "ja": "Error: #{channel} には {ts} に投稿済みです（{elapsed}秒前）。クールダウン {cooldown}秒が必要です。",
-        "en": ("Error: Already posted to #{channel} at {ts} ({elapsed}s ago). Cooldown of {cooldown}s required."),
-    },
     "handler.procedure_description_missing": {
         "ja": "`description` フィールドがありません。自動マッチングを有効にするために description を追加してください。",
         "en": "The `description` field is missing. Add description to enable auto-matching.",

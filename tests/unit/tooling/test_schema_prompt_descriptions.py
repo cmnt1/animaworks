@@ -41,12 +41,12 @@ def test_unknown_guide_has_empty_last_resort_fallback() -> None:
 
 
 def test_send_message_preserves_constraints() -> None:
-    """Shortened send_message keeps the max-recipient and intent constraints."""
+    """send_message keeps the per-recipient run guard and intent constraints."""
     ja = _desc("ja", "send_message")
     en = _desc("en", "send_message")
-    assert "最大2宛先" in ja
+    assert "同一 run" in ja and "宛先数の上限はない" in ja
     assert "report" in ja and "question" in ja
-    assert "Max 2 recipients" in en
+    assert "same recipient once" in en and "no recipient-count cap" in en
     assert "'report'" in en and "'question'" in en
 
 

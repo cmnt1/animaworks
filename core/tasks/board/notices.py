@@ -6,10 +6,10 @@ from __future__ import annotations
 
 """Batched task board notices.
 
-Each ``task cancel/done/note`` is its own CLI process, so a triage pass that
-closes forty tasks used to send forty DMs and tripped the conversation depth
-limit after six. Notices are queued per (actor, recipient) instead, and the
-supervisor sends one digest per pair once the actor has been quiet for a while.
+Each ``task cancel/done/note`` is its own CLI process. Notices are queued per
+(actor, recipient) so a burst of task updates can be delivered as one readable
+digest after the actor has been quiet for a while. This batching is a notice
+presentation policy, independent of messaging send limits.
 """
 
 import hashlib

@@ -346,10 +346,7 @@ class InboxMixin:
         except (OSError, ValueError):
             logger.warning("[%s] Failed to restore inbox presentation counters", self.name, exc_info=True)
 
-    async def process_inbox_message(
-        self,
-        cascade_suppressed_senders: set[str] | None = None,
-    ) -> CycleResult:
+    async def process_inbox_message(self) -> CycleResult:
         """Process Anima-to-Anima messages immediately under _inbox_lock.
 
         Separated from heartbeat to provide instant response to inter-Anima
@@ -385,10 +382,7 @@ class InboxMixin:
                         meta={"session_type": "inbox", "thread_id": _INBOX_THREAD_ID},
                     )
 
-                    inbox_result = await self._process_inbox_messages(
-                        cascade_suppressed_senders,
-                        track_retries=budget_result is None,
-                    )
+                    inbox_result = await self._process_inbox_messages(track_retries=budget_result is None)
 
                     if inbox_result.unread_count == 0:
                         if inbox_result.inbox_items:
@@ -710,16 +704,11 @@ class InboxMixin:
         finally:
             self._notify_lock_released()
 
-    async def _process_inbox_messages(
-        self,
-        cascade_suppressed_senders: set[str] | None = None,
-        *,
-        track_retries: bool = True,
-    ) -> InboxResult:
-        """Read, filter, deduplicate, format, and record inbox messages.
+    async def _process_inbox_messages(self, *, track_retries: bool = True) -> InboxResult:
+        """Read, deduplicate, format, and record inbox messages.
 
-        Handles cascade suppression, MessageDeduplicator, retry counter,
-        episode recording, and activity logging.
+        Handles MessageDeduplicator, retry counter, episode recording, and
+        activity logging.
         """
         if not self.messenger.has_unread():
             return InboxResult()
@@ -728,21 +717,6 @@ class InboxMixin:
         messages = [item.msg for item in inbox_items]
         unread_count = len(messages)
         senders: set[str] = {m.from_person for m in messages}
-
-        # ── Filter cascade-suppressed senders ──
-        if cascade_suppressed_senders:
-            suppressed_items = [item for item in inbox_items if item.msg.from_person in cascade_suppressed_senders]
-            inbox_items = [item for item in inbox_items if item.msg.from_person not in cascade_suppressed_senders]
-            messages = [item.msg for item in inbox_items]
-            if suppressed_items:
-                logger.info(
-                    "[%s] Cascade-suppressed %d messages from %s",
-                    self.name,
-                    len(suppressed_items),
-                    ", ".join(cascade_suppressed_senders & senders),
-                )
-            senders = {m.from_person for m in messages}
-            unread_count = len(messages)
 
         # ── Message overflow handling ──
         if track_retries:

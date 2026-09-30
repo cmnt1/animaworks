@@ -610,49 +610,6 @@ class TestProcessInboxMessages:
         finally:
             _stop_patches(mocks)
 
-    async def test_cascade_suppression(self, data_dir, make_anima):
-        """Messages from cascade-suppressed senders are filtered out."""
-        anima_dir = make_anima("alice")
-        shared_dir = data_dir / "shared"
-
-        inbox_dir = shared_dir / "inbox" / "alice"
-        inbox_dir.mkdir(parents=True, exist_ok=True)
-        msg_file_bob = inbox_dir / "msg_bob.json"
-        msg_file_bob.write_text("{}", encoding="utf-8")
-        msg_file_eve = inbox_dir / "msg_eve.json"
-        msg_file_eve.write_text("{}", encoding="utf-8")
-
-        dp, mocks = _create_anima(anima_dir, shared_dir)
-        try:
-            dp.messenger.has_unread.return_value = True
-
-            item_bob = _make_inbox_item("bob", "Hi from bob", msg_file_bob)
-            item_eve = _make_inbox_item("eve", "Hi from eve", msg_file_eve)
-            dp.messenger.receive_with_paths.return_value = [item_bob, item_eve]
-
-            with (
-                patch("core.anima.inbox_overflow.MessageDeduplicator") as MockDedup,
-                patch("core.anima.digital_anima.ActivityLogger"),
-            ):
-                dedup_inst = MockDedup.return_value
-                dedup_inst.load_deferred.return_value = []
-                # After cascade filtering, only bob remains
-                dedup_inst.apply_rate_limit.side_effect = lambda msgs: (msgs, [])
-                dedup_inst.consolidate_messages.side_effect = lambda msgs: (msgs, [])
-                dp.memory.read_resolutions = MagicMock(return_value=[])
-                dp.memory.append_episode = MagicMock()
-
-                result = await dp._process_inbox_messages(
-                    cascade_suppressed_senders={"eve"},
-                )
-
-            # Eve should be suppressed; only Bob remains
-            assert "bob" in result.senders
-            assert "eve" not in result.senders
-            assert result.unread_count == 1
-        finally:
-            _stop_patches(mocks)
-
     async def test_dedup_failure_uses_original_messages(self, data_dir, make_anima):
         """When dedup import fails, original messages are used."""
         anima_dir = make_anima("alice")

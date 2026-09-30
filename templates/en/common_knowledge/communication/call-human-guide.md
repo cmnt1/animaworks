@@ -30,8 +30,8 @@ See `troubleshooting/escalation-flowchart.md` for detailed decision criteria.
 
 ### Constraints
 
-- `call_human` is **exempt** from DM rate limits (30/h, 100/day）)
-- You can send without worrying about limits even in urgent situations
+- `call_human` uses the separate human-notification route; it is not a `send_message` DM.
+- Use it for urgent situations only when human-notification channels are configured.
 
 ## Receiving Replies
 

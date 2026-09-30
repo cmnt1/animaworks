@@ -8,7 +8,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from core.config.schemas import UserAliasConfig
-from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 
 # ── resolve_slack_mentions ────────────────────────────────
 
@@ -179,54 +178,3 @@ class TestLoadAliasUserIds:
         }
         mock_load.return_value = cfg
         assert _load_alias_user_ids() == {"U111"}
-
-
-# ── External platform inbox trigger (shared condition) ───────
-
-
-class TestExternalDirectedTrigger:
-    """Boolean logic for immediate heartbeat vs defer (inbox_watcher / inbox_rate_limiter)."""
-
-    def test_external_with_intent_triggers_immediately(self) -> None:
-        messages = [
-            Message(
-                from_person="slack:U1",
-                to_person="anima",
-                content="hi",
-                source="slack",
-                intent="question",
-            )
-        ]
-        has_external_directed = any(m.source in EXTERNAL_PLATFORM_SOURCES and m.intent for m in messages)
-        assert has_external_directed is True
-
-    def test_external_without_intent_defers(self) -> None:
-        messages = [
-            Message(
-                from_person="slack:U1",
-                to_person="anima",
-                content="hi",
-                source="slack",
-                intent="",
-            )
-        ]
-        has_external_directed = any(m.source in EXTERNAL_PLATFORM_SOURCES and m.intent for m in messages)
-        assert has_external_directed is False
-
-    def test_human_message_still_triggers(self) -> None:
-        """Human source satisfies ``has_human`` so the defer branch is not taken."""
-        inbox_messages = [
-            Message(
-                from_person="human:alice",
-                to_person="anima",
-                content="hi",
-                source="human",
-                intent="",
-            )
-        ]
-        has_human = any(m.source == "human" for m in inbox_messages)
-        has_external_directed = any(m.source in EXTERNAL_PLATFORM_SOURCES and m.intent for m in inbox_messages)
-        actionable_intents = ("report", "question")
-        has_actionable = any(m.intent in actionable_intents for m in inbox_messages)
-        defer = not has_human and not has_external_directed and not has_actionable
-        assert defer is False

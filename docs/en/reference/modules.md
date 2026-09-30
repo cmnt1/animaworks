@@ -606,7 +606,6 @@ Message delivery between animas and with external parties.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.messaging` | 6 | — |
-| `core.messaging.cascade_limiter` | 224 | — |
 | `core.messaging.discord_webhooks` | 296 | — |
 | `core.messaging.meeting_room_store` | 130 | — |
 | `core.messaging.messenger` | 1063 | — |
@@ -774,7 +773,7 @@ Anima supervision, delegation, and execution coordination.
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
-| `core.supervisor.inbox_rate_limiter` | 406 | Inbox rate limiting, cascade detection, and deferred trigger management. |
+| `core.supervisor.inbox_rate_limiter` | 270 | Event-driven inbox wakeups and deferred trigger management. |
 | `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1104 | Process Supervisor - Manages lifecycle of Anima child processes. |

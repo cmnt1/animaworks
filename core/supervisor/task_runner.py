@@ -150,14 +150,9 @@ async def execute_cron_followup_contract(
     }
 
 
-async def execute_heartbeat_contract(
-    anima: DigitalAnima,
-    *,
-    cascade_suppressed_senders: list[str] | None = None,
-) -> dict[str, Any]:
+async def execute_heartbeat_contract(anima: DigitalAnima) -> dict[str, Any]:
     """Execute the legacy heartbeat contract inside the child process."""
-    senders = set(cascade_suppressed_senders) if cascade_suppressed_senders else None
-    result = await anima.run_heartbeat(cascade_suppressed_senders=senders)
+    result = await anima.run_heartbeat()
     result_dict = result.model_dump(mode="json")
     return {
         "task_type": "heartbeat",
@@ -167,19 +162,14 @@ async def execute_heartbeat_contract(
     }
 
 
-async def execute_inbox_contract(
-    anima: DigitalAnima,
-    *,
-    cascade_suppressed_senders: list[str] | None = None,
-) -> dict[str, Any]:
+async def execute_inbox_contract(anima: DigitalAnima) -> dict[str, Any]:
     """Execute the inbox (inter-Anima message) contract inside the child process.
 
     Mirrors :func:`execute_heartbeat_contract` but runs
     ``DigitalAnima.process_inbox_message`` which is the same function the
     root previously invoked inline.
     """
-    senders = set(cascade_suppressed_senders) if cascade_suppressed_senders else None
-    result = await anima.process_inbox_message(cascade_suppressed_senders=senders)
+    result = await anima.process_inbox_message()
     result_dict = result.model_dump(mode="json")
     success = result.action not in {"error", "cancelled", "failed"} and not result.reason
     return {
@@ -633,26 +623,10 @@ async def _prepare_execution(
             )
         )
     if identity.lane == "heartbeat":
-        raw_senders = params.get("cascade_suppressed_senders")
-        senders: list[str] | None
-        if raw_senders is None:
-            senders = None
-        elif isinstance(raw_senders, list) and all(isinstance(item, str) for item in raw_senders):
-            senders = list(raw_senders)
-        else:
-            raise ValueError("cascade_suppressed_senders must be a list of strings or null")
-        return asyncio.create_task(execute_heartbeat_contract(anima, cascade_suppressed_senders=senders))
+        return asyncio.create_task(execute_heartbeat_contract(anima))
 
     if identity.lane == "inbox":
-        raw_senders = params.get("cascade_suppressed_senders")
-        senders: list[str] | None
-        if raw_senders is None:
-            senders = None
-        elif isinstance(raw_senders, list) and all(isinstance(item, str) for item in raw_senders):
-            senders = list(raw_senders)
-        else:
-            raise ValueError("cascade_suppressed_senders must be a list of strings or null")
-        return asyncio.create_task(execute_inbox_contract(anima, cascade_suppressed_senders=senders))
+        return asyncio.create_task(execute_inbox_contract(anima))
 
     if identity.lane == "task":
         task_desc = params.get("task_desc")

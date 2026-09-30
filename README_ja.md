@@ -412,8 +412,7 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X検索 / AWSコレク�
 | **コマンドセキュリティ** | シェルインジェクション検出（既定は記録・enforce可） → グローバル禁止リスト（強制。`permissions.global.json` 無しではサーバーが起動しない） → 個別エージェント禁止コマンド → 個別エージェント許可リスト → パストラバーサル検出 |
 | **ファイルサンドボックス** | 各エージェントは `permissions.json` で自ディレクトリに閉じ込め。identityと権限ファイル自体は書き込み保護 |
 | **プロセス隔離** | エージェントごとに独立OSプロセス。ローカルIPCで通信（Unix socket、Windowsは loopback TCP） |
-| **レート制限** | セッション内の宛先重複排除とロール別上限 → 時間・日単位の横断上限（ログが読めない場合はfail-closed） → 直近送信履歴のプロンプト注入による自己認識 |
-| **カスケード防止** | 会話深度制限＋カスケード検出。5分クールダウンと遅延処理 |
+| **メッセージ処理** | 同一 run での同一宛先への重複送信防止、Inbox ファイル変更 wake・単一実行・メッセージ集約、Provider backoff。直近の送信履歴はプロンプトに注入し、グローバル予算や深度による送信拒否は行わない |
 | **認証・セッション管理** | Argon2idハッシュ、48バイトランダムトークン、最大10セッション、TTLは設定可能 |
 | **Webhook検証** | Slack・Chatwork・Zoom・GitHub のHMAC署名検証（リプレイ防止付き） |
 | **SSRF緩和** | メディアプロキシがプライベートIPとDNSリバインディングをブロック、HTTPS強制、Content-Type・マジックバイト検証 |
@@ -452,7 +451,7 @@ CLIはパワーユーザーと自動化向けです。日常操作はWeb UIで�
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 新規作成 |
 | `animaworks anima list / info / status / restart / disable / enable` | 確認・制御 |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima単位の設定 |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima単位の設定 |
 | `animaworks anima reload [--all]` | status.jsonからホットリロード |
 | `animaworks anima delete / rename` | ライフサイクル操作 |
 | `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 統合スクリプト（CLI本体の保守対象外） |

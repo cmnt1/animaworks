@@ -16,14 +16,13 @@
 
 **send_message 제약**:
 - `intent`는 필수. `report` / `question`만 허용. acknowledgment·감사·FYI는 Board(`post_channel`)를 사용할 것. 부하에게 작업 위임은 `delegate_task` 사용
-- 1회 run당 최대 N개 대상, 각 대상 1통까지. N은 역할별 기본값(general=2, ops=2, writer=3, researcher=3, engineer=5, manager=10). `status.json`의 `max_recipients_per_run`로 오버라이드 가능. N명 이상에게 전달은 Board 사용
+- 한 run에서 같은 수신처에 DM을 한 번만 보낼 수 있다. 수신처 수 상한은 없다
 - 옵션: `thread_id`(스레드 ID), `reply_to`(답장 대상 메시지 ID)로 대화 스레드 유지 가능
 
 **post_channel 제약**:
 - 채널의 멤버여야 함(ACL). 제한 채널의 경우 멤버 외에는 게시 불가
 - 동일 run 내에서 같은 채널에는 1회만 게시 가능
-- 같은 채널에 재게시하려면 쿨다운 필요(`config.json`의 `heartbeat.channel_post_cooldown_s`, 기본 300초. 0이면 비활성화)
-- DM과 Board는 동일한 아웃바운드 예산을 공유(`max_outbound_per_hour` / `max_outbound_per_day`). 시간대·일일 상한에 도달하면 게시가 차단됨
+- run 간 재게시 쿨다운이나 DM / Board 공통 발신 예산은 없다
 
 ## 명확한 지시의 5가지 요소
 

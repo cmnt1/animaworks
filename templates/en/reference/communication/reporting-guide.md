@@ -12,12 +12,12 @@ Use the `send_message` tool for reports. Observe the following constraints.
 | Tool | Purpose | Notes |
 |--------|------|------|
 | `send_message` | One-on-one reports or questions to a supervisor or colleague | Use `intent="report"` for reports, progress updates, and requests for decisions; use `intent="question"` for questions. Anima names, aliases, `slack:`/`chatwork:`, etc. (see below) |
-| `post_channel` | Announcements to the whole team (Board) | Use Board for acknowledgments, thanks, and FYI messages. Posting is limited to once per channel per run; reposting requires a cooldown (`heartbeat.channel_post_cooldown_s`, 300 seconds by default) |
+| `post_channel` | Announcements to the whole team (Board) | Use Board for acknowledgements, thanks, and FYI messages. One post per channel per run; there is no cross-run cooldown |
 | `call_human` | Urgent notifications to humans | For service shutdowns, security incidents, etc. |
 
 **send_message constraints**:
 - `intent` is required, and its value must be **`report` or `question` only** (`report` for reports and progress updates; `question` for questions). **`delegation` cannot be used with `send_message`** (the tool will reject it). Use `delegate_task` to delegate tasks.
-- The maximum number of recipients per run is **`max_recipients_per_run`** (can be overridden with `status.json`; if not set, the role default applies. Example: `general` is 2). Send only one message to each recipient. Use Board to communicate with three or more people.
+- A run can send only one DM to the same recipient. There is no recipient-count cap.
 - Use Board (post_channel) for additional communication.
 - For **recipients**, see “Resolving recipients” below (directly specifying Anima names, human aliases, `slack:` / `chatwork:`, etc.).
 - **Note**: You cannot use send_message to message humans during a chat session. Reply directly with text.
@@ -49,10 +49,10 @@ The `to` of `send_message` is resolved to an internal inbox or external (Slack /
 - **Slack**: If a `SLACK_BOT_TOKEN__{anima名}` associated with the Anima name (from Vault or shared credentials) exists, send with the Bot token, attaching the display name (Anima name) and **icon URL** (derived from Anima assets). **If no Bot token exists**, prepend `[送信者Anima名] ` to the message body
 - **Chatwork**: Uses the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). When sent via `send_message`, a `[Anima名] ` prefix is added to the message body
 
-**Send limits (based on implementation)**:
+**Send behavior**:
 
-- **Global (time window)**: `send_message` to internal Animas (via `Messenger.send`) and **`post_channel` share the same send count**. Determined by `dm_sent` / `message_sent` / `channel_post` in the last 1 hour and 24 hours on `activity_log`. The limit is **`max_outbound_per_hour` / `max_outbound_per_day` of `status.json`** if set; otherwise, **role-specific defaults** apply (example: `general` is 15/hour and 50/day, `manager` is 60/hour and 300/day). When exceeded, sending is blocked; follow the tool result to save the content to `current_state.md` etc. and send it in the next session
-- **Same pair (internal Anima DM only)**: Within the `heartbeat.depth_window_s` window (default 600 seconds = 10 minutes), up to `heartbeat.max_depth` (default 6 turns). When exceeded, sending to the other party is blocked (wait until the next window)
+- There are no hourly/daily send budgets or conversation-depth send blocks.
+- Conversation depth between internal Animas may be logged for diagnostics, but messages are still delivered.
 
 ## Reporting Timing
 
@@ -387,4 +387,4 @@ Procedure for deciding whether a report should be escalated:
 - Reporting "a problem occurred" without any specific information
 - Combining multiple different topics into one message (separate by topic)
 - Hiding problems or making them seem minor (convey the accurate situation)
-- Sending send_message to the same recipient more than once in the same run (limit to one message; use Board for additional communication). Also, DMs cannot be sent to more than `max_recipients_per_run` people
+- Sending more than one `send_message` DM to the same recipient in one run (one message per recipient; there is no recipient-count cap)

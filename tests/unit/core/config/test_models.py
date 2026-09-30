@@ -117,6 +117,54 @@ class TestAnimaWorksConfig:
         assert restored.animas["alice"].supervisor == "bob"
         assert restored.animas["alice"].speciality == "engineer"
 
+    def test_legacy_throttle_keys_are_ignored_when_loading_existing_config(self, tmp_path: Path):
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "heartbeat": {
+                        "msg_heartbeat_cooldown_s": 300,
+                        "cascade_window_s": 1800,
+                        "cascade_threshold": 3,
+                        "depth_window_s": 600,
+                        "max_depth": 6,
+                        "actionable_intents": ["report", "question"],
+                        "channel_post_cooldown_s": 300,
+                        "outbound_limit_enabled": False,
+                    },
+                    "anima_defaults": {
+                        "max_outbound_per_hour": 60,
+                        "max_outbound_per_day": 300,
+                        "max_recipients_per_run": 10,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        invalidate_cache()
+        try:
+            config = load_config(config_path)
+        finally:
+            invalidate_cache()
+
+        serialized = config.model_dump(mode="json")
+        assert config.heartbeat.interval_minutes == 30
+        assert not {
+            "msg_heartbeat_cooldown_s",
+            "cascade_window_s",
+            "cascade_threshold",
+            "depth_window_s",
+            "max_depth",
+            "actionable_intents",
+            "channel_post_cooldown_s",
+            "outbound_limit_enabled",
+        } & serialized["heartbeat"].keys()
+        assert not {
+            "max_outbound_per_hour",
+            "max_outbound_per_day",
+            "max_recipients_per_run",
+        } & serialized["anima_defaults"].keys()
+
 
 class TestLocalLLMConfig:
     def test_defaults(self):

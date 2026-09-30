@@ -1,8 +1,5 @@
 {
   "model": "claude-sonnet-4-6",
   "context_threshold": 0.50,
-  "conversation_history_threshold": 0.30,
-  "max_outbound_per_hour": 15,
-  "max_outbound_per_day": 50,
-  "max_recipients_per_run": 2
+  "conversation_history_threshold": 0.30
 }

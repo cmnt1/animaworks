@@ -2,25 +2,17 @@
 
 # メッセージング
 
-Anima 間のメッセージは `send_message` で宛先へ届ける。メッセージには任意の `intent` を付けられ、inbox dispatcher は `delegation` などの intent と送信元を使って即時処理の要否を判断する。対話履歴は活動ログを中心に読み取り、共有設定によって DM 履歴を補う。
+Anima 間のメッセージは `send_message` で宛先へ届ける。`intent` はメッセージの目的を示すメタデータで、Inbox の起動をふるい分ける用途には使わない。対話履歴は活動ログを中心に読み取り、共有設定によって DM 履歴を補う。
 
 ## 共有チャネルと会社境界
 
 `post_channel` は shared channel に投稿し、`read_channel` はアクセス可能な最近の投稿を読む。channel の metadata で member、closed 状態、company scope を管理する。company が指定された open channel は、その会社内の Anima から見える範囲に限定される。DM と channel の送信経路、外部宛ての alias 解決は `core/messaging/` が担当する。
 
-## 送信制限と受信 dispatch
+## 送信ルールと受信 dispatch
 
-送信時には次の3種類のチェックを使う。`send_message` の1実行あたり recipient 数は `max_recipients_per_run` に制限される。Anima 間の送信数は `max_outbound_per_hour` と日単位の上限で制御される。また、同じ Anima の組み合わせで短時間に会話が循環しないように depth limit を確認する。role ごとの既定値は `core/config/schemas.py`、Anima 固有の上書きは `status.json` にある。設定の全項目は[設定リファレンス](../reference/config.md)を参照する。
+`send_message` は `report` / `question` intent を使い、同一 run では同じ宛先への2通目を拒否する。宛先数の上限はない。`post_channel` は同一 run で同じチャネルへ1回まで投稿できるが、run 間 cooldown はない。時間・日単位の送信予算や会話深度による送信拒否もない。`Messenger.send` はメッセージを activity log に記録し、深度を診断ログに記録する場合も配送を拒否しない。
 
-受信側では `core/supervisor/inbox_rate_limiter.py` が cooldown、cascade 検知、受信 intent を確認して inbox lane の起動を調整する。従って送信上限の判定と受信処理開始の抑制は、別の責務として実装されている。
-
-| role | 1時間 | 24時間 | 1実行の宛先数 |
-|---|---:|---:|---:|
-| manager | 60 | 300 | 10 |
-| engineer | 40 | 200 | 5 |
-| writer / researcher | 30 | 150 | 3 |
-| ops | 20 | 80 | 2 |
-| general | 15 | 50 | 2 |
+受信側では `core/supervisor/inbox_rate_limiter.py` が Inbox JSON のファイル変更通知を監視し、未読があれば Inbox lane を起動する。同時実行は1本で、実行中に届いたメッセージは次の1回にまとめる。通知を取りこぼした場合に備え45秒ごとに再確認し、Provider エラー時は `rate_guard` の回復時間を待ちながら未読を保持する。`overflow_inbox` は容量保護として残る。
 
 ## 人間への通知と外部連携
 

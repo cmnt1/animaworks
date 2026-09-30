@@ -12,7 +12,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +38,43 @@ def _server_base_url() -> str:
 logger = logging.getLogger("animaworks.messenger")
 
 _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+_DEPTH_OBSERVATION_WINDOW_S = 600
+_DEPTH_OBSERVATION_THRESHOLD = 6
+
+
+def _log_conversation_depth(sender: str, receiver: str, sender_anima_dir: Path) -> None:
+    """Log unusually deep exchanges without affecting message delivery."""
+    try:
+        from core.memory.activity.logger import ActivityLogger
+
+        entries = ActivityLogger(sender_anima_dir).recent(
+            days=1,
+            limit=200,
+            types=["dm_sent", "dm_received"],
+            involving=receiver,
+        )
+    except Exception:
+        logger.debug("Could not read activity log for conversation-depth observation", exc_info=True)
+        return
+
+    cutoff = now_local() - timedelta(seconds=_DEPTH_OBSERVATION_WINDOW_S)
+    count = 0
+    for entry in entries:
+        try:
+            if ensure_aware(datetime.fromisoformat(entry.ts)) >= cutoff:
+                count += 1
+        except (ValueError, TypeError):
+            continue
+
+    if count >= _DEPTH_OBSERVATION_THRESHOLD:
+        logger.info(
+            "MESSAGE DEPTH OBSERVED: %s -> %s (%d exchanges in %ds); continuing delivery",
+            sender,
+            receiver,
+            count + 1,
+            _DEPTH_OBSERVATION_WINDOW_S,
+        )
+
 
 # ── External message dedup (source_message_id) ──────────
 _EXTERNAL_DEDUP_TTL = 30  # seconds
@@ -204,46 +241,14 @@ class Messenger:
             for previous in (target / f"{delivery_id}.json", target / "processed" / f"{delivery_id}.json"):
                 if previous.exists():
                     return Message.model_validate_json(previous.read_text(encoding="utf-8"))
-        # ── Conversation depth check (internal Anima only) ──
-        # Human-sourced messages bypass the cascade limiter: they originate
-        # outside the anima conversation graph, like the chat API path.
+        # Keep depth as an observation only. Never discard the message based on
+        # the activity log; the regular message_sent event remains the source
+        # of truth for reviewing conversation activity.
         if source == "anima" and msg_type not in ("ack", "error", "system_alert"):
             animas_dir = self.shared_dir.parent / "animas"
-            is_internal = (animas_dir / to).is_dir() if animas_dir.exists() else False
-            if is_internal:
-                from core.messaging.cascade_limiter import get_depth_limiter
-
-                sender_dir = animas_dir / self.anima_name
-                limiter = get_depth_limiter()
-                outbound_check = limiter.check_global_outbound(self.anima_name, sender_dir)
-                if outbound_check is not True:
-                    logger.warning(
-                        "Global outbound limit exceeded: %s. Message not sent.",
-                        self.anima_name,
-                    )
-                    return Message(
-                        from_person="system",
-                        to_person=self.anima_name,
-                        type="error",
-                        content=str(outbound_check),
-                    )
-                if not limiter.check_depth(self.anima_name, to, sender_dir):
-                    logger.warning(
-                        "Depth limit exceeded: %s -> %s. Message not sent.",
-                        self.anima_name,
-                        to,
-                    )
-                    return Message(
-                        from_person="system",
-                        to_person=self.anima_name,
-                        type="error",
-                        content=t(
-                            "messenger.depth_exceeded",
-                            to=to,
-                            max_depth=limiter._max_depth,
-                            window_min=f"{limiter._window_s / 60:g}",
-                        ),
-                    )
+            sender_dir = animas_dir / self.anima_name
+            if (animas_dir / to).is_dir():
+                _log_conversation_depth(self.anima_name, to, sender_dir)
 
         msg = Message(
             from_person=self.anima_name,
@@ -462,30 +467,6 @@ class Messenger:
             raise DeliveryError(
                 f"Channel post failed: local write ({cause}); server fallback ({fb_exc}) ({poster} -> #{channel})"
             ) from fb_exc
-
-    def last_post_by(self, anima_name: str, channel: str) -> dict | None:
-        """Return the last post by *anima_name* in *channel*, or None.
-
-        Scans the channel JSONL file from the tail for efficiency.
-        Used by ToolHandler for cross-run cooldown checks.
-        """
-        filepath = self.shared_dir / "channels" / f"{channel}.jsonl"
-        if not filepath.exists():
-            return None
-        try:
-            lines = filepath.read_text(encoding="utf-8").strip().splitlines()
-            for line in reversed(lines):
-                if not line.strip():
-                    continue
-                try:
-                    entry = json.loads(line)
-                    if entry.get("from") == anima_name:
-                        return entry
-                except json.JSONDecodeError:
-                    continue
-        except OSError:
-            pass
-        return None
 
     def read_channel(
         self,
@@ -1042,7 +1023,7 @@ class Messenger:
         if not msg.thread_id:
             msg.thread_id = msg.id
         filepath = self.inbox_dir / f"{msg.id}.json"
-        filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+        atomic_write_json(filepath, msg.model_dump(mode="json"), indent=2, trailing_newline=False)
         logger.info(
             "External message received: %s -> %s (source=%s, id=%s)",
             msg.from_person,

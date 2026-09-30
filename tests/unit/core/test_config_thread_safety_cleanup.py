@@ -11,7 +11,6 @@ from __future__ import annotations
 
 Covers:
 - reminder.py push_sync/drain_sync are thread-safe
-- get_depth_limiter() reloads config on each call
 - resolution_tracker.read_resolutions() uses tail-only parsing
 """
 
@@ -90,39 +89,6 @@ class TestReminderSyncThreadSafety:
         import _thread
 
         assert isinstance(q._sync_lock, _thread.LockType)
-
-
-@pytest.mark.unit
-class TestGetDepthLimiterReloadsConfig:
-    """get_depth_limiter() creates a new instance each call."""
-
-    def test_returns_new_instance_each_call(self):
-        """Each call returns a different instance."""
-        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
-            mock_cfg.return_value.heartbeat.depth_window_s = 600
-            mock_cfg.return_value.heartbeat.max_depth = 6
-            mock_cfg.return_value.heartbeat.max_messages_per_hour = 30
-            mock_cfg.return_value.heartbeat.max_messages_per_day = 100
-
-            from core.messaging.cascade_limiter import get_depth_limiter
-
-            a = get_depth_limiter()
-            b = get_depth_limiter()
-            assert a is not b
-
-    def test_calls_load_config(self):
-        """get_depth_limiter() triggers load_config() via __init__."""
-        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
-            mock_cfg.return_value.heartbeat.depth_window_s = 600
-            mock_cfg.return_value.heartbeat.max_depth = 6
-            mock_cfg.return_value.heartbeat.max_messages_per_hour = 30
-            mock_cfg.return_value.heartbeat.max_messages_per_day = 100
-
-            initial_count = mock_cfg.call_count
-            from core.messaging.cascade_limiter import get_depth_limiter
-
-            get_depth_limiter()
-            assert mock_cfg.call_count > initial_count
 
 
 @pytest.mark.unit

@@ -55,11 +55,9 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 | 정기 하트비트 | `config.json`의 `heartbeat.interval_minutes`에 따라 APScheduler가 정기적으로 시작 |
 | 메시지 트리거 | Inbox에 읽지 않은 메시지가 도착했을 때 즉시 시작(Inbox 경로로 처리) |
 
-메시지 트리거에는 다음의 세이프가드가 내장되어 있다:
-- **쿨다운**: 이전 메시지 시작 완료부터 일정 시간 이내에는 재시작하지 않음(`config.json`의 `heartbeat.msg_heartbeat_cooldown_s`, 기본 300초)
-- **캐스케이드 감지**: 2자 간에 일정 시간 내 왕복이 임계값을 초과하면 루프로 간주하여 억제(`heartbeat.cascade_window_s` 기본 30분, `heartbeat.cascade_threshold` 기본 3)
-- **의도 필터**: `intent`이 `heartbeat.actionable_intents`(기본 `report`, `question`)에 포함되는 메시지가 있는 경우에만 즉시 하트비트. 그 외(예: 가벼운 ack 계열)는 정기 하트비트까지 대기
-- **왕복 깊이 제한**: `heartbeat.depth_window_s`(기본 600초)와 `heartbeat.max_depth`(기본 6)으로, 같은 쌍의 단기간 왕복 과다를 억제
+메시지 트리거는 Inbox JSON 파일 변경 알림으로 시작한다. 알림을 놓친 경우를 대비해 45초마다 읽지 않은 메시지를 다시 확인한다.
+Inbox 작업은 동시에 하나만 실행하며, 실행 중 도착한 메시지는 다음 한 번의 처리로 모은다. Provider 오류가 나면 `rate_guard` 복구 시간을 기다리고 읽지 않은 메시지는 남겨 둔다.
+intent에 따른 시작 필터나 메시지 트리거 쿨다운 / 캐스케이드 억제는 없다. 확인·감사 인사만 있는 메시지에는 답장하지 않도록 Inbox 프롬프트에서 지시한다.
 
 ## heartbeat.md의 설정
 
@@ -151,7 +149,7 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 - **부하 체크**: 부하를 가진 Anima에는 하트비트·Cron의 프롬프트에 부하의 상태 확인 지침이 자동 주입된다.
 - **세션 시간 제한**(`config.json`의 `heartbeat`): `soft_timeout_seconds`(기본 300초) 경과 시 랩업용 리마인더를 주입, `hard_timeout_seconds`(기본 600초)에서 세션을 강제 종료한다.
 - **아이들 시 자동 컴팩트**: `heartbeat.idle_compaction_minutes`(기본 10분) — 스트림 종료부터 이 시간 경과 후 아이들 자동 컴팩션이 실행된다(실행 엔진 측 설정).
-- **Board 게시 간격**: `heartbeat.channel_post_cooldown_s`(기본 300초, 0이면 무제한) — 같은 Anima의 `post_channel` 연속 게시를 억제.
+- **Board 게시**: 한 run에서 같은 채널에는 한 번만 게시할 수 있다. run 간 게시 간격 제한은 없다.
 
 ### 정기 하트비트의 스케줄 방식
 

@@ -466,32 +466,23 @@ class TestHandleRouting:
         assert "Error" in result2
         assert "alice" in result2
 
-    def test_send_message_max_recipients_returns_error(
+    def test_send_message_has_no_run_recipient_count_cap(
         self,
         handler_with_messenger: ToolHandler,
         anima_dir: Path,
     ):
-        """After sending to 2 recipients, a 3rd recipient is rejected."""
-        _make_unassigned_anima(anima_dir.parent, "alice")
-        _make_unassigned_anima(anima_dir.parent, "bob")
-        _make_unassigned_anima(anima_dir.parent, "charlie")
+        """A run can contact multiple distinct recipients; duplicates remain blocked."""
+        for name in ("alice", "bob", "charlie"):
+            _make_unassigned_anima(anima_dir.parent, name)
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
-            result1 = handler_with_messenger.handle(
-                "send_message",
-                {"to": "alice", "content": "hi", "intent": "report"},
-            )
-            assert "Message sent to alice" in result1
-            result2 = handler_with_messenger.handle(
-                "send_message",
-                {"to": "bob", "content": "hi", "intent": "report"},
-            )
-            assert "Message sent to bob" in result2
-            result3 = handler_with_messenger.handle(
-                "send_message",
-                {"to": "charlie", "content": "hi", "intent": "report"},
-            )
-        assert "Error" in result3
-        assert "2" in result3
+            results = [
+                handler_with_messenger.handle(
+                    "send_message",
+                    {"to": name, "content": "hi", "intent": "report"},
+                )
+                for name in ("alice", "bob", "charlie")
+            ]
+        assert all(f"Message sent to {name}" in result for name, result in zip(("alice", "bob", "charlie"), results))
 
     def test_send_message_two_recipients_allowed(
         self,

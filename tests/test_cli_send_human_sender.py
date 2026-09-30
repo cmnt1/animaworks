@@ -44,16 +44,13 @@ def test_messenger_send_human_source(tmp_path: Path) -> None:
     assert data["from_person"] == "someuser"
 
 
-def test_messenger_human_source_skips_cascade_limiter(tmp_path: Path) -> None:
-    """Human-sourced sends must not consult the anima cascade limiter."""
+def test_messenger_human_source_sends_message(tmp_path: Path) -> None:
     shared_dir = tmp_path / "shared"
-    # Make the recipient look like an internal anima so the depth-check
-    # branch would be reached for anima-sourced messages.
     (tmp_path / "animas" / "bob").mkdir(parents=True)
     messenger = Messenger(shared_dir, "someuser")
-    with patch("core.messaging.cascade_limiter.get_depth_limiter") as get_limiter:
-        msg = messenger.send(to="bob", content="hello", source="human")
-    get_limiter.assert_not_called()
+
+    msg = messenger.send(to="bob", content="hello", source="human")
+
     assert msg.type == "message"
 
 

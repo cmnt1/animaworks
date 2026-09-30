@@ -21,7 +21,7 @@
 | [라이프사이클](architecture/lifecycle.md) | chat, inbox, heartbeat, cron, task의 시작 경로와 잠금. |
 | [프롬프트 구축](architecture/prompt.md) | 시스템 프롬프트와 런타임 컨텍스트의 구성. |
 | [작업 관리](architecture/tasks.md) | Task Board, 위임, background task. |
-| [메시징](architecture/messaging.md) | DM, Board, 인간에 대한 알림, 전송 제한, 외부 연계. |
+| [메시징](architecture/messaging.md) | DM, Board, 인간 알림, Inbox wake와 메시지 처리, 외부 연계. |
 | [기억 시스템](memory/index.md) | 기억의 설계, 디렉터리, frontmatter. |
 | [자동 회상](memory/priming.md) | 실행 시 기억을 컨텍스트로 가져오는 방식. |
 | [의도적 회상과 검색](memory/retrieval.md) | `search_memory`, 검색 처리, RAG, 복구. |

@@ -228,9 +228,6 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 | `background_model` | 하트비트·cron 등 백그라운드용 모델 | engineer / manager만（다른 역할은 키 없음） |
 | `context_threshold` | 컴팩션 임계값 | 전 역할 |
 | `conversation_history_threshold` | 대화 기록 압축 임계값 | 전 역할（템플릿에서는 0.30〜0.40） |
-| `max_outbound_per_hour` | 1시간당 전송 상한（DM·Board） | 레이트 제한 |
-| `max_outbound_per_day` | 1일당 전송 상한 | 레이트 제한 |
-| `max_recipients_per_run` | 1 run당 수신자 수 상한 | 레이트 제한 |
 
 유효한 역할명은 코드상 `VALID_ROLES`（`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`）에 일치해야 한다.
 
@@ -247,17 +244,6 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-메시징 상한（`defaults.json` 내의 레이트 관련）:
-
-| 역할 | max_outbound_per_hour | max_outbound_per_day | max_recipients_per_run |
-|--------|------------------------|----------------------|-------------------------|
-| manager | 60 | 300 | 10 |
-| engineer | 40 | 200 | 5 |
-| researcher | 30 | 150 | 3 |
-| writer | 30 | 150 | 3 |
-| ops | 20 | 80 | 2 |
-| general | 15 | 50 | 2 |
-
 `--role` 미지정의 `create_from_md`에서는 `general`가 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿 동봉의 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`이 실행 모드 **A**（LiteLLM + tool 루프）에 매치한다. vLLM 등을 사용하는 경우는 `status.json`의 `model`와 `credential`（예: `openai/glm-4.7-flash`）을 편집한다. engineer / manager는 `background_model`에 의해 하트비트·cron 등의 백그라운드 실행에 경량 모델을 할당할 수 있다.
 
 ### 적용 흐름
@@ -265,8 +251,8 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 1. **생성 시** (`create_from_md`)의 순서는 다음과 같음:
    - `_apply_defaults_from_sheet()` … 캐릭터 시트에서 `identity.md` / `injection.md` (/（권한 섹션이 있으면) `permissions.md` → `permissions.json`로 마이그레이션
    - `_apply_role_defaults()` … 롤의 `permissions.json`와 `specialty_prompt.md`를 **덮어쓰기 복사** (캐릭터 시트에서 온 `permissions.json`는 롤 쪽에서 덮어써짐)
-   - `_create_status_json()` … `SHARED_ROLES_DIR`(`_shared/roles/<role>/defaults.json`)에서 위 표의 키를 모두 읽고, 캐릭터 시트의 "모델", "credential"이 있으면 그것으로 덮어써서 `status.json`를 작성함. 캐릭터 시트의 "실행 모드"에 값이 있을 때만 `execution_mode`를 기록함; 미지정이면 키 자체를 생략하고, `models.json` 등의 패턴 해결에 맡김 (`core/anima/factory.py`의 `_create_status_json`).
-2. **롤 변경 시** (`animaworks anima set-role`): `_apply_role_defaults()`에서 `permissions.json`와 `specialty_prompt.md`를 다시 복사. `status.json`에는 `model`, `context_threshold`, `conversation_history_threshold`가 `defaults.json`에서 병합됨. `background_model`와 `max_outbound_*`는 **set-role에서는 업데이트되지 않음** (필요하면 수동으로 `status.json`를 편집). `--status-only`는 `role`만 업데이트하고 템플릿 파일에는 건드리지 않음. `--no-restart`에서 API를 통한 자동 재시작을 건너뛸 수 있음. CLI의 성공 출력에는 `permissions.json`가 포함됨 (`cli/commands/anima_mgmt.py`의 `cmd_anima_set_role`).
+   - `_create_status_json()` … `SHARED_ROLES_DIR`(`_shared/roles/<role>/defaults.json`)에서 위 표의 모델·컨텍스트 설정을 읽고, 캐릭터 시트의 "모델", "credential"이 있으면 그것으로 덮어써서 `status.json`를 작성함. 캐릭터 시트의 "실행 모드"에 값이 있을 때만 `execution_mode`를 기록함; 미지정이면 키 자체를 생략하고, `models.json` 등의 패턴 해결에 맡김 (`core/anima/factory.py`의 `_create_status_json`).
+2. **롤 변경 시** (`animaworks anima set-role`): `_apply_role_defaults()`에서 `permissions.json`와 `specialty_prompt.md`를 다시 복사. `status.json`에는 `model`, `context_threshold`, `conversation_history_threshold`가 `defaults.json`에서 병합됨. `background_model`은 **set-role에서는 업데이트되지 않음** (필요하면 수동으로 `status.json`를 편집). `--status-only`는 `role`만 업데이트하고 템플릿 파일에는 건드리지 않음. `--no-restart`에서 API를 통한 자동 재시작을 건너뛸 수 있음. CLI의 성공 출력에는 `permissions.json`가 포함됨 (`cli/commands/anima_mgmt.py`의 `cmd_anima_set_role`).
 
 ### 프롬프트 주입
 

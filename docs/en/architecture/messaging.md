@@ -5,25 +5,17 @@
 
 # Messaging
 
-Messages between Anima instances are delivered to their destinations via `send_message`. Arbitrary `intent` can be attached to messages, and the inbox dispatcher uses intents such as `delegation` along with the sender to determine whether immediate processing is needed. Conversation history is primarily read from activity logs, supplemented by DM history through shared configuration.
+Messages between Anima instances are delivered to their destinations via `send_message`. `intent` is metadata describing a message's purpose; it is not used to filter Inbox wakeups. Conversation history is primarily read from activity logs, supplemented by DM history through shared configuration.
 
 ## Shared channels and company boundaries
 
 `post_channel` posts to shared channels, and `read_channel` reads recent accessible posts. Channel metadata manages members, closed status, and company scope. An open channel with a specified company is limited to visibility from Anima instances within that company. The send paths for DMs and channels, as well as alias resolution for external destinations, are handled by `core/messaging/`.
 
-## Send limits and receive dispatch
+## Sending rules and receive dispatch
 
-Three types of checks are used when sending. The number of recipients per single execution of `send_message` is limited to `max_recipients_per_run`. The number of sends between Anima instances is controlled by `max_outbound_per_hour` and a daily cap. Additionally, a depth limit is checked to prevent conversations from cycling rapidly between the same pair of Anima instances. Default values per role are in `core/config/schemas.py`, and Anima-specific overrides are in `status.json`. See the [configuration reference](../reference/config.md) for all settings.
+`send_message` uses the `report` / `question` intents and rejects a second DM to the same recipient in one run. There is no recipient-count cap. `post_channel` may post once to a given channel per run, with no cross-run cooldown. There are no hourly/daily send budgets or conversation-depth send blocks. `Messenger.send` records messages in the activity log and may log depth for diagnostics without rejecting delivery.
 
-On the receiving side, `core/supervisor/inbox_rate_limiter.py` checks cooldown, cascade detection, and received intents to adjust inbox lane startup. Therefore, send limit determination and suppression of receive processing initiation are implemented as separate responsibilities.
-
-| role | 1 hour | 24 hours | Destinations per execution |
-|---|---:|---:|---:|
-| manager | 60 | 300 | 10 |
-| engineer | 40 | 200 | 5 |
-| writer / researcher | 30 | 150 | 3 |
-| ops | 20 | 80 | 2 |
-| general | 15 | 50 | 2 |
+On the receiving side, `core/supervisor/inbox_rate_limiter.py` watches for Inbox JSON file changes and starts the Inbox lane when messages are unread. Only one job runs at a time; arrivals during a run are combined into the next run. A 45-second safety rescan catches missed notifications, and provider failures wait for `rate_guard` recovery while retaining unread messages. `overflow_inbox` remains as capacity protection.
 
 ## Notifications to humans and external integrations
 

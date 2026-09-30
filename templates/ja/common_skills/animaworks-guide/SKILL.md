@@ -127,14 +127,6 @@ animaworks anima set-background-model --all --clear     # 有効な全Animaの b
 animaworks anima set-background-model --all {モデル名}   # 有効な全Anima一括（モデルは位置引数でも可: `{モデル} --all`）
 ```
 
-### アウトバウンド制限
-
-```bash
-animaworks anima set-outbound-limit {名前} --per-hour 30 --per-day 100   # 送信レート制限
-animaworks anima set-outbound-limit {名前} --per-run 5                  # 1 runあたりの宛先数
-animaworks anima set-outbound-limit {名前} --clear                      # ロールデフォルトに戻す
-```
-
 ### 名前変更
 
 ```bash

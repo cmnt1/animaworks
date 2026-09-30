@@ -43,7 +43,7 @@ def test_delegate_task_writes_canonical_task_and_alias(monkeypatch, tmp_path: Pa
             "boss": SimpleNamespace(supervisor=None, aliases=[]),
             "worker": SimpleNamespace(supervisor="boss", aliases=[]),
         },
-        heartbeat=SimpleNamespace(depth_window_s=600, max_depth=6),
+        heartbeat=SimpleNamespace(delegation_dm_enabled=True),
     )
     with (
         patch("core.config.models.load_config", return_value=config),
@@ -106,7 +106,7 @@ def test_delegate_task_missing_instruction_creates_no_tasks(monkeypatch, tmp_pat
             "boss": SimpleNamespace(supervisor=None, aliases=[]),
             "worker": SimpleNamespace(supervisor="boss", aliases=[]),
         },
-        heartbeat=SimpleNamespace(depth_window_s=600, max_depth=6),
+        heartbeat=SimpleNamespace(delegation_dm_enabled=True),
     )
     with (
         patch("core.config.models.load_config", return_value=config),

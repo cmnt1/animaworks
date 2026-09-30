@@ -227,42 +227,26 @@ class TaskRunnerSupervisor:
             log_context=f"task={task.name} follow-up",
         )
 
-    async def run_heartbeat(
-        self,
-        *,
-        cascade_suppressed_senders: list[str] | None = None,
-    ) -> dict[str, Any]:
+    async def run_heartbeat(self) -> dict[str, Any]:
         """Spawn one heartbeat task runner and return its terminal result."""
-        senders = list(cascade_suppressed_senders) if cascade_suppressed_senders else None
         return await self._run_isolated_job(
             lane="heartbeat",
             job_prefix="heartbeat",
-            params_builder=lambda url_env: {
-                "cascade_suppressed_senders": senders,
-                "environment": {"urls": url_env},
-            },
+            params_builder=lambda url_env: {"environment": {"urls": url_env}},
             log_context="heartbeat",
         )
 
-    async def run_inbox(
-        self,
-        *,
-        cascade_suppressed_senders: list[str] | None = None,
-    ) -> dict[str, Any]:
+    async def run_inbox(self) -> dict[str, Any]:
         """Spawn one inbox (inter-Anima message) task runner and return its terminal result.
 
         Uses a dedicated ``inbox`` lane rather than reusing the ``cron`` lane so
         that journal recovery (lane name == session type) picks up the inbox
         journal (``session_type="inbox"``).
         """
-        senders = list(cascade_suppressed_senders) if cascade_suppressed_senders else None
         return await self._run_isolated_job(
             lane="inbox",
             job_prefix="inbox",
-            params_builder=lambda url_env: {
-                "cascade_suppressed_senders": senders,
-                "environment": {"urls": url_env},
-            },
+            params_builder=lambda url_env: {"environment": {"urls": url_env}},
             log_context="inbox",
             display_lane="inbox",
         )

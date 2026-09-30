@@ -59,7 +59,7 @@ When authentication configuration is required, `auth_guard` of `server/app.py` c
 
 ## External Send and Receive
 
-External sending includes checks for destination resolution, operation permission, recipient count, and per-hour and per-day send limits. DM and shared channel send limits share a common budget. On the receive side, cooldown and cascade detection control inbox startup. Credentials are not written into code or documents, and only approved integrations are enabled. For details on send rules, see [Messaging](architecture/messaging.md).
+External sending checks destination resolution, operation permissions, and external-service delivery results. Within a run, a second DM to the same recipient is prevented; there is no recipient-count cap, hourly/daily budget, or conversation-depth send block. On the receive side, Inbox file-change notifications wake processing, with only one job running at a time. `rate_guard` controls provider-error recovery waits. Credentials are not written into code or documents, and only approved integrations are enabled. For details, see [Messaging](architecture/messaging.md).
 
 ## Adversarial Threat Analysis
 
@@ -72,7 +72,7 @@ External sending includes checks for destination resolution, operation permissio
 
 ## Defense in Depth
 
-The layers include boundary tags for input provenance, per-Anima tool permissions, common command evaluation, file path and company affiliation checks, internal API caller validation, HTTP authentication, and send volume limits. Each layer protects a different operation point, so no single layer is designed to provide safety on its own. Operate in combination with configuration management, execution environment protection, and least privilege for external services.
+The layers include boundary tags for input provenance, per-Anima tool permissions, common command evaluation, file path and company affiliation checks, internal API caller validation, HTTP authentication, and per-run duplicate-recipient prevention. Each layer protects a different operation point, so no single layer is designed to provide safety on its own. Operate in combination with configuration management, execution environment protection, and least privilege for external services.
 
 ## Residual Risks and Operations
 
@@ -80,7 +80,7 @@ The layers include boundary tags for input provenance, per-Anima tool permission
 - `permissions.json` and `permissions.global.json` are permission boundaries. Take a backup before editing, and validate the JSON and schema after changes. If a read error occurs, do not loosen permissions; fix the cause instead.
 - When enabling localhost trust, correctly restrict the reverse proxy's forwarded headers and exposure scope. When exposing the server to the internet, configure authentication and TLS.
 - The internal API's log mode is for migration verification and differs from operations that enforce caller validation. Check the production configuration.
-- Send limits are a mechanism to reduce the impact of misdirected sends; they do not replace human review of destinations and content or least privilege on the external service side.
+- Per-run duplicate prevention is only a safeguard against accidental repeats; it does not replace human review of destinations and content or least privilege on the external service side.
 
 ## Related Documents
 

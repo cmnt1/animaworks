@@ -425,12 +425,7 @@ class TestHandlerPostReadACL:
         )
         assert not (shared_dir / "channels" / "tombstone.jsonl").exists()
 
-        with (
-            patch("core.messaging.messenger.is_channel_member", return_value=True),
-            patch("core.config.models.load_config") as mock_cfg,
-        ):
-            mock_cfg.return_value = MagicMock()
-            mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 0
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             result = handler._handle_post_channel(
                 {
                     "channel": "tombstone",

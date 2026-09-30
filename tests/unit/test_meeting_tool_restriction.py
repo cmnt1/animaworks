@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -117,14 +116,10 @@ class TestMeetingModeToolBlocking:
         meeting_token = meeting_mode_var.set(True)
         context_token = meeting_context.set(context)
         try:
-            with patch(
-                "core.config.models.resolve_outbound_limits",
-                return_value={"max_recipients_per_run": 5},
-            ):
-                result = handler.handle(
-                    "send_message",
-                    {"to": "rin", "content": "Please review this", "intent": "question"},
-                )
+            result = handler.handle(
+                "send_message",
+                {"to": "rin", "content": "Please review this", "intent": "question"},
+            )
         finally:
             meeting_context.reset(context_token)
             meeting_mode_var.reset(meeting_token)
@@ -159,16 +154,12 @@ class TestMeetingModeToolBlocking:
         meeting_token = meeting_mode_var.set(True)
         context_token = meeting_context.set(context)
         try:
-            with patch(
-                "core.config.models.resolve_outbound_limits",
-                return_value={"max_recipients_per_run": 2},
-            ):
-                results = [
-                    handler.handle(
-                        "send_message", {"to": name, "content": f"Question for {name}", "intent": "question"}
-                    )
-                    for name in ("rin", "mei", "kai", "yui")
-                ]
+            results = [
+                handler.handle(
+                    "send_message", {"to": name, "content": f"Question for {name}", "intent": "question"}
+                )
+                for name in ("rin", "mei", "kai", "yui")
+            ]
         finally:
             meeting_context.reset(context_token)
             meeting_mode_var.reset(meeting_token)
@@ -183,44 +174,6 @@ class TestMeetingModeToolBlocking:
         assert redirect_entries[0]["text"] == "@rin Question for rin"
         assert redirect_entries[0]["meta"]["dedup_key"].startswith("meeting_redirect:")
         messenger.send.assert_not_called()
-
-    def test_normal_dm_recipient_limit_still_applies(self, tmp_path):
-        animas_dir = tmp_path / "animas"
-        for name in ("rin", "mei", "kai"):
-            (animas_dir / name).mkdir(parents=True, exist_ok=True)
-        messenger = Messenger(tmp_path / "shared", "test")
-        handler = _make_handler(tmp_path, messenger=messenger)
-        config = SimpleNamespace(
-            animas={
-                "test": SimpleNamespace(supervisor=None, aliases=[]),
-                "rin": SimpleNamespace(supervisor=None, aliases=[]),
-                "mei": SimpleNamespace(supervisor=None, aliases=[]),
-                "kai": SimpleNamespace(supervisor=None, aliases=[]),
-            },
-            external_messaging=SimpleNamespace(user_aliases={}, preferred_channel="slack"),
-            heartbeat=SimpleNamespace(depth_window_s=1800, max_depth=5),
-        )
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.config.models.load_config", return_value=config),
-            patch(
-                "core.config.models.resolve_outbound_limits",
-                return_value={
-                    "max_recipients_per_run": 2,
-                    "max_outbound_per_hour": 100,
-                    "max_outbound_per_day": 1000,
-                },
-            ),
-        ):
-            first = handler.handle("send_message", {"to": "rin", "content": "One", "intent": "question"})
-            second = handler.handle("send_message", {"to": "mei", "content": "Two", "intent": "question"})
-            third = handler.handle("send_message", {"to": "kai", "content": "Three", "intent": "question"})
-
-        assert "Message sent to rin" in first
-        assert "Message sent to mei" in second
-        assert "2" in third
-        assert not list((tmp_path / "shared" / "inbox" / "kai").glob("*.json"))
 
     def test_meeting_redirect_duplicate_is_not_appended_twice(self, tmp_path):
         messenger = MagicMock()

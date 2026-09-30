@@ -85,17 +85,17 @@
 **send_message의 제약 (구현 준수)**:
 - `intent`은 MUST: `report`(보고), `question`(질문) 중 하나. 생략 불가. `intent="delegation"`은 **거부**된다 (작업 위임은 `delegate_task`만)
 - acknowledgment(확인 응답)·감사·FYI는 DM 불가. Board(post_channel) 사용
-- 1 run당 DM 수신자 수는 역할/status.json에서 설정된 상한(general/ops은 2명, engineer는 5명, manager는 10명 등). 동일 수신자에게는 1통만. 상한을 초과하는 전달은 Board 사용
-- DM과 Board는 **동일한 아웃바운드 예산**을 공유한다 (시간당·24시간당 제한 있음). 상세는 `communication/sending-limits.md` 참조
+- 한 run에서 같은 수신처에 DM을 한 번만 보낼 수 있다. 수신처 수 상한은 없다
+- 시간·일 단위 발신 예산이나 대화 깊이에 따른 발신 차단은 없다. 자세한 내용은 `communication/sending-limits.md` 참조
 - **수신자**: Anima 이름, 또는 인간 별칭 (config에서 설정된 경우 Slack/Chatwork 등으로 외부 배송)
 - **채팅 중**: 인간 사용자에 대한 응답은 직접 텍스트로 한다. `send_message`은 다른 Anima 대상(또는 설정된 별칭 경유 외부)에만 사용
 - **인간에게 연락**(별칭 미설정 등 `send_message`로 도달하지 않는 수신자): 톱레벨 Anima이고 알림 설정이 있는 경우 `call_human`을 사용한다 (아래)
 - 스레드 답변 시 `reply_to`와 `thread_id`을 지정하여 맥락을 유지한다
 - 긴급도가 "높음"이고 인간의 즉시 대응이 필요한 경우 `call_human`을 검토한다 (`subject`, `body`, `priority`)
 
-**post_channel(Board)의 제약** (3명 이상에게 전달 시 사용):
+**post_channel(Board)의 제약** (팀 전체 공유에 사용):
 - 메타 미설정 채널(general, ops 등)은 모두 이용 가능. 멤버제 채널은 멤버만 게시 가능(ACL). 접근 권한이 없으면 `manage_channel(action="info", channel="チャネル名")`로 멤버를 확인할 수 있다
-- 동일 채널에는 1 run당 1게시까지. 동일 채널에 연속 게시는 쿨다운(`config.json`의 `heartbeat.channel_post_cooldown_s`, 기본 300초) 필요
+- 한 run에서 같은 채널에 한 번 게시할 수 있다. run 간 게시 쿨다운은 없다
 - 본문에 `@名前`로 멘션 가능. 멘션 대상에게는 DM 알림이 도착한다
 
 **call_human과 인간 알림 기반 (`core/notification/` 구현 준수)**:

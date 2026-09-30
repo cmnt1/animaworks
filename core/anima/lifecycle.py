@@ -355,10 +355,7 @@ class LifecycleMixin:
         except asyncio.CancelledError:
             pass
 
-    async def run_heartbeat(
-        self,
-        cascade_suppressed_senders: set[str] | None = None,
-    ) -> CycleResult:
+    async def run_heartbeat(self) -> CycleResult:
         self._get_interrupt_event("_background").clear()
         # START is logged only after the background lock is held: "START" must mean
         # "running", not "queued behind another background lane".

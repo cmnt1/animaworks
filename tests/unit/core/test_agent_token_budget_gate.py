@@ -164,7 +164,7 @@ async def test_budget_blocked_inbox_is_not_read_or_archived(tmp_path: Path) -> N
         result = await inbox.process_inbox_message()
 
     assert result.action == "skipped"
-    inbox._process_inbox_messages.assert_awaited_once_with(None, track_retries=False)
+    inbox._process_inbox_messages.assert_awaited_once_with(track_retries=False)
     inbox.messenger.archive_paths.assert_not_called()
     assert not (tmp_path / "state" / "inbox_read_counts.json").exists()
     assert inbox._status_slots["inbox"] == "idle"

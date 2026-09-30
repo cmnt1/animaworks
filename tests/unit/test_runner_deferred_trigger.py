@@ -1,17 +1,10 @@
-"""Unit tests for deferred trigger mechanism in InboxRateLimiter.
-
-Verifies that messages arriving during cooldown or lock-held states
-are guaranteed to be processed via deferred timer scheduling.
-"""
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
+"""Unit tests for deferred Inbox wakeups and lock-release notification."""
 
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -20,240 +13,85 @@ from core.supervisor.scheduler_manager import SchedulerManager
 
 
 def _make_limiter(tmp_path: Path) -> InboxRateLimiter:
-    """Create an InboxRateLimiter with minimal dependencies."""
-    mock_anima = MagicMock()
-    mock_anima.messenger = MagicMock()
-    mock_anima._inbox_lock = asyncio.Lock()
-
-    mock_scheduler_mgr = MagicMock(spec=SchedulerManager)
-    mock_scheduler_mgr.heartbeat_running = False
-
+    anima = MagicMock()
+    anima.anima_dir = tmp_path / "animas" / "defer-test"
+    anima.messenger.has_unread.return_value = False
+    scheduler_mgr = MagicMock(spec=SchedulerManager)
+    scheduler_mgr.heartbeat_running = False
     return InboxRateLimiter(
-        anima=mock_anima,
+        anima=anima,
         anima_name="defer-test",
         shutdown_event=asyncio.Event(),
-        scheduler_mgr=mock_scheduler_mgr,
+        scheduler_mgr=scheduler_mgr,
     )
 
 
-# ── schedule_deferred_trigger ──────────────────────────
-
-
 class TestScheduleDeferredTrigger:
-    """Verify deferred timer scheduling behavior."""
-
-    def test_initial_deferred_timer_is_none(self, tmp_path):
-        """InboxRateLimiter initializes with _deferred_timer=None."""
+    @pytest.mark.asyncio
+    async def test_schedules_one_timer_that_wakes_the_watcher(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
-        assert limiter._deferred_timer is None
-
-    def test_schedules_timer(self, tmp_path):
-        """schedule_deferred_trigger creates a timer handle."""
-        limiter = _make_limiter(tmp_path)
-        loop = asyncio.new_event_loop()
-        try:
-            with patch("asyncio.get_running_loop", return_value=loop):
-                limiter.schedule_deferred_trigger()
-            assert limiter._deferred_timer is not None
-            limiter._deferred_timer.cancel()
-        finally:
-            loop.close()
-
-    def test_noop_when_already_scheduled(self, tmp_path):
-        """Second call is a no-op when timer already exists."""
-        limiter = _make_limiter(tmp_path)
-        sentinel = MagicMock()
-        limiter._deferred_timer = sentinel
+        limiter._failure_retry_until = asyncio.get_running_loop().time() + 0.05
 
         limiter.schedule_deferred_trigger()
-        # Timer should still be the same sentinel object
-        assert limiter._deferred_timer is sentinel
+        timer = limiter._deferred_timer
+        assert timer is not None
+        limiter.schedule_deferred_trigger()
+        assert limiter._deferred_timer is timer
 
-
-# ── try_deferred_trigger ───────────────────────────────
-
-
-class TestTryDeferredTrigger:
-    """Verify deferred trigger execution logic."""
-
-    @pytest.mark.asyncio
-    async def test_triggers_heartbeat_when_ready(self, tmp_path):
-        """Fires heartbeat when not in cooldown and lock not held."""
-        limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = True
-        limiter._anima._inbox_lock = MagicMock()
-        limiter._anima._inbox_lock.locked.return_value = False
-        limiter._anima._background_lock = MagicMock()
-        limiter._anima._background_lock.locked.return_value = False
-        limiter._deferred_timer = MagicMock()
-
-        with (
-            patch.object(limiter, "is_in_cooldown", return_value=False),
-            patch.object(limiter, "message_triggered_inbox", new_callable=AsyncMock),
-        ):
-            await limiter.try_deferred_trigger()
-            assert limiter._pending_trigger is True
-            assert limiter._deferred_timer is None
-
-    @pytest.mark.asyncio
-    async def test_reschedules_when_in_cooldown(self, tmp_path):
-        """Re-schedules if still in cooldown."""
-        limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = True
-        limiter._deferred_timer = MagicMock()
-
-        with (
-            patch.object(limiter, "is_in_cooldown", return_value=True),
-            patch.object(limiter, "schedule_deferred_trigger") as mock_sched,
-        ):
-            await limiter.try_deferred_trigger()
-            mock_sched.assert_called_once()
-            assert limiter._pending_trigger is False
-
-    @pytest.mark.asyncio
-    async def test_noop_when_no_unread(self, tmp_path):
-        """Does nothing if inbox is empty."""
-        limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = False
-        limiter._deferred_timer = MagicMock()
-
-        await limiter.try_deferred_trigger()
-        assert limiter._pending_trigger is False
+        await asyncio.wait_for(limiter._inbox_wake_event.wait(), timeout=3.0)
         assert limiter._deferred_timer is None
-
-    @pytest.mark.asyncio
-    async def test_noop_when_pending_trigger(self, tmp_path):
-        """Does nothing if trigger already pending."""
-        limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = True
-        limiter._deferred_timer = MagicMock()
-        limiter._pending_trigger = True
-
-        await limiter.try_deferred_trigger()
-
-    @pytest.mark.asyncio
-    async def test_clears_timer_on_entry(self, tmp_path):
-        """Timer reference is cleared at the start of execution."""
-        limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = False
-        limiter._deferred_timer = MagicMock()
-
-        await limiter.try_deferred_trigger()
-        assert limiter._deferred_timer is None
-
-
-# ── on_anima_lock_released ────────────────────────────
 
 
 class TestOnAnimaLockReleased:
-    """Verify lock-released callback behavior."""
-
-    @pytest.mark.asyncio
-    async def test_schedules_deferred_when_unread(self, tmp_path):
-        """Schedules deferred trigger when unread messages exist."""
+    def test_unread_messages_wake_the_watcher(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
         limiter._anima.messenger.has_unread.return_value = True
 
-        with patch.object(limiter, "schedule_deferred_trigger") as mock_sched:
-            await limiter.on_anima_lock_released()
-            mock_sched.assert_called_once()
+        limiter.on_anima_lock_released()
 
-    @pytest.mark.asyncio
-    async def test_no_action_when_no_unread(self, tmp_path):
-        """Does nothing when no unread messages."""
+        assert limiter._inbox_wake_event.is_set()
+        assert limiter._deferred_timer is None
+
+    def test_no_wake_when_there_are_no_unread_messages(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
-        limiter._anima.messenger.has_unread.return_value = False
 
-        with patch.object(limiter, "schedule_deferred_trigger") as mock_sched:
-            await limiter.on_anima_lock_released()
-            mock_sched.assert_not_called()
+        limiter.on_anima_lock_released()
 
-    @pytest.mark.asyncio
-    async def test_no_action_when_pending_trigger(self, tmp_path):
-        """Does nothing when trigger already pending."""
+        limiter._anima.messenger.has_unread.assert_called_once_with()
+        assert not limiter._inbox_wake_event.is_set()
+
+    def test_no_duplicate_wake_when_a_job_is_pending(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
         limiter._anima.messenger.has_unread.return_value = True
         limiter._pending_trigger = True
 
-        with patch.object(limiter, "schedule_deferred_trigger") as mock_sched:
-            await limiter.on_anima_lock_released()
-            mock_sched.assert_not_called()
+        limiter.on_anima_lock_released()
 
-    @pytest.mark.asyncio
-    async def test_no_action_when_no_anima(self, tmp_path):
-        """Does nothing when anima is None."""
+        assert not limiter._inbox_wake_event.is_set()
+
+    def test_no_action_when_anima_is_unavailable(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
         limiter._anima = None
 
-        # Should not raise
-        await limiter.on_anima_lock_released()
+        limiter.on_anima_lock_released()
 
-
-# ── Cleanup ────────────────────────────────────────────
+        assert not limiter._inbox_wake_event.is_set()
 
 
 class TestDeferredTimerCleanup:
-    """Verify timer is cleaned up properly."""
-
-    def test_cancel_deferred_timer(self, tmp_path):
-        """cancel_deferred_timer cancels and clears the timer."""
+    def test_cancel_deferred_timer(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
         mock_timer = MagicMock()
         limiter._deferred_timer = mock_timer
 
         limiter.cancel_deferred_timer()
+
         mock_timer.cancel.assert_called_once()
         assert limiter._deferred_timer is None
 
-    def test_cancel_noop_when_no_timer(self, tmp_path):
-        """cancel_deferred_timer handles None timer gracefully."""
+    def test_cancel_noop_when_no_timer(self, tmp_path: Path) -> None:
         limiter = _make_limiter(tmp_path)
-        assert limiter._deferred_timer is None
 
-        # Should not raise
         limiter.cancel_deferred_timer()
 
-
-class TestAnimaRunnerCleanupDelegation:
-    """Verify AnimaRunner._cleanup delegates to InboxRateLimiter."""
-
-    @pytest.mark.asyncio
-    async def test_cleanup_cancels_timer_via_limiter(self, tmp_path):
-        """AnimaRunner._cleanup calls inbox_limiter.cancel_deferred_timer()."""
-        from core.supervisor.runner import AnimaRunner
-
-        animas_dir = tmp_path / "animas"
-        animas_dir.mkdir(exist_ok=True)
-        (animas_dir / "defer-test").mkdir(exist_ok=True)
-        (animas_dir / "defer-test" / "identity.md").write_text("test")
-        shared_dir = tmp_path / "shared"
-        shared_dir.mkdir(exist_ok=True)
-
-        runner = AnimaRunner(
-            anima_name="defer-test",
-            socket_path=tmp_path / "test.sock",
-            animas_dir=animas_dir,
-            shared_dir=shared_dir,
-        )
-
-        mock_limiter = MagicMock(spec=InboxRateLimiter)
-        runner._inbox_limiter = mock_limiter
-
-        with patch("core.execution.engines.litellm._litellm_tools.shutdown_tool_executors") as shutdown_executors:
-            await runner._cleanup()
-        mock_limiter.cancel_deferred_timer.assert_called_once()
-        shutdown_executors.assert_called_once_with()
-
-    def test_mode_a_executor_shutdown_cancels_pending_work(self):
-        from core.execution.engines.litellm import _litellm_tools
-
-        quick_executor = MagicMock()
-        background_executor = MagicMock()
-        with (
-            patch.object(_litellm_tools, "_tool_executor", quick_executor),
-            patch.object(_litellm_tools, "_bg_tool_executor", background_executor),
-        ):
-            _litellm_tools.shutdown_tool_executors()
-
-        quick_executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
-        background_executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
+        assert limiter._deferred_timer is None

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 23d104d8172984932ac70c4afd0180a64300bb8f1f5e6861096249b73a071ed8 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 1dc92c9a2c2347be99e2cb76fa553b62b74e267fef6c8cb2e36276550224dabc -->
 
 # CLI リファレンス: `animaworks`
 
@@ -17,7 +17,7 @@
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
+                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,reload,set-role,rename,audit}
                         ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
@@ -181,23 +181,6 @@ Set heartbeat/cron model
 | model | positional | — | — | Model name (e.g. azure/gpt-4.1-mini) |
 | --credential | option | — | — | Credential name |
 | --all | flag | false | — | Apply to all enabled animas |
-
-## `anima set-outbound-limit`
-
-Set per-Anima outbound message limits
-
-`usage: animaworks anima set-outbound-limit [-h] [--per-hour PER_HOUR]
-                                           [--per-day PER_DAY]
-                                           [--per-run PER_RUN] [--clear]
-                                           name`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| name | positional | — | — | Anima name |
-| --per-hour | option | — | — | Max outbound messages per hour |
-| --per-day | option | — | — | Max outbound messages per day |
-| --per-run | option | — | — | Max DM recipients per run |
-| --clear | flag | false | — | Clear overrides (fallback to role defaults) |
 
 ## `anima set-role`
 

@@ -1,11 +1,7 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Inbox rate limiting, cascade detection, and deferred trigger management.
-
-Monitors the Anima inbox for new messages and triggers heartbeats with
-rate limiting to prevent cascade loops between Animas.
-"""
+"""Event-driven inbox wakeups and deferred trigger management."""
 
 from __future__ import annotations
 
@@ -13,11 +9,10 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from core.config.models import load_config
 from core.platform.tasks import spawn
-from core.schemas import EXTERNAL_PLATFORM_SOURCES
 
 if TYPE_CHECKING:
     from core.anima.digital_anima import DigitalAnima
@@ -25,46 +20,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Min interval between "disabled, skip inbox" info logs (watcher polls ~2s).
+_INBOX_RECHECK_INTERVAL_SEC = 45.0
 _DISABLED_SKIP_LOG_COOLDOWN_SEC = 30.0
-
-
-def _is_immediately_actionable_intent(intent: str, source: str, actionable_intents: list[str]) -> bool:
-    """Return True when an inbox message should wake the anima immediately.
-
-    Internal delegation DMs are treated as actionable even though they are not
-    listed in config.json, because delegated work should not wait for the next
-    scheduled heartbeat.
-    """
-    if intent in actionable_intents:
-        return True
-    return intent == "delegation" and source not in {"human", *EXTERNAL_PLATFORM_SOURCES}
-
-
-def _cascade_senders(inbox_messages: list[Any], anima_name: str) -> set[str]:
-    """Return internal Anima senders that should participate in cascade checks."""
-    return {
-        message.from_person
-        for message in inbox_messages
-        if message.from_person != anima_name
-        and message.source != "system"
-        and message.source not in EXTERNAL_PLATFORM_SOURCES
-    }
+_PROVIDER_FAILURE_RETRY_MIN_SEC = 30.0
 
 
 def _read_anima_enabled(anima_dir: Path) -> bool:
-    """Read status.json ``enabled`` flag (default True if missing/unreadable).
-
-    Local helper mirroring ``ProcessSupervisor.read_anima_enabled`` to avoid
-    importing the heavy manager module from the runner path.
-    """
+    """Read status.json ``enabled`` flag (default True if missing/unreadable)."""
     from core.platform.status_store import read_status
 
     return bool(read_status(anima_dir).get("enabled", True))
 
 
 class InboxRateLimiter:
-    """Inbox rate limiting, cascade detection, and deferred trigger management."""
+    """Coordinate one-at-a-time inbox jobs, filesystem wakeups, and provider backoff."""
 
     def __init__(
         self,
@@ -72,36 +41,25 @@ class InboxRateLimiter:
         anima_name: str,
         shutdown_event: asyncio.Event,
         scheduler_mgr: SchedulerManager,
-        cooldown_sec: float | None = None,
     ) -> None:
-        cfg = load_config()
         self._anima = anima
         self._anima_name = anima_name
         self._shutdown_event = shutdown_event
         self._scheduler_mgr = scheduler_mgr
-        self._cooldown_sec = cooldown_sec if cooldown_sec is not None else cfg.heartbeat.msg_heartbeat_cooldown_s
-        self._cascade_window_s = cfg.heartbeat.cascade_window_s
-        self._cascade_threshold = cfg.heartbeat.cascade_threshold
 
-        self._pending_trigger: bool = False
+        self._pending_trigger = False
+        self._inbox_run_lock = asyncio.Lock()
+        self._inbox_wake_event = asyncio.Event()
         self._deferred_timer: asyncio.Handle | None = None
-        self._last_msg_heartbeat_end: float = 0.0
-        self._pair_heartbeat_times: dict[tuple[str, str], list[float]] = {}
-        self._last_disabled_skip_log: float = 0.0
-        self._failure_retry_until: float = 0.0
-
-    # ── Cooldown ─────────────────────────────────────────────────
-
-    def is_in_cooldown(self) -> bool:
-        """Return True if a message-triggered heartbeat finished too recently."""
-        return (time.monotonic() - self._last_msg_heartbeat_end) < self._cooldown_sec
+        self._last_disabled_skip_log = 0.0
+        self._failure_retry_until = 0.0
 
     def _retry_is_delayed(self) -> bool:
-        """Provider failures retain unread messages but never hot-loop them."""
+        """Provider failures retain unread messages without hot-looping them."""
         return time.monotonic() < self._failure_retry_until
 
     def _record_processing_failure(self) -> None:
-        delay = max(self._cooldown_sec, 30.0)
+        delay = _PROVIDER_FAILURE_RETRY_MIN_SEC
         try:
             from core.config.model_config import _guard_key_for_model_config, resolve_effective_model_config
             from core.execution.rate_guard import get_rate_guard
@@ -110,294 +68,200 @@ class InboxRateLimiter:
             config = self._anima.agent.model_config
             if isinstance(config, ModelConfig):
                 effective = resolve_effective_model_config(config)
-                # When every candidate is blocked the resolver returns the
-                # earliest recovery candidate. Wait for that guard, not a
-                # repeated paid request every poll/minimum retry interval.
+                # When every candidate is blocked, wait for the earliest
+                # recovery candidate instead of issuing repeated provider calls.
                 key = _guard_key_for_model_config(effective, load_config())
                 delay = max(delay, get_rate_guard().blocked_remaining(key))
         except Exception:
             logger.debug("Could not inspect provider retry guard; retaining minimum inbox backoff", exc_info=True)
         self._failure_retry_until = time.monotonic() + delay
 
-    def _has_external_platform_message(self) -> bool:
-        """Peek at inbox for external platform messages (Slack, etc.).
-
-        When a human sends a DM via Slack, the cooldown (designed to
-        prevent Anima-to-Anima cascade loops) should NOT block immediate
-        processing.  This helper lets callers bypass cooldown when such
-        messages are present.
-        """
+    def _start_inbox_observer(self, loop: asyncio.AbstractEventLoop):
+        """Watch top-level inbox JSON files and forward changes to the event loop."""
         try:
-            from core.schemas import EXTERNAL_PLATFORM_SOURCES
+            from watchdog.events import FileSystemEventHandler
+            from watchdog.observers import Observer
 
-            messages = self._anima.messenger.receive()
-            return any(m.source in EXTERNAL_PLATFORM_SOURCES and m.intent for m in messages)
+            inbox_dir = Path(self._anima.messenger.inbox_dir).resolve()
+            limiter = self
+
+            class InboxEventHandler(FileSystemEventHandler):
+                def on_any_event(self, event) -> None:
+                    if event.is_directory:
+                        return
+                    candidates = [getattr(event, "src_path", ""), getattr(event, "dest_path", "")]
+                    for candidate in candidates:
+                        if not candidate:
+                            continue
+                        path = Path(candidate)
+                        if path.suffix == ".json" and path.parent.resolve() == inbox_dir:
+                            try:
+                                loop.call_soon_threadsafe(limiter._inbox_wake_event.set)
+                            except RuntimeError:
+                                logger.debug("Inbox wake arrived after the event loop closed")
+                            return
+
+            observer = Observer()
+            observer.schedule(InboxEventHandler(), str(inbox_dir), recursive=False)
+            observer.start()
+            logger.info("Inbox filesystem watcher started for %s", self._anima_name)
+            return observer
         except Exception:
-            return False
+            logger.warning(
+                "Inbox filesystem watcher unavailable for %s; using %.0fs safety rechecks",
+                self._anima_name,
+                _INBOX_RECHECK_INTERVAL_SEC,
+                exc_info=True,
+            )
+            return None
 
-    # ── Cascade Detection ────────────────────────────────────────
-
-    def check_cascade(self, senders: set[str]) -> bool:
-        """Return True if any (anima, sender) pair exceeds cascade threshold."""
-        now = time.monotonic()
-        for sender in senders:
-            keys = [(self._anima_name, sender), (sender, self._anima_name)]
-            total = 0
-            for k in keys:
-                times = self._pair_heartbeat_times.get(k, [])
-                # Evict expired entries
-                times = [t for t in times if now - t < self._cascade_window_s]
-                self._pair_heartbeat_times[k] = times
-                if not times and k in self._pair_heartbeat_times:
-                    del self._pair_heartbeat_times[k]
-                total += len(times)
-            if total >= self._cascade_threshold:
-                logger.warning(
-                    "CASCADE DETECTED: %s <-> %s (%d round-trips in %ds window). "
-                    "Suppressing message-triggered heartbeat.",
-                    self._anima_name,
-                    sender,
-                    total,
-                    self._cascade_window_s,
-                )
-                return True
-        return False
-
-    def record_pair_heartbeat(self, senders: set[str]) -> None:
-        """Record a heartbeat exchange for cascade tracking."""
-        now = time.monotonic()
-        for sender in senders:
-            key = (self._anima_name, sender)
-            self._pair_heartbeat_times.setdefault(key, []).append(now)
-
-    # ── Lock-Released Callback ───────────────────────────────────
-
-    async def on_anima_lock_released(self) -> None:
-        """Check deferred inbox after the anima's lock is released.
-
-        If unread messages exist, schedule a deferred trigger to ensure
-        they are processed even when cooldown is still active.
-        """
-        if not self._anima:
-            return
-        if not self._anima.messenger.has_unread():
-            return
-        if self._pending_trigger:
-            return
-        # Instead of giving up when in cooldown, schedule deferred trigger
-        self.schedule_deferred_trigger()
-
-    # ── Deferred Trigger ─────────────────────────────────────────
+    def on_anima_lock_released(self) -> None:
+        """Wake the inbox watcher after the Anima releases its processing lock."""
+        if self._anima and self._anima.messenger.has_unread() and not self._pending_trigger:
+            self._inbox_wake_event.set()
 
     def schedule_deferred_trigger(self) -> None:
-        """Schedule a deferred heartbeat trigger after cooldown expires.
-
-        Only one timer is maintained.  If a timer is already pending,
-        the call is a no-op (the existing timer will fire and re-check
-        the inbox).
-        """
+        """Recheck unread messages after provider backoff or a busy heartbeat."""
         if self._deferred_timer is not None:
-            return  # already scheduled
-        remaining = self._cooldown_sec - (time.monotonic() - self._last_msg_heartbeat_end)
-        remaining = max(remaining, self._failure_retry_until - time.monotonic())
-        # If not in cooldown (e.g. lock-only), use a short retry delay
+            return
+        remaining = max(self._failure_retry_until - time.monotonic(), 0.0)
         delay = max(remaining, 2.0)
         loop = asyncio.get_running_loop()
-        self._deferred_timer = loop.call_later(
-            delay,
-            lambda: asyncio.create_task(self.try_deferred_trigger()),
-        )
-        logger.debug(
-            "Deferred trigger scheduled for %s in %.1fs",
-            self._anima_name,
-            delay,
-        )
 
-    async def try_deferred_trigger(self) -> None:
-        """Attempt to trigger a deferred heartbeat.
+        def wake_inbox() -> None:
+            self._deferred_timer = None
+            self._inbox_wake_event.set()
 
-        Re-schedules itself if the anima is still blocked by cooldown
-        or lock, ensuring messages are never forgotten.
-        """
-        self._deferred_timer = None
-        if not self._anima:
-            return
-        if not self._anima.messenger.has_unread():
-            return
-        if self._pending_trigger:
-            return
-        # Bypass cooldown when external platform messages are waiting
-        if self._retry_is_delayed() or (self.is_in_cooldown() and not self._has_external_platform_message()):
-            self.schedule_deferred_trigger()
-            return
-        # Cron runs in a separate task-runner process with its own AgentCore,
-        # so inbox dispatch must not wait for the root's scheduled-work lock.
-        # Waiting here would let dispatch notifications accumulate or overflow.
-        self._pending_trigger = True
-        spawn(self.message_triggered_inbox(), name=f"inbox-trigger-{self._anima.name}")
-
-    # ── Message-Triggered Inbox Processing ──────────────────────
+        self._deferred_timer = loop.call_later(delay, wake_inbox)
+        logger.debug("Deferred inbox check scheduled for %s in %.1fs", self._anima_name, delay)
 
     async def message_triggered_inbox(self) -> None:
-        """Execute inbox processing triggered by incoming messages.
-
-        The actual inbox LLM work runs in an isolated task runner child
-        (``lane="inbox"``); this method stays on the root and only decides
-        *whether* to launch it.  ``self._pending_trigger`` doubles as the
-        "inbox job running" flag: watcher and deferred-trigger paths treat a
-        truthy ``_pending_trigger`` as "an inbox job is in flight" and wait.
-        """
-        if not self._anima:
-            self._pending_trigger = False
+        """Run one inbox job; arrivals during it are coalesced into the next job."""
+        if self._inbox_run_lock.locked():
+            # The active job checks for unread messages on exit and raises one
+            # wake for the next batch, so parallel triggers need not queue here.
             return
 
-        if self._retry_is_delayed():
-            self._pending_trigger = False
-            self.schedule_deferred_trigger()
-            return
+        async with self._inbox_run_lock:
+            if not self._anima:
+                self._pending_trigger = False
+                return
+            self._pending_trigger = True
 
-        # Shared gate for poll / deferred timer / lock-released paths.
-        # Disabled → leave inbox unread; clear pending so watcher can resume.
-        if not _read_anima_enabled(self._anima.anima_dir):
-            now = time.monotonic()
-            if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
-                logger.info(
-                    "Inbox processing skip: anima disabled (%s); messages left unread",
-                    self._anima_name,
-                )
-                self._last_disabled_skip_log = now
-            self._pending_trigger = False
-            return
+            if self._retry_is_delayed():
+                self._pending_trigger = False
+                self.schedule_deferred_trigger()
+                return
 
-        if self._scheduler_mgr.heartbeat_running:
-            logger.info("Message-triggered inbox SKIPPED (heartbeat already running): %s", self._anima_name)
-            self._pending_trigger = False
-            return
+            # Disabled animas keep messages unread until re-enabled.
+            if not _read_anima_enabled(self._anima.anima_dir):
+                now = time.monotonic()
+                if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
+                    logger.info(
+                        "Inbox processing skip: anima disabled (%s); messages left unread",
+                        self._anima_name,
+                    )
+                    self._last_disabled_skip_log = now
+                self._pending_trigger = False
+                return
 
-        # Peek at inbox senders for cascade detection and intent filtering
-        inbox_messages = self._anima.messenger.receive()
+            if self._scheduler_mgr.heartbeat_running:
+                logger.info("Message-triggered inbox deferred (heartbeat already running): %s", self._anima_name)
+                self._pending_trigger = False
+                self.schedule_deferred_trigger()
+                return
 
-        # ── Intent-based trigger filtering ──
-        # Only trigger immediate heartbeat for actionable messages or human messages.
-        # Non-actionable messages (ack, thanks, FYI) wait for the scheduled heartbeat.
-        cfg = load_config()
-        has_human = any(m.source == "human" for m in inbox_messages)
-        has_external_directed = any(m.source in EXTERNAL_PLATFORM_SOURCES and m.intent for m in inbox_messages)
-        has_actionable = any(
-            _is_immediately_actionable_intent(
-                m.intent,
-                m.source,
-                cfg.heartbeat.actionable_intents,
-            )
-            for m in inbox_messages
-        )
-        if not has_human and not has_external_directed and not has_actionable:
-            logger.info(
-                "Intent filter: %s — no actionable messages, deferring to scheduled heartbeat",
-                self._anima_name,
-            )
-            self._pending_trigger = False
-            return
-
-        # Cascade detection applies only to Anima-to-Anima communication,
-        # NOT to messages from external platforms (Slack DMs from humans).
-        cascade_senders = _cascade_senders(inbox_messages, self._anima_name)
-        if cascade_senders and self.check_cascade(cascade_senders):
-            self._pending_trigger = False
-            return
-
-        self._scheduler_mgr.heartbeat_running = True
-        try:
-            logger.info("Message-triggered inbox: %s", self._anima_name)
-            isolated = await self._scheduler_mgr._task_runner_supervisor.run_inbox()
-            result = isolated.get("result")
-            if not isinstance(result, dict):
-                raise ValueError("isolated inbox result must be an object")
-            if (
-                not isolated.get("success")
-                or result.get("action") == "error"
-                or isinstance(result.get("reason"), str)
-                and result.get("reason")
-            ):
+            self._scheduler_mgr.heartbeat_running = True
+            try:
+                logger.info("Message-triggered inbox: %s", self._anima_name)
+                isolated = await self._scheduler_mgr._task_runner_supervisor.run_inbox()
+                result = isolated.get("result")
+                if not isinstance(result, dict):
+                    raise ValueError("isolated inbox result must be an object")
+                if (
+                    not isolated.get("success")
+                    or result.get("action") == "error"
+                    or isinstance(result.get("reason"), str)
+                    and result.get("reason")
+                ):
+                    self._record_processing_failure()
+                else:
+                    self._failure_retry_until = 0.0
+            except Exception:
                 self._record_processing_failure()
-            else:
-                self._failure_retry_until = 0.0
-        except Exception:
-            self._record_processing_failure()
-            logger.exception(
-                "Message-triggered inbox failed: %s",
-                self._anima_name,
-            )
-        finally:
-            self._scheduler_mgr.heartbeat_running = False
-            self._pending_trigger = False
-            self._last_msg_heartbeat_end = time.monotonic()
-            if cascade_senders:
-                self.record_pair_heartbeat(cascade_senders)
-
-    # ── Inbox Watcher Loop ───────────────────────────────────────
+                logger.exception("Message-triggered inbox failed: %s", self._anima_name)
+            finally:
+                self._scheduler_mgr.heartbeat_running = False
+                self._pending_trigger = False
+                try:
+                    if self._anima.messenger.has_unread():
+                        if self._retry_is_delayed():
+                            self.schedule_deferred_trigger()
+                        else:
+                            self._inbox_wake_event.set()
+                except Exception:
+                    logger.debug("Could not check inbox after processing", exc_info=True)
 
     async def inbox_watcher_loop(self) -> None:
-        """Poll inbox every 2s; trigger heartbeat on new messages.
-
-        Applies rate limiting to prevent cascade loops between animas
-        and cooldown to avoid excessive heartbeat triggers.
-        """
+        """Wake on inbox file changes, with an infrequent safety rescan."""
         if not self._anima:
             return
 
         logger.info("Inbox watcher started for %s", self._anima_name)
-
-        while not self._shutdown_event.is_set():
-            try:
-                if self._pending_trigger:
-                    await asyncio.sleep(2.0)
-                    continue
-                if not self._anima.messenger.has_unread():
-                    await asyncio.sleep(2.0)
-                    continue
-                # Bypass cooldown for external platform messages (Slack DMs
-                # from humans should never wait up to 5 minutes).
-                if self._retry_is_delayed() or (self.is_in_cooldown() and not self._has_external_platform_message()):
-                    self.schedule_deferred_trigger()
-                    await asyncio.sleep(2.0)
-                    continue
-                if self._pending_trigger:
-                    self.schedule_deferred_trigger()
-                    await asyncio.sleep(2.0)
-                    continue
-                # Cron runs in a separate task-runner process; do not gate inbox dispatch on it.
-
-                # Unread exists: only then read status.json (avoid per-poll I/O).
-                # Disabled → leave inbox files intact; do not trigger processing.
-                if not _read_anima_enabled(self._anima.anima_dir):
-                    now = time.monotonic()
-                    if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
-                        logger.info(
-                            "Inbox watcher skip: anima disabled (%s); messages left unread",
-                            self._anima_name,
+        observer = self._start_inbox_observer(asyncio.get_running_loop())
+        # Reconcile messages already present at startup, even if they predate
+        # the filesystem observer.
+        self._inbox_wake_event.set()
+        try:
+            while not self._shutdown_event.is_set():
+                try:
+                    try:
+                        await asyncio.wait_for(
+                            self._inbox_wake_event.wait(),
+                            timeout=_INBOX_RECHECK_INTERVAL_SEC,
                         )
-                        self._last_disabled_skip_log = now
-                    await asyncio.sleep(2.0)
-                    continue
+                    except TimeoutError:
+                        # Filesystem notifications can be missed on some mounts.
+                        pass
+                    self._inbox_wake_event.clear()
 
-                self._pending_trigger = True
-                spawn(self.message_triggered_inbox(), name=f"inbox-trigger-{self._anima.name}")
-                await asyncio.sleep(2.0)
+                    if self._shutdown_event.is_set() or self._pending_trigger:
+                        continue
+                    if not self._anima.messenger.has_unread():
+                        continue
+                    if self._retry_is_delayed():
+                        self.schedule_deferred_trigger()
+                        continue
 
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(
-                    "Error in inbox watcher for %s: %s",
-                    self._anima_name,
-                    e,
-                )
-                await asyncio.sleep(2.0)
+                    # Only read status.json when unread messages exist.
+                    if not _read_anima_enabled(self._anima.anima_dir):
+                        now = time.monotonic()
+                        if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
+                            logger.info(
+                                "Inbox watcher skip: anima disabled (%s); messages left unread",
+                                self._anima_name,
+                            )
+                            self._last_disabled_skip_log = now
+                        continue
+
+                    self._pending_trigger = True
+                    try:
+                        spawn(self.message_triggered_inbox(), name=f"inbox-trigger-{self._anima.name}")
+                    except Exception:
+                        self._pending_trigger = False
+                        logger.exception("Failed to start inbox processing for %s", self._anima_name)
+                        self.schedule_deferred_trigger()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Error in inbox watcher for %s", self._anima_name)
+                    self.schedule_deferred_trigger()
+        finally:
+            if observer is not None:
+                observer.stop()
+                await asyncio.to_thread(observer.join, 2.0)
 
         logger.info("Inbox watcher stopped for %s", self._anima_name)
-
-    # ── Cleanup ──────────────────────────────────────────────────
 
     def cancel_deferred_timer(self) -> None:
         """Cancel deferred trigger timer if active."""
