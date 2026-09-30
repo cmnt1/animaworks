@@ -97,7 +97,7 @@ When a two-party exchange exceeds `max_depth` within `depth_window_s`, `Messenge
 | Depth window | 600 seconds (10 minutes) | `heartbeat.depth_window_s` | Sliding window |
 | Maximum depth | 6 turns | `heartbeat.max_depth` | 6 turns = 3 round trips expected. Sends are blocked if exceeded |
 
-The displayed message is `messenger.depth_exceeded` in `core/i18n` (currently, the Japanese text is fixed as “6 turns in 10 minutes.” The actual threshold follows the configuration above).
+The displayed message is `messenger.depth_exceeded` in `core/i18n`; its turn count and time window are interpolated from `heartbeat.max_depth` and `heartbeat.depth_window_s`.
 
 If reading the log fails, the depth check is **fail-closed** (sending is blocked).
 

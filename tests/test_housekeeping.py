@@ -141,6 +141,27 @@ class TestHousekeepingConfig:
         assert vector_log.read_bytes() == b"x" * 2048
 
     @pytest.mark.asyncio
+    async def test_run_housekeeping_rotates_sdk_bash_injection_log(self, tmp_path: Path):
+        from core.config.models import HousekeepingConfig
+        from core.memory.maintenance.housekeeping import run_housekeeping
+
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        log_path = logs_dir / "sdk_bash_injection.jsonl"
+        original = b"x" * (1024 * 1024 + 1)
+        log_path.write_bytes(original)
+
+        results = await run_housekeeping(
+            tmp_path,
+            housekeeping=HousekeepingConfig(suppressed_messages_max_size_mb=1, suppressed_messages_keep_generations=2),
+        )
+
+        assert results["sdk_bash_injection"]["files"] == 1
+        assert results["sdk_bash_injection"]["rotated"] is True
+        assert (logs_dir / "sdk_bash_injection.jsonl.1").read_bytes() == original
+        assert log_path.stat().st_size == 0
+
+    @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_suppressed_messages_log(self, tmp_path: Path):
         from core.config.models import HousekeepingConfig
         from core.memory.maintenance.housekeeping import run_housekeeping

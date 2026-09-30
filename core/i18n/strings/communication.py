@@ -31,9 +31,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "{reply_content}",
     },
     "messenger.depth_exceeded": {
-        "ja": "ConversationDepthExceeded: {to}との会話が10分間に6ターンに達しました。次のハートビートサイクルまでお待ちください",
+        "ja": "ConversationDepthExceeded: {to}との会話が{window_min}分間に{max_depth}ターンに達しました。次のハートビートサイクルまでお待ちください",
         "en": (
-            "ConversationDepthExceeded: Conversation with {to} reached 6 turns in 10 minutes. Please wait until the next heartbeat cycle."
+            "ConversationDepthExceeded: Conversation with {to} reached {max_depth} turns in {window_min} minutes. "
+            "Please wait until the next heartbeat cycle."
         ),
     },
     "messenger.more_count": {

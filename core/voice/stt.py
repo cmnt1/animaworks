@@ -34,6 +34,7 @@ class VoiceSTT:
         model_name: str = "large-v3-turbo",
         device: str = "auto",
         compute_type: str = "default",
+        language: str | None = None,
     ) -> None:
         """Initialize STT engine.
 
@@ -41,10 +42,12 @@ class VoiceSTT:
             model_name: Whisper model name.
             device: Device ("auto", "cuda", "cpu").
             compute_type: Compute type ("default", "float16", "int8", etc.).
+            language: Preferred language code, or None to auto-detect.
         """
         self._model_name = model_name
         self._device = device
         self._compute_type = compute_type
+        self._language = language
         self._model: WhisperModel | None = None
 
     def _ensure_model(self) -> WhisperModel:
@@ -91,16 +94,18 @@ class VoiceSTT:
             raise ImportError("Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]")
         model = self._ensure_model()
         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, info = model.transcribe(
-            audio_np,
-            beam_size=1,
-            condition_on_previous_text=False,
-            no_speech_threshold=0.6,
-            temperature=0.0,
-            language=language,
-            vad_filter=vad_filter,
-            initial_prompt=initial_prompt,
-        )
+        transcribe_options: dict[str, Any] = {
+            "beam_size": 1,
+            "condition_on_previous_text": False,
+            "no_speech_threshold": 0.6,
+            "temperature": 0.0,
+            "vad_filter": vad_filter,
+            "initial_prompt": initial_prompt,
+        }
+        selected_language = language if language is not None else self._language
+        if selected_language is not None:
+            transcribe_options["language"] = selected_language
+        segments, info = model.transcribe(audio_np, **transcribe_options)
         segments_list = list(segments)
         raw_text = " ".join(seg.text.strip() for seg in segments_list)
         return {

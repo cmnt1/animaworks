@@ -48,6 +48,7 @@ def _get_stt(voice_config: VoiceConfig) -> VoiceSTT:
             model_name=voice_config.stt_model,
             device=voice_config.stt_device,
             compute_type=voice_config.stt_compute_type,
+            language=voice_config.stt_language,
         )
     return _stt_instance
 

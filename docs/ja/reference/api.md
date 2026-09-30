@@ -121,7 +121,6 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/system/available-models` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
 | GET | `/api/system/available-tools` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
 | GET | `/api/system/config` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
-| GET | `/api/system/init-status` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Check initialization status of AnimaWorks. | `server/routes/config_routes.py:init_status` |
 
 ## `server/routes/external_tasks.py`
 

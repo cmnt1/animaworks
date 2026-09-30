@@ -61,7 +61,6 @@ Default settings common to all Anima:
     "stt_language": null,
     "stt_refine_enabled": false,
     "default_tts_provider": "voicevox",
-    "audio_format": "wav",
     "voicevox": { "base_url": "http://localhost:50021" },
     "elevenlabs": { "api_key_env": "ELEVENLABS_API_KEY", "model_id": "eleven_flash_v2_5" },
     "style_bert_vits2": { "base_url": "http://localhost:5000" }
@@ -77,7 +76,6 @@ Default settings common to all Anima:
 | `stt_language` | `null` | Language code (`ja`, `en`, etc.). Auto-detection with `null` |
 | `stt_refine_enabled` | `false` | LLM post-processing of STT results (adds 1-3 seconds latency when enabled) |
 | `default_tts_provider` | `voicevox` | Default TTS provider: `voicevox` / `style_bert_vits2` / `elevenlabs` |
-| `audio_format` | `wav` | TTS output audio format |
 
 ### Per-Anima Voice Settings (status.json section of `voice`)
 

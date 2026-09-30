@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from functools import wraps
 from typing import Any, ClassVar
 
 from core.execution.base import BaseExecutor, ExecutionResult, TokenUsage, ToolCallRecord
@@ -38,6 +39,47 @@ class CLIStreamExecutor(BaseExecutor):
     engine_mode: ClassVar[str] = ""
     errors_always_terminal: ClassVar[bool] = True
     event_idle_timeout_seconds: ClassVar[float] = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Record normalized tool events for non-Codex CLI engine streams."""
+        super().__init_subclass__(**kwargs)
+        stream_method = cls.__dict__.get("execute_streaming")
+        # Codex records richer provider-specific input/output itself.
+        if stream_method is None or cls.engine_mode == "C":
+            return
+
+        @wraps(stream_method)
+        async def record_tool_activity(
+            self: CLIStreamExecutor, *args: Any, **kwargs: Any
+        ) -> AsyncIterator[dict[str, Any]]:
+            from core.execution.tool_evidence import ToolEvidence
+
+            evidence = ToolEvidence(self._anima_dir)
+            pending_inputs: dict[str, dict[str, Any]] = {}
+            async for event in stream_method(self, *args, **kwargs):
+                if isinstance(event, dict):
+                    event_type = event.get("type")
+                    tool_id = str(event.get("tool_id") or "")
+                    tool_name = str(event.get("tool_name") or "unknown")
+                    if event_type == "tool_start":
+                        tool_input = event.get("input") or event.get("tool_input") or event.get("tool_detail") or {}
+                        if isinstance(tool_input, dict):
+                            pending_inputs[tool_id] = tool_input
+                        elif tool_input:
+                            pending_inputs[tool_id] = {"input": str(tool_input)}
+                        else:
+                            pending_inputs[tool_id] = {}
+                    elif event_type == "tool_end":
+                        evidence.record_tool_call(
+                            tool_name,
+                            pending_inputs.pop(tool_id, {}),
+                            tool_id,
+                            str(event.get("result") or event.get("result_summary") or ""),
+                            is_error=bool(event.get("is_error", False)),
+                        )
+                yield event
+
+        cls.execute_streaming = record_tool_activity  # type: ignore[method-assign]
 
     def _error_metadata(self, message: str) -> dict[str, Any]:
         """Return normalized metadata for this engine's provider error."""

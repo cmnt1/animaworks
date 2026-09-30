@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 # ── Test App Factory ─────────────────────────────────────────────
 
 
@@ -77,12 +76,11 @@ class TestAllNewRoutesRegistered:
         # 404 = route exists but file missing; 200 = file exists
         assert resp.status_code in (200, 404)
 
-    async def test_get_init_status_returns_200(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    async def test_removed_init_status_returns_404(self, tmp_path):
         app = _create_test_app(tmp_path)
         async with _client(app) as c:
             resp = await c.get("/api/system/init-status")
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
     async def test_get_connections_returns_200(self, tmp_path):
         app = _create_test_app(tmp_path)
@@ -104,62 +102,6 @@ class TestAllNewRoutesRegistered:
         async with _client(app) as c:
             resp = await c.get("/api/system/logs")
         assert resp.status_code == 200
-
-
-# ── 2. Init-Status Flow ─────────────────────────────────────────
-
-
-class TestInitStatus:
-    """Test /api/system/init-status with varying filesystem state."""
-
-    async def test_empty_directory(self, tmp_path, monkeypatch):
-        """No config.json, no animas => initialized=false."""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-        app = _create_test_app(tmp_path)
-        async with _client(app) as c:
-            resp = await c.get("/api/system/init-status")
-        data = resp.json()
-        assert data["initialized"] is False
-        assert data["config_exists"] is False
-        assert data["animas_count"] == 0
-
-    async def test_with_config_and_animas(self, tmp_path, monkeypatch):
-        """config.json + 1 anima => initialized=true."""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-
-        aw_dir = tmp_path / ".animaworks"
-        aw_dir.mkdir()
-        (aw_dir / "config.json").write_text("{}", encoding="utf-8")
-
-        animas_dir = aw_dir / "animas"
-        animas_dir.mkdir()
-        alice = animas_dir / "alice"
-        alice.mkdir()
-        (alice / "identity.md").write_text("# Alice", encoding="utf-8")
-
-        app = _create_test_app(tmp_path)
-        async with _client(app) as c:
-            resp = await c.get("/api/system/init-status")
-        data = resp.json()
-        assert data["initialized"] is True
-        assert data["config_exists"] is True
-        assert data["animas_count"] == 1
-
-    async def test_api_key_detection(self, tmp_path, monkeypatch):
-        """API key presence should be reflected."""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-123")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        app = _create_test_app(tmp_path)
-        async with _client(app) as c:
-            resp = await c.get("/api/system/init-status")
-        data = resp.json()
-        assert data["api_keys"]["anthropic"] is True
-        assert data["api_keys"]["openai"] is False
-        assert data["api_keys"]["google"] is False
 
 
 # ── 3. System Connections ────────────────────────────────────────
@@ -217,10 +159,7 @@ class TestScheduler:
         alice_dir = animas_dir / "alice"
         alice_dir.mkdir(parents=True)
         (alice_dir / "cron.md").write_text(
-            "# Cron: alice\n\n"
-            "## Morning Planning (Daily 9:00 JST)\n"
-            "type: llm\n"
-            "Plan daily tasks.\n",
+            "# Cron: alice\n\n## Morning Planning (Daily 9:00 JST)\ntype: llm\nPlan daily tasks.\n",
             encoding="utf-8",
         )
         app.state.anima_names = ["alice"]
@@ -260,9 +199,7 @@ class TestLogsIntegration:
 
         logs_dir = tmp_path / "logs"
         logs_dir.mkdir()
-        (logs_dir / "animaworks.log").write_text(
-            "2026-02-15 INFO Started\n2026-02-15 DEBUG tick\n", encoding="utf-8"
-        )
+        (logs_dir / "animaworks.log").write_text("2026-02-15 INFO Started\n2026-02-15 DEBUG tick\n", encoding="utf-8")
         (logs_dir / "error.log").write_text("ERR something\n", encoding="utf-8")
 
         monkeypatch.setattr(logs_mod, "_LOG_SEARCH_DIRS", [logs_dir])
@@ -343,18 +280,12 @@ class TestMemoryStats:
 
         episodes = alice_dir / "episodes"
         episodes.mkdir()
-        (episodes / "2026-02-14.md").write_text(
-            "Worked on project", encoding="utf-8"
-        )
-        (episodes / "2026-02-15.md").write_text(
-            "Fixed bugs", encoding="utf-8"
-        )
+        (episodes / "2026-02-14.md").write_text("Worked on project", encoding="utf-8")
+        (episodes / "2026-02-15.md").write_text("Fixed bugs", encoding="utf-8")
 
         knowledge = alice_dir / "knowledge"
         knowledge.mkdir()
-        (knowledge / "python.md").write_text(
-            "Python tips", encoding="utf-8"
-        )
+        (knowledge / "python.md").write_text("Python tips", encoding="utf-8")
 
         procedures = alice_dir / "procedures"
         procedures.mkdir()
@@ -398,11 +329,10 @@ class TestAnimaConfig:
         }
         mock_credential = MagicMock()
 
-        with patch(
-            "core.config.models.load_config"
-        ) as mock_load, patch(
-            "core.config.models.resolve_anima_config"
-        ) as mock_resolve:
+        with (
+            patch("core.config.models.load_config") as mock_load,
+            patch("core.config.models.resolve_anima_config") as mock_resolve,
+        ):
             mock_load.return_value = MagicMock()
             mock_resolve.return_value = (mock_defaults, mock_credential)
             async with _client(app) as c:
@@ -450,14 +380,11 @@ class TestStaticFileServing:
         app.state.shared_dir = tmp_path / "shared"
         app.state.shared_dir.mkdir()
 
-
         app.include_router(create_router())
 
         static_dir = Path(__file__).resolve().parent.parent.parent / "server" / "static"
         if static_dir.exists():
-            app.mount(
-                "/", StaticFiles(directory=str(static_dir), html=True), name="static"
-            )
+            app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
         async with _client(app) as c:
             resp = await c.get("/")
@@ -489,14 +416,11 @@ class TestStaticFileServing:
         app.state.shared_dir = tmp_path / "shared"
         app.state.shared_dir.mkdir()
 
-
         app.include_router(create_router())
 
         static_dir = Path(__file__).resolve().parent.parent.parent / "server" / "static"
         if static_dir.exists():
-            app.mount(
-                "/", StaticFiles(directory=str(static_dir), html=True), name="static"
-            )
+            app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
         async with _client(app) as c:
             resp = await c.get("/")
@@ -534,15 +458,12 @@ class TestStaticFileServing:
         app.state.shared_dir = tmp_path / "shared"
         app.state.shared_dir.mkdir()
 
-
         app.include_router(create_router())
 
         static_dir = Path(__file__).resolve().parent.parent.parent / "server" / "static"
         if not static_dir.exists():
             pytest.skip("server/static not present in this checkout")
-        app.mount(
-            "/", StaticFiles(directory=str(static_dir), html=True), name="static"
-        )
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
         expected_css = [
             "sidebar-nav.css",
@@ -577,10 +498,6 @@ class TestCrossRouteIntegration:
         app.state.anima_names = ["alice"]
 
         async with _client(app) as c:
-            # System endpoint
-            resp_init = await c.get("/api/system/init-status")
-            assert resp_init.status_code == 200
-
             # Anima list endpoint
             resp_animas = await c.get("/api/animas")
             assert resp_animas.status_code == 200

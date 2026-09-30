@@ -61,7 +61,6 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
     "stt_language": null,
     "stt_refine_enabled": false,
     "default_tts_provider": "voicevox",
-    "audio_format": "wav",
     "voicevox": { "base_url": "http://localhost:50021" },
     "elevenlabs": { "api_key_env": "ELEVENLABS_API_KEY", "model_id": "eleven_flash_v2_5" },
     "style_bert_vits2": { "base_url": "http://localhost:5000" }
@@ -77,7 +76,6 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 | `stt_language` | `null` | 언어 코드 (`ja`, `en` 등). `null`이면 자동 감지 |
 | `stt_refine_enabled` | `false` | STT 결과의 LLM 후처리 (활성화 시 레이턴시 1-3초 추가) |
 | `default_tts_provider` | `voicevox` | 기본 TTS 프로바이더: `voicevox` / `style_bert_vits2` / `elevenlabs` |
-| `audio_format` | `wav` | TTS 출력 오디오 형식 |
 
 ### Per-Anima 음성 설정 (status.json의 `voice` 섹션)
 

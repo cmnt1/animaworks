@@ -121,7 +121,6 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | GET | `/api/system/available-models` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
 | GET | `/api/system/available-tools` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
 | GET | `/api/system/config` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
-| GET | `/api/system/init-status` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Check initialization status of AnimaWorks. | `server/routes/config_routes.py:init_status` |
 
 ## `server/routes/external_tasks.py`
 

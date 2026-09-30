@@ -74,6 +74,8 @@ class TestBoardMentionDepthCheck:
         mock_limiter = MagicMock()
         mock_limiter.check_global_outbound.return_value = True  # pass before depth check
         mock_limiter.check_depth.return_value = False
+        mock_limiter._max_depth = 12
+        mock_limiter._window_s = 900
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
@@ -88,6 +90,8 @@ class TestBoardMentionDepthCheck:
         assert result.type == "error"
         assert result.from_person == "system"
         assert "ConversationDepthExceeded" in result.content
+        assert "12" in result.content
+        assert "15" in result.content
 
     def test_ack_exempt_from_depth_limiter(self, messenger: Messenger, animas_dir: Path) -> None:
         """msg_type='ack' should bypass the depth limiter entirely."""

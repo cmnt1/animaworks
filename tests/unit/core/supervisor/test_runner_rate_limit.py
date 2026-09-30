@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.config.models import load_config
-from core.supervisor.inbox_rate_limiter import InboxRateLimiter
+from core.supervisor.inbox_rate_limiter import InboxRateLimiter, _cascade_senders
 from core.supervisor.scheduler_manager import SchedulerManager
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -70,6 +71,28 @@ class TestCooldown:
 
 class TestCascadeDetection:
     """Tests for check_cascade() method."""
+
+    def test_self_and_system_messages_are_not_cascade_senders(self):
+        limiter = _make_limiter()
+        self_messages = [SimpleNamespace(from_person="test", source="anima") for _ in range(3)]
+        system_messages = [SimpleNamespace(from_person="github-gateway", source="system") for _ in range(3)]
+
+        self_senders = _cascade_senders(self_messages, "test")
+        system_senders = _cascade_senders(system_messages, "test")
+        limiter.record_pair_heartbeat(self_senders | system_senders)
+
+        assert limiter.check_cascade(self_senders | system_senders) is False
+        assert limiter._pair_heartbeat_times == {}
+
+    def test_internal_anima_exchange_still_triggers_cascade(self):
+        limiter = _make_limiter()
+        messages = [SimpleNamespace(from_person="alice", source="anima") for _ in range(3)]
+        senders = _cascade_senders(messages, "test")
+        for _ in range(load_config().heartbeat.cascade_threshold):
+            limiter.record_pair_heartbeat(senders)
+
+        assert senders == {"alice"}
+        assert limiter.check_cascade(senders) is True
 
     def test_no_cascade_below_threshold(self):
         """check_cascade returns False when below cascade_threshold."""
