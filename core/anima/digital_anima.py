@@ -111,12 +111,14 @@ class DigitalAnima(
 
         self._agent_progress_callback = _throttled_progress
 
-        # Locks: conversation / inbox / scheduled background work (heartbeat, cron, consolidation).
+        # Locks: conversation / inbox / LLM background work (heartbeat, cron, consolidation).
+        # Root-side command crons use tracked subprocesses so distinct commands can overlap.
         # TaskExec is managed by worker slots and does not acquire this lock.
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._active_chat_conversations: dict[str, Any] = {}
         self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
+        self._active_cron_commands: dict[str, tuple[str, int | None]] = {}
         # AgentCore carries mutable executor/tool state, so each execution lane
         # gets its own AgentCore and its own preparation/use lock.
         self._agent_session_locks: dict[str, asyncio.Lock] = {lane: asyncio.Lock() for lane in self._AGENT_LANES}
@@ -306,6 +308,7 @@ class DigitalAnima(
             or self._background_lock.locked()
             or self._inbox_lock.locked()
             or active_workers
+            or bool(getattr(self, "_active_cron_commands", {}))
             or bool(self._isolated_busy_jobs())
         )
 
@@ -360,6 +363,11 @@ class DigitalAnima(
                     lanes.append("inbox")
                 for slot_id, task_id in getattr(self, "_active_background_workers", {}).items():
                     lanes.append(f"background-worker:{slot_id}:{task_id}")
+                for _task_name, pid in getattr(self, "_active_cron_commands", {}).values():
+                    if "background" not in lanes:
+                        lanes.append("background")
+                    if pid is not None:
+                        subprocesses.append({"pid": pid, "kind": "cron_command"})
                 for job in self._isolated_busy_jobs().values():
                     identity = getattr(job, "identity", None)
                     lane = getattr(identity, "display_lane", None)

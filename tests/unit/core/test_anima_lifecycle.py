@@ -7,10 +7,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shlex
+import signal
+import sys
+import time
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import psutil
 import pytest
 
 
@@ -138,12 +144,14 @@ class TestRunCronCommandZombieReap:
 
         mock_proc = AsyncMock()
         mock_proc.returncode = None
+        mock_proc.pid = 12345
         mock_proc.communicate = AsyncMock(side_effect=asyncio.CancelledError())
-        mock_proc.kill = MagicMock()
         mock_proc.wait = AsyncMock()
 
         with (
             patch("asyncio.create_subprocess_shell", return_value=mock_proc),
+            patch("core.anima.lifecycle.snapshot_descendants", return_value=[]),
+            patch("core.anima.lifecycle.signal_tree") as kill_group,
             patch("core.tooling.handler.active_session_type") as mock_ast,
         ):
             mock_ast.reset = MagicMock()
@@ -158,7 +166,8 @@ class TestRunCronCommandZombieReap:
             except (asyncio.CancelledError, Exception):
                 pass
 
-        mock_proc.kill.assert_called_once()
+        kill_group.assert_called_once()
+        assert kill_group.call_args.args[:2] == (12345, signal.SIGKILL)
         mock_proc.wait.assert_awaited()
 
     @pytest.mark.asyncio
@@ -171,7 +180,7 @@ class TestRunCronCommandZombieReap:
         mock_proc.communicate = AsyncMock(return_value=(b"output", b""))
 
         with (
-            patch("asyncio.create_subprocess_shell", return_value=mock_proc),
+            patch("asyncio.create_subprocess_shell", return_value=mock_proc) as create_shell,
             patch("core.tooling.handler.active_session_type") as mock_ast,
             patch("core.execution.session_context.RuntimeSessionContext.create") as create_runtime_context,
         ):
@@ -182,8 +191,125 @@ class TestRunCronCommandZombieReap:
                 stub,
                 task_name="test-task",
                 command="echo hello",
+                env={"ANIMAWORKS_ANIMA_DIR": "/animas/test"},
             )
 
+        create_shell.assert_awaited_once()
+        shell_kwargs = create_shell.await_args.kwargs
+        assert shell_kwargs["env"] == {"ANIMAWORKS_ANIMA_DIR": "/animas/test"}
+        assert "cwd" not in shell_kwargs
         assert create_runtime_context.call_args.kwargs["thread_id"] == "cron-test-task"
-        mock_proc.kill.assert_not_called()
+        mock_proc.wait.assert_not_awaited()
         assert result["exit_code"] == 0
+        stub.memory.append_cron_command_log.assert_called_once()
+        activity_call = stub._activity.alog.await_args
+        assert activity_call.args[0] == "cron_executed"
+        assert activity_call.kwargs["meta"] == {
+            "task_name": "test-task",
+            "exit_code": 0,
+            "command": "echo hello",
+            "tool": "",
+        }
+
+    @pytest.mark.asyncio
+    async def test_root_cron_commands_can_overlap_without_shared_lock(self):
+        """Direct root commands retain the old per-runner parallelism."""
+        from core.anima.lifecycle import LifecycleMixin
+
+        stub = self._make_anima_stub()
+        both_started = asyncio.Event()
+        release = asyncio.Event()
+        started_count = 0
+
+        async def communicate():
+            nonlocal started_count
+            started_count += 1
+            if started_count == 2:
+                both_started.set()
+            await release.wait()
+            return b"", b""
+
+        processes = []
+        for pid in (12345, 12346):
+            proc = AsyncMock()
+            proc.returncode = 0
+            proc.pid = pid
+            proc.communicate = AsyncMock(side_effect=communicate)
+            proc.wait = AsyncMock()
+            processes.append(proc)
+        process_iter = iter(processes)
+
+        async def create_process(*_args, **_kwargs):
+            return next(process_iter)
+
+        with (
+            patch("asyncio.create_subprocess_shell", side_effect=create_process),
+            patch("core.tooling.handler.active_session_type") as mock_ast,
+        ):
+            mock_ast.reset = MagicMock()
+            tasks = [
+                asyncio.create_task(
+                    LifecycleMixin.run_cron_command(
+                        stub,
+                        task_name=f"task-{index}",
+                        command="true",
+                        serialize=False,
+                    )
+                )
+                for index in range(2)
+            ]
+            try:
+                await asyncio.wait_for(both_started.wait(), timeout=1)
+                overlapped = True
+            except TimeoutError:
+                overlapped = False
+            finally:
+                release.set()
+            await asyncio.gather(*tasks)
+
+        assert overlapped
+        assert not stub._background_lock.locked()
+        assert not stub._active_cron_commands
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.name != "posix", reason="process groups")
+    async def test_cron_command_timeout_kills_the_entire_process_group(self, tmp_path, monkeypatch):
+        """A timed-out shell command and its child processes are killed together."""
+        from core.anima import lifecycle
+        from core.anima.lifecycle import LifecycleMixin
+
+        stub = self._make_anima_stub()
+        child_pid_path = tmp_path / "child.pid"
+        child_code = (
+            "import subprocess,sys,time; "
+            "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+            f"open({str(child_pid_path)!r},'w').write(str(child.pid)); "
+            "time.sleep(30)"
+        )
+        command = shlex.join([sys.executable, "-c", child_code])
+        monkeypatch.setattr(lifecycle, "_CRON_COMMAND_TIMEOUT_SECONDS", 0.25)
+
+        with patch("core.tooling.handler.active_session_type") as mock_ast:
+            mock_ast.reset = MagicMock()
+            result = await LifecycleMixin.run_cron_command(stub, task_name="timeout", command=command)
+
+        assert result["exit_code"] == 1
+        assert "exceeded 0.25s limit" in result["stderr"]
+        child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                child = psutil.Process(child_pid)
+                if child.status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail(f"cron command child {child_pid} survived the process-group kill")
+
+        stub.memory.append_cron_command_log.assert_called_once()
+        assert stub.memory.append_cron_command_log.call_args.kwargs["exit_code"] == 1
+        activity_call = stub._activity.alog.await_args
+        assert activity_call.args[0] == "cron_executed"
+        assert activity_call.kwargs["meta"]["exit_code"] == 1

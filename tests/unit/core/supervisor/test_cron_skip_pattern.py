@@ -18,22 +18,29 @@ from core.supervisor.scheduler_manager import SchedulerManager
 # ── Helpers ──────────────────────────────────────────────────
 
 
-def _make_scheduler_mgr() -> SchedulerManager:
+def _make_scheduler_mgr(tmp_path: Path) -> SchedulerManager:
     """Create a SchedulerManager with minimal config for unit testing."""
     mock_anima = MagicMock()
     mock_anima.memory = MagicMock()
+    mock_anima.shared_dir = tmp_path / "shared"
+    mock_anima.shared_dir.mkdir()
+    mock_anima.run_cron_command = AsyncMock(
+        return_value={"task": "test_task", "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 100}
+    )
 
-    anima_dir = Path("/tmp/animas/test")
-    anima_dir.mkdir(parents=True, exist_ok=True)
+    anima_dir = tmp_path / "animas" / "test"
+    anima_dir.mkdir(parents=True)
     mgr = SchedulerManager(
         anima=mock_anima,
         anima_name="test",
         anima_dir=anima_dir,
         emit_event=MagicMock(),
     )
-    # Always-isolated: _run_cron_task delegates to the task runner supervisor.
     mgr._task_runner_supervisor.run_cron = AsyncMock(
         return_value={"result": {"action": "completed", "summary": "ok"}, "success": True}
+    )
+    mgr._task_runner_supervisor.run_cron_followup = AsyncMock(
+        return_value={"result": {"action": "completed", "summary": "reviewed"}, "success": True}
     )
     return mgr
 
@@ -47,7 +54,7 @@ def _make_command_task(
         name=name,
         schedule="*/5 * * * *",
         type="command",
-        tool="test_tool",
+        command="echo hi",
         skip_pattern=skip_pattern,
         trigger_heartbeat=trigger_heartbeat,
     )
@@ -72,11 +79,11 @@ def _command_result(
 
 
 class TestDispatchDelegation:
-    """_run_cron_task always delegates to the task runner supervisor."""
+    """LLM cron tasks use runners; shell command execution stays in the scheduler root."""
 
     @pytest.mark.asyncio
-    async def test_llm_task_delegates_to_supervisor(self):
-        mgr = _make_scheduler_mgr()
+    async def test_llm_task_delegates_to_supervisor(self, tmp_path: Path):
+        mgr = _make_scheduler_mgr(tmp_path)
         task = CronTask(
             name="review",
             schedule="0 9 * * *",
@@ -91,21 +98,32 @@ class TestDispatchDelegation:
         mgr._anima.run_cron_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_command_task_delegates_to_supervisor(self):
-        mgr = _make_scheduler_mgr()
-        task = _make_command_task()
+    async def test_command_task_runs_in_root_without_runner(self, tmp_path: Path):
+        mgr = _make_scheduler_mgr(tmp_path)
+        task = _make_command_task(trigger_heartbeat=False)
+
+        await mgr._run_cron_task(task)
+
+        mgr._anima.run_cron_command.assert_awaited_once()
+        mgr._task_runner_supervisor.run_cron.assert_not_awaited()
+        mgr._task_runner_supervisor.run_cron_followup.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_tool_cron_remains_on_existing_runner_path(self, tmp_path: Path):
+        mgr = _make_scheduler_mgr(tmp_path)
+        task = CronTask(name="tool", schedule="*/5 * * * *", type="command", tool="internal_tool")
 
         await mgr._run_cron_task(task)
 
         mgr._task_runner_supervisor.run_cron.assert_awaited_once_with(task)
-        mgr._anima.run_cron_command.assert_not_called()
+        mgr._anima.run_cron_command.assert_not_awaited()
 
 
 # ── TestSkipPatternFiltering ─────────────────────────────────
 
 
 class TestSkipPatternFiltering:
-    """Skip-pattern semantics (used by the task runner child via cron_followup)."""
+    """Skip-pattern semantics shared by root execution and isolated follow-ups."""
 
     def test_empty_stdout_is_suppressed(self):
         assert (
@@ -170,3 +188,47 @@ class TestSkipPatternFiltering:
             _command_result(stdout="error occurred", stderr="some error", exit_code=1),
         )
         assert "some error" in out
+
+
+class TestRootCommandFollowup:
+    @pytest.mark.asyncio
+    async def test_skip_pattern_prevents_followup_runner(self, tmp_path: Path):
+        mgr = _make_scheduler_mgr(tmp_path)
+        task = _make_command_task(skip_pattern=r"^\[\s*\]$")
+        mgr._anima.run_cron_command.return_value = _command_result(stdout="[]")
+
+        await mgr._run_cron_task(task)
+
+        mgr._task_runner_supervisor.run_cron_followup.assert_not_awaited()
+        mgr._task_runner_supervisor.run_cron.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_trigger_heartbeat_false_suppresses_followup(self, tmp_path: Path):
+        mgr = _make_scheduler_mgr(tmp_path)
+        task = _make_command_task(trigger_heartbeat=False)
+        mgr._anima.run_cron_command.return_value = _command_result(stdout="new data")
+
+        await mgr._run_cron_task(task)
+
+        mgr._task_runner_supervisor.run_cron_followup.assert_not_awaited()
+        mgr._task_runner_supervisor.run_cron.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_command_failure_runs_followup_notification(self, tmp_path: Path):
+        mgr = _make_scheduler_mgr(tmp_path)
+        task = _make_command_task()
+        mgr._anima.run_cron_command.return_value = _command_result(exit_code=2, stderr="sensor failed")
+
+        await mgr._run_cron_task(task)
+
+        mgr._task_runner_supervisor.run_cron_followup.assert_awaited_once()
+        command_output = mgr._task_runner_supervisor.run_cron_followup.await_args.args[1]
+        assert '"exit_code": 2' in command_output
+        assert '"stderr": "sensor failed"' in command_output
+        mgr._task_runner_supervisor.run_cron.assert_not_awaited()
+        mgr._anima.memory.append_cron_event.assert_called_once_with(
+            task.name,
+            "failed",
+            reason="execution failed",
+            schedule=task.schedule,
+        )

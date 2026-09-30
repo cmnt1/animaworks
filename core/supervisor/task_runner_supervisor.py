@@ -193,6 +193,15 @@ class TaskRunnerSupervisor:
         )
         return env
 
+    def build_cron_command_environment(self) -> dict[str, str]:
+        """Build the per-Anima environment formerly inherited from a cron runner."""
+        url_env = {
+            name: value.strip()
+            for name, value in os.environ.items()
+            if name.startswith("ANIMAWORKS_") and name.endswith("_URL") and value.strip()
+        }
+        return self._build_child_environment(url_env, attempt=1, display_lane="background")
+
     async def run_cron(self, task: CronTask) -> dict[str, Any]:
         """Spawn one cron task runner and return its terminal result."""
         return await self._run_isolated_job(
@@ -203,6 +212,19 @@ class TaskRunnerSupervisor:
                 "environment": {"urls": url_env},
             },
             log_context=f"task={task.name}",
+        )
+
+    async def run_cron_followup(self, task: CronTask, command_output: str) -> dict[str, Any]:
+        """Run only a command cron's LLM follow-up in an isolated runner."""
+        return await self._run_isolated_job(
+            lane="cron",
+            job_prefix="cron-followup",
+            params_builder=lambda url_env: {
+                "task": task.model_dump(mode="json"),
+                "command_output": command_output,
+                "environment": {"urls": url_env},
+            },
+            log_context=f"task={task.name} follow-up",
         )
 
     async def run_heartbeat(

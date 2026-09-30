@@ -28,6 +28,7 @@ from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
 from core.platform.tasks import spawn
 from core.schemas import CronTask
+from core.supervisor.cron_followup import command_followup_output
 from core.supervisor.memory_service import MemoryService
 from core.supervisor.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
@@ -102,6 +103,7 @@ class SchedulerManager:
         self.scheduler: AsyncIOScheduler | None = None
         self._heartbeat_running: bool = False
         self._cron_running: set[str] = set()
+        self._direct_cron_tasks: set[asyncio.Task[Any]] = set()
         self._cron_md_mtime: float = 0.0
         self._heartbeat_md_mtime: float = 0.0
         self._last_schedule_level: int | None = None
@@ -695,14 +697,56 @@ class SchedulerManager:
             self._cron_running.discard(task.name)
             raise
 
+    async def _run_command_cron(self, task: CronTask) -> dict[str, Any]:
+        """Run a shell-command cron in this scheduler process, isolating only its LLM follow-up."""
+        current = asyncio.current_task()
+        if current is not None:
+            self._direct_cron_tasks.add(current)
+        try:
+            result = await self._anima.run_cron_command(
+                task.name,
+                command=task.command,
+                tool=task.tool,
+                args=task.args,
+                env=self._task_runner_supervisor.build_cron_command_environment(),
+                serialize=False,
+            )
+            success = result.get("exit_code", 1) == 0
+            followup_result: dict[str, Any] | None = None
+            usage: dict[str, int] | None = None
+            # Preserve the legacy flag's command-output follow-up semantics; it does not call heartbeat_tick.
+            command_output = command_followup_output(task, result)
+            if command_output is not None:
+                followup = await self._task_runner_supervisor.run_cron_followup(task, command_output)
+                followup_result = followup.get("result")
+                if not isinstance(followup_result, dict):
+                    raise ValueError("isolated cron follow-up result must be an object")
+                success = success and bool(followup.get("success"))
+                usage = followup.get("usage")
+            return {
+                "task_type": "command",
+                "result": result,
+                "followup_result": followup_result,
+                "success": success,
+                "usage": usage,
+            }
+        finally:
+            if current is not None:
+                self._direct_cron_tasks.discard(current)
+
     async def _run_cron_task(self, task: CronTask) -> None:
-        """Run a single cron task (LLM or command type)."""
+        """Run one cron task; shell commands stay in the root, LLM work is isolated."""
         if not self._anima:
             return
         self._cron_running.add(task.name)
         success = False
         try:
-            isolated = await self._task_runner_supervisor.run_cron(task)
+            # Raw shell crons already bypass ToolHandler policy; tool-only crons
+            # stay in the runner so their existing ToolHandler checks are preserved.
+            if task.type == "command" and (task.command or not task.tool):
+                isolated = await self._run_command_cron(task)
+            else:
+                isolated = await self._task_runner_supervisor.run_cron(task)
             success = bool(isolated.get("success"))
             result = isolated.get("result")
             if not isinstance(result, dict):
@@ -729,7 +773,13 @@ class SchedulerManager:
             self._cron_running.discard(task.name)
 
     async def shutdown_task_runners(self) -> None:
-        """Grace and reap isolated task processes before root shutdown."""
+        """Cancel root-side cron commands and reap isolated task processes."""
+        current = asyncio.current_task()
+        direct_tasks = [task for task in self._direct_cron_tasks if task is not current and not task.done()]
+        for task in direct_tasks:
+            task.cancel()
+        if direct_tasks:
+            await asyncio.gather(*direct_tasks, return_exceptions=True)
         if self._task_runner_supervisor is not None:
             await self._task_runner_supervisor.close()
 
