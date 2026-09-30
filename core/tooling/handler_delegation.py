@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import _DelegationHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -35,7 +37,7 @@ class DelegationMixin(OrgHelpersMixin):
     _session_origin: str
     _session_origin_chain: list[str]
 
-    def _handle_delegate_task(self, args: dict[str, Any]) -> str:
+    def _handle_delegate_task(self: _DelegationHost, args: dict[str, Any]) -> str:
         """Delegate a task to a direct subordinate."""
         from core.tooling.org_helpers import resolve_anima_name
 
@@ -210,7 +212,7 @@ class DelegationMixin(OrgHelpersMixin):
         )
         return result + process_warning
 
-    def _handle_task_tracker(self, args: dict[str, Any]) -> str:
+    def _handle_task_tracker(self: _DelegationHost, args: dict[str, Any]) -> str:
         """Track progress of delegated tasks."""
         status_filter = args.get("status", "active")
 

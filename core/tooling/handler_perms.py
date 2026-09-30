@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _PermissionsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -50,7 +54,7 @@ class PermissionsMixin:
 
     # ── check_permissions handler ────────────────────────────
 
-    def _handle_check_permissions(self, args: dict[str, Any]) -> str:
+    def _handle_check_permissions(self: _PermissionsHost, args: dict[str, Any]) -> str:
         """Return a summary of what tools, external tools, and file access this anima has."""
         internal_tools = sorted(self._dispatch.keys())
 
@@ -125,7 +129,7 @@ class PermissionsMixin:
 
     # ── Tool creation permission ─────────────────────────────
 
-    def _check_tool_creation_permission(self, kind: str) -> bool:
+    def _check_tool_creation_permission(self: _PermissionsHost, kind: str) -> bool:
         """Check if tool creation is permitted via permissions config."""
         if self._memory is None:
             return False
@@ -139,11 +143,11 @@ class PermissionsMixin:
 
     # ── Permission helpers ───────────────────────────────────
 
-    def _load_permissions_config(self) -> PermissionsConfig:
+    def _load_permissions_config(self: _PermissionsHost) -> PermissionsConfig:
         """Load PermissionsConfig from permissions.json (with migration fallback)."""
         return load_permissions(self._anima_dir)
 
-    def _resolved_file_deny_roots(self, config: PermissionsConfig | None = None) -> tuple[Path, ...]:
+    def _resolved_file_deny_roots(self: _PermissionsHost, config: PermissionsConfig | None = None) -> tuple[Path, ...]:
         """Return canonical configured and company-derived deny roots."""
         if self._superuser:
             return ()
@@ -151,7 +155,7 @@ class PermissionsMixin:
         return resolve_effective_denied_roots(self._anima_dir, effective_config.file_roots_denied)
 
     def _find_denied_file_root(
-        self,
+        self: _PermissionsHost,
         path: str | Path,
         denied_roots: tuple[Path, ...] | None = None,
     ) -> Path | None:
@@ -162,7 +166,7 @@ class PermissionsMixin:
         return find_denied_root(path, roots)
 
     def _check_file_permission(
-        self,
+        self: _PermissionsHost,
         path: str,
         *,
         write: bool = False,
@@ -246,7 +250,7 @@ class PermissionsMixin:
         decision = evaluate_file_access(path, context, write=write)
         return self._file_access_error(path, decision)
 
-    def _file_access_error(self, path: str, decision: FileAccessDecision) -> str | None:
+    def _file_access_error(self: _PermissionsHost, path: str, decision: FileAccessDecision) -> str | None:
         """Convert the shared policy decision to ToolHandler's JSON error format."""
         if decision.allowed:
             return None
@@ -319,7 +323,7 @@ class PermissionsMixin:
             )
         return _error_result("PermissionDenied", f"Access to file is not allowed: {path}")
 
-    def _check_command_permission(self, command: str) -> str | None:
+    def _check_command_permission(self: _PermissionsHost, command: str) -> str | None:
         """Check if the command is allowed by permissions config and security rules.
 
         Returns ``None`` if allowed, or an error message string if denied.

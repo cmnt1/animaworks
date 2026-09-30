@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.anima._mixin_protocols import _MessagingHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -487,7 +489,7 @@ class MessagingMixin:
     """Mixin: human chat processing, bootstrap, and greeting."""
 
     async def inject_message(
-        self,
+        self: _MessagingHost,
         content: str,
         *,
         from_person: str = "human",
@@ -504,7 +506,7 @@ class MessagingMixin:
             attachment_paths=attachment_paths,
         )
 
-    def _sync_interactive_bootstrap_state(self) -> None:
+    def _sync_interactive_bootstrap_state(self: _MessagingHost) -> None:
         """Persist completed/repair state after chat-driven bootstrap changes."""
         try:
             from core.anima.bootstrap_state import get_bootstrap_status, write_bootstrap_state
@@ -517,7 +519,7 @@ class MessagingMixin:
             logger.debug("[%s] Failed to sync interactive bootstrap state", self.name, exc_info=True)
 
     def _log_human_conversation(
-        self,
+        self: _MessagingHost,
         content: str,
         from_person: str,
         thread_id: str = "default",
@@ -572,7 +574,7 @@ class MessagingMixin:
             )
 
     def _resolve_chat_external_recipient(
-        self,
+        self: _MessagingHost,
         from_person: str,
         source: str = "",
     ):
@@ -613,7 +615,7 @@ class MessagingMixin:
         return t("anima.delivery_via_external")
 
     def _send_chat_reply_via_resolved(
-        self,
+        self: _MessagingHost,
         resolved: Any,
         *,
         to_person: str,
@@ -661,7 +663,7 @@ class MessagingMixin:
             },
         )
 
-    async def run_bootstrap(self) -> CycleResult:
+    async def run_bootstrap(self: _MessagingHost) -> CycleResult:
         """Run the first-time bootstrap process in the background.
 
         Acquires the anima lock, sets status to ``"bootstrapping"``, and
@@ -733,7 +735,7 @@ class MessagingMixin:
             self._notify_lock_released()
 
     async def process_message(
-        self,
+        self: _MessagingHost,
         content: str,
         from_person: str = "human",
         images: list[ImageData] | None = None,
@@ -775,7 +777,7 @@ class MessagingMixin:
         return cycle_result.get("summary", "")
 
     async def process_message_stream(
-        self,
+        self: _MessagingHost,
         content: str,
         from_person: str = "human",
         images: list[ImageData] | None = None,
@@ -1205,7 +1207,7 @@ class MessagingMixin:
             self._notify_lock_released()
 
     async def process_greet(
-        self, *, mode: str = "visit", user_name: str = "", user_id: str = ""
+        self: _MessagingHost, *, mode: str = "visit", user_name: str = "", user_id: str = ""
     ) -> dict[str, str | bool]:
         """Generate a greeting response for a desk visit or first meeting.
 

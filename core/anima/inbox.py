@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.anima._mixin_protocols import _InboxHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -323,7 +325,7 @@ class InboxMixin:
 
     # ── Inbox MSG Immediate Processing ────────────────────────
 
-    def _undo_failed_inbox_presentation(self, items: list[InboxItem]) -> None:
+    def _undo_failed_inbox_presentation(self: _InboxHost, items: list[InboxItem]) -> None:
         """Provider failure does not consume the unanswered-message limit."""
         path = self.anima_dir / "state" / "inbox_read_counts.json"
         if not items or not path.exists():
@@ -346,7 +348,7 @@ class InboxMixin:
         except (OSError, ValueError):
             logger.warning("[%s] Failed to restore inbox presentation counters", self.name, exc_info=True)
 
-    async def process_inbox_message(self) -> CycleResult:
+    async def process_inbox_message(self: _InboxHost) -> CycleResult:
         """Process Anima-to-Anima messages immediately under _inbox_lock.
 
         Separated from heartbeat to provide instant response to inter-Anima
@@ -704,7 +706,7 @@ class InboxMixin:
         finally:
             self._notify_lock_released()
 
-    async def _process_inbox_messages(self, *, track_retries: bool = True) -> InboxResult:
+    async def _process_inbox_messages(self: _InboxHost, *, track_retries: bool = True) -> InboxResult:
         """Read, deduplicate, format, and record inbox messages.
 
         Handles MessageDeduplicator, retry counter, episode recording, and
@@ -956,7 +958,7 @@ class InboxMixin:
         )
 
     async def _archive_processed_messages(
-        self,
+        self: _InboxHost,
         inbox_items: list[InboxItem],
         senders: set[str],
         replied_to: set[str],

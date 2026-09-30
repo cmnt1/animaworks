@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import _CommsToolsHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -72,7 +74,7 @@ class CommsToolsMixin:
         participant_map = {str(name).lower(): str(name) for name in participants if str(name)}
         return participant_map.get(to.lower(), "")
 
-    def _handle_send_message(self, args: dict[str, Any]) -> str:
+    def _handle_send_message(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
 
@@ -271,7 +273,7 @@ class CommsToolsMixin:
             return f"{base}\n{feedback}"
         return base
 
-    def _build_send_feedback(self, to: str) -> str:
+    def _build_send_feedback(self: _CommsToolsHost, to: str) -> str:
         """Build behavioral feedback showing recent send history to the same recipient.
 
         Returns a short summary of how many messages were sent to *to* in the
@@ -319,7 +321,7 @@ class CommsToolsMixin:
             logger.debug("Failed to build send feedback for %s", to, exc_info=True)
             return ""
 
-    def _cross_company_communication_error(self, peers: list[str]) -> str | None:
+    def _cross_company_communication_error(self: _CommsToolsHost, peers: list[str]) -> str | None:
         """Return the standard DM boundary error for the first cross-company peer."""
         animas_dir = self._anima_dir.parent
         for peer in sorted(set(peers)):
@@ -332,7 +334,7 @@ class CommsToolsMixin:
                 return company_error
         return None
 
-    def _channel_company_boundary_error(self, channel: str) -> str | None:
+    def _channel_company_boundary_error(self: _CommsToolsHost, channel: str) -> str | None:
         """Enforce company scope for channel post/read access.
 
         Decision order:
@@ -379,7 +381,7 @@ class CommsToolsMixin:
 
     # ── Channel tool handlers ────────────────────────────────
 
-    def _handle_post_channel(self, args: dict[str, Any]) -> str:
+    def _handle_post_channel(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
         channel = args.get("channel", "")
@@ -437,7 +439,7 @@ class CommsToolsMixin:
 
         return f"Posted to #{channel}"
 
-    def _fanout_board_mentions(self, channel: str, text: str) -> None:
+    def _fanout_board_mentions(self: _CommsToolsHost, channel: str, text: str) -> None:
         """Send DM notifications to mentioned Animas when posting to a board channel."""
         if not self._messenger:
             return
@@ -505,7 +507,7 @@ class CommsToolsMixin:
                     exc_info=True,
                 )
 
-    def _fire_board_slack_sync(self, channel: str, text: str) -> None:
+    def _fire_board_slack_sync(self: _CommsToolsHost, channel: str, text: str) -> None:
         """Sync a board post to the mapped Slack channel.
 
         The MCP tool handler dispatches ``handle()`` via
@@ -547,7 +549,7 @@ class CommsToolsMixin:
         except Exception:
             logger.warning("Board→Slack sync failed for #%s", channel, exc_info=True)
 
-    def _handle_read_channel(self, args: dict[str, Any]) -> str:
+    def _handle_read_channel(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
         channel = args.get("channel", "")
@@ -582,7 +584,7 @@ class CommsToolsMixin:
             return f"No messages in #{channel}"
         return _json.dumps(messages, ensure_ascii=False, indent=2)
 
-    def _handle_read_dm_history(self, args: dict[str, Any]) -> str:
+    def _handle_read_dm_history(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
         peer = args.get("peer", "")
@@ -608,7 +610,7 @@ class CommsToolsMixin:
 
     # ── Channel management handler ────────────────────────────
 
-    def _handle_manage_channel(self, args: dict[str, Any]) -> str:
+    def _handle_manage_channel(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         if not self._messenger:
             return "Error: messenger not configured"
 
@@ -728,7 +730,7 @@ class CommsToolsMixin:
 
     # ── Human notification handler ────────────────────────────
 
-    def _handle_call_human(self, args: dict[str, Any]) -> str:
+    def _handle_call_human(self: _CommsToolsHost, args: dict[str, Any]) -> str:
         self._last_call_human_denied = False
         if not self._human_notifier:
             return _error_result(

@@ -8,13 +8,20 @@ Covers:
   - GET /api/system/frontend-logs — reading log entries with filters
   - _get_frontend_logger — TimedRotatingFileHandler setup
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import pytest
 from httpx import ASGITransport, AsyncClient
+
+
+@pytest.fixture(autouse=True)
+def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
+    """Use the real data-dir accessor against each test's temporary root."""
 
 
 def _make_test_app(tmp_path: Path):
@@ -56,18 +63,17 @@ class TestReceiveFrontendLogs:
         mod._frontend_logger = None
         mod._frontend_log_dir = None
         log_dir = tmp_path / "logs" / "frontend"
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            entries = [
-                {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "test"},
-            ]
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/frontend-logs",
-                    content=json.dumps(entries),
-                    headers={"Content-Type": "application/json"},
-                )
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        entries = [
+            {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "test"},
+        ]
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/system/frontend-logs",
+                content=json.dumps(entries),
+                headers={"Content-Type": "application/json"},
+            )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -92,16 +98,15 @@ class TestReceiveFrontendLogs:
 
         mod._frontend_logger = None
         mod._frontend_log_dir = None
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            entries = [{"ts": "2026-02-17T12:00:00Z", "level": "WARN", "module": "ws", "msg": "reconnect"}]
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/frontend-logs",
-                    content=json.dumps(entries),
-                    headers={"Content-Type": "text/plain"},
-                )
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        entries = [{"ts": "2026-02-17T12:00:00Z", "level": "WARN", "module": "ws", "msg": "reconnect"}]
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/system/frontend-logs",
+                content=json.dumps(entries),
+                headers={"Content-Type": "text/plain"},
+            )
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
@@ -158,20 +163,19 @@ class TestReceiveFrontendLogs:
 
         mod._frontend_logger = None
         mod._frontend_log_dir = None
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            entries = [
-                {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "one"},
-                {"ts": "2026-02-17T12:00:01Z", "level": "ERROR", "module": "ws", "msg": "two"},
-                {"ts": "2026-02-17T12:00:02Z", "level": "WARN", "module": "chat", "msg": "three"},
-            ]
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/frontend-logs",
-                    content=json.dumps(entries),
-                    headers={"Content-Type": "application/json"},
-                )
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        entries = [
+            {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "one"},
+            {"ts": "2026-02-17T12:00:01Z", "level": "ERROR", "module": "ws", "msg": "two"},
+            {"ts": "2026-02-17T12:00:02Z", "level": "WARN", "module": "chat", "msg": "three"},
+        ]
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/system/frontend-logs",
+                content=json.dumps(entries),
+                headers={"Content-Type": "application/json"},
+            )
 
         assert resp.status_code == 200
         assert resp.json()["count"] == 3
@@ -189,21 +193,20 @@ class TestReceiveFrontendLogs:
 
         mod._frontend_logger = None
         mod._frontend_log_dir = None
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            entries = [
-                {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "valid"},
-                "string entry",
-                42,
-                None,
-            ]
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/api/system/frontend-logs",
-                    content=json.dumps(entries),
-                    headers={"Content-Type": "application/json"},
-                )
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        entries = [
+            {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "valid"},
+            "string entry",
+            42,
+            None,
+        ]
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/system/frontend-logs",
+                content=json.dumps(entries),
+                headers={"Content-Type": "application/json"},
+            )
 
         assert resp.status_code == 200
         # count includes all entries, not just dicts
@@ -225,7 +228,10 @@ class TestViewFrontendLogs:
     """GET endpoint: read and filter stored frontend logs."""
 
     def _write_log_entries(
-        self, log_dir: Path, entries: list[dict], filename: str = "frontend.jsonl",
+        self,
+        log_dir: Path,
+        entries: list[dict],
+        filename: str = "frontend.jsonl",
     ) -> None:
         """Write JSONL entries to the specified log file."""
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -236,15 +242,17 @@ class TestViewFrontendLogs:
     async def test_today_reads_active_file(self, tmp_path: Path) -> None:
         """Requesting today's logs should read the active frontend.jsonl file."""
         log_dir = tmp_path / "logs" / "frontend"
-        self._write_log_entries(log_dir, [
-            {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "hello"},
-        ])
+        self._write_log_entries(
+            log_dir,
+            [
+                {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "hello"},
+            ],
+        )
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -260,11 +268,10 @@ class TestViewFrontendLogs:
             filename="frontend.jsonl.20260216",
         )
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs?date=20260216")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs?date=20260216")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -281,11 +288,10 @@ class TestViewFrontendLogs:
             filename="20260215.jsonl",
         )
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs?date=20260215")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs?date=20260215")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -294,11 +300,10 @@ class TestViewFrontendLogs:
 
     async def test_no_file_returns_empty(self, tmp_path: Path) -> None:
         """Non-existent date should return empty results."""
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs?date=20260101")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs?date=20260101")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -308,17 +313,19 @@ class TestViewFrontendLogs:
     async def test_filter_by_level(self, tmp_path: Path) -> None:
         """Level filter should only return matching entries."""
         log_dir = tmp_path / "logs" / "frontend"
-        self._write_log_entries(log_dir, [
-            {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "info msg"},
-            {"ts": "2026-02-17T12:00:01Z", "level": "ERROR", "module": "api", "msg": "error msg"},
-            {"ts": "2026-02-17T12:00:02Z", "level": "INFO", "module": "ws", "msg": "info2"},
-        ])
+        self._write_log_entries(
+            log_dir,
+            [
+                {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "info msg"},
+                {"ts": "2026-02-17T12:00:01Z", "level": "ERROR", "module": "api", "msg": "error msg"},
+                {"ts": "2026-02-17T12:00:02Z", "level": "INFO", "module": "ws", "msg": "info2"},
+            ],
+        )
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs?level=ERROR")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs?level=ERROR")
 
         data = resp.json()
         assert data["total"] == 1
@@ -327,16 +334,18 @@ class TestViewFrontendLogs:
     async def test_filter_by_module(self, tmp_path: Path) -> None:
         """Module filter should only return matching entries."""
         log_dir = tmp_path / "logs" / "frontend"
-        self._write_log_entries(log_dir, [
-            {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "api msg"},
-            {"ts": "2026-02-17T12:00:01Z", "level": "INFO", "module": "ws", "msg": "ws msg"},
-        ])
+        self._write_log_entries(
+            log_dir,
+            [
+                {"ts": "2026-02-17T12:00:00Z", "level": "INFO", "module": "api", "msg": "api msg"},
+                {"ts": "2026-02-17T12:00:01Z", "level": "INFO", "module": "ws", "msg": "ws msg"},
+            ],
+        )
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs?module=ws")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs?module=ws")
 
         data = resp.json()
         assert data["total"] == 1
@@ -346,16 +355,14 @@ class TestViewFrontendLogs:
         """Limit parameter should cap the number of returned entries."""
         log_dir = tmp_path / "logs" / "frontend"
         entries = [
-            {"ts": f"2026-02-17T12:00:{i:02d}Z", "level": "INFO", "module": "api", "msg": f"msg{i}"}
-            for i in range(10)
+            {"ts": f"2026-02-17T12:00:{i:02d}Z", "level": "INFO", "module": "api", "msg": f"msg{i}"} for i in range(10)
         ]
         self._write_log_entries(log_dir, entries)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            app = _make_test_app(tmp_path)
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get("/api/system/frontend-logs?limit=3")
+        app = _make_test_app(tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/system/frontend-logs?limit=3")
 
         data = resp.json()
         assert data["total"] == 10
@@ -376,8 +383,7 @@ class TestFrontendLoggerSetup:
         mod._frontend_logger = None
         mod._frontend_log_dir = None
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            fe_logger = mod._get_frontend_logger()
+        fe_logger = mod._get_frontend_logger()
 
         # Check handler filename
         handlers = fe_logger.handlers
@@ -397,8 +403,7 @@ class TestFrontendLoggerSetup:
         mod._frontend_logger = None
         mod._frontend_log_dir = None
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            mod._get_frontend_logger()
+        mod._get_frontend_logger()
 
         assert (tmp_path / "logs" / "frontend").is_dir()
 

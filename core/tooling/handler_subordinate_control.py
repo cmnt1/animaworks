@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _SubordinateControlHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -30,7 +34,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
     _activity: ActivityLogger
     _process_supervisor: Any
 
-    def _handle_disable_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_disable_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Disable a subordinate anima (set enabled=false in status.json)."""
         target_name = resolve_anima_name(args.get("name", ""))
         reason = args.get("reason", "")
@@ -83,7 +87,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
             result += "\n" + t("handler.reason_prefix", reason=reason)
         return result
 
-    def _handle_enable_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_enable_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Enable a subordinate anima (set enabled=true in status.json)."""
         target_name = resolve_anima_name(args.get("name", ""))
 
@@ -129,7 +133,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
 
         return t("handler.enabled_success", target_name=target_name)
 
-    def _handle_set_subordinate_model(self, args: dict[str, Any]) -> str:
+    def _handle_set_subordinate_model(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Change a subordinate anima's LLM model (updates status.json)."""
         from core.config.model_config import smart_update_model
         from core.config.models import KNOWN_MODELS
@@ -186,7 +190,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
             result_msg += "\n" + t("handler.reason_prefix", reason=reason)
         return result_msg + warn_msg
 
-    def _handle_set_subordinate_background_model(self, args: dict[str, Any]) -> str:
+    def _handle_set_subordinate_background_model(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Change a subordinate's background model (heartbeat/cron)."""
         from core.config.models import update_status_model
         from core.paths import get_data_dir
@@ -236,7 +240,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
             return t("handler.bg_model_changed", target_name=target_name, model=model)
         return t("handler.bg_model_cleared", target_name=target_name)
 
-    def _handle_restart_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_restart_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Request restart of a subordinate anima via sentinel flag in status.json."""
         from core.paths import get_animas_dir
 
@@ -283,7 +287,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
             result += "\n" + t("handler.reason_prefix", reason=reason)
         return result
 
-    def _handle_ping_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_ping_subordinate(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Ping subordinate(s) for liveness check."""
         from datetime import datetime
 
@@ -370,7 +374,7 @@ class SubordinateControlMixin(OrgHelpersMixin):
 
         return _json.dumps(results, ensure_ascii=False, indent=2)
 
-    def _handle_read_subordinate_state(self, args: dict[str, Any]) -> str:
+    def _handle_read_subordinate_state(self: _SubordinateControlHost, args: dict[str, Any]) -> str:
         """Read a descendant's current task state."""
         target_name = args.get("name", "")
         if not target_name:

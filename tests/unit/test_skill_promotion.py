@@ -48,7 +48,6 @@ def _resolved_promotion_approval(tmp_path: Path, anima_name: str, skill_name: st
     mock_auth = MagicMock()
     mock_auth.secret_key = "skill-promotion-unit-test"
     with (
-        patch("core.notification.interactive.get_data_dir", return_value=tmp_path),
         patch("core.notification.interactive.get_shared_dir", return_value=tmp_path / "shared"),
         patch("core.notification.interactive.load_auth", return_value=mock_auth),
     ):
@@ -176,7 +175,10 @@ def test_dangerous_draft_aborts_before_quarantine(tmp_path: Path) -> None:
     assert not (anima_dir / "skills" / "dangerous-flow").exists()
 
 
-def test_approve_moves_skill_to_active_and_records_create_event(tmp_path: Path) -> None:
+def test_approve_moves_skill_to_active_and_records_create_event(
+    tmp_path: Path,
+    data_dir_at_tmp_path: Path,
+) -> None:
     anima_dir = tmp_path / "alice"
     _write_procedure(anima_dir, "deploy-flow")
     converter = ProcedureToSkillConverter(anima_dir)
@@ -216,7 +218,10 @@ def test_approve_requires_verified_approval_callback(tmp_path: Path) -> None:
         raise AssertionError("Expected approval without callback_id to be rejected")
 
 
-def test_external_send_risk_keeps_runtime_human_approval(tmp_path: Path) -> None:
+def test_external_send_risk_keeps_runtime_human_approval(
+    tmp_path: Path,
+    data_dir_at_tmp_path: Path,
+) -> None:
     anima_dir = tmp_path / "alice"
     _write_procedure(anima_dir, "send-status")
     converter = ProcedureToSkillConverter(anima_dir)

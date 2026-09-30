@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.anima._mixin_protocols import _HeartbeatHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -193,7 +195,7 @@ class HeartbeatMixin:
 
     # ── Background model resolution ──────────────────────────
 
-    def _resolve_background_config(self, channel: str = "background") -> ModelConfig | None:  # noqa: F821
+    def _resolve_background_config(self: _HeartbeatHost, channel: str = "background") -> ModelConfig | None:  # noqa: F821
         """Resolve the background lane through the common route selection."""
         from core.config.model_config import resolve_model_selection
         from core.config.models import load_config
@@ -221,7 +223,7 @@ class HeartbeatMixin:
 
     _PLAN_OUTCOME_MAX_CHARS = 120
 
-    def _load_heartbeat_history(self) -> str:
+    def _load_heartbeat_history(self: _HeartbeatHost) -> str:
         """Load last N heartbeat history entries with plan-outcome tracking.
 
         When ``meta.plan_summary`` is available, the entry is rendered as
@@ -264,7 +266,7 @@ class HeartbeatMixin:
 
     _RECENT_REFLECTIONS_N = 3
 
-    def _get_recent_dialogue_max_age_hours(self) -> int:
+    def _get_recent_dialogue_max_age_hours(self: _HeartbeatHost) -> int:
         """Read the heartbeat recent-dialogue freshness window from config."""
         try:
             from core.config.models import load_config
@@ -276,7 +278,7 @@ class HeartbeatMixin:
             logger.debug("Could not read heartbeat.recent_dialogue_max_age_hours", exc_info=True)
         return 6
 
-    def _dialogue_is_recent(self, turns: list[Any]) -> bool:
+    def _dialogue_is_recent(self: _HeartbeatHost, turns: list[Any]) -> bool:
         """True when the last turn is newer than the configured freshness window.
 
         Missing or unparseable timestamps default to including the dialogue so
@@ -297,7 +299,7 @@ class HeartbeatMixin:
             return True
         return (now_local() - last_at).total_seconds() <= max_age_hours * 3600
 
-    def _load_recent_reflections(self) -> str:
+    def _load_recent_reflections(self: _HeartbeatHost) -> str:
         """Load recent heartbeat reflections from unified activity log."""
         try:
             entries = self._activity.recent(
@@ -324,7 +326,7 @@ class HeartbeatMixin:
     # ── Heartbeat private methods ──────────────────────────
 
     def _build_prior_messages(
-        self,
+        self: _HeartbeatHost,
         prompt_text: str,
     ) -> list[dict[str, Any]] | None:
         """Build prior_messages for A mode, None for S/B."""
@@ -334,7 +336,7 @@ class HeartbeatMixin:
         conv = ConversationMemory(self.anima_dir, self.model_config)
         return conv.build_structured_messages(prompt_text)
 
-    def _build_background_context_parts(self, include_dialogue: bool = True) -> list[str]:
+    def _build_background_context_parts(self: _HeartbeatHost, include_dialogue: bool = True) -> list[str]:
         """Build shared context parts for background-auto sessions (heartbeat/cron).
 
         Collects: recovery note, background task notifications, heartbeat
@@ -428,7 +430,7 @@ class HeartbeatMixin:
 
         return parts
 
-    def _get_current_state_max_chars(self) -> int:
+    def _get_current_state_max_chars(self: _HeartbeatHost) -> int:
         try:
             from core.config.models import load_config
 
@@ -436,7 +438,7 @@ class HeartbeatMixin:
         except Exception:
             return 0
 
-    def _enforce_state_size_limit(self) -> None:
+    def _enforce_state_size_limit(self: _HeartbeatHost) -> None:
         """Hard-trim current_state.md if it exceeds the configured threshold.
 
         Called after heartbeat completion.  Overflow content is archived
@@ -474,7 +476,7 @@ class HeartbeatMixin:
             len(trimmed),
         )
 
-    def _get_current_state_cleanup_chars(self) -> int:
+    def _get_current_state_cleanup_chars(self: _HeartbeatHost) -> int:
         try:
             from core.config.models import load_config
 
@@ -482,7 +484,7 @@ class HeartbeatMixin:
         except Exception:
             return 0
 
-    def _build_state_cleanup_instruction(self) -> str | None:
+    def _build_state_cleanup_instruction(self: _HeartbeatHost) -> str | None:
         """Return a self-cleanup instruction when current_state.md nears the limit."""
         max_chars = self._get_current_state_max_chars()
         if max_chars <= 0:
@@ -508,7 +510,7 @@ class HeartbeatMixin:
             target_chars=(cleanup_chars // 2) if cleanup_chars > 0 else (max_chars // 2),
         )
 
-    def _get_heartbeat_md_max_bytes(self) -> int:
+    def _get_heartbeat_md_max_bytes(self: _HeartbeatHost) -> int:
         try:
             from core.config.models import load_config
 
@@ -516,7 +518,7 @@ class HeartbeatMixin:
         except Exception:
             return 0
 
-    def _archive_heartbeat_md_before_cleanup(self) -> str | None:
+    def _archive_heartbeat_md_before_cleanup(self: _HeartbeatHost) -> str | None:
         """Keep one pre-cleanup heartbeat.md snapshot per local calendar day."""
         source = self.anima_dir / "heartbeat.md"
         archive_dir = self.anima_dir / "archive" / "heartbeat"
@@ -534,7 +536,7 @@ class HeartbeatMixin:
             logger.warning("[%s] Failed to archive heartbeat.md before cleanup", self.name, exc_info=True)
             return None
 
-    def _build_heartbeat_md_cleanup_instruction(self, hb_config: str) -> str | None:
+    def _build_heartbeat_md_cleanup_instruction(self: _HeartbeatHost, hb_config: str) -> str | None:
         """Return a compaction instruction when heartbeat.md grows past the limit.
 
         heartbeat.md is re-read into every heartbeat prompt, so a bloated
@@ -564,7 +566,7 @@ class HeartbeatMixin:
             archive_notice=archive_notice,
         )
 
-    async def _build_heartbeat_prompt(self) -> list[str]:
+    async def _build_heartbeat_prompt(self: _HeartbeatHost) -> list[str]:
         """Build heartbeat prompt parts.
 
         Heartbeat-specific header + shared background context.
@@ -600,7 +602,7 @@ class HeartbeatMixin:
         return parts
 
     def _build_cron_prompt(
-        self,
+        self: _HeartbeatHost,
         task_name: str,
         description: str,
         command_output: str | None = None,
@@ -656,7 +658,7 @@ class HeartbeatMixin:
         return "\n\n".join(parts)
 
     async def _execute_heartbeat_cycle(
-        self,
+        self: _HeartbeatHost,
         prompt: str,
         inbox_items: list[InboxItem],
         unread_count: int,
@@ -895,7 +897,7 @@ class HeartbeatMixin:
             await asyncio.to_thread(journal.close)
 
     async def _handle_heartbeat_failure(
-        self,
+        self: _HeartbeatHost,
         error: Exception,
         inbox_items: list[InboxItem],
         unread_count: int,
@@ -948,7 +950,7 @@ class HeartbeatMixin:
 
     # ── run_heartbeat orchestrator ───────────────────────────
 
-    def _trigger_pending_task_execution(self) -> None:
+    def _trigger_pending_task_execution(self: _HeartbeatHost) -> None:
         """Signal PendingTaskExecutor to check for new tasks.
 
         Called after heartbeat completion to ensure tasks written

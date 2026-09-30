@@ -35,6 +35,13 @@ def _make_handler(tmp_path: Path, anima_name: str = "test_anima"):
     handler._anima_dir = tmp_path / "animas" / anima_name
     handler._anima_dir.mkdir(parents=True, exist_ok=True)
     handler._anima_name = anima_name
+    from core.tooling.tool_context import ToolContext
+
+    handler._tool_context = ToolContext(
+        anima_dir=handler._anima_dir,
+        anima_name=anima_name,
+        check_command_permission=lambda _command: None,
+    )
     handler._memory = MagicMock()
     handler._messenger = None
     handler._on_message_sent = None

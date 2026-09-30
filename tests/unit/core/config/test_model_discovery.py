@@ -9,8 +9,13 @@ fault-isolation between probes.  No real subprocess / network is invoked.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+import core.config.model_catalog as model_catalog
+import core.config.model_discovery as model_discovery
 from core.config.model_discovery import (
     DiscoveredModel,
     _parse_claude_help,
@@ -20,6 +25,7 @@ from core.config.model_discovery import (
     discovered_model_ids,
     invalidate_cache,
 )
+from core.config.models import AnimaWorksConfig
 
 CODEX_JSON = """{"models": [
   {"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","priority":1},
@@ -37,6 +43,54 @@ Available models:
   * grok-4.6 (default)
   - grok-4.5
 """
+
+
+@pytest.fixture(autouse=True)
+def _clear_discovery_cache():
+    invalidate_cache()
+    yield
+    invalidate_cache()
+
+
+def _configure_discovery_backends(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    codex: bool = False,
+    grok: bool = False,
+    codex_error: bool = False,
+) -> MagicMock:
+    """Stub CLI/network boundaries while exercising the public discovery API."""
+    monkeypatch.setattr(model_discovery, "is_codex_login_available", lambda: codex)
+    monkeypatch.setattr(
+        model_discovery,
+        "get_codex_executable",
+        lambda: (
+            (_ for _ in ()).throw(RuntimeError("codex probe failed"))
+            if codex_error
+            else "/usr/bin/codex"
+            if codex
+            else None
+        ),
+    )
+    monkeypatch.setattr(model_discovery, "is_grok_authenticated", lambda: grok)
+    monkeypatch.setattr(model_discovery, "get_grok_executable", lambda: "/usr/bin/grok" if grok else None)
+    monkeypatch.setattr(model_discovery.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(model_catalog, "is_codex_login_available", lambda: False)
+    monkeypatch.setattr(model_catalog, "is_grok_authenticated", lambda: False)
+
+    def _run(command, **_kwargs):
+        output = CODEX_JSON if command[-2:] == ["debug", "models"] else GROK_TEXT
+        return SimpleNamespace(stdout=output, stderr="")
+
+    run = MagicMock(side_effect=_run)
+    monkeypatch.setattr(model_discovery.subprocess, "run", run)
+
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {"data": [], "models": []}
+    monkeypatch.setattr(model_discovery.httpx, "get", lambda *_args, **_kwargs: response)
+    return run
+
 
 CLAUDE_HELP = """Usage: claude [options]
 
@@ -86,143 +140,63 @@ class TestParseClaude:
 
 
 class TestDiscoverModels:
-    def _all_empty_probes(self):
-        return (
-            patch("core.config.model_discovery._probe_codex", return_value=[]),
-            patch("core.config.model_discovery._probe_grok", return_value=[]),
-            patch("core.config.model_discovery._probe_claude", return_value=[]),
-            patch("core.config.model_discovery._probe_openai_compatible", return_value=[]),
-            patch("core.config.model_discovery._probe_ollama", return_value=[]),
-        )
+    def test_static_fallback_when_all_probes_empty(self, monkeypatch):
+        _configure_discovery_backends(monkeypatch)
 
-    def test_static_fallback_when_all_probes_empty(self):
-        from contextlib import ExitStack
+        models = discover_models(config=AnimaWorksConfig(), refresh=True)
 
-        invalidate_cache()
-        fallback = [DiscoveredModel("a:openai/gpt-4.1", "a", "openai/gpt-4.1", "gpt-4.1", "openai", source="static")]
-        with ExitStack() as stack:
-            for ctx in self._all_empty_probes():
-                stack.enter_context(ctx)
-            stack.enter_context(patch("core.config.model_discovery._static_fallback", return_value=fallback))
-            models = discover_models(config=object())
-        assert [m.id for m in models] == ["a:openai/gpt-4.1"]
+        assert models
+        assert all(model.source == "static" for model in models)
 
-    def test_cache_reuses_result(self):
-        invalidate_cache()
-        stub = [DiscoveredModel("s:fable", "s", "fable", "fable", "Claude", source="claude-cli")]
-        with (
-            patch(
-                "core.config.model_discovery._probe_codex",
-                return_value=stub,
-            ) as codex,
-            patch(
-                "core.config.model_discovery._probe_grok",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_claude",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_openai_compatible",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_ollama",
-                return_value=[],
-            ),
-        ):
-            discover_models(config=object())
-            discover_models(config=object())
-            assert codex.call_count == 1
+    def test_cache_reuses_result(self, monkeypatch):
+        run = _configure_discovery_backends(monkeypatch, codex=True)
+        config = AnimaWorksConfig()
 
-    def test_expired_cache_is_returned_while_background_refresh_starts(self):
+        first = discover_models(config=config)
+        second = discover_models(config=config)
+
+        assert [model.id for model in first] == [model.id for model in second]
+        assert run.call_count == 1
+
+    def test_expired_cache_is_returned_while_background_refresh_starts(self, monkeypatch):
         """A model picker must not wait for probes every time the TTL expires."""
-        invalidate_cache()
-        stub = [DiscoveredModel("s:fable", "s", "fable", "fable", "Claude", source="claude-cli")]
-        with (
-            patch("core.config.model_discovery._probe_codex", return_value=stub) as codex,
-            patch("core.config.model_discovery._probe_grok", return_value=[]),
-            patch("core.config.model_discovery._probe_claude", return_value=[]),
-            patch("core.config.model_discovery._probe_openai_compatible", return_value=[]),
-            patch("core.config.model_discovery._probe_ollama", return_value=[]),
-            patch("core.config.model_discovery.time.monotonic", return_value=1.0),
-        ):
-            discover_models(config=object())
+        run = _configure_discovery_backends(monkeypatch, codex=True)
+        config = AnimaWorksConfig()
 
-        with (
-            patch(
-                "core.config.model_discovery.time.monotonic",
-                return_value=1.0 + 301.0,
-            ),
-            patch("core.config.model_discovery.threading.Thread") as thread_cls,
-        ):
-            models = discover_models(config=object())
+        class _Clock:
+            now = 1.0
 
-        assert [model.id for model in models] == ["s:fable"]
-        assert codex.call_count == 1
-        thread_cls.assert_called_once()
-        thread_cls.return_value.start.assert_called_once()
-        invalidate_cache()
+            def monotonic(self):
+                return self.now
 
-    def test_refresh_reruns_probes(self):
-        invalidate_cache()
-        stub = [
-            DiscoveredModel("c:codex/gpt-5.6-sol", "c", "codex/gpt-5.6-sol", "GPT-5.6-Sol", "Codex", source="codex-cli")
-        ]
-        with (
-            patch(
-                "core.config.model_discovery._probe_codex",
-                return_value=stub,
-            ) as codex,
-            patch(
-                "core.config.model_discovery._probe_grok",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_claude",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_openai_compatible",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_ollama",
-                return_value=[],
-            ),
-        ):
-            discover_models(config=object())
-            discover_models(refresh=True, config=object())
-            assert codex.call_count == 2
+        clock = _Clock()
+        monkeypatch.setattr(model_discovery, "time", clock)
+        first = discover_models(config=config)
+        clock.now += model_discovery.CACHE_TTL_SECONDS + 1
+        thread_factory = MagicMock()
+        monkeypatch.setattr(model_discovery, "threading", SimpleNamespace(Thread=thread_factory))
+        stale = discover_models(config=config)
 
-    def test_one_probe_exception_ignored(self):
-        invalidate_cache()
-        stub = [DiscoveredModel("x:grok/grok-4.6", "x", "grok/grok-4.6", "grok-4.6", "Grok", source="grok-cli")]
-        with (
-            patch(
-                "core.config.model_discovery._probe_codex",
-                side_effect=RuntimeError("boom"),
-            ),
-            patch(
-                "core.config.model_discovery._probe_grok",
-                return_value=stub,
-            ),
-            patch(
-                "core.config.model_discovery._probe_claude",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_openai_compatible",
-                return_value=[],
-            ),
-            patch(
-                "core.config.model_discovery._probe_ollama",
-                return_value=[],
-            ),
-        ):
-            models = discover_models(config=object())
-        assert [m.id for m in models] == ["x:grok/grok-4.6"]
+        assert [model.id for model in stale] == [model.id for model in first]
+        assert run.call_count == 1
+        thread_factory.assert_called_once()
+        thread_factory.return_value.start.assert_called_once()
+
+    def test_refresh_reruns_probes(self, monkeypatch):
+        run = _configure_discovery_backends(monkeypatch, codex=True)
+        config = AnimaWorksConfig()
+
+        discover_models(config=config)
+        discover_models(refresh=True, config=config)
+
+        assert run.call_count == 2
+
+    def test_one_probe_exception_ignored(self, monkeypatch):
+        _configure_discovery_backends(monkeypatch, codex=True, grok=True, codex_error=True)
+
+        models = discover_models(config=AnimaWorksConfig())
+
+        assert any(model.id == "x:grok/grok-4.6" for model in models)
 
     def test_discovered_model_ids_include_three_forms(self):
         models = [

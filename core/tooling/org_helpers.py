@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _OrgHelpersHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -60,7 +64,7 @@ class OrgHelpersMixin:
     _anima_dir: Path
     _anima_name: str
 
-    def _check_subordinate(self, target_name: str) -> str | None:
+    def _check_subordinate(self: _OrgHelpersHost, target_name: str) -> str | None:
         """Verify that *target_name* is a direct subordinate of this anima."""
         from core.config.models import load_config
 
@@ -94,7 +98,7 @@ class OrgHelpersMixin:
 
         return None
 
-    def _get_all_descendants(self, root_name: str | None = None) -> list[str]:
+    def _get_all_descendants(self: _OrgHelpersHost, root_name: str | None = None) -> list[str]:
         """Get all descendant Anima names recursively via supervisor chain."""
         from core.config.models import load_config
         from core.org.hierarchy import descendants_of
@@ -104,7 +108,7 @@ class OrgHelpersMixin:
         descendants = descendants_of(config.animas, root)
         return [name for name in config.animas if name in descendants]
 
-    def _get_direct_subordinates(self) -> list[str]:
+    def _get_direct_subordinates(self: _OrgHelpersHost) -> list[str]:
         """Return names of direct subordinates (supervisor == self)."""
         from core.config.models import load_config
         from core.org.hierarchy import is_direct_subordinate
@@ -112,7 +116,7 @@ class OrgHelpersMixin:
         config = load_config()
         return [name for name in config.animas if is_direct_subordinate(config.animas, self._anima_name, name)]
 
-    def _check_descendant(self, target_name: str) -> str | None:
+    def _check_descendant(self: _OrgHelpersHost, target_name: str) -> str | None:
         """Verify that target_name is a descendant (any depth) of this anima."""
         target_name = resolve_anima_name(target_name)
         if target_name == self._anima_name:

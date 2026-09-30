@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _DashboardHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -30,7 +34,7 @@ class DashboardMixin(OrgHelpersMixin):
     _process_supervisor: Any
 
     def _render_tree(
-        self,
+        self: _DashboardHost,
         by_supervisor: dict[str, list[dict[str, Any]]],
         lines: list[str],
         parent: str,
@@ -58,7 +62,7 @@ class DashboardMixin(OrgHelpersMixin):
             lines.append(line)
             self._render_tree(by_supervisor, lines, child["name"], indent + 1)
 
-    def _handle_org_dashboard(self, args: dict[str, Any]) -> str:
+    def _handle_org_dashboard(self: _DashboardHost, args: dict[str, Any]) -> str:
         """Show organization dashboard with all descendants' status."""
         descendants = self._get_all_descendants()
         if not descendants:
@@ -142,7 +146,7 @@ class DashboardMixin(OrgHelpersMixin):
 
         return "\n".join(lines)
 
-    def _handle_audit_subordinate(self, args: dict[str, Any]) -> str:
+    def _handle_audit_subordinate(self: _DashboardHost, args: dict[str, Any]) -> str:
         """Audit subordinate behavior from activity logs."""
         from core.activity.audit import AuditAggregator
         from core.paths import get_animas_dir

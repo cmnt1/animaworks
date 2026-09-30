@@ -23,6 +23,12 @@ from cli.commands.index_cmd import (
 )
 from core.memory.rag.indexer import IndexDirectoryResult
 
+
+@pytest.fixture(autouse=True)
+def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
+    """Use real runtime path accessors for each test's temporary root."""
+
+
 # ── _is_anima_enabled ─────────────────────────────────────
 
 
@@ -127,7 +133,6 @@ def test_index_command_opens_each_anima_once_for_personal_and_shared_indexing(tm
         yield access
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.MemoryIndexer", return_value=indexer),
         patch("core.memory.facts.entity_index.rebuild_entity_collection", return_value=True),
@@ -152,7 +157,6 @@ def test_index_command_does_not_index_shared_user_store(tmp_path: Path) -> None:
     shared_store = MagicMock()
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("cli.commands.index_cmd._index_anima", return_value=0),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=True) as delegation,
@@ -174,7 +178,6 @@ def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path)
     args = argparse.Namespace(anima="alice", full=False, shared=False, dry_run=False)
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=True),
@@ -197,7 +200,6 @@ def test_index_command_indexes_phase3_anima_through_access(tmp_path: Path) -> No
     mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.MemoryIndexer", return_value=mock_indexer),
         patch("core.memory.facts.entity_index.rebuild_entity_collection", return_value=True),
@@ -225,7 +227,6 @@ def test_index_command_rebuilds_longterm_bm25(tmp_path: Path) -> None:
     mock_store = MagicMock()
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
@@ -252,7 +253,6 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
     mock_store = MagicMock()
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
@@ -288,7 +288,6 @@ def test_index_command_full_uses_atomic_repair_before_indexing(tmp_path: Path) -
     access_context.__enter__.return_value = access
 
     with (
-        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
         patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
         patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),

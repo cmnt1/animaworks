@@ -12,7 +12,7 @@ from core.activity.logger import ActivityLogger
 
 
 @pytest.fixture()
-def activity_logger(tmp_path: Path) -> ActivityLogger:
+def activity_logger(tmp_path: Path, data_dir_at_tmp_path: Path) -> ActivityLogger:
     ActivityLogger._live_rate_limiter.reset()
     anima_dir = tmp_path / "animas" / "testanima"
     anima_dir.mkdir(parents=True)
@@ -21,8 +21,7 @@ def activity_logger(tmp_path: Path) -> ActivityLogger:
 
 class TestEmitLiveEvent:
     def test_visible_tool_use_emits_event_file(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-            activity_logger.log("tool_use", tool="delegate_task", summary="task delegation")
+        activity_logger.log("tool_use", tool="delegate_task", summary="task delegation")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         files = list(event_dir.glob("ta_*.json"))
@@ -35,8 +34,7 @@ class TestEmitLiveEvent:
         assert data["data"]["tool"] == "delegate_task"
 
     def test_any_tool_use_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-            activity_logger.log("tool_use", tool="Read", summary="/foo/bar.py")
+        activity_logger.log("tool_use", tool="Read", summary="/foo/bar.py")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         files = list(event_dir.glob("ta_*.json"))
@@ -46,13 +44,12 @@ class TestEmitLiveEvent:
         assert data["tool"] == "Read"
 
     def test_tool_result_emits_normalized_payload(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-            activity_logger.log(
-                "tool_result",
-                tool="Bash",
-                summary="x" * 250,
-                meta={"result_status": "fail"},
-            )
+        activity_logger.log(
+            "tool_result",
+            tool="Bash",
+            summary="x" * 250,
+            meta={"result_status": "fail"},
+        )
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         files = list(event_dir.glob("ta_*.json"))
@@ -66,10 +63,7 @@ class TestEmitLiveEvent:
         other_dir.mkdir(parents=True)
         other_logger = ActivityLogger(other_dir)
 
-        with (
-            patch("core.activity.logger.get_data_dir", return_value=tmp_path),
-            patch("core.activity.logger.time.monotonic", return_value=100.0),
-        ):
+        with patch("core.activity.logger.time.monotonic", return_value=100.0):
             for index in range(7):
                 activity_logger.log("tool_use", tool="Read", summary=str(index))
             other_logger.log("tool_use", tool="Read", summary="other")
@@ -78,10 +72,7 @@ class TestEmitLiveEvent:
         assert len(list(event_dir.glob("ta_*.json"))) == 5
         assert len(list((tmp_path / "run" / "events" / "other").glob("ta_*.json"))) == 1
 
-        with (
-            patch("core.activity.logger.get_data_dir", return_value=tmp_path),
-            patch("core.activity.logger.time.monotonic", return_value=101.0),
-        ):
+        with patch("core.activity.logger.time.monotonic", return_value=101.0):
             activity_logger.log("tool_result", tool="Read", content="ok")
 
         events = [json.loads(path.read_text(encoding="utf-8"))["data"] for path in event_dir.glob("ta_*.json")]
@@ -89,23 +80,20 @@ class TestEmitLiveEvent:
         assert next(event for event in events if event["kind"] == "tool_result")["dropped"] == 2
 
     def test_inbox_processing_start_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-            activity_logger.log("inbox_processing_start", summary="processing")
+        activity_logger.log("inbox_processing_start", summary="processing")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         files = list(event_dir.glob("ta_*.json"))
         assert len(files) == 1
 
     def test_non_live_event_does_not_emit(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-            activity_logger.log("message_received", content="hello")
+        activity_logger.log("message_received", content="hello")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         assert not event_dir.exists() or len(list(event_dir.glob("ta_*.json"))) == 0
 
     def test_heartbeat_start_does_not_emit(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-            activity_logger.log("heartbeat_start", summary="heartbeat")
+        activity_logger.log("heartbeat_start", summary="heartbeat")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         assert not event_dir.exists() or len(list(event_dir.glob("ta_*.json"))) == 0
@@ -124,10 +112,7 @@ class TestEmitLiveEvent:
 @pytest.mark.parametrize("event_type", ["task_created", "task_updated", "task_exec_start", "task_exec_end"])
 def test_task_lifecycle_survives_tool_rate_limit(activity_logger, tmp_path, event_type):
     """A task completion must reach observers even when tool traffic is limited."""
-    with (
-        patch("core.activity.logger.get_data_dir", return_value=tmp_path),
-        patch("core.activity.logger.time.monotonic", return_value=100.0),
-    ):
+    with patch("core.activity.logger.time.monotonic", return_value=100.0):
         for _ in range(7):
             activity_logger.log("tool_use", tool="Read")
         activity_logger.log(event_type, ctx="task:job", meta={"task_id": "job", "status": "completed"})

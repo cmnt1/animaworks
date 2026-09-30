@@ -19,6 +19,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from core.memory.rag.store import CollectionExistence
 from core.platform.tasks import spawn
+from core.supervisor._manager_protocols import _SchedulerMixinHost
 from core.supervisor.process_handle import ProcessState
 from core.time_utils import get_app_timezone, now_local
 
@@ -51,7 +52,7 @@ def _write_marker(marker_path: Path, ts: datetime | None = None) -> None:
 class SchedulerMixin:
     """System-level cron scheduler for memory consolidation and log rotation."""
 
-    def _start_system_scheduler(self) -> None:
+    def _start_system_scheduler(self: _SchedulerMixinHost) -> None:
         """Start the system-level scheduler for consolidation crons."""
         try:
             self.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
@@ -65,7 +66,7 @@ class SchedulerMixin:
             self.scheduler = None
             self._scheduler_running = False
 
-    def _setup_system_crons(self) -> None:
+    def _setup_system_crons(self: _SchedulerMixinHost) -> None:
         """Register system-wide cron jobs for memory consolidation."""
         if not self.scheduler:
             return
@@ -206,7 +207,7 @@ class SchedulerMixin:
         )
         logger.info("System cron: DM log rotation at 04:30")
 
-    def _iter_consolidation_targets(self) -> list[tuple[str, Path]]:
+    def _iter_consolidation_targets(self: _SchedulerMixinHost) -> list[tuple[str, Path]]:
         """Return (anima_name, anima_dir) for all initialized and enabled animas.
 
         Scans ``self.animas_dir`` on disk so that stopped / crashed animas are
@@ -228,7 +229,7 @@ class SchedulerMixin:
             targets.append((anima_dir.name, anima_dir))
         return targets
 
-    def _get_data_dir(self) -> Path:
+    def _get_data_dir(self: _SchedulerMixinHost) -> Path:
         """Return the runtime data directory (``~/.animaworks`` or override)."""
         return self.animas_dir.parent
 
@@ -273,7 +274,7 @@ class SchedulerMixin:
         return min(max_seconds, max(base, estimate))
 
     async def _run_project_archive_consolidations(
-        self,
+        self: _SchedulerMixinHost,
         handle: object,
         anima_name: str,
         anima_dir: Path,
@@ -342,7 +343,7 @@ class SchedulerMixin:
             else:
                 consolidating.discard(anima_name)
 
-    async def _run_daily_consolidation(self) -> None:
+    async def _run_daily_consolidation(self: _SchedulerMixinHost) -> None:
         """Run daily consolidation for all animas via IPC.
 
         Sends ``run_consolidation`` IPC requests to running Anima processes.
@@ -510,7 +511,7 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_daily_consolidation")
 
-    async def _run_weekly_integration(self) -> None:
+    async def _run_weekly_integration(self: _SchedulerMixinHost) -> None:
         """Run weekly integration for all animas via IPC.
 
         Sends ``run_consolidation`` IPC requests to running Anima processes.
@@ -638,7 +639,7 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
 
-    async def _run_daily_indexing(self) -> None:
+    async def _run_daily_indexing(self: _SchedulerMixinHost) -> None:
         """Run daily RAG indexing for all animas.
 
         Incrementally indexes all memory files (knowledge, episodes,
@@ -831,7 +832,7 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_daily_indexing")
 
-    async def _run_activity_log_rotation(self) -> None:
+    async def _run_activity_log_rotation(self: _SchedulerMixinHost) -> None:
         """Run activity log rotation for all animas."""
         logger.info("Starting system-wide activity log rotation")
 
@@ -888,7 +889,7 @@ class SchedulerMixin:
         except Exception:
             logger.exception("Activity log rotation failed")
 
-    def _get_housekeeping_lock(self) -> asyncio.Lock:
+    def _get_housekeeping_lock(self: _SchedulerMixinHost) -> asyncio.Lock:
         """Return the lazily-created lock guarding housekeeping runs.
 
         Created on first use so the mixin needs no ``__init__``. Safe under
@@ -901,7 +902,7 @@ class SchedulerMixin:
             self._housekeeping_lock_obj = lock
         return lock
 
-    async def _run_housekeeping(self) -> None:
+    async def _run_housekeeping(self: _SchedulerMixinHost) -> None:
         """Run unified housekeeping, guarded against concurrent invocation.
 
         Both the cron schedule (:222) and the startup catch-up (:1000)
@@ -915,7 +916,7 @@ class SchedulerMixin:
         async with lock:
             await self._run_housekeeping_impl()
 
-    async def _run_housekeeping_impl(self) -> None:
+    async def _run_housekeeping_impl(self: _SchedulerMixinHost) -> None:
         """Run unified housekeeping for all data types."""
         logger.info("Starting system-wide housekeeping")
 
@@ -951,7 +952,7 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_housekeeping")
 
-    async def _run_dm_log_rotation(self) -> None:
+    async def _run_dm_log_rotation(self: _SchedulerMixinHost) -> None:
         """Archive old dm_log entries beyond 7 days."""
         logger.info("Starting DM log rotation")
         try:
@@ -970,7 +971,7 @@ class SchedulerMixin:
 
     _CATCHUP_DELAY_SEC = 90
 
-    async def _catchup_missed_jobs(self) -> None:
+    async def _catchup_missed_jobs(self: _SchedulerMixinHost) -> None:
         """Run after scheduler start to execute any jobs missed while offline.
 
         Uses marker files in ``~/.animaworks/run/`` to track the last

@@ -14,6 +14,7 @@ from __future__ import annotations
 # self-pipe wake-up が黙って失敗し to_thread/run_in_executor が返らなくなる。
 # socketpair が使えない環境でだけ os.pipe に差し替える（ホストでは no-op）。
 import importlib.util as _ilu
+import json
 import logging
 import os
 import signal
@@ -36,6 +37,7 @@ if _spec and _spec.loader:
 logger = logging.getLogger(__name__)
 
 from tests.helpers.filesystem import (
+    DEFAULT_TEST_CONFIG,
     create_anima_dir,
     create_test_data_dir,
 )
@@ -263,6 +265,32 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _kill_orphan_runners(str(d))
 
     # Cleanup: invalidate caches again to avoid leaking between tests
+    invalidate_cache()
+    _prompt_cache.clear()
+
+
+@pytest.fixture
+def data_dir_at_tmp_path(
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Point runtime path accessors at ``tmp_path`` for legacy data-dir layouts.
+
+    Unlike ``data_dir``, this preserves tests that build their runtime files
+    directly beneath ``tmp_path`` while still exercising the real path/config
+    accessors instead of patching ``get_data_dir`` or ``load_config``.
+    """
+    from core.config import invalidate_cache
+    from core.paths import _prompt_cache
+
+    config_path = tmp_path / "config.json"
+    if not config_path.exists():
+        config_path.write_text(json.dumps(DEFAULT_TEST_CONFIG, indent=2), encoding="utf-8")
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    invalidate_cache()
+    _prompt_cache.clear()
+    yield tmp_path
     invalidate_cache()
     _prompt_cache.clear()
 

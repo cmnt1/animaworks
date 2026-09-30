@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.platform.env import server_url
+from core.tooling._handler_protocols import _CreateAnimaHost
 
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -23,11 +24,7 @@ logger = logging.getLogger("animaworks.tool_handler")
 class CreateAnimaMixin:
     """Mixin for create_anima tool handler."""
 
-    # Declared for type-checker visibility
-    _anima_dir: Path
-    _anima_name: str
-
-    def _handle_create_anima(self, args: dict[str, Any]) -> str:
+    def _handle_create_anima(self: _CreateAnimaHost, args: dict[str, Any]) -> str:
         """Create a new anima from a character sheet via anima_factory."""
         from core.anima.factory import create_from_md
         from core.paths import get_animas_dir
@@ -42,8 +39,9 @@ class CreateAnimaMixin:
         elif sheet_path_raw:
             md_path = Path(sheet_path_raw).expanduser()
             if not md_path.is_absolute():
-                md_path = (self._anima_dir / md_path).resolve()
-                if not md_path.is_relative_to(self._anima_dir.resolve()):
+                anima_dir = self._tool_context.anima_dir
+                md_path = (anima_dir / md_path).resolve()
+                if not md_path.is_relative_to(anima_dir.resolve()):
                     return _error_result(
                         "PermissionDenied",
                         "character_sheet_path must be within anima directory.",
@@ -105,7 +103,7 @@ class CreateAnimaMixin:
         return self._finalize_create_anima(anima_dir)
 
     def _create_anima_via_server(
-        self,
+        self: _CreateAnimaHost,
         *,
         content: str | None,
         name: str | None,
@@ -132,7 +130,7 @@ class CreateAnimaMixin:
 
         payload: dict[str, Any] = {
             "character_sheet_content": content,
-            "calling_anima": self._anima_name or "",
+            "calling_anima": self._tool_context.anima_name or "",
         }
         if name:
             payload["name"] = name
@@ -188,13 +186,13 @@ class CreateAnimaMixin:
         )
         return f"Anima '{anima_name}' created successfully at {anima_dir_str}. Reload the server to activate."
 
-    def _finalize_create_anima(self, anima_dir: Path) -> str:
+    def _finalize_create_anima(self: _CreateAnimaHost, anima_dir: Path) -> str:
         """Local post-create: supervisor fallback + config registration."""
         from core.config import register_anima_in_config
         from core.paths import get_data_dir
 
         status_path = anima_dir / "status.json"
-        if status_path.exists() and self._anima_name:
+        if status_path.exists() and self._tool_context.anima_name:
             from core.platform.status_store import update_status
 
             assigned = False
@@ -202,7 +200,7 @@ class CreateAnimaMixin:
             def set_fallback_supervisor(status_data: dict[str, Any]) -> None:
                 nonlocal assigned
                 if not status_data.get("supervisor"):
-                    status_data["supervisor"] = self._anima_name
+                    status_data["supervisor"] = self._tool_context.anima_name
                     assigned = True
 
             try:
@@ -210,7 +208,7 @@ class CreateAnimaMixin:
                 if assigned:
                     logger.debug(
                         "Set fallback supervisor '%s' for '%s'",
-                        self._anima_name,
+                        self._tool_context.anima_name,
                         anima_dir.name,
                     )
             except (OSError, ValueError):

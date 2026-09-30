@@ -138,7 +138,14 @@ def _make_handler(
     handler._anima_dir = anima_dir
     handler._anima_name = anima_dir.name
     handler._superuser = superuser
-    handler._task_cwd = task_cwd
+    from core.tooling.tool_context import ToolContext
+
+    handler._tool_context = ToolContext(
+        anima_dir=anima_dir,
+        anima_name=anima_dir.name,
+        check_command_permission=lambda _command: None,
+        task_cwd=task_cwd,
+    )
     handler._subordinate_activity_dirs = []
     handler._descendant_activity_dirs = []
     handler._peer_activity_dirs = []

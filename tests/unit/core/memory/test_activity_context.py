@@ -3,17 +3,17 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 from core.activity.logger import (
     ActivityEntry,
     ActivityLogger,
     activity_context_from_trigger,
     build_semantic_replay_events,
 )
+from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 from core.time_utils import now_local
 from core.tooling.handler import ToolHandler
 
@@ -102,7 +102,10 @@ def test_context_is_preserved_in_grouped_and_semantic_views() -> None:
     assert semantic[0]["ctx"] == "task:parallel-1"
 
 
-def test_context_is_included_in_live_activity_event(tmp_path: Path) -> None:
+def test_context_is_included_in_live_activity_event(
+    tmp_path: Path,
+    data_dir_at_tmp_path: Path,
+) -> None:
     anima_dir = tmp_path / "animas" / "alice"
     activity = ActivityLogger(anima_dir)
     activity.bind_runtime_session(
@@ -113,8 +116,7 @@ def test_context_is_included_in_live_activity_event(tmp_path: Path) -> None:
         )
     )
 
-    with patch("core.activity.logger.get_data_dir", return_value=tmp_path):
-        activity.log("tool_use", tool="delegate_task")
+    activity.log("tool_use", tool="delegate_task")
 
     event_file = next((tmp_path / "run" / "events" / "alice").glob("ta_*.json"))
     payload = json.loads(event_file.read_text(encoding="utf-8"))

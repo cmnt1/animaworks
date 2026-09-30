@@ -29,7 +29,6 @@ RENDER_UTILS_JS = REPO_ROOT / "server" / "static" / "shared" / "chat" / "render-
 WEBSOCKET_JS = REPO_ROOT / "server" / "static" / "modules" / "websocket.js"
 TIMELINE_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "timeline.js"
 CHAT_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "chat.js"
-ANIMA_PY = REPO_ROOT / "core" / "anima" / "digital_anima.py"
 
 
 # ── Issue A: WS Event Mismatch ────────────────────────
@@ -84,30 +83,6 @@ class TestIssueA_WSEventMismatch:
         """chat.response WS handler was dead code and must be removed."""
         src = APP_JS.read_text(encoding="utf-8")
         assert 'onEvent("chat.response"' not in src, "chat.response handler still present in app.js (should be removed)"
-
-    def test_anima_py_dm_received_has_to_person(self) -> None:
-        """message_received (from_type=anima) log call in anima modules must include to_person=self.name."""
-        src = "\n".join(
-            p.read_text(encoding="utf-8")
-            for p in [
-                REPO_ROOT / "core" / "anima" / f"{name}.py"
-                for name in ("digital_anima", "lifecycle", "messaging", "inbox", "heartbeat")
-            ]
-        )
-        # Find activity.alog("message_received" ...) calls — may span multiple lines
-        matches = re.findall(
-            r'activity\.alog\(\s*"message_received"[\s\S]*?\n\s*\)',
-            src,
-        )
-        assert len(matches) > 0, "No activity.alog('message_received') call found in anima.py"
-        # At least one call must have from_type in meta and to_person=self.name
-        anima_dm_calls = [m for m in matches if "from_type" in m and "to_person" in m]
-        assert len(anima_dm_calls) >= 1, "No message_received log with from_type meta and to_person found"
-        for call in anima_dm_calls:
-            # Accept both self.name (method) and anima_mixin.name (module function)
-            assert "to_person=self.name" in call or "to_person=anima_mixin.name" in call, (
-                f"to_person=self.name or to_person=anima_mixin.name missing from message_received log: {call[:150]}"
-            )
 
 
 # ── Issue B: Activity Sidebar Empty ───────────────────

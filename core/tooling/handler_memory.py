@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _MemoryToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -383,7 +387,7 @@ class MemoryToolsMixin:
         "common_skills/": "shared_common_skills",
     }
 
-    def _record_memory_file_used(self, rel: str) -> None:
+    def _record_memory_file_used(self: _MemoryToolsHost, rel: str) -> None:
         """Best-effort explicit-use accounting for indexed memory files."""
         collection = self._collection_for_memory_file(rel)
         if collection is None:
@@ -414,20 +418,20 @@ class MemoryToolsMixin:
         except Exception:
             logger.debug("Failed to record explicit memory use for %s", rel, exc_info=True)
 
-    def _collection_for_memory_file(self, rel: str) -> str | None:
+    def _collection_for_memory_file(self: _MemoryToolsHost, rel: str) -> str | None:
         for prefix, template in self._USED_COLLECTION_PREFIXES.items():
             if rel.startswith(prefix):
                 return template.format(anima=self._current_anima_name())
         return None
 
-    def _current_anima_name(self) -> str:
+    def _current_anima_name(self: _MemoryToolsHost) -> str:
         return str(getattr(self, "_anima_name", "") or self._anima_dir.name)
 
-    def _memory_source_is_denied(self, source: str, denied_roots: tuple[Path, ...]) -> bool:
+    def _memory_source_is_denied(self: _MemoryToolsHost, source: str, denied_roots: tuple[Path, ...]) -> bool:
         """Return whether a persisted search hit originated below an explicit deny root."""
         return not memory_source_is_allowed(self._anima_dir, source, denied_roots)
 
-    def _update_longterm_bm25_source(self, rel: str) -> None:
+    def _update_longterm_bm25_source(self: _MemoryToolsHost, rel: str) -> None:
         if not rel.startswith(("knowledge/", "episodes/", "procedures/")):
             return
         try:
@@ -437,7 +441,7 @@ class MemoryToolsMixin:
         except Exception:
             logger.debug("Failed to update long-term BM25 index after memory write: %s", rel, exc_info=True)
 
-    def _anima_search_hint(self, query: str) -> str | None:
+    def _anima_search_hint(self: _MemoryToolsHost, query: str) -> str | None:
         """If query looks like a search for a registered Anima, return a redirect hint.
 
         Checks all anima directories and config aliases so that queries like
@@ -488,7 +492,7 @@ class MemoryToolsMixin:
             logger.debug("handler_memory read failed", exc_info=True)
         return None
 
-    def _handle_search_memory(self, args: dict[str, Any]) -> str:
+    def _handle_search_memory(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         scope = args.get("scope", "all")
         query = args.get("query", "")
         offset = int(args.get("offset", 0))
@@ -555,7 +559,7 @@ class MemoryToolsMixin:
         return self._format_search_results(query, scope, offset, results, anima_hint=anima_hint)
 
     def _format_search_results(
-        self,
+        self: _MemoryToolsHost,
         query: str,
         scope: str,
         offset: int,
@@ -695,7 +699,7 @@ class MemoryToolsMixin:
             return "traversal"
         return (D, real)
 
-    def _record_skill_view_if_applicable(self, rel: str) -> None:
+    def _record_skill_view_if_applicable(self: _MemoryToolsHost, rel: str) -> None:
         """Record a 'view' event if the path looks like a skill or procedure."""
         is_flat_personal_skill = self._is_flat_personal_skill_path(rel)
         is_skill = is_flat_personal_skill or (rel.startswith("skills/") and "SKILL.md" in rel)
@@ -736,7 +740,7 @@ class MemoryToolsMixin:
         except Exception:
             logger.debug("Failed to record skill view event for %s", rel, exc_info=True)
 
-    def _handle_read_memory_file(self, args: dict[str, Any]) -> str:
+    def _handle_read_memory_file(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         raw_path = args["path"]
         norm = _normalize_memory_path(raw_path, self._anima_dir)
         if norm.channel_redirect:
@@ -896,7 +900,7 @@ class MemoryToolsMixin:
                 hint = f"\nAvailable files in {parent.name}/:\n" + "\n".join(f"  - {s}" for s in siblings)
         return f"File not found: {rel}{hint}"
 
-    def _resolve_write_origin(self) -> str:
+    def _resolve_write_origin(self: _MemoryToolsHost) -> str:
         """Return the conservative origin for knowledge written this session."""
         from core.trust import read_session_trust
 
@@ -907,14 +911,14 @@ class MemoryToolsMixin:
             min_trust = min(min_trust, read_session_trust(self._anima_dir, tool_session_id))
         return {0: "external_web", 1: "mixed"}.get(min_trust, "")
 
-    def _write_plain_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+    def _write_plain_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         if request.mode == "append":
             _append_memory_content(request.path, request.content)
         else:
             request.path.write_text(request.content, encoding="utf-8")
         return _MemoryWriteOutcome()
 
-    def _write_knowledge_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+    def _write_knowledge_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         if request.mode == "overwrite" and request.rel.endswith(".md"):
             request.path.write_text(
                 _knowledge_frontmatter_text(request.path, request.rel, request.content, request.write_origin),
@@ -926,7 +930,7 @@ class MemoryToolsMixin:
             return _MemoryWriteOutcome()
         return self._write_plain_memory_file(request)
 
-    def _write_procedure_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+    def _write_procedure_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         if (
             request.mode == "overwrite"
             and request.rel.endswith(".md")
@@ -942,7 +946,7 @@ class MemoryToolsMixin:
             return _MemoryWriteOutcome(auto_frontmatter_applied=True)
         return self._write_plain_memory_file(request)
 
-    def _write_episode_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+    def _write_episode_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         if request.mode == "overwrite" and request.was_existing:
             try:
                 archive_episode_before_write(self._anima_dir, request.path)
@@ -956,7 +960,7 @@ class MemoryToolsMixin:
                 )
         return self._write_plain_memory_file(request)
 
-    def _write_memory_scope(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+    def _write_memory_scope(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         scope = next(
             (scope for prefix, scope in _MEMORY_WRITE_SCOPE_PREFIXES if request.rel.startswith(prefix)),
             "default",
@@ -964,7 +968,7 @@ class MemoryToolsMixin:
         writer_name = _MEMORY_WRITE_HANDLERS[scope]
         return getattr(self, writer_name)(request)
 
-    def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
+    def _handle_write_memory_file(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         raw_path = args["path"]
         norm = _normalize_memory_path(raw_path, self._anima_dir)
         if norm.channel_redirect:
@@ -1098,7 +1102,7 @@ class MemoryToolsMixin:
         return self._complete_memory_write(request, auto_frontmatter_applied=outcome.auto_frontmatter_applied)
 
     def _complete_memory_write(
-        self,
+        self: _MemoryToolsHost,
         request: _MemoryWriteRequest,
         *,
         auto_frontmatter_applied: bool,
@@ -1114,7 +1118,7 @@ class MemoryToolsMixin:
         self._update_memory_write_indexes(request)
         return result
 
-    def _record_memory_file_change(self, request: _MemoryWriteRequest) -> None:
+    def _record_memory_file_change(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> None:
         if request.skill_capture is not None:
             from core.skills.ledger import record_skill_change
 
@@ -1136,7 +1140,7 @@ class MemoryToolsMixin:
             meta={"path": request.rel, "mode": request.mode},
         )
 
-    def _memory_write_similarity_hint(self, request: _MemoryWriteRequest) -> str:
+    def _memory_write_similarity_hint(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> str:
         if not (request.rel.startswith("knowledge/") and request.mode == "overwrite" and not request.was_existing):
             return ""
 
@@ -1160,7 +1164,7 @@ class MemoryToolsMixin:
         lines = "\n".join(f"  - {name}" for name in similar[:10])
         return t("handler.similar_knowledge_hint", files=lines)
 
-    def _reload_schedule_if_needed(self, rel: str) -> None:
+    def _reload_schedule_if_needed(self: _MemoryToolsHost, rel: str) -> None:
         if rel not in ("heartbeat.md", "cron.md") or not self._on_schedule_changed:
             return
         try:
@@ -1170,7 +1174,7 @@ class MemoryToolsMixin:
             logger.exception("Schedule reload failed for '%s'", self._anima_name)
 
     def _format_memory_write_result(
-        self,
+        self: _MemoryToolsHost,
         request: _MemoryWriteRequest,
         *,
         auto_frontmatter_applied: bool,
@@ -1201,7 +1205,7 @@ class MemoryToolsMixin:
                 result = f"{result}\n\n{t('handler.procedure_format_validation', msg=validation_msg)}"
         return result
 
-    def _update_memory_write_indexes(self, request: _MemoryWriteRequest) -> None:
+    def _update_memory_write_indexes(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> None:
         rel = request.rel
         path = request.path
         if rel.startswith(("skills/", "procedures/")) and rel.endswith(".md"):
@@ -1241,7 +1245,7 @@ class MemoryToolsMixin:
         if rel.startswith("episodes/") and rel.endswith(".md"):
             self._update_longterm_bm25_source(rel)
 
-    def _handle_archive_memory_file(self, args: dict[str, Any]) -> str:
+    def _handle_archive_memory_file(self: _MemoryToolsHost, args: dict[str, Any]) -> str:
         """Archive a memory file by moving it to archive/superseded/."""
         import shutil
 
