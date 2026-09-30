@@ -54,46 +54,22 @@ class TestDigitalAnimaActivityConsolidation:
         source = inspect.getsource(DigitalAnima.__init__)
         assert "ActivityLogger" in source
 
-    def test_write_call_in_process_message_not_wrapped_in_try_except(self):
-        """Activity log write in process_message is NOT wrapped in try/except.
-
-        The ``await self._activity.alog("message_received", ...)`` call should appear
-        outside any ``try:`` block that is specifically guarding it.
-        """
+    def test_message_received_activity_write_is_not_swallowed(self):
+        """The shared streaming implementation must not suppress receive-log failures."""
         from core.anima.digital_anima import DigitalAnima
 
-        source = inspect.getsource(DigitalAnima.process_message)
+        source = inspect.getsource(DigitalAnima.process_message_stream)
         lines = source.splitlines()
+        message_line = next(
+            (i for i, line in enumerate(lines) if line.strip() == '"message_received",'),
+            None,
+        )
+        assert message_line is not None
+        assert lines[message_line - 1].strip() == "await self._activity.alog("
 
-        # Find the activity log "message_received" call
-        for i, line in enumerate(lines):
-            if 'self._activity.alog("message_received"' in line:
-                # Walk backwards to check: the closest enclosing try should be
-                # the lock acquisition try, NOT a dedicated activity-log guard.
-                # A dedicated guard would have "try:" immediately preceding
-                # (within 1-2 lines) with no other logic between.
-                found_try_guard = False
-                for j in range(i - 1, max(i - 3, -1), -1):
-                    stripped = lines[j].strip()
-                    if stripped == "try:":
-                        # Check if this try is ONLY guarding the activity log
-                        # (i.e. the except is "except: pass" or "except Exception: pass")
-                        # Look ahead from the activity line for the matching except
-                        for k in range(i + 1, min(i + 4, len(lines))):
-                            exc_line = lines[k].strip()
-                            if exc_line.startswith("except") and "pass" in exc_line:
-                                found_try_guard = True
-                                break
-                            if exc_line.startswith("except"):
-                                # Has recovery logic, check if next line is just pass
-                                if k + 1 < len(lines) and lines[k + 1].strip() == "pass":
-                                    found_try_guard = True
-                                break
-                        break
-                assert not found_try_guard, (
-                    "Activity log 'message_received' write call is still wrapped in a dedicated try/except: pass guard"
-                )
-                break
+        # The receive event is written before the execution try/except so a
+        # failure cannot be silently converted into a successful reply.
+        assert not any(line.strip() == "try:" for line in lines[message_line - 3 : message_line])
 
     def test_load_heartbeat_history_retains_try_except(self):
         """_load_heartbeat_history still has try/except wrapping for recovery."""

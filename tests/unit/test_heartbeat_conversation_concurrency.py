@@ -300,7 +300,7 @@ class TestConcurrentLockAcquisition:
             combined = "\n".join(sources)
             return "_agent_session_lock" in combined or "_agent_session_context" in combined
 
-        assert guarded(MessagingMixin.process_message)
+        assert guarded(MessagingMixin.process_message, MessagingMixin.process_message_stream)
         assert guarded(MessagingMixin.process_message_stream)
         # run_heartbeat routes the agent cycle through _run_heartbeat_agent_session
         assert guarded(
