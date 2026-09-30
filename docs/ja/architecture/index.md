@@ -34,7 +34,7 @@ flowchart TD
 | `core.execution` | エンジン共通イベント、セッション、プロセス、watchdog、tool evidence |
 | `core.i18n` | ローカライズ文字列と翻訳関数 |
 | `core.infra` | 起動準備、ログ、ランタイム基盤 |
-| `core.integrations` | 外部サービスとの接続アダプター |
+| `core.integrations` | 外部サービス連携と animaworks-tool の実装 |
 | `core.lifecycle` | 共通ライフサイクル処理と Anima 統合 |
 | `core.mcp` | AnimaWorks のツールを MCP 経由で公開するサーバー |
 | `core.memory` | 会話記録、長期記憶、検索、記憶の保守 |
@@ -48,7 +48,6 @@ flowchart TD
 | `core.supervisor` | Anima と task runner のプロセス管理、IPC、scheduler |
 | `core.tasks` | 永続タスク、実行キュー、委任、外部タスク収集 |
 | `core.tooling` | 内部ツールの定義、実行ハンドラー、権限検査 |
-| `core.tools` | `core.integrations` の互換エイリアス（旧パッケージ名。`animaworks-tool` のエントリポイントとして残す） |
 | `core.usage` | 利用量とコストの集計 |
 | `core.voice` | 音声入出力と音声会話 |
 

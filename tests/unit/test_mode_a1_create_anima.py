@@ -199,7 +199,7 @@ class TestCreateAnimaCLISupervisor:
             patch("core.infra.runtime_init.ensure_runtime_dir"),
             patch("core.paths.get_data_dir", return_value=data_dir),
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
-            patch("cli.commands.init_cmd._register_anima_in_config"),
+            patch("core.config.register_anima_in_config"),
         ):
             mock_create.return_value = data_dir / "animas" / "test-subordinate"
 
@@ -243,7 +243,7 @@ class TestCreateAnimaCLISupervisor:
             patch("core.infra.runtime_init.ensure_runtime_dir"),
             patch("core.paths.get_data_dir", return_value=data_dir),
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
-            patch("cli.commands.init_cmd._register_anima_in_config"),
+            patch("core.config.register_anima_in_config"),
         ):
             mock_create.return_value = data_dir / "animas" / "test-worker"
 

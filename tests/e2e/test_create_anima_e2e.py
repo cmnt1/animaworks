@@ -368,7 +368,7 @@ class TestCreateAnimaToolHandler:
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
         # Mock the config registration (imported inline in the handler method)
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
@@ -422,7 +422,7 @@ class TestCreateAnimaToolHandler:
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
         # First creation succeeds
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result1 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path)},
@@ -431,7 +431,7 @@ class TestCreateAnimaToolHandler:
 
         # Second creation should return an error string, not raise
         sheet_path2 = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET, filename="sheet2.md")
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result2 = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path2)},
@@ -454,7 +454,7 @@ class TestCreateAnimaToolHandler:
 
         sheet_path = _write_character_sheet(tmp_path, FULL_CHARACTER_SHEET)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": str(sheet_path), "name": "custom-worker"},
@@ -481,7 +481,7 @@ class TestCreateAnimaToolHandler:
         memory = MemoryManager(caller_dir)
         handler = ToolHandler(anima_dir=caller_dir, memory=memory)
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             result = handler.handle(
                 "create_anima",
                 {"character_sheet_path": "new_hire.md"},

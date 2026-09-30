@@ -247,9 +247,8 @@ def _copy_examples(examples: Path, data_dir: Path, repo_root: Path) -> None:
 
 def initialize_demo(data_dir: Path, preset_dir: Path, repo_root: Path, auth: dict) -> None:
     """Run first-run initialization (port of entrypoint steps 1-10)."""
-    from cli.commands.init_cmd import _register_anima_in_config
     from core.anima.factory import create_from_md
-    from core.config import invalidate_cache
+    from core.config import invalidate_cache, register_anima_in_config
     from core.infra.runtime_init import ensure_runtime_dir, merge_templates
 
     # 1. Initialize infrastructure (no default anima)
@@ -290,7 +289,7 @@ def initialize_demo(data_dir: Path, preset_dir: Path, repo_root: Path, auth: dic
                 supervisor = lines[1].strip()
         print(f"Creating anima: {name}")
         anima_dir = create_from_md(animas_dir, md_file, supervisor=supervisor, role=role)
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
 
     # 4a. Override models for cost
     _override_models(data_dir, auth["family"])

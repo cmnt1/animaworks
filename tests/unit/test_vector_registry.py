@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
-from core.memory.rag.http_store import HttpVectorStore
+from core.memory.rag.vector_client import VectorClient
 from core.memory.rag.vector_registry import (
     _reset_for_testing,
     configure_owner_vector_access,
@@ -29,7 +29,7 @@ def test_vector_url_returns_cached_http_store() -> None:
 
     store = get_vector_store("sakura")
 
-    assert isinstance(store, HttpVectorStore)
+    assert isinstance(store, VectorClient)
     assert store._anima_name == "sakura"
     assert store._base_url == "http://localhost:18500/api/internal/vector"
     assert get_vector_store("sakura") is store
@@ -41,7 +41,7 @@ def test_concurrent_calls_share_cached_http_store() -> None:
     with ThreadPoolExecutor(max_workers=8) as executor:
         stores = list(executor.map(lambda _index: get_vector_store("sakura"), range(8)))
 
-    assert isinstance(stores[0], HttpVectorStore)
+    assert isinstance(stores[0], VectorClient)
     assert all(store is stores[0] for store in stores)
 
 
@@ -51,8 +51,8 @@ def test_http_store_cache_is_keyed_by_base_url() -> None:
     configure_endpoints(RagEndpoints(vector_url="http://localhost:2222/vector"))
     second = get_vector_store("sakura")
 
-    assert isinstance(first, HttpVectorStore)
-    assert isinstance(second, HttpVectorStore)
+    assert isinstance(first, VectorClient)
+    assert isinstance(second, VectorClient)
     assert first is not second
     assert first._base_url == "http://localhost:1111/vector"
     assert second._base_url == "http://localhost:2222/vector"
@@ -65,7 +65,7 @@ def test_owner_transport_takes_priority_and_rejects_other_animas() -> None:
 
     store = get_vector_store("sakura")
 
-    assert isinstance(store, HttpVectorStore)
+    assert isinstance(store, VectorClient)
     assert store.list_collections() == []
     transport.assert_called_once()
     assert get_vector_store("other") is None
@@ -77,7 +77,7 @@ def test_server_transport_is_used_when_configured() -> None:
 
     store = get_vector_store("sakura")
 
-    assert isinstance(store, HttpVectorStore)
+    assert isinstance(store, VectorClient)
     assert get_vector_store("sakura") is store
 
 

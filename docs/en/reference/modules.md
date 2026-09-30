@@ -874,14 +874,6 @@ Tool schemas, permissions, and execution infrastructure.
 |---|---:|---|
 | `core.tooling.schemas` | 79 | Canonical tool schema definitions and format converters. |
 
-## `core.tools`
-
-Internal tool implementations.
-
-| Module | Lines | First docstring line |
-|---|---:|---|
-| `core.tools` | 58 | — |
-
 ## `core.usage`
 
 Recording and aggregation of LLM usage and costs.

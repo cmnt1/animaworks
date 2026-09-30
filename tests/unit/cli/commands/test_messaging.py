@@ -58,23 +58,23 @@ class TestCmdSend:
 
 
 class TestNotifyServer:
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=123)
+    @patch("core.platform.process.is_process_alive", return_value=False)
+    @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_server_not_alive(self, mock_pid, mock_alive):
         from cli.commands.messaging import _notify_server_message_sent
 
         # Should return silently
         _notify_server_message_sent("alice", "bob", "test")
 
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("core.platform.pid.read_server_pid", return_value=None)
     def test_no_pid(self, mock_pid):
         from cli.commands.messaging import _notify_server_message_sent
 
         _notify_server_message_sent("alice", "bob", "test")
 
     @patch("httpx.post")
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=123)
+    @patch("core.platform.process.is_process_alive", return_value=True)
+    @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_successful_notification(self, mock_pid, mock_alive, mock_post):
         from cli.commands.messaging import _notify_server_message_sent
 
@@ -87,8 +87,8 @@ class TestNotifyServer:
         mock_post.assert_called_once()
 
     @patch("httpx.post")
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=123)
+    @patch("core.platform.process.is_process_alive", return_value=True)
+    @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_message_id_in_payload(self, mock_pid, mock_alive, mock_post):
         from cli.commands.messaging import _notify_server_message_sent
 
@@ -104,8 +104,8 @@ class TestNotifyServer:
         assert payload["message_id"] == "msg_123"
 
     @patch("httpx.post", side_effect=Exception("connection error"))
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=123)
+    @patch("core.platform.process.is_process_alive", return_value=True)
+    @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_notification_failure_silent(self, mock_pid, mock_alive, mock_post):
         from cli.commands.messaging import _notify_server_message_sent
 

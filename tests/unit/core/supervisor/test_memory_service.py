@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.memory.rag.http_store import HttpVectorStore, VectorStoreRetryableError
+from core.memory.rag.vector_client import VectorClient, VectorStoreRetryableError
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
 from core.memory.rag.vector_ops import bridge_transport
 from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
@@ -77,7 +77,7 @@ async def test_vector_client_get_all_and_count_use_bridge_transport(tmp_path: Pa
     store._get_all_once.return_value = documents
     store._count_once.return_value = len(documents)
     service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
-    vector_client = HttpVectorStore("sakura", transport=bridge_transport(service.handle, asyncio.get_running_loop()))
+    vector_client = VectorClient("sakura", transport=bridge_transport(service.handle, asyncio.get_running_loop()))
 
     results = await asyncio.to_thread(vector_client.get_all, "sakura_knowledge", 100_000)
     count = await asyncio.to_thread(vector_client.count, "sakura_knowledge")
@@ -395,7 +395,7 @@ async def test_bridge_transport_round_trip_and_unavailable(tmp_path: Path) -> No
     async def handle(method: str, params: dict) -> dict:
         return await service.handle(method, params)
 
-    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
+    store = VectorClient("sakura", transport=bridge_transport(handle, loop))
     assert await asyncio.to_thread(
         store.upsert,
         "sakura_knowledge",
@@ -412,7 +412,7 @@ async def test_bridge_transport_round_trip_and_unavailable(tmp_path: Path) -> No
 
 def test_owner_store_routes_writes_to_root() -> None:
     transport = MagicMock(return_value={"ok": True})
-    store = HttpVectorStore("sakura", transport=transport)
+    store = VectorClient("sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is True
     call_path, call_payload = transport.call_args.args
@@ -425,18 +425,18 @@ def test_owner_store_marks_unavailable_write_as_transient() -> None:
     def transport(_path: str, _payload: dict) -> dict:
         raise VectorStoreRetryableError("owner unavailable", retry_after_ms=100)
 
-    store = HttpVectorStore("sakura", transport=transport)
+    store = VectorClient("sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is False
     assert store.is_transient_write_failure("sakura_knowledge") is True
 
 
 def test_owner_store_collection_existence_is_three_state() -> None:
-    available = HttpVectorStore(
+    available = VectorClient(
         "sakura",
         transport=lambda _path, _payload: {"collections": ["sakura_knowledge"]},
     )
-    unavailable = HttpVectorStore(
+    unavailable = VectorClient(
         "sakura",
         transport=lambda _path, _payload: (_ for _ in ()).throw(RuntimeError("root down")),
     )

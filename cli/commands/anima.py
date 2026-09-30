@@ -15,13 +15,13 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
     """Create a new Digital Anima."""
     from pathlib import Path
 
-    from cli.commands.init_cmd import _register_anima_in_config
     from core.anima.factory import (
         create_blank,
         create_from_md,
         create_from_template,
         validate_anima_name,
     )
+    from core.config import register_anima_in_config
     from core.infra.runtime_init import ensure_runtime_dir
     from core.paths import get_animas_dir, get_data_dir
 
@@ -42,13 +42,13 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
             supervisor=supervisor,
             role=role,
         )
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created anima '{anima_dir.name}' from {md_path.name}")
         return
 
     if args.template:
         anima_dir = create_from_template(animas_dir, args.template, anima_name=args.name)
-        _register_anima_in_config(data_dir, anima_dir.name)
+        register_anima_in_config(data_dir, anima_dir.name)
         print(f"Created anima '{anima_dir.name}' from template '{args.template}'")
         return
 
@@ -62,7 +62,7 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
         print(f"Error: {err}")
         sys.exit(1)
     anima_dir = create_blank(animas_dir, name)
-    _register_anima_in_config(data_dir, anima_dir.name)
+    register_anima_in_config(data_dir, anima_dir.name)
     print(f"Created blank anima '{anima_dir.name}'")
 
 

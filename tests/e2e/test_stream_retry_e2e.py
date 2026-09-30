@@ -164,7 +164,7 @@ class TestStreamRetryFullFlow:
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core.agent.cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -235,7 +235,7 @@ class TestStreamRetryMaxExceeded:
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core.agent.cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -296,7 +296,7 @@ class TestCheckpointClearedOnSuccess:
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core.agent.cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -384,7 +384,7 @@ class TestCheckpointClearedOnSuccess:
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core.agent.cycle.inject_shortterm",
+            "core.prompt.builder.inject_shortterm",
             lambda sp, st: sp,
         )
 

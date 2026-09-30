@@ -16,24 +16,13 @@ ROOT = Path(__file__).resolve().parents[2]
 SCAN_ROOTS = ("core", "cli", "server")
 BASELINE_PATH = Path(__file__).with_name("layering_baseline.txt")
 
-# L7 applications must not depend on one another. Existing core -> cli and
-# server -> cli edges are grandfathered only by the checked-in baseline until
-# the TODOs below are resolved; a new edge in any direction fails the ratchet.
+# L7 applications must not depend on one another. Core/server imports from
+# CLI packages are forbidden and are asserted separately below.
 APP_IMPORTS_FORBIDDEN = frozenset({("cli", "server"), ("server", "cli")})
 STRICT_DIRECTIONS = frozenset({("core", "cli"), ("core", "server"), ("server", "cli")})
-# TODO(P0): remove these exact legacy imports. This allowlist is deliberately
-# independent of the generated baseline so --update cannot bless new app edges.
-# core -> server is already 0 and must remain absent.
-STRICT_DIRECTION_ALLOWLIST = Counter(
-    {
-        ("core.integrations", "cli"): 2,
-        ("core.memory.rag.cli_access", "cli.commands.server"): 2,
-        ("core.tasks.board.notices", "cli.commands.messaging"): 1,
-        ("core.tooling.handler_create_anima", "cli.commands.init_cmd"): 1,
-        ("server.app", "cli.commands.server"): 1,
-        ("server.routes.internal", "cli.commands.init_cmd"): 1,
-    }
-)
+# Deliberately independent of the generated baseline so --update cannot bless
+# any core/server -> CLI dependency.
+STRICT_DIRECTION_ALLOWLIST: Counter[tuple[str, str]] = Counter()
 
 # Specific rules take precedence over parent rules. Modules not covered by the
 # table use DEFAULT_CORE_LAYER (L4), as allowed by the audit plan.

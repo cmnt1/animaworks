@@ -1,34 +1,20 @@
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
-"""
-Process isolation supervisor package.
-
-Provides process-level isolation for each Anima by running them in
-separate subprocesses communicating via Unix Domain Sockets.
-"""
-
 from __future__ import annotations
 
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
-from core.supervisor.manager import (
-    HealthConfig,
-    ProcessSupervisor,
-    ReconciliationConfig,
-    RestartPolicy,
-)
-from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+"""Process-level Anima supervisor APIs."""
 
-__all__ = [
-    "IPCClient",
-    "IPCServer",
-    "IPCRequest",
-    "IPCResponse",
-    "ProcessHandle",
-    "ProcessState",
-    "ProcessStats",
-    "ProcessSupervisor",
-    "RestartPolicy",
-    "HealthConfig",
-    "ReconciliationConfig",
-]
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {"ProcessSupervisor": "core.supervisor.manager"}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = ["ProcessSupervisor"]

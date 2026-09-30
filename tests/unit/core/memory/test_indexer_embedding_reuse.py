@@ -79,11 +79,11 @@ def make_indexer(tmp_path, monkeypatch, *, shared=False):
 def test_indexer_creation_does_not_load_embedding_model(tmp_path, monkeypatch):
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
-    from core.memory.rag import embedding, singleton
+    from core.memory.rag import embedding
 
     get_embedding_model = MagicMock()
     monkeypatch.setattr(embedding, "get_embedding_model", get_embedding_model)
-    monkeypatch.setattr(singleton, "get_embedding_model", get_embedding_model)
+    monkeypatch.setattr(embedding, "get_embedding_model", get_embedding_model)
 
     indexer = MemoryIndexer(Store(), "test", tmp_path)
 

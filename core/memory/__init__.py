@@ -1,22 +1,20 @@
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
-
 from __future__ import annotations
 
-from core.memory.conversation.memory import ConversationMemory, ConversationState, ConversationTurn
-from core.memory.conversation.shortterm import SessionState, ShortTermMemory
-from core.memory.manager import MemoryManager
-from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section
+"""Memory APIs, loaded only when explicitly requested."""
 
-__all__ = [
-    "ConversationMemory",
-    "ConversationState",
-    "ConversationTurn",
-    "MemoryManager",
-    "PrimingEngine",
-    "PrimingResult",
-    "SessionState",
-    "ShortTermMemory",
-    "format_priming_section",
-]
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {"MemoryManager": "core.memory.manager"}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = ["MemoryManager"]

@@ -37,7 +37,7 @@ The main packages of `core/` are as follows. For a module-level list, refer to t
 | `core.execution` | Engine common events, sessions, processes, watchdog, tool evidence |
 | `core.i18n` | Localized strings and translation functions |
 | `core.infra` | Startup preparation, logging, runtime foundation |
-| `core.integrations` | Connection adapters for external services |
+| `core.integrations` | External service integrations and the core tool dispatcher |
 | `core.lifecycle` | Common lifecycle processing and Anima integration |
 | `core.mcp` | Server that exposes AnimaWorks tools via MCP |
 | `core.memory` | Conversation records, long-term memory, search, memory maintenance |
@@ -51,7 +51,6 @@ The main packages of `core/` are as follows. For a module-level list, refer to t
 | `core.supervisor` | Process management for Anima and task runners, IPC, scheduler |
 | `core.tasks` | Persistent tasks, execution queues, delegation, external task collection |
 | `core.tooling` | Internal tool definitions, execution handlers, permission checks |
-| `core.tools` | Compatibility alias for `core.integrations` (old package name; kept as an entry point for `animaworks-tool`) |
 | `core.usage` | Usage and cost aggregation |
 | `core.voice` | Voice input/output and voice conversations |
 

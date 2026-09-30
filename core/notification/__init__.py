@@ -4,20 +4,11 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Human notification subsystem.
-
-Provides ``HumanNotifier`` and channel implementations for sending
-notifications from top-level Animas to human administrators via
-external messaging services (Slack, LINE, Telegram, Chatwork, ntfy).
-"""
+"""Notification coordination helpers."""
 
 import hashlib
 import secrets
 import threading
-
-from core.notification.notifier import HumanNotifier, NotificationChannel
-
-__all__ = ["HumanNotifier", "NotificationChannel"]
 
 
 def notification_key_for(subject: str, body: str) -> str:
@@ -26,11 +17,7 @@ def notification_key_for(subject: str, body: str) -> str:
 
 
 class CallHumanKeys:
-    """Random per-session confirmation keys for ``call_human``.
-
-    Kept only in this process's memory: nothing an Anima can read or compute
-    reveals a key except the denial message that carries the instructions.
-    """
+    """Random per-session confirmation keys for ``call_human``."""
 
     _MAX_SESSIONS = 256
 
@@ -39,7 +26,7 @@ class CallHumanKeys:
         self._lock = threading.Lock()
 
     def check(self, anima_name: str, session_id: str, sha: str) -> str | None:
-        """Return ``None`` if *sha* matches this session's key, else the key to hand out."""
+        """Return ``None`` for a matching key, else the key to hand out."""
         with self._lock:
             slot = (anima_name, session_id)
             key = self._keys.get(slot)
@@ -48,3 +35,6 @@ class CallHumanKeys:
                     self._keys.pop(next(iter(self._keys)))
                 key = self._keys[slot] = secrets.token_hex(4)
         return None if str(sha or "").strip().lower() == key else key
+
+
+__all__ = ["CallHumanKeys", "notification_key_for"]

@@ -611,6 +611,7 @@ def create_internal_router() -> APIRouter:
 
         def _create() -> Path:
             from core.anima.factory import create_from_md
+            from core.config import register_anima_in_config
             from core.paths import get_animas_dir, get_data_dir
 
             md_path = Path(body.character_sheet_path) if body.character_sheet_path else None
@@ -641,9 +642,7 @@ def create_internal_router() -> APIRouter:
                     )
 
             try:
-                from cli.commands.init_cmd import _register_anima_in_config
-
-                _register_anima_in_config(get_data_dir(), anima_dir.name)
+                register_anima_in_config(get_data_dir(), anima_dir.name)
             except Exception:
                 logger.warning(
                     "Failed to register anima '%s' in config.json",

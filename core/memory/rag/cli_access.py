@@ -34,10 +34,11 @@ class VectorAccess:
 
 def detect_server() -> ServerInfo:
     """Detect the local server using its PID file and configured port."""
-    from cli.commands.server import _is_process_alive, _read_pid
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
-    pid = _read_pid()
-    running = pid is not None and _is_process_alive(pid)
+    pid = read_server_pid()
+    running = pid is not None and is_process_alive(pid)
     try:
         from core.config import load_config
 

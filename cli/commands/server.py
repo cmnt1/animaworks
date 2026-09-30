@@ -16,6 +16,7 @@ from pathlib import Path
 
 import psutil
 
+from core.platform.pid import read_server_pid
 from core.platform.process import (
     find_first_matching_pid,
     subprocess_session_kwargs,
@@ -65,28 +66,6 @@ def _remove_pid_file() -> None:
         logger.debug("PID file removed: %s", pid_file)
     except OSError as exc:
         logger.warning("Failed to remove PID file %s: %s", pid_file, exc)
-
-
-def _read_pid() -> int | None:
-    """Read and validate the PID from the PID file.
-
-    Returns the PID if the file exists and contains a valid integer,
-    or None if the file is missing or contains invalid data.
-    """
-    pid_file = _get_pid_file()
-    if not pid_file.exists():
-        return None
-    try:
-        text = pid_file.read_text(encoding="utf-8").strip()
-        return int(text)
-    except (ValueError, OSError) as exc:
-        logger.warning("Invalid PID file %s: %s", pid_file, exc)
-        return None
-
-
-def _is_process_alive(pid: int) -> bool:
-    """Check whether a process with the given PID is currently running."""
-    return is_pid_alive(pid)
 
 
 def _find_server_pid_by_process(
@@ -238,7 +217,7 @@ def _stop_server(
             print(f"Killed {orphans} orphan runner process(es).")
         return orphans
 
-    pid = _read_pid()
+    pid = read_server_pid()
 
     if pid is None:
         pid = _find_server_pid_by_process(extra_exclude_pids=extra_exclude_pids)
@@ -248,7 +227,7 @@ def _stop_server(
             return True
         print(f"PID file missing — found server process by scanning (pid={pid}).")
     else:
-        if not _is_process_alive(pid):
+        if not is_pid_alive(pid):
             print(f"Stale PID file (pid={pid}). Server is not running. Cleaning up.")
             _remove_pid_file()
             _cleanup_orphans()
@@ -268,7 +247,7 @@ def _stop_server(
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _is_process_alive(pid):
+        if not is_pid_alive(pid):
             print("Server stopped.")
             _remove_pid_file()
             _cleanup_orphans()
@@ -291,11 +270,11 @@ def _stop_server(
 
     kill_deadline = time.monotonic() + 3
     while time.monotonic() < kill_deadline:
-        if not _is_process_alive(pid):
+        if not is_pid_alive(pid):
             break
         time.sleep(0.1)
 
-    if _is_process_alive(pid):
+    if is_pid_alive(pid):
         print(f"Error: Server (pid={pid}) still alive after SIGKILL.")
         return False
 
@@ -362,8 +341,8 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     """Spawn the server as a background process and verify startup."""
     from core.paths import get_data_dir
 
-    existing_pid = _read_pid()
-    if existing_pid is not None and _is_process_alive(existing_pid):
+    existing_pid = read_server_pid()
+    if existing_pid is not None and is_pid_alive(existing_pid):
         print(f"Error: Server is already running (pid={existing_pid}).")
         print("Use 'animaworks stop' first, or 'animaworks restart'.")
         sys.exit(EXIT_ALREADY_RUNNING)
@@ -371,7 +350,7 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process(port=args.port)
-    if orphan_pid is not None and _is_process_alive(orphan_pid):
+    if orphan_pid is not None and is_pid_alive(orphan_pid):
         print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
         print("Use 'animaworks stop' first, or 'animaworks restart'.")
         sys.exit(EXIT_ALREADY_RUNNING)
@@ -441,7 +420,7 @@ def _start_pid_watchdog() -> None:
         while True:
             time.sleep(30)
             try:
-                current = _read_pid()
+                current = read_server_pid()
                 if current == my_pid:
                     continue
                 # PID file missing, empty, or pointing at a different/dead process
@@ -487,126 +466,6 @@ def _pin_native_threads() -> None:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def _is_mode_c_status(data: dict) -> bool:
-    """Return True when status.json indicates Mode C / codex execution."""
-    mode = str(data.get("execution_mode") or data.get("resolved_mode") or "").strip().upper()
-    if mode == "C":
-        return True
-    model = str(data.get("model") or "").strip()
-    return model.startswith("codex/")
-
-
-def _is_mode_s_status(data: dict) -> bool:
-    """Return True when status.json indicates Mode S / Claude Agent SDK."""
-    mode = str(data.get("execution_mode") or data.get("resolved_mode") or "").strip().upper()
-    if mode == "S":
-        return True
-    model = str(data.get("model") or "").strip().lower()
-    return model.startswith("claude-") or model.startswith("anthropic/")
-
-
-def _package_importable(module_name: str) -> bool:
-    """Return True when *module_name* can be imported."""
-    try:
-        __import__(module_name)
-        return True
-    except Exception:
-        return False
-
-
-def _scan_sdk_dependent_animas(animas_dir: Path) -> tuple[list[str], list[str]]:
-    """Scan animas status.json for Mode C / Mode S dependents.
-
-    Returns:
-        (mode_c_names, mode_s_names)
-    """
-    import json
-
-    mode_c: list[str] = []
-    mode_s: list[str] = []
-    if not animas_dir.is_dir():
-        return mode_c, mode_s
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        status_path = anima_dir / "status.json"
-        if not status_path.is_file():
-            continue
-        try:
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        if _is_mode_c_status(data):
-            mode_c.append(anima_dir.name)
-        if _is_mode_s_status(data):
-            mode_s.append(anima_dir.name)
-    return mode_c, mode_s
-
-
-def _run_execution_sdk_preflight(animas_dir: Path | None = None) -> None:
-    """CRITICAL-log when Mode C/S animas exist but their SDK packages are missing.
-
-    Does not abort startup — operators must restore packages before new
-    spawns succeed.
-    """
-    try:
-        if animas_dir is None:
-            from core.paths import get_animas_dir
-
-            animas_dir = get_animas_dir()
-
-        mode_c, mode_s = _scan_sdk_dependent_animas(animas_dir)
-
-        if mode_c and not _package_importable("openai_codex"):
-            names = ", ".join(mode_c)
-            logger.critical(
-                "Mode C anima %s が存在するが openai-codex パッケージが見つからない。"
-                "`uv sync --frozen --all-extras` または "
-                "`uv pip install openai-codex openai-codex-cli-bin` で復元せよ。"
-                "新規spawnされるプロセスは全て失敗する",
-                names,
-            )
-
-        if mode_s and not _package_importable("claude_agent_sdk"):
-            names = ", ".join(mode_s)
-            logger.critical(
-                "Mode S anima %s が存在するが claude_agent_sdk パッケージが見つからない。"
-                "`uv sync --frozen --all-extras` または "
-                "`uv pip install 'animaworks[claude]'` で復元せよ。"
-                "新規spawnされるプロセスは全て失敗する",
-                names,
-            )
-
-        if mode_s:
-            names = ", ".join(mode_s)
-            try:
-                from core.platform.claude_code import get_claude_executable
-
-                cli_path = get_claude_executable()
-            except Exception:
-                cli_path = None
-            if cli_path is None:
-                logger.critical(
-                    "Mode S anima %s が存在するが Claude Code CLI が見つからない。"
-                    "Python SDK は CLI を同梱しない。`npm install -g @anthropic-ai/claude-code` で入れよ。"
-                    "CLI が無いと全セッションが『ストリームが3回切断』で失敗する",
-                    names,
-                )
-            if hasattr(os, "geteuid") and os.geteuid() == 0 and os.environ.get("IS_SANDBOX") != "1":
-                logger.critical(
-                    "root で実行中だが IS_SANDBOX が未設定。"
-                    "Claude Code CLI は root で bypassPermissions を拒否して即終了するため、"
-                    "Mode S anima %s の全セッションが『ストリームが3回切断』で失敗する。"
-                    "隔離コンテナなら `IS_SANDBOX=1` を設定、そうでなければ非 root で起動せよ",
-                    names,
-                )
-    except Exception:
-        logger.exception("Execution SDK preflight failed unexpectedly; continuing server startup")
-
-
 def _start_foreground(args: argparse.Namespace) -> None:
     """Run the server in the foreground (blocking, with log output)."""
     _pin_native_threads()
@@ -620,8 +479,8 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     raise_fd_soft_limit(logger=logger, process_label="server")
 
-    existing_pid = _read_pid()
-    if existing_pid is not None and _is_process_alive(existing_pid):
+    existing_pid = read_server_pid()
+    if existing_pid is not None and is_pid_alive(existing_pid):
         print(f"Error: Server is already running (pid={existing_pid}).")
         print("Use 'animaworks stop' first, or 'animaworks restart'.")
         sys.exit(EXIT_ALREADY_RUNNING)
@@ -630,7 +489,7 @@ def _start_foreground(args: argparse.Namespace) -> None:
         _remove_pid_file()
 
     orphan_pid = _find_server_pid_by_process(port=args.port)
-    if orphan_pid is not None and _is_process_alive(orphan_pid):
+    if orphan_pid is not None and is_pid_alive(orphan_pid):
         print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
         print("Use 'animaworks stop' first, or 'animaworks restart'.")
         sys.exit(EXIT_ALREADY_RUNNING)
@@ -910,8 +769,8 @@ def cmd_restart(args: argparse.Namespace) -> None:
     After stopping, waits for the helper to bring the new server up and
     reports success or failure with log path.
     """
-    old_pid = _read_pid()
-    if old_pid is not None and not _is_process_alive(old_pid):
+    old_pid = read_server_pid()
+    if old_pid is not None and not is_pid_alive(old_pid):
         old_pid = None
     if old_pid is None:
         old_pid = _find_server_pid_by_process()
@@ -962,7 +821,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
         time.sleep(0.5)
 
     if started:
-        new_pid = _read_pid()
+        new_pid = read_server_pid()
         pid_info = f" (pid={new_pid})" if new_pid else ""
         display_host = "localhost" if host == "0.0.0.0" else host
         print(f"Server restarted successfully{pid_info}.")

@@ -23,8 +23,6 @@ core.execution.engines.claude._sdk_hooks -> core.tooling.handler_base
 core.execution.engines.claude._sdk_hooks -> core.tooling.handler_skills
 core.execution.engines.claude._sdk_options -> core.mcp.server
 core.execution.session_context -> core.tasks.board.tasks
-core.integrations -> cli
-core.integrations -> cli
 core.integrations._image_pipeline -> core.anima.asset_reconciler
 core.memory._llm_utils -> core.execution.backoff
 core.memory._llm_utils -> core.execution.engines.claude._sdk_options
@@ -63,8 +61,6 @@ core.memory.priming.items -> core.prompt.tokens
 core.memory.priming.outbound -> core.prompt.tokens
 core.memory.priming.result -> core.prompt.tokens
 core.memory.priming.utils -> core.prompt.tokens
-core.memory.rag.cli_access -> cli.commands.server
-core.memory.rag.cli_access -> cli.commands.server
 core.memory.rag.cli_access -> core.supervisor.memory_service
 core.memory.rag.embedding -> core.infra.gpu
 core.memory.rag.embedding -> core.infra.gpu
@@ -131,7 +127,6 @@ core.notification.slack_names -> core.integrations.slack
 core.org.company -> core.internal_api
 core.paths -> core.config.models
 core.tasks.background -> core.integrations._base
-core.tasks.board.notices -> cli.commands.messaging
 core.tasks.dispatch -> core.internal_api
 core.tasks.dispatch -> core.internal_api
 core.tasks.dispatch -> core.internal_api
@@ -147,13 +142,8 @@ core.tasks.pending_executor -> core.execution._sanitize
 core.tasks.pending_executor -> core.supervisor.task_runner_supervisor
 core.tasks.pending_executor -> core.supervisor.task_runner_supervisor
 core.tasks.pending_executor -> core.supervisor.task_runner_supervisor
-core.tooling -> core.tooling.handler
-core.tooling -> core.tooling.handler
-core.tooling.handler_create_anima -> cli.commands.init_cmd
 core.tooling.org_helpers -> core.tooling.handler_base
 core.tooling.skill_promotion_tool -> core.tooling.handler_base
 core.tooling.standalone -> core.tooling.handler
 core.usage.token_usage -> core.infra.event_export
 core.usage.token_usage -> core.infra.event_export
-server.app -> cli.commands.server
-server.routes.internal -> cli.commands.init_cmd

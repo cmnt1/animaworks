@@ -29,8 +29,8 @@ class TestUvicornConfigE2E:
     @patch("cli.commands.server._write_pid_file")
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.is_pid_alive", return_value=False)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_server_start_passes_all_uvicorn_settings(
         self,
         mock_pid,

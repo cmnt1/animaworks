@@ -27,12 +27,13 @@ def _setup_server_delegation() -> bool:
     Returns:
         True if delegation was activated (server is running).
     """
-    from cli.commands.server import _is_process_alive, _read_pid
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
-    pid = _read_pid()
+    pid = read_server_pid()
     from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
 
-    if pid is None or not _is_process_alive(pid):
+    if pid is None or not is_process_alive(pid):
         configure_endpoints(RagEndpoints())
         return False
 

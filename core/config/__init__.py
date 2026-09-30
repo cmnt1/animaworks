@@ -1,42 +1,35 @@
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
-
 from __future__ import annotations
 
-from core.config.models import (
-    CANONICAL_MODES,
-    DEFAULT_ANIMA_MODEL,
-    DEFAULT_CONSOLIDATION_MODEL,
-    DEFAULT_MODEL_MODE_PATTERNS,
-    AnimaDefaults,
-    AnimaModelConfig,
-    AnimaWorksConfig,
-    BackgroundReviewConfig,
-    CredentialConfig,
-    CronGuardConfig,
-    FactEdgeTypeConfig,
-    GPUConfig,
-    MemoryConfig,
-    SystemConfig,
-    fallback_event_meta,
-    get_config_path,
-    invalidate_cache,
-    invalidate_models_json_cache,
-    load_config,
-    parse_fallback_entry,
-    read_anima_supervisor,
-    register_anima_in_config,
-    resolve_anima_config,
-    resolve_background_worker_pool_size,
-    resolve_context_window,
-    resolve_effective_model_config,
-    resolve_execution_mode,
-    save_config,
-)
-from core.config.vault import (
-    VaultError,
-    VaultManager,
-    get_vault_manager,
-    invalidate_vault_cache,
-)
+"""Configuration APIs, loaded lazily to keep package imports lightweight."""
+
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "AnimaModelConfig": "core.config.schemas",
+    "AnimaWorksConfig": "core.config.schemas",
+    "BackgroundReviewConfig": "core.config.schemas",
+    "CredentialConfig": "core.config.schemas",
+    "DEFAULT_MODEL_MODE_PATTERNS": "core.config.model_mode",
+    "get_config_path": "core.config.io",
+    "invalidate_cache": "core.config.io",
+    "invalidate_vault_cache": "core.config.vault",
+    "load_config": "core.config.io",
+    "read_anima_supervisor": "core.config.anima_registry",
+    "register_anima_in_config": "core.config.anima_registry",
+    "resolve_anima_config": "core.config.resolver",
+    "resolve_execution_mode": "core.config.model_mode",
+    "save_config": "core.config.io",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = sorted(_EXPORTS)

@@ -194,6 +194,7 @@ class CreateAnimaMixin:
 
     def _finalize_create_anima(self, anima_dir: Path) -> str:
         """Local post-create: supervisor fallback + config registration."""
+        from core.config import register_anima_in_config
         from core.paths import get_data_dir
 
         status_path = anima_dir / "status.json"
@@ -215,9 +216,7 @@ class CreateAnimaMixin:
                 logger.warning("Failed to set fallback supervisor", exc_info=True)
 
         try:
-            from cli.commands.init_cmd import _register_anima_in_config
-
-            _register_anima_in_config(get_data_dir(), anima_dir.name)
+            register_anima_in_config(get_data_dir(), anima_dir.name)
         except Exception:
             logger.warning("Failed to register anima in config.json", exc_info=True)
 

@@ -1,8 +1,8 @@
 ---
 name: tool-creator
 description: >-
-  AnimaWorks向けPython外部ツールモジュールを作成するメタスキル。core/tools連携・get_credential・permissionsを扱う。
-  Use when: core/toolsへ新規モジュール追加、Web APIラッパー実装、animaworks-toolから呼ぶカスタムツール開発が必要なとき。
+  AnimaWorks向けPython外部ツールモジュールを作成するメタスキル。core/integrations連携・get_credential・permissionsを扱う。
+  Use when: core/integrationsへ新規モジュール追加、Web APIラッパー実装、animaworks-toolから呼ぶカスタムツール開発が必要なとき。
 ---
 
 # tool-creator
@@ -230,7 +230,7 @@ share_tool(tool_name="my_tool")
 ## 呼び出しとスキーマ名
 
 - **`use_tool`**: `schema_name = f"{tool_name}_{action}"` でモジュールの `dispatch`（または同名関数）に渡る。許可判定は **コア**: `tool_registry`（`get_permitted_tools` の結果に `tool_name` が含まれること）、**ファイルベース（共通・個人）**: マージ済み `_personal_tools` に `tool_name` があること（`core/tooling/handler.py` の `_handle_use_tool`）。
-- **`animaworks-tool`**: 第1トークンが `submit` の場合はバックグラウンド投入（下記）。**コア**は `TOOL_MODULES` から import して `cli_main`、**共通・個人**はファイルからロードして `cli_main`。未知の第1引数はメイン CLI（`animaworks`）へフォールバックする場合あり（`core/integrations/__init__.py` の `_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS`）。
+- **`animaworks-tool`**: 第1トークンが `submit` の場合はバックグラウンド投入（下記）。**コア**は `TOOL_MODULES` から import して `cli_main`、**共通・個人**はファイルからロードして `cli_main`。未知の第1引数はメイン CLI（`animaworks`）へフォールバックする場合あり（`cli/tool_dispatch.py`）。
 - **ゲート付きサブコマンド（コアのみ）**: `EXECUTION_PROFILE` の該当アクションに `"gated": True` があると、`permissions` の許可集合に **`{tool_name}_{action}`**（例: `gmail_send`）が含まれていないと CLI / ディスパッチの両方でブロックされる。**ファイルベースの個人・共有ツール**は `TOOL_MODULES` に無いため、このゲート機構の対象外。
 
 ## スキーマ正規化

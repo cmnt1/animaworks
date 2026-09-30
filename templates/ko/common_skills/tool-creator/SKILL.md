@@ -1,8 +1,8 @@
 ---
 name: tool-creator
 description: >-
-  AnimaWorks용 Python 외부 도구 모듈을 작성하는 메타스킬.core/tools연동·get_credential·permissions를 다룬다.
-  Use when: core/tools에 새 모듈 추가, Web API 래퍼 구현, animaworks-tool에서 호출하는 커스텀 도구 개발이 필요할 때.
+  AnimaWorks용 Python 외부 도구 모듈을 작성하는 메타스킬.core/integrations연동·get_credential·permissions를 다룬다.
+  Use when: core/integrations에 새 모듈 추가, Web API 래퍼 구현, animaworks-tool에서 호출하는 커스텀 도구 개발이 필요할 때.
 ---
 
 
@@ -231,7 +231,7 @@ share_tool(tool_name="my_tool")
 ## 호출과 스키마 이름
 
 - **`use_tool`**: `schema_name = f"{tool_name}_{action}"`에서 모듈의 `dispatch`(또는 동일 이름 함수)에 전달된다. 허가 판정은 **코어**: `tool_registry`(`get_permitted_tools`의 결과에 `tool_name`가 포함될 것), **파일 기반(공통·개인)**: 병합된 `_personal_tools`에 `tool_name`가 있을 것(`core/tooling/handler.py`의 `_handle_use_tool`).
-- **`animaworks-tool`**: 첫 번째 토큰이 `submit`인 경우 백그라운드 투입(아래). **코어**는 `TOOL_MODULES`에서 import하여 `cli_main`, **공통·개인**은 파일에서 로드하여 `cli_main`. 알 수 없는 첫 번째 인자는 메인 CLI(`animaworks`)로 폴백하는 경우가 있다(`core/integrations/__init__.py`의 `_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS`).
+- **`animaworks-tool`**: 첫 번째 토큰이 `submit`인 경우 백그라운드 투입(아래). **코어**는 `TOOL_MODULES`에서 import하여 `cli_main`, **공통·개인**은 파일에서 로드하여 `cli_main`. 알 수 없는 첫 번째 인자는 메인 CLI(`animaworks`)로 폴백하는 경우가 있다(`cli/tool_dispatch.py`).
 - **게이트 부착 서브커맨드(코어만)**: `EXECUTION_PROFILE`의 해당 액션에 `"gated": True`가 있으면, `permissions`의 허가 집합에 **`{tool_name}_{action}`**(예: `gmail_send`)가 포함되어 있지 않으면 CLI / 디스패치 양쪽에서 블록된다. **파일 기반의 개인·공유 도구**는 `TOOL_MODULES`에 없으므로 이 게이트 메커니즘의 대상 외.
 
 ## 스키마 정규화

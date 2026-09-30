@@ -62,7 +62,7 @@ class TestHandleCreateAnima:
             patch("core.anima.factory.create_from_md", return_value=fake_anima_dir) as mock_create,
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch("cli.commands.init_cmd._register_anima_in_config"),
+            patch("core.config.register_anima_in_config"),
         ):
             result = handler.handle("create_anima", {"character_sheet_path": str(sheet)})
 

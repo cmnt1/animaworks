@@ -195,9 +195,9 @@ class BasePathMiddleware:
 
 
 def _startup_default_preflight_runner() -> None:
-    from cli.commands.server import _run_execution_sdk_preflight
+    from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
-    _run_execution_sdk_preflight()
+    run_execution_sdk_preflight()
 
 
 def _format_startup_elapsed(seconds: object) -> str:

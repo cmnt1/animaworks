@@ -1,8 +1,8 @@
 ---
 name: tool-creator
 description: >-
-  A meta-skill for creating Python external tool modules for AnimaWorks.core/toolsHandles integration, get_credential, and permissions.
-  Use when: Use when: core/tools requires adding a new module, implementing a Web API wrapper, or developing a custom tool to be called from animaworks-tool.
+  A meta-skill for creating Python external tool modules for AnimaWorks.core/integrationsHandles integration, get_credential, and permissions.
+  Use when: Use when: core/integrations requires adding a new module, implementing a Web API wrapper, or developing a custom tool to be called from animaworks-tool.
 ---
 
 
@@ -231,7 +231,7 @@ Copied to `~/.animaworks/common_tools/`. `tool_creation.shared` is required. Oth
 ## Calls and Schema Names
 
 - **`use_tool`**: Passed to the module's `dispatch` (or same-name function) via `schema_name = f"{tool_name}_{action}"`. Permission determination: **core** — `tool_registry` (`tool_name` must be included in the result of `get_permitted_tools`); **file-based (common, personal)** — `tool_name` must exist in the merged `_personal_tools` (`_handle_use_tool` of `core/tooling/handler.py`).
-- **`animaworks-tool`**: If the first token is `submit`, it is submitted in the background (see below). **Core** imports from `TOOL_MODULES` and calls `cli_main`; **common and personal** load from the file and call `cli_main`. An unknown first argument may fall back to the main CLI (`animaworks`) (`_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS` of `core/integrations/__init__.py`).
+- **`animaworks-tool`**: If the first token is `submit`, it is submitted in the background (see below). **Core** imports from `TOOL_MODULES` and calls `cli_main`; **common and personal** load from the file and call `cli_main`. An unknown first argument may fall back to the main CLI (`animaworks`) (`cli/tool_dispatch.py`).
 - **Gated subcommands (core only)**: If `"gated": True` exists for the corresponding action in `EXECUTION_PROFILE`, both CLI and dispatch are blocked unless **`{tool_name}_{action}`** (e.g., `gmail_send`) is included in the permission set of `permissions`. **File-based personal and shared tools** are not in `TOOL_MODULES`, so this gate mechanism does not apply to them.
 
 ## Schema Normalization
