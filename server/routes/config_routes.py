@@ -202,60 +202,6 @@ def create_config_router() -> APIRouter:
 
         return _mask_secrets(config)
 
-    @router.get("/system/init-status")
-    async def init_status(request: Request):
-        """Check initialization status of AnimaWorks."""
-        base_dir = Path.home() / ".animaworks"
-        config_path = base_dir / "config.json"
-        animas_dir = base_dir / "animas"
-        shared_dir = base_dir / "shared"
-
-        # Count animas
-        animas_count = 0
-        if animas_dir.exists():
-            for d in animas_dir.iterdir():
-                if d.is_dir() and (d / "identity.md").exists():
-                    animas_count += 1
-
-        # Check API keys / subscription auth
-        has_anthropic_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-        anthropic_cred = load_config().credentials.get("anthropic", CredentialConfig())
-        has_anthropic_subscription = anthropic_cred.type == "claude_code_login" and is_claude_code_available()
-        has_anthropic = has_anthropic_key or has_anthropic_subscription
-        has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-        has_codex_login = is_codex_login_available()
-        has_openai_auth = has_openai or has_codex_login
-        has_google = bool(os.environ.get("GOOGLE_API_KEY"))
-
-        config_exists = config_path.exists()
-        initialized = config_exists and animas_count > 0
-
-        return {
-            "checks": [
-                {"label": t("config.config_file"), "ok": config_exists},
-                {
-                    "label": t("config.anima_registration"),
-                    "ok": animas_count > 0,
-                    "detail": t("config.anima_count_detail", count=animas_count),
-                },
-                {"label": t("config.shared_dir"), "ok": shared_dir.exists()},
-                {"label": t("config.anthropic_auth"), "ok": has_anthropic},
-                {"label": t("config.openai_auth"), "ok": has_openai_auth},
-                {"label": t("config.google_api_key"), "ok": has_google},
-                {"label": t("config.init_complete"), "ok": initialized},
-            ],
-            "config_exists": config_exists,
-            "animas_count": animas_count,
-            "api_keys": {
-                "anthropic": has_anthropic,
-                "openai": has_openai_auth,
-                "codex_login": has_codex_login,
-                "google": has_google,
-            },
-            "shared_dir_exists": shared_dir.exists(),
-            "initialized": initialized,
-        }
-
     @router.get("/settings/anthropic-auth")
     async def get_anthropic_auth(request: Request):
         """Return current Anthropic auth mode and runtime availability."""

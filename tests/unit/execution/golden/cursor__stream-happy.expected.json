@@ -47,5 +47,24 @@
   ],
   "result": null,
   "raised": null,
-  "activity": []
+  "activity": [
+    {
+      "type": "tool_use",
+      "content": "(no path)",
+      "tool": "Read",
+      "meta": {
+        "args": {
+          "input": "{'args': {'path': 'README.md'}, 'result': {'success': {'content': 'contents'}}}"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "tool": "Read",
+      "meta": {
+        "tool_use_id": "",
+        "is_error": false
+      }
+    }
+  ]
 }

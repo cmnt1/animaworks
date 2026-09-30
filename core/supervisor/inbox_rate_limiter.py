@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core.config.models import load_config
 from core.schemas import EXTERNAL_PLATFORM_SOURCES
@@ -39,6 +39,17 @@ def _is_immediately_actionable_intent(intent: str, source: str, actionable_inten
     if intent in actionable_intents:
         return True
     return intent == "delegation" and source not in {"human", *EXTERNAL_PLATFORM_SOURCES}
+
+
+def _cascade_senders(inbox_messages: list[Any], anima_name: str) -> set[str]:
+    """Return internal Anima senders that should participate in cascade checks."""
+    return {
+        message.from_person
+        for message in inbox_messages
+        if message.from_person != anima_name
+        and message.source != "system"
+        and message.source not in EXTERNAL_PLATFORM_SOURCES
+    }
 
 
 def _read_anima_enabled(anima_dir: Path) -> bool:
@@ -297,7 +308,7 @@ class InboxRateLimiter:
 
         # Cascade detection applies only to Anima-to-Anima communication,
         # NOT to messages from external platforms (Slack DMs from humans).
-        cascade_senders = {m.from_person for m in inbox_messages if m.source not in EXTERNAL_PLATFORM_SOURCES}
+        cascade_senders = _cascade_senders(inbox_messages, self._anima_name)
         if cascade_senders and self.check_cascade(cascade_senders):
             self._pending_trigger = False
             return

@@ -45,12 +45,20 @@ def animas_dir(tmp_path: Path) -> Path:
     return d
 
 
+def _mock_depth_limiter() -> MagicMock:
+    """Build a depth limiter double with the production configuration fields."""
+    limiter = MagicMock()
+    limiter._max_depth = 6
+    limiter._window_s = 600
+    return limiter
+
+
 class TestDepthLimitBlocking:
     """Test that Messenger.send blocks when depth limit is exceeded."""
 
     def test_blocked_returns_error_message(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = True  # pass global first
         mock_limiter.check_depth.return_value = False  # blocked
 
@@ -67,7 +75,7 @@ class TestDepthLimitBlocking:
 
     def test_blocked_does_not_write_file(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = True  # pass global first
         mock_limiter.check_depth.return_value = False  # blocked
 
@@ -87,7 +95,7 @@ class TestDepthLimitAllowed:
 
     def test_allowed_writes_file(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = True  # pass global first
         mock_limiter.check_depth.return_value = True  # allowed
 
@@ -108,7 +116,7 @@ class TestDepthLimitBypass:
 
     def test_ack_bypasses_depth_check(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_depth.return_value = False  # blocked, but ack bypasses
 
         with (
@@ -122,7 +130,7 @@ class TestDepthLimitBypass:
 
     def test_error_bypasses_depth_check(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_depth.return_value = False  # blocked, but error bypasses
 
         with (
@@ -136,7 +144,7 @@ class TestDepthLimitBypass:
 
     def test_system_alert_bypasses_depth_check(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_depth.return_value = False  # blocked, but system_alert bypasses
 
         with (
@@ -151,7 +159,7 @@ class TestDepthLimitBypass:
     def test_board_mention_does_not_bypass_depth_check(self, shared_dir, animas_dir):
         """board_mention no longer bypasses depth check (praise-loop-prevention)."""
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = True  # pass global first
         mock_limiter.check_depth.return_value = False  # blocked
 
@@ -170,7 +178,7 @@ class TestExternalRecipientSkip:
 
     def test_external_recipient_not_checked(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_depth.return_value = False  # blocked, but external skips check
 
         # "external-user" directory does not exist in animas_dir
@@ -190,7 +198,7 @@ class TestGlobalOutboundLimitBlocking:
 
     def test_blocked_returns_error_message(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = "GlobalOutboundLimitExceeded: テスト用ブロックメッセージ"
         mock_limiter.check_depth.return_value = True  # would allow
 
@@ -207,7 +215,7 @@ class TestGlobalOutboundLimitBlocking:
 
     def test_blocked_does_not_write_file(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = "GlobalOutboundLimitExceeded: テスト用ブロックメッセージ"
         mock_limiter.check_depth.return_value = True  # would allow
 
@@ -223,7 +231,7 @@ class TestGlobalOutboundLimitBlocking:
 
     def test_ack_bypasses_global_limit(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = False  # would block
         mock_limiter.check_depth.return_value = False  # would block
 
@@ -238,7 +246,7 @@ class TestGlobalOutboundLimitBlocking:
 
     def test_error_bypasses_global_limit(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = False  # would block
         mock_limiter.check_depth.return_value = False  # would block
 
@@ -253,7 +261,7 @@ class TestGlobalOutboundLimitBlocking:
 
     def test_system_alert_bypasses_global_limit(self, shared_dir, animas_dir):
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = False  # would block
         mock_limiter.check_depth.return_value = False  # would block
 
@@ -269,7 +277,7 @@ class TestGlobalOutboundLimitBlocking:
     def test_global_check_before_depth_check(self, shared_dir, animas_dir):
         """When global allows but depth blocks, returns ConversationDepthExceeded (confirms ordering)."""
         messenger = Messenger(shared_dir, "alice")
-        mock_limiter = MagicMock()
+        mock_limiter = _mock_depth_limiter()
         mock_limiter.check_global_outbound.return_value = True  # allowed
         mock_limiter.check_depth.return_value = False  # blocked
 

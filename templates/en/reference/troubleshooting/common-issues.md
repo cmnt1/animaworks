@@ -388,7 +388,7 @@ See `operations/tool-usage-overview.md` for the overall tool architecture.
 - An error was returned when executing `send_message` or `post_channel`
 - `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` or a 24-hour version of the same type of message was displayed
 - `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` was displayed (`core/messaging/cascade_limiter.py` — when the sender's `activity_log` cannot be read)
-- `ConversationDepthExceeded: {相手}との会話が10分間に6ターンに達しました...` was displayed
+- `ConversationDepthExceeded: ...` was displayed; its turn count and time window reflect `heartbeat.max_depth` and `heartbeat.depth_window_s`
 
 ### Cause
 

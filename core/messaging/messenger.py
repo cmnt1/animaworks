@@ -239,7 +239,12 @@ class Messenger:
                         from_person="system",
                         to_person=self.anima_name,
                         type="error",
-                        content=t("messenger.depth_exceeded", to=to),
+                        content=t(
+                            "messenger.depth_exceeded",
+                            to=to,
+                            max_depth=limiter._max_depth,
+                            window_min=f"{limiter._window_s / 60:g}",
+                        ),
                     )
 
         msg = Message(

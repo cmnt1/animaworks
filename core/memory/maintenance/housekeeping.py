@@ -287,6 +287,21 @@ async def run_housekeeping(
         logger.exception("Housekeeping: suppressed message log rotation failed")
         results["suppressed_messages"] = {"error": True}
 
+    try:
+        sdk_bash_log = data_dir / "logs" / "sdk_bash_injection.jsonl"
+        r = await loop.run_in_executor(
+            None,
+            _rotate_daemon_log,
+            sdk_bash_log,
+            housekeeping.suppressed_messages_max_size_mb,
+            housekeeping.suppressed_messages_keep_generations,
+        )
+        r["files"] = int(sdk_bash_log.is_file())
+        results["sdk_bash_injection"] = r
+    except Exception:
+        logger.exception("Housekeeping: SDK bash injection log rotation failed")
+        results["sdk_bash_injection"] = {"error": True}
+
     # 9. Archive/superseded rotation
     try:
         r = await loop.run_in_executor(

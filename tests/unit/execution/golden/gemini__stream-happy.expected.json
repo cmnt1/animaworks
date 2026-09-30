@@ -50,5 +50,26 @@
   ],
   "result": null,
   "raised": null,
-  "activity": []
+  "activity": [
+    {
+      "type": "tool_use",
+      "content": "{'query': 'golden'}",
+      "tool": "search_memory",
+      "meta": {
+        "args": {
+          "query": "golden"
+        },
+        "tool_use_id": "t1"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "found result",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "t1",
+        "is_error": false
+      }
+    }
+  ]
 }

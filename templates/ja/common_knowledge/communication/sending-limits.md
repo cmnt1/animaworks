@@ -97,7 +97,7 @@ animaworks anima set-outbound-limit <名前> --clear   # ロールデフォル�
 | 深度ウィンドウ | 600秒（10分） | `heartbeat.depth_window_s` | スライディングウィンドウ |
 | 最大深度 | 6ターン | `heartbeat.max_depth` | 6ターン = 3往復想定。超過で送信ブロック |
 
-表示文言は `core/i18n` の `messenger.depth_exceeded`（日本語は現状「10分間に6ターン」の固定表記。実際の閾値は上記設定に従う）。
+表示文言は `core/i18n` の `messenger.depth_exceeded` で、ターン数と時間は `heartbeat.max_depth` / `heartbeat.depth_window_s` の設定値に従う。
 
 ログ読み取りに失敗した場合は深度チェックは **fail-closed**（送信不可）。
 

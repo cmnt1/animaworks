@@ -7,8 +7,6 @@ Validates the following changes through the full FastAPI app stack:
 
 1. system.py — system_status and system_scheduler now parse cron.md files
    from animas directories instead of relying on a scheduler attribute.
-2. config_routes.py — init_status now returns a ``checks`` array alongside
-   the existing backward-compatible fields.
 3. system.py — connections endpoint returns websocket and process info.
 """
 
@@ -17,7 +15,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 # ── Helpers ──────────────────────────────────────────────
@@ -331,186 +328,6 @@ class TestSchedulerWithoutCronMd:
         data = resp.json()
         assert data["animas"] == 0
         assert data["scheduler_running"] is False
-
-
-# ── Test 3: Init-status with checks array ────────────────
-
-
-class TestInitStatusChecksArray:
-    """Verify init_status returns a checks array with backward-compatible fields."""
-
-    async def test_checks_array_present(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """init-status response should contain a checks array."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        app = _create_app(tmp_path)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "checks" in data
-        assert isinstance(data["checks"], list)
-        assert len(data["checks"]) > 0
-
-    async def test_checks_items_have_label_and_ok(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Each check item should have at least 'label' and 'ok' fields."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        app = _create_app(tmp_path)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-
-        data = resp.json()
-        for check in data["checks"]:
-            assert "label" in check, f"Missing 'label' in check: {check}"
-            assert "ok" in check, f"Missing 'ok' in check: {check}"
-            assert isinstance(check["ok"], bool)
-
-    async def test_checks_reflect_actual_state(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Check values should reflect actual filesystem and env state."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        monkeypatch.setattr(
-            "server.routes.config_routes.is_codex_login_available",
-            lambda: False,
-        )
-
-        # Set up config and one anima
-        base_dir = tmp_path / ".animaworks"
-        base_dir.mkdir(parents=True, exist_ok=True)
-        (base_dir / "config.json").write_text("{}", encoding="utf-8")
-
-        animas_dir = base_dir / "animas"
-        animas_dir.mkdir()
-        alice_dir = animas_dir / "alice"
-        alice_dir.mkdir()
-        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
-
-        shared_dir = base_dir / "shared"
-        shared_dir.mkdir()
-
-        app = _create_app(tmp_path)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-
-        data = resp.json()
-        checks_by_label = {c["label"]: c for c in data["checks"]}
-
-        # Config file exists
-        config_check = checks_by_label.get("設定ファイル")
-        assert config_check is not None
-        assert config_check["ok"] is True
-
-        # Anima registered
-        anima_check = checks_by_label.get("Anima登録")
-        assert anima_check is not None
-        assert anima_check["ok"] is True
-        assert "detail" in anima_check  # Should include count detail
-
-        # Shared dir exists
-        shared_check = checks_by_label.get("共有ディレクトリ")
-        assert shared_check is not None
-        assert shared_check["ok"] is True
-
-        # API key checks
-        anthropic_check = checks_by_label.get("Anthropic APIキー / サブスクリプション認証")
-        assert anthropic_check is not None
-        assert anthropic_check["ok"] is True
-
-        openai_check = checks_by_label.get("OpenAI APIキー / Codex Login")
-        assert openai_check is not None
-        assert openai_check["ok"] is False
-
-    async def test_backward_compatible_fields_present(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Existing fields (config_exists, animas_count, etc.) should still be present."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        app = _create_app(tmp_path)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-
-        data = resp.json()
-        # All backward-compatible fields must still exist
-        assert "config_exists" in data
-        assert "animas_count" in data
-        assert "api_keys" in data
-        assert "shared_dir_exists" in data
-        assert "initialized" in data
-
-        # api_keys should be a dict with provider keys
-        assert isinstance(data["api_keys"], dict)
-        assert "anthropic" in data["api_keys"]
-        assert "openai" in data["api_keys"]
-        assert "google" in data["api_keys"]
-
-    async def test_initialized_true_with_config_and_animas(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """initialized should be True when config and at least one anima exist."""
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-        base_dir = tmp_path / ".animaworks"
-        base_dir.mkdir(parents=True)
-        (base_dir / "config.json").write_text("{}", encoding="utf-8")
-
-        animas_dir = base_dir / "animas"
-        animas_dir.mkdir()
-        alice_dir = animas_dir / "alice"
-        alice_dir.mkdir()
-        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
-
-        app = _create_app(tmp_path)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/system/init-status")
-
-        data = resp.json()
-        assert data["initialized"] is True
-        assert data["config_exists"] is True
-        assert data["animas_count"] == 1
-
-        # checks array should also have 初期化完了=True
-        checks_by_label = {c["label"]: c for c in data["checks"]}
-        init_check = checks_by_label.get("初期化完了")
-        assert init_check is not None
-        assert init_check["ok"] is True
 
 
 # ── Test 4: Connections endpoint ─────────────────────────

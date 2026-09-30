@@ -121,7 +121,6 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 | GET | `/api/system/available-models` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | UI 드롭다운용 모든 사용 가능한 모델(클라우드 + 로컬)을 반환합니다. | `server/routes/config_routes.py:get_available_models` |
 | GET | `/api/system/available-tools` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 외부 도구 모듈 이름을 반환합니다(비활성화된 서비스 제외). | `server/routes/config_routes.py:get_available_tools` |
 | GET | `/api/system/config` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 마스킹된 비밀값이 포함된 AnimaWorks 구성을 읽어 반환합니다. | `server/routes/config_routes.py:get_config` |
-| GET | `/api/system/init-status` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | AnimaWorks의 초기화 상태를 확인합니다. | `server/routes/config_routes.py:init_status` |
 
 ## `server/routes/external_tasks.py`
 

@@ -401,7 +401,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `voice.stt_language` | `str \| None` | `null` | — |
 | `voice.stt_refine_enabled` | `bool` | `false` | — |
 | `voice.default_tts_provider` | `str` | `"voicevox"` | — |
-| `voice.audio_format` | `str` | `"wav"` | — |
 | `voice.front_model` | `str \| None` | `null` | — |
 | `voice.front_api_base` | `str \| None` | `null` | — |
 | `voice.proactive_enabled` | `bool` | `true` | — |
