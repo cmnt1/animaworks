@@ -6,7 +6,7 @@ import weakref
 
 import pytest
 
-from core.infra.tasks import _background_tasks, spawn
+from core.platform.tasks import _background_tasks, spawn
 
 
 @pytest.mark.asyncio

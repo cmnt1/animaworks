@@ -41,10 +41,10 @@ from core.execution.fallback_activity import (
 )
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
-from core.infra.tasks import spawn
 from core.memory.conversation.memory import ConversationMemory, ToolRecord
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.paths import load_prompt
+from core.platform.tasks import spawn
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult, ImageData, ModelConfig
 from core.time_utils import now_local, today_local
 

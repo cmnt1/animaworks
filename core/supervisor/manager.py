@@ -27,8 +27,8 @@ from core.exceptions import (  # noqa: F401
     IPCConnectionError,
     ProcessError,
 )
-from core.infra.tasks import spawn
 from core.platform.process import kill_tree, snapshot_descendants
+from core.platform.tasks import spawn
 from core.supervisor._mgr_health import HealthMixin
 from core.supervisor._mgr_rag_repair import RAGRepairMixin
 from core.supervisor._mgr_reconcile import ReconcileMixin

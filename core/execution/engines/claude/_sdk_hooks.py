@@ -32,7 +32,7 @@ from core.execution.engines.claude._sdk_security import (
 )
 from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
 from core.execution.engines.claude._sdk_stream import _log_tool_use
-from core.infra.tasks import spawn
+from core.platform.tasks import spawn
 from core.prompt.context import CHARS_PER_TOKEN
 from core.tooling.schemas import submit_tasks_enabled_for_trigger
 

@@ -11,7 +11,7 @@ from fastapi import Request
 from core.execution._tool_summary import summarize_tool_args
 from core.execution.base import resolve_streamed_leaked_thinking
 from core.i18n import t
-from core.infra.tasks import spawn
+from core.platform.tasks import spawn
 from server.events import emit, emit_notification
 from server.routes.chat_emotion import extract_emotion
 

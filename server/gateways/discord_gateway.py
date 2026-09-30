@@ -25,11 +25,11 @@ from typing import Any
 from core.config.models import load_config
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.i18n import t
-from core.infra.tasks import spawn
 from core.integrations._base import get_credential
 from core.integrations._discord_markdown import clean_discord_markup
 from core.messaging.messenger import Messenger
 from core.paths import get_data_dir, get_shared_dir
+from core.platform.tasks import spawn
 
 logger = logging.getLogger("animaworks.discord_gateway")
 

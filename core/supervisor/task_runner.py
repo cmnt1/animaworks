@@ -16,9 +16,9 @@ from typing import Any
 
 from core.anima.digital_anima import DigitalAnima
 from core.i18n import t
-from core.infra.tasks import spawn
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
 from core.platform.process import snapshot_descendants, terminate_tree
+from core.platform.tasks import spawn
 from core.schemas import CronTask
 from core.supervisor.ipc import IPCRequest
 from core.supervisor.ipc_v2 import (

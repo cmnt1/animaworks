@@ -32,7 +32,7 @@ from core.auth.manager import find_user, load_auth, validate_session
 from core.config import load_config
 from core.i18n import t
 from core.infra import startup_progress
-from core.infra.tasks import spawn
+from core.platform.tasks import spawn
 from core.supervisor import ProcessSupervisor
 from server.localhost import _is_safe_localhost_request
 from server.routes import create_router

@@ -31,10 +31,10 @@ import psutil
 from core.anima.digital_anima import DigitalAnima
 from core.exceptions import AnimaNotRunningError, ProcessError  # noqa: F401
 from core.i18n import t
-from core.infra.tasks import spawn
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids
+from core.platform.tasks import spawn
 from core.supervisor.event_bus import RootEventBus
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer

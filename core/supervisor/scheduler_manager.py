@@ -24,8 +24,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 from core.config.models import ActivityScheduleEntry, load_config, save_config
 from core.i18n import t
-from core.infra.tasks import spawn
 from core.platform.atomic_io import atomic_write_json
+from core.platform.tasks import spawn
 from core.schemas import CronTask
 from core.supervisor.memory_service import MemoryService
 from core.supervisor.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule

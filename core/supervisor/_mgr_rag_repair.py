@@ -12,8 +12,8 @@ import asyncio
 import logging
 from pathlib import Path
 
-from core.infra.tasks import spawn
 from core.memory.rag import repair_state
+from core.platform.tasks import spawn
 
 logger = logging.getLogger(__name__)
 

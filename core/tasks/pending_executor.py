@@ -24,13 +24,13 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ToolExecutionError
 from core.i18n import t
-from core.infra.tasks import spawn
 from core.platform.processing_lease import (
     is_processing_lease_live,
     processing_lease_path,
     read_processing_lease,
     write_processing_lease,
 )
+from core.platform.tasks import spawn
 from core.time_utils import now_iso
 
 if TYPE_CHECKING:

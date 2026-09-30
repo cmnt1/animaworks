@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.models import load_config
-from core.infra.tasks import spawn
+from core.platform.tasks import spawn
 from core.schemas import EXTERNAL_PLATFORM_SOURCES
 
 if TYPE_CHECKING:

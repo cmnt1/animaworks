@@ -13,7 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, field_validator
 
-from core.infra.tasks import spawn
+from core.platform.tasks import spawn
 from server.events import emit
 from server.routes.media_proxy import proxy_external_image
 

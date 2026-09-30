@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.infra.tasks import spawn
+from core.platform.tasks import spawn
 from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
 

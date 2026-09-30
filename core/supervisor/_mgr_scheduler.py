@@ -17,8 +17,8 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from core.infra.tasks import spawn
 from core.memory.rag.store import CollectionExistence
+from core.platform.tasks import spawn
 from core.supervisor.process_handle import ProcessState
 from core.time_utils import get_app_timezone, now_local
 
