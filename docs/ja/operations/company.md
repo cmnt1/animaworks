@@ -33,9 +33,7 @@ animaworks company assign sample-anima --unassign
 
 ## チャネルの会社帰属
 
-`config.json` の `channel_company_defaults` は、会社が指定されていない状態で作られる open channel に対し、チャネル名から会社を補うための対応表である。値が適用されたチャネルは会社スコープになり、参加資格と投稿可否は所属の境界に従う。既存チャネルを変更する場合は、対象チャネルの会社とメンバーを確認する。
-
-外部メッセージングから作成する board には、連携ごとの `default_channel_company` も利用できる。設定の全項目は[設定リファレンス](../reference/config.md)を参照する。
+open channel の会社スコープは、チャネル metadata の `company` で管理する。外部メッセージングから作成する board には、連携ごとの `default_channel_company` を指定できる。既存チャネルを変更する場合は、対象チャネルの会社とメンバーを確認する。設定の全項目は[設定リファレンス](../reference/config.md)を参照する。
 
 ## GitHub アカウントの割当て
 

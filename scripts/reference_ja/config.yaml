@@ -40,7 +40,6 @@ inbox: anima の受信箱と通知表示。
 local_llm: ローカル LLM エンドポイントとモデル設定。
 workspaces: 名前付き workspace パスの対応。
 github_identities: 会社 slug と GitHub アカウントの対応。
-channel_company_defaults: チャネル名に対する既定の会社属性。
 activity_level: 全体の活動頻度を調整する倍率。
 activity_schedule: 時刻帯ごとの活動頻度。
 icon_url_template: anima アイコン URL のテンプレート。

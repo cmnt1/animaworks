@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,6 +20,11 @@ from core.time_utils import now_local
 logger = logging.getLogger(__name__)
 
 _STATE_FILE = "migration_state.json"
+_MIN_SUPPORTED_VERSION = (0, 14, 0)
+
+
+class UnsupportedRuntimeVersionError(RuntimeError):
+    """Raised when runtime data predates the minimum supported migration base."""
 
 
 def _get_package_version() -> str:
@@ -108,3 +114,32 @@ class MigrationTracker:
 
     def get_current_version(self) -> str:
         return _get_package_version()
+
+
+def assert_supported_runtime_version(data_dir: Path) -> None:
+    """Reject direct upgrades from runtime versions older than 0.14.0.
+
+    A missing migration state is expected for a fresh installation. Older
+    runtime versions that predate version tracking also have no reliable
+    version to compare, so only a recorded ``applied_version`` is enforced.
+    """
+    tracker = MigrationTracker(data_dir)
+    state = tracker.load()
+    applied_version = state.applied_version.strip()
+    if not applied_version:
+        return
+
+    match = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", applied_version)
+    if not match:
+        from core.i18n import t
+
+        message = t("migrate.unsupported_runtime_version", version=applied_version)
+        raise UnsupportedRuntimeVersionError(message)
+    version = tuple(int(part or 0) for part in match.groups())
+    if version >= _MIN_SUPPORTED_VERSION:
+        return
+
+    from core.i18n import t
+
+    message = t("migrate.unsupported_runtime_version", version=applied_version)
+    raise UnsupportedRuntimeVersionError(message)

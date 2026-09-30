@@ -7,6 +7,10 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Direct upgrades from runtime versions older than 0.14.0 are no longer supported. Upgrade to 0.14 first, then upgrade to the current version.
+
 ## [0.15.0] - 2026-09-29
 
 ### Upgrade notes

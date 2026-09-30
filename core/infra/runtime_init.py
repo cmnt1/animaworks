@@ -40,7 +40,10 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
     # but not be fully initialized yet.
     config_json = data_dir / "config.json"
     if config_json.exists():
-        # Run unified migration (includes Person→Anima, config, templates, DB sync)
+        from core.migrations.tracker import assert_supported_runtime_version
+
+        assert_supported_runtime_version(data_dir)
+        # Run supported migrations and synchronize bundled runtime templates.
         try:
             _run_auto_migrations(data_dir)
         except Exception:

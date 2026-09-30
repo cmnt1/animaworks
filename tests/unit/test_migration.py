@@ -161,88 +161,6 @@ class TestMigrationSteps:
         (d / "state").mkdir()
         return d
 
-    def test_step_vault_reencrypt_generates_key_and_encrypts_plaintext(self, data_dir: Path) -> None:
-        from core.config.vault import VaultManager
-        from core.migrations.steps import step_vault_reencrypt
-
-        original = {
-            "shared": {"API_TOKEN": "plain-token"},
-            "sakura": {"SERVICE_KEY": "plain-service-key"},
-        }
-        (data_dir / "vault.json").write_text(json.dumps(original), encoding="utf-8")
-
-        result = step_vault_reencrypt(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        assert result.changed == 1
-        assert (data_dir / "vault.key").is_file()
-        encrypted = json.loads((data_dir / "vault.json").read_text(encoding="utf-8"))
-        assert encrypted["shared"]["API_TOKEN"] != original["shared"]["API_TOKEN"]
-        assert encrypted["sakura"]["SERVICE_KEY"] != original["sakura"]["SERVICE_KEY"]
-        vault = VaultManager(data_dir)
-        assert vault.get("shared", "API_TOKEN") == original["shared"]["API_TOKEN"]
-        assert vault.get("sakura", "SERVICE_KEY") == original["sakura"]["SERVICE_KEY"]
-        assert len(list(data_dir.glob("vault.json.bak-*"))) == 1
-
-    def test_step_vault_reencrypt_rolls_back_on_verification_failure(self, data_dir: Path) -> None:
-        from core.config.vault import VaultManager
-        from core.migrations.steps import step_vault_reencrypt
-
-        original_text = json.dumps({"shared": {"API_TOKEN": "plain-token"}})
-        (data_dir / "vault.json").write_text(original_text, encoding="utf-8")
-
-        with patch.object(VaultManager, "decrypt", return_value="corrupted"):
-            result = step_vault_reencrypt(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is not None
-        assert "Round-trip verification failed" in result.error
-        assert (data_dir / "vault.json").read_text(encoding="utf-8") == original_text
-        assert not (data_dir / "vault.key").exists()
-
-    def test_step_vault_reencrypt_backs_up_existing_key(self, data_dir: Path) -> None:
-        from core.config.vault import VaultManager
-        from core.migrations.steps import step_vault_reencrypt
-
-        vault = VaultManager(data_dir)
-        vault.generate_key()
-        original_key = vault.key_path.read_bytes()
-        vault.save_vault({"shared": {"API_TOKEN": "plain-token"}})
-
-        result = step_vault_reencrypt(data_dir, dry_run=False, verbose=True)
-
-        assert result.error is None
-        key_backups = list(data_dir.glob("vault.key.bak-*"))
-        assert len(key_backups) == 1
-        assert key_backups[0].read_bytes() == original_key
-
-    def test_step_current_task_rename(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_rename
-
-        anima = self._make_anima(data_dir, "alice")
-        (anima / "state" / "current_task.md").write_text("tasks here", encoding="utf-8")
-        result = step_current_task_rename(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        assert (anima / "state" / "current_state.md").exists()
-        assert not (anima / "state" / "current_task.md").exists()
-
-    def test_step_current_task_rename_dry_run(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_rename
-
-        anima = self._make_anima(data_dir, "alice")
-        (anima / "state" / "current_task.md").write_text("tasks here", encoding="utf-8")
-        result = step_current_task_rename(data_dir, dry_run=True, verbose=True)
-        assert result.changed == 0 or result.details
-        assert (anima / "state" / "current_task.md").exists()
-
-    def test_step_current_task_rename_skip_if_state_exists(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_rename
-
-        anima = self._make_anima(data_dir, "alice")
-        (anima / "state" / "current_task.md").write_text("old", encoding="utf-8")
-        (anima / "state" / "current_state.md").write_text("new", encoding="utf-8")
-        result = step_current_task_rename(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 0
-
     def test_step_trust_state_per_session_dry_run_and_removal(self, data_dir: Path) -> None:
         from core.migrations.steps import step_trust_state_per_session
 
@@ -259,157 +177,6 @@ class TestMigrationSteps:
         result = step_trust_state_per_session(data_dir, dry_run=False, verbose=True)
         assert result.changed == 1
         assert not legacy_state.exists()
-
-    def test_step_pending_merge(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_pending_merge
-
-        anima = self._make_anima(data_dir, "bob")
-        (anima / "state" / "current_state.md").write_text("# State\n", encoding="utf-8")
-        (anima / "state" / "pending.md").write_text("urgent task", encoding="utf-8")
-        result = step_pending_merge(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        content = (anima / "state" / "current_state.md").read_text(encoding="utf-8")
-        assert "urgent task" in content
-        assert not (anima / "state" / "pending.md").exists()
-
-    def test_step_pending_merge_empty(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_pending_merge
-
-        anima = self._make_anima(data_dir, "bob")
-        (anima / "state" / "pending.md").write_text("", encoding="utf-8")
-        result = step_pending_merge(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        assert not (anima / "state" / "pending.md").exists()
-
-    def test_step_current_task_references(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_references
-
-        anima = self._make_anima(data_dir, "carol")
-        (anima / "heartbeat.md").write_text("Check current_task.md for status\nReview current_task", encoding="utf-8")
-        result = step_current_task_references(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        content = (anima / "heartbeat.md").read_text(encoding="utf-8")
-        assert "current_state.md" in content
-        assert "current_task" not in content
-
-    def test_step_current_task_references_no_match(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_current_task_references
-
-        anima = self._make_anima(data_dir, "carol")
-        (anima / "heartbeat.md").write_text("No references here", encoding="utf-8")
-        result = step_current_task_references(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 0
-
-    def test_step_person_to_anima_skip(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_person_to_anima
-
-        result = step_person_to_anima(data_dir, dry_run=False, verbose=True)
-        assert result.skipped == 1
-
-    def test_step_enable_skill_catalog_router_updates_existing_config(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_enable_skill_catalog_router
-
-        config_path = data_dir / "config.json"
-        config_path.write_text(
-            json.dumps({"prompt": {"skill_catalog_router_enabled": False}}),
-            encoding="utf-8",
-        )
-
-        result = step_enable_skill_catalog_router(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-        assert raw["prompt"]["skill_catalog_router_enabled"] is True
-        assert raw["prompt"]["skill_catalog_router_top_k"] == 5
-        assert raw["prompt"]["skill_catalog_router_min_score"] == 1.15
-        assert raw["prompt"]["skill_catalog_router_include_body"] is True
-
-    def test_step_enable_skill_catalog_router_dry_run_keeps_config(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_enable_skill_catalog_router
-
-        config_path = data_dir / "config.json"
-        config_path.write_text('{"prompt": {"skill_catalog_router_enabled": false}}\n', encoding="utf-8")
-
-        result = step_enable_skill_catalog_router(data_dir, dry_run=True, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-        assert raw["prompt"]["skill_catalog_router_enabled"] is False
-
-    def test_step_enable_skill_catalog_router_preserves_tuned_values(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_enable_skill_catalog_router
-
-        config_path = data_dir / "config.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "prompt": {
-                        "skill_catalog_router_enabled": False,
-                        "skill_catalog_router_top_k": 9,
-                        "skill_catalog_router_min_score": 2.0,
-                        "skill_catalog_router_include_body": False,
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        result = step_enable_skill_catalog_router(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-        assert raw["prompt"]["skill_catalog_router_enabled"] is True
-        assert raw["prompt"]["skill_catalog_router_top_k"] == 9
-        assert raw["prompt"]["skill_catalog_router_min_score"] == 2.0
-        assert raw["prompt"]["skill_catalog_router_include_body"] is False
-
-    def test_step_models_json_create_skip_existing(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_models_json_create
-
-        (data_dir / "models.json").write_text("{}", encoding="utf-8")
-        result = step_models_json_create(data_dir, dry_run=False, verbose=True)
-        assert result.skipped == 1
-
-    def test_step_grok_models_json_adds_entries_and_preserves_existing(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_grok_models_json
-
-        models_path = data_dir / "models.json"
-        existing = {"custom/model": {"mode": "A", "context_window": 12345}}
-        models_path.write_text(json.dumps(existing), encoding="utf-8")
-
-        result = step_grok_models_json(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 2
-        raw = json.loads(models_path.read_text(encoding="utf-8"))
-        assert raw["custom/model"] == existing["custom/model"]
-        assert raw["grok/grok-4.5"] == {"mode": "X", "context_window": 500000}
-        assert raw["grok/*"] == {"mode": "X", "context_window": 500000}
-
-    def test_step_grok_models_json_preserves_existing_grok_entry(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_grok_models_json
-
-        models_path = data_dir / "models.json"
-        custom_grok = {"mode": "A", "context_window": 999999}
-        models_path.write_text(json.dumps({"grok/*": custom_grok}), encoding="utf-8")
-
-        result = step_grok_models_json(data_dir, dry_run=False, verbose=True)
-
-        assert result.changed == 1
-        raw = json.loads(models_path.read_text(encoding="utf-8"))
-        assert raw["grok/*"] == custom_grok
-        assert raw["grok/grok-4.5"] == {"mode": "X", "context_window": 500000}
-
-    def test_step_shortterm_layout(self, data_dir: Path) -> None:
-        from core.migrations.steps import step_shortterm_layout
-
-        anima = self._make_anima(data_dir, "dave")
-        shortterm = anima / "shortterm"
-        shortterm.mkdir(exist_ok=True)
-        (shortterm / "session_state.json").write_text("{}", encoding="utf-8")
-        result = step_shortterm_layout(data_dir, dry_run=False, verbose=True)
-        assert result.changed == 1
-        assert (shortterm / "chat" / "session_state.json").exists()
-        assert not (shortterm / "session_state.json").exists()
 
     def test_step_update_version(self, data_dir: Path) -> None:
         from core.migrations.steps import step_update_version
@@ -592,7 +359,43 @@ class TestRegisterAllSteps:
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         steps = runner.list_steps()
-        assert len(steps) >= 20
+        assert len(steps) >= 15
+
+    def test_0140_runtime_startup_ignores_retired_migration_ids(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+        from core.migrations.tracker import assert_supported_runtime_version
+
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+        retired_ids = {
+            "person_to_anima",
+            "config_md_to_json",
+            "model_config_to_status",
+            "cron_format",
+            "split_board_by_company_20260720",
+            "channel_company_defaults_20260723",
+            "tool_prompts_db_to_md",
+            "legacy_flat_skill_migration",
+            "v060_resync",
+        }
+        (tmp_path / "migration_state.json").write_text(
+            json.dumps(
+                {
+                    "applied_version": "0.14.0",
+                    "steps_applied": {step_id: "2026-09-29T00:00:00" for step_id in retired_ids},
+                    "last_migrated_at": "2026-09-29T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert_supported_runtime_version(tmp_path)
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        registered_ids = {step["id"] for step in runner.list_steps()}
+
+        assert retired_ids.isdisjoint(registered_ids)
+        report = runner.run_all()
+        assert report.errors == []
+        assert retired_ids.issubset(runner.tracker.load().steps_applied)
 
     def test_all_step_ids_unique(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps

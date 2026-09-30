@@ -179,7 +179,6 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `local_llm` |  |
 | `workspaces` |  |
 | `github_identities` |  |
-| `channel_company_defaults` |  |
 | `activity_level` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |

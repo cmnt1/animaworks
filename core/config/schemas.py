@@ -1338,8 +1338,6 @@ class AnimaWorksConfig(BaseModel):
     # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
     # Used by executors to inject GH_TOKEN and pin push identity.
     github_identities: dict[str, str] = Field(default_factory=dict)
-    # channel name → company name for open-channel company attribution migration
-    channel_company_defaults: dict[str, str] = Field(default_factory=dict)
     activity_level: int = Field(
         default=100,
         ge=10,

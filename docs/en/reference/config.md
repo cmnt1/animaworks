@@ -466,7 +466,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 | `workspaces` | `dict[str, str]` | `{}` | Mapping of named workspace paths. |
 | `github_identities` | `dict[str, str]` | `{}` | Mapping of company slugs to GitHub accounts. |
-| `channel_company_defaults` | `dict[str, str]` | `{}` | Default company attribution for channel names. |
 | `activity_level` | `int` | `100` | Multiplier to adjust overall activity frequency. |
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | Activity frequency by time period. |
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |
