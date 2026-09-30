@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import server_url
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -101,12 +103,6 @@ def save_notification_mapping(
     return True
 
 
-def _server_base_url() -> str:
-    import os
-
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
-
-
 def post_notification_mapping_via_api(
     ts: str,
     channel: str,
@@ -128,7 +124,7 @@ def post_notification_mapping_via_api(
 
     try:
         resp = httpx.post(
-            f"{_server_base_url()}/api/internal/notification-mapping",
+            f"{server_url()}/api/internal/notification-mapping",
             headers=internal_api_headers(),
             json={
                 "ts": ts,

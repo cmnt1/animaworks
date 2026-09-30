@@ -165,7 +165,7 @@ async def test_existing_episode_model_fallback_is_used_and_all_failures_are_repo
             raise RuntimeError("primary unavailable")
         return '{"operations": []}' if model == "fallback" else None
 
-    monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", completion)
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", completion)
     configs = [SimpleNamespace(model="primary", credential=""), SimpleNamespace(model="fallback", credential="")]
 
     raw, reason = await _complete_episode_prompt("prompt", configs)
@@ -179,7 +179,7 @@ async def test_existing_episode_model_fallback_is_used_and_all_failures_are_repo
         attempts.append(model)
         raise RuntimeError("unavailable")
 
-    monkeypatch.setattr("core.memory._llm_utils.one_shot_completion", fail_all)
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion", fail_all)
     raw, reason = await _complete_episode_prompt("prompt", configs)
     assert raw is None
     assert reason

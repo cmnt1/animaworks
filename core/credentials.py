@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -96,7 +98,7 @@ def get_credential(
     if env_var:
         val = _lookup_abconfig_credential(env_var)
         if val:
-            abconfig_path = os.environ.get(_ABCONFIG_ENV_VAR, "abconfig")
+            abconfig_path = get_env(_ABCONFIG_ENV_VAR, "abconfig")
             _log_resolved(credential_name, key_name, abconfig_path, val)
             return val
 
@@ -111,7 +113,7 @@ def get_credential(
     sources = [f"config.json credentials.{credential_name}.{key_name}"]
     if env_var:
         sources.append("vault.json")
-        abconfig_path = os.environ.get(_ABCONFIG_ENV_VAR)
+        abconfig_path = get_env(_ABCONFIG_ENV_VAR)
         if abconfig_path and env_var in _ABCONFIG_KEY_MAP:
             sources.append(abconfig_path)
         sources.append(f"environment variable {env_var}")
@@ -217,16 +219,15 @@ def resolve_env_style_credential(key: str) -> str | None:
     return val if val else None
 
 
-@lru_cache(maxsize=1)
 def _load_abconfig_secrets() -> Any | None:
-    """Load ``secrets_local.py`` next to ``ANIMAWORKS_ABCONFIG_PATH`` (Cnct_Env.py).
+    """Load the secrets module selected by the current abconfig path env var."""
+    raw = get_env(_ABCONFIG_ENV_VAR)
+    return _load_abconfig_secrets_from_path(raw) if raw else None
 
-    When ``ANIMAWORKS_ABCONFIG_PATH`` is unset, this stage is skipped entirely.
-    """
-    raw = os.environ.get(_ABCONFIG_ENV_VAR)
-    if not raw:
-        return None
 
+@lru_cache(maxsize=4)
+def _load_abconfig_secrets_from_path(raw: str) -> Any | None:
+    """Load ``secrets_local.py`` next to the supplied ``Cnct_Env.py`` path."""
     cnct_env_path = Path(raw)
     if not cnct_env_path.is_file():
         logger.debug("abconfig path not found: %s", cnct_env_path)

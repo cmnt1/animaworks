@@ -39,7 +39,7 @@ def handler(anima_dir):
 def allow_action_gate(monkeypatch):
     """Keep these file-guard tests independent from RAG-backed action rules."""
 
-    monkeypatch.setattr("core.tooling.action_gate.find_action_rules", lambda *a, **k: [])
+    monkeypatch.setattr("core.tooling.policy.action_gate.find_action_rules", lambda *a, **k: [])
 
 
 # ── Read-before-write guard ─────────────────────────────

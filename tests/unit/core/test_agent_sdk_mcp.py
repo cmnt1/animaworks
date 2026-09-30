@@ -78,6 +78,14 @@ class TestBuildMcpEnv:
             env = executor._build_mcp_env()
         assert env["PATH"] == "/usr/bin:/bin"
 
+    def test_passes_server_url_from_current_environment(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://server.example:18601/")
+        executor = _make_executor(tmp_path / "animas" / "test-anima")
+
+        env = executor._build_mcp_env()
+
+        assert env["ANIMAWORKS_SERVER_URL"] == "http://server.example:18601"
+
     def test_passes_embed_and_vector_urls(self, tmp_path: Path) -> None:
         """Embed/vector/rerank URLs propagate so the MCP server delegates over HTTP."""
         executor = _make_executor(tmp_path / "animas" / "test-anima")

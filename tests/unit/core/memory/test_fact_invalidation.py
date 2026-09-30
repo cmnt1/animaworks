@@ -465,7 +465,7 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
         captured["prompt"] = prompt
         return "CONTRADICT"
 
-    monkeypatch.setattr("core.memory._llm_utils.one_shot_completion_sync", fake_completion)
+    monkeypatch.setattr("core.llm.oneshot.one_shot_completion_sync", fake_completion)
 
     label = fact_invalidation_llm.classify_fact_relation(
         new,

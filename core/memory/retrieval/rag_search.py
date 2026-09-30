@@ -29,6 +29,7 @@ from core.org.company_resources import (
     get_company_resources_for_company,
     infer_data_dir,
 )
+from core.platform.env import get_env
 
 logger = logging.getLogger("animaworks.memory")
 
@@ -112,7 +113,7 @@ class RAGMemorySearch:
         self._indexer_initialized = False
         self._indexer_init_lock = threading.Lock()
         self._index_retry_at: float | None = None
-        self._auto_index_on_access = not os.environ.get("ANIMAWORKS_TASK_IPC_PATH", "").strip()
+        self._auto_index_on_access = not get_env("ANIMAWORKS_TASK_IPC_PATH", "").strip()
         self._last_search_meta: dict[str, object] = {}
 
     def _init_indexer(self) -> None:

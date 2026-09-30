@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -7,7 +9,6 @@ from __future__ import annotations
 """Runtime session context shared by agent and tool execution paths."""
 
 import contextvars
-import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -55,11 +56,11 @@ class RuntimeSessionContext:
 
     @classmethod
     def from_env(cls) -> RuntimeSessionContext | None:
-        request_id = os.environ.get("ANIMAWORKS_REQUEST_ID", "").strip()
-        session_type = os.environ.get("ANIMAWORKS_SESSION_TYPE", "").strip()
-        thread_id = os.environ.get("ANIMAWORKS_THREAD_ID", "").strip()
-        trigger = os.environ.get("ANIMAWORKS_TRIGGER", "").strip()
-        tool_session_id = os.environ.get("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
+        request_id = get_env("ANIMAWORKS_REQUEST_ID", "").strip()
+        session_type = get_env("ANIMAWORKS_SESSION_TYPE", "").strip()
+        thread_id = get_env("ANIMAWORKS_THREAD_ID", "").strip()
+        trigger = get_env("ANIMAWORKS_TRIGGER", "").strip()
+        tool_session_id = get_env("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
         if not any((request_id, session_type, thread_id, trigger, tool_session_id)):
             return None
         return cls(

@@ -17,6 +17,7 @@ from typing import Any, TypeVar
 
 from core.memory.rag.owner_lock import VectorOwnerBusy, VectorOwnerLock
 from core.memory.rag.store import ChromaVectorStore, Document, SearchResult
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -195,8 +196,7 @@ class MemoryService:
         result_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
             sys.executable,
-            "-m",
-            "core.memory.rag.repair.rebuild",
+            *module_args(SubprocessEntry.RAG_REPAIR_REBUILD),
             "--build-staging",
             "--anima",
             self.anima_name,

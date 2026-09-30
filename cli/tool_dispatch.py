@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 """CLI-facing dispatcher for tools and main CLI command aliases."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -70,7 +71,7 @@ def cli_dispatch() -> None:
         return
 
     tool_name = sys.argv[1]
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir = anima_dir_env() or ""
     common_tools = discover_common_tools()
     personal_tools = discover_personal_tools(Path(anima_dir)) if anima_dir else {}
     if tool_name in TOOL_MODULES or tool_name in common_tools or tool_name in personal_tools or tool_name == "submit":

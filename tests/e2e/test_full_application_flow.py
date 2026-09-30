@@ -238,7 +238,7 @@ Combined content from both files with duplicates removed.
     with (
         patch("litellm.acompletion") as mock,
         patch("core.memory.conversation.compression._call_llm", new_callable=AsyncMock) as mock_call_llm,
-        patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock) as mock_one_shot,
+        patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock) as mock_one_shot,
     ):
 
         async def async_response(*args, **kwargs):

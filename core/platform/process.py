@@ -15,6 +15,8 @@ from typing import Any
 
 import psutil
 
+from core.platform.subprocess_entries import SubprocessEntry
+
 
 def subprocess_session_kwargs() -> dict[str, Any]:
     """Return Popen kwargs for launching an isolated subprocess session."""
@@ -184,7 +186,7 @@ def process_group_exists(pgid: int | None, fallback_alive: bool) -> bool:
 def task_runner_subtree_pids(
     root: psutil.Process,
     job_pids: set[int],
-    cmd_marker: str = "core.supervisor.task_runner",
+    cmd_marker: str = SubprocessEntry.TASK_RUNNER.value,
 ) -> set[int]:
     """Return task-runner roots and all descendants for orphan-cleanup exclusion."""
     excluded: set[int] = set()

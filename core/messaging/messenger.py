@@ -25,15 +25,9 @@ from core.exceptions import (
 )  # noqa: F401
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
+from core.platform.env import server_url
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 from core.time_utils import ensure_aware, now_iso, now_local
-
-
-def _server_base_url() -> str:
-    import os
-
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
-
 
 logger = logging.getLogger("animaworks.messenger")
 
@@ -424,7 +418,7 @@ class Messenger:
             from core.internal_api import internal_api_headers
 
             resp = httpx.post(
-                f"{_server_base_url()}/api/internal/send-message",
+                f"{server_url()}/api/internal/send-message",
                 json={"message": msg.model_dump(mode="json")},
                 headers=internal_api_headers(),
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
@@ -450,7 +444,7 @@ class Messenger:
             from core.internal_api import internal_api_headers
 
             resp = httpx.post(
-                f"{_server_base_url()}/api/internal/post-channel",
+                f"{server_url()}/api/internal/post-channel",
                 json={
                     "from_anima": self.anima_name,
                     "channel": channel,

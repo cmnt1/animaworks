@@ -61,7 +61,7 @@ def _resolve_default(finfo):
 
 def _generate_tool_parameters() -> str:
     """Generate tool parameter reference from core/tooling/schemas.py."""
-    from core.tooling.schemas import MEMORY_TOOLS
+    from core.tooling.policy.schemas import MEMORY_TOOLS
 
     lines: list[str] = ["### ツールパラメータリファレンス（自動生成）", ""]
 

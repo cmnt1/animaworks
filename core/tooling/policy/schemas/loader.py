@@ -9,7 +9,6 @@ from __future__ import annotations
 
 """Schema loading from external and personal tool modules."""
 
-import importlib
 import importlib.util
 import logging
 from typing import Any
@@ -31,14 +30,14 @@ def load_external_schemas(tool_registry: list[str]) -> list[dict[str, Any]]:
     if not tool_registry:
         return []
 
-    from core.integrations import TOOL_MODULES
+    from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
 
     schemas: list[dict[str, Any]] = []
     for tool_name in tool_registry:
         if tool_name not in TOOL_MODULES:
             continue
         try:
-            mod = importlib.import_module(TOOL_MODULES[tool_name])
+            mod = load_tool_module(tool_name)
             if not hasattr(mod, "get_tool_schemas"):
                 continue
             for s in mod.get_tool_schemas():
@@ -84,7 +83,7 @@ def load_external_schemas_by_category(
     *categories* is a set of tool module names (e.g. ``{"chatwork", "slack"}``).
     Only schemas belonging to those modules are returned.
     """
-    from core.integrations import TOOL_MODULES
+    from core.tooling.policy.registry import TOOL_MODULES
 
     filtered_registry = [name for name in TOOL_MODULES if name in categories]
     return load_external_schemas(filtered_registry)

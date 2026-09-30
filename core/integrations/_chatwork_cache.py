@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from core.exceptions import ToolConfigError
 from core.integrations._cache import BaseMessageCache, CacheTable
 from core.integrations._chatwork_client import JST, ChatworkClient
 from core.platform.atomic_io import atomic_write_json
+from core.platform.env import get_env
 
 logger = logging.getLogger("animaworks.tools.chatwork.cache")
 
@@ -30,7 +30,14 @@ logger = logging.getLogger("animaworks.tools.chatwork.cache")
 # This allows TaskExec/Codex sandbox environments to redirect cache writes
 # to a writable location (e.g. /tmp/animaworks-cache/chatwork).
 _DEFAULT_CACHE_DIR = Path.home() / ".animaworks" / "cache" / "chatwork"
-DEFAULT_CACHE_DIR = Path(os.environ.get("ANIMAWORKS_CHATWORK_CACHE_DIR", str(_DEFAULT_CACHE_DIR)))
+DEFAULT_CACHE_DIR = _DEFAULT_CACHE_DIR
+
+
+def get_cache_dir() -> Path:
+    """Resolve the cache directory from the current environment."""
+    configured = get_env("ANIMAWORKS_CHATWORK_CACHE_DIR")
+    return Path(configured) if configured else DEFAULT_CACHE_DIR
+
 
 _CHATWORK_SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS rooms (
@@ -89,13 +96,14 @@ def _format_timestamp(unix_ts: int) -> str:
 
 def resolve_cache_db_path(client: ChatworkClient) -> Path:
     """Return the account-specific cache DB path for *client*."""
+    cache_dir = get_cache_dir()
     try:
-        DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         # A read-only sandbox must not turn a cache miss into a hard failure
         # here; the caller still fails loudly if the DB itself is unusable.
-        logger.warning("Chatwork cache directory is not writable (%s): %s", DEFAULT_CACHE_DIR, exc)
-    map_path = DEFAULT_CACHE_DIR / "identity_map.json"
+        logger.warning("Chatwork cache directory is not writable (%s): %s", cache_dir, exc)
+    map_path = cache_dir / "identity_map.json"
     token_fingerprint = hashlib.sha256(client.api_token.encode("utf-8")).hexdigest()[:16]
 
     identity_map: dict[str, str] = {}
@@ -120,7 +128,7 @@ def resolve_cache_db_path(client: ChatworkClient) -> Path:
             # proceed uncached instead of blocking every Chatwork read.
             logger.warning("Chatwork identity cache could not be updated (%s): %s", map_path, exc)
 
-    return DEFAULT_CACHE_DIR / account_id / "messages.db"
+    return cache_dir / account_id / "messages.db"
 
 
 # ── MessageCache ─────────────────────────────────────────────

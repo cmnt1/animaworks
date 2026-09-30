@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from core.prompt.tool_content import apply_prompt_descriptions, get_default_guide
+from core.tooling.policy.tool_content import apply_prompt_descriptions, get_default_guide
 
 ROOT = Path(__file__).resolve().parents[3] / "templates"
 

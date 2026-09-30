@@ -19,7 +19,7 @@ logger = logging.getLogger("animaworks.memory.fact_invalidation_llm")
 
 def classify_fact_relation(new_fact: FactRecord, candidates: list[Any], anima_dir: Path) -> str:
     model, llm_extra, timeout = _resolve_reconcile_llm_config(anima_dir)
-    from core.memory._llm_utils import one_shot_completion_sync
+    from core.llm.oneshot import one_shot_completion_sync
 
     text = one_shot_completion_sync(
         _user_prompt(new_fact, candidates),

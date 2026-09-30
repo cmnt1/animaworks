@@ -1,4 +1,4 @@
-"""Table-driven tests for the shared command policy (core.tooling.command_policy).
+"""Table-driven tests for the shared command policy (core.tooling.policy.command_policy).
 
 Covers every policy layer, the fixed evaluation order, the unified segment
 split, and the requirement that ToolHandler / Mode S / Codex all reach the
@@ -29,13 +29,13 @@ from core.config.schemas import (
 )
 from core.execution.engines.claude._sdk_security import _check_a1_bash_command
 from core.tooling import codex_command_hook as hook
-from core.tooling.command_policy import (
+from core.tooling.handler import ToolHandler
+from core.tooling.policy.command_policy import (
     CommandPolicyContext,
     evaluate_command,
     load_command_policy_context,
     split_segments,
 )
-from core.tooling.handler import ToolHandler
 
 
 def _build_global_config(*, mode: str = "log", with_injection: bool = True) -> GlobalPermissionsConfig:
@@ -225,7 +225,7 @@ def test_load_context_broken_global_raises(tmp_path: Path) -> None:
 
 
 def test_record_injection_hit_writes_jsonl(tmp_path: Path) -> None:
-    from core.tooling.command_policy import record_injection_hit
+    from core.tooling.policy.command_policy import record_injection_hit
 
     ctx, ad, data_dir = make_ctx(tmp_path, injection_mode="log")
     record_injection_hit("echo a; echo b", ctx, pattern_name="chaining", trigger="chat")

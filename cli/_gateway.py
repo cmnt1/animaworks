@@ -6,16 +6,16 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from typing import Any
+
+from core.platform.env import SERVER_URL_ENV, get_env
 
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────
 
 _DEFAULT_GATEWAY_URL = "http://localhost:18500"
-_ENV_SERVER_URL = "ANIMAWORKS_SERVER_URL"
 _ENV_GATEWAY_URL = "ANIMAWORKS_GATEWAY_URL"
 
 
@@ -25,12 +25,12 @@ _ENV_GATEWAY_URL = "ANIMAWORKS_GATEWAY_URL"
 def resolve_gateway_url(args: argparse.Namespace) -> str:
     """Resolve the gateway URL from CLI args or environment variable.
 
-    Priority: ``--gateway-url`` flag > ``ANIMAWORKS_SERVER_URL`` >
+    Priority: ``--gateway-url`` flag > configured server URL >
     ``ANIMAWORKS_GATEWAY_URL`` (legacy) > default.
     """
     if getattr(args, "gateway_url", None):
         return args.gateway_url
-    return os.environ.get(_ENV_SERVER_URL) or os.environ.get(_ENV_GATEWAY_URL) or _DEFAULT_GATEWAY_URL
+    return get_env(SERVER_URL_ENV) or get_env(_ENV_GATEWAY_URL) or _DEFAULT_GATEWAY_URL
 
 
 def gateway_request(

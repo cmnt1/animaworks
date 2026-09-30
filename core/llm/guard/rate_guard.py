@@ -34,6 +34,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from core.platform.env import anima_dir_env, get_env
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -70,10 +72,10 @@ def _load_guard_config() -> LlmRateGuardConfig:
 
 def _current_anima_name() -> str:
     """Best-effort identity for the ``updated_by`` field (observability only)."""
-    name = os.environ.get("ANIMAWORKS_ANIMA_NAME")
+    name = get_env("ANIMAWORKS_ANIMA_NAME")
     if name:
         return name
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if anima_dir:
         return Path(anima_dir).name
     return "unknown"

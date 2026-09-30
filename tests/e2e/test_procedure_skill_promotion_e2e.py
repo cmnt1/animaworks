@@ -17,7 +17,7 @@ from core.skills.index import SkillIndex
 from core.skills.promotion import ProcedureToSkillConverter
 from core.time_utils import now_iso
 from core.tooling.handler import ToolHandler
-from core.tooling.schemas import _create_skill_schemas
+from core.tooling.policy.schemas import _create_skill_schemas
 
 
 def _write_procedure(anima_dir: Path) -> None:

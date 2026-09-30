@@ -38,6 +38,8 @@ from core.platform.cursor import (
 from core.platform.cursor import (
     is_cursor_agent_available,
 )
+from core.platform.env import server_url_env
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -114,6 +116,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
+        mcp_env.update(server_url_env())
         from core.execution.session.session_context import current_runtime_session
 
         runtime_ctx = current_runtime_session()
@@ -123,7 +126,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
             "mcpServers": {
                 "aw": {
                     "command": sys.executable,
-                    "args": ["-m", "core.mcp.server"],
+                    "args": list(module_args(SubprocessEntry.MCP_SERVER)),
                     "env": mcp_env,
                 }
             }

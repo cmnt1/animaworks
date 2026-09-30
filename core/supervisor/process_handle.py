@@ -26,6 +26,7 @@ import psutil
 
 from core.exceptions import AnimaNotRunningError, IPCConnectionError, ProcessError
 from core.platform.process import kill_tree, snapshot_descendants, subprocess_session_kwargs, terminate_subprocess
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse
 from core.time_utils import ensure_aware, now_local
 
@@ -137,8 +138,7 @@ class ProcessHandle:
         # Spawn child process
         cmd = [
             sys.executable,
-            "-m",
-            "core.supervisor.runner",
+            *module_args(SubprocessEntry.SUPERVISOR_RUNNER),
             "--anima-name",
             self.anima_name,
             "--socket-path",

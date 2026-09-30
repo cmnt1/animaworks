@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -61,7 +63,7 @@ def rag_repair_nonce_env() -> Iterator[str]:
     Preserves a pre-existing value; generates a fresh token when unset and
     restores the previous environment on exit.
     """
-    previous = os.environ.get(_RAG_REPAIR_NONCE_ENV)
+    previous = get_env(_RAG_REPAIR_NONCE_ENV)
     if previous is None:
         os.environ[_RAG_REPAIR_NONCE_ENV] = secrets.token_urlsafe(32)
     try:

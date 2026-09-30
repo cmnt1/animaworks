@@ -45,10 +45,10 @@ from core.execution.engines.codex.setup import (
     _close_codex_client,
     _close_subprocess_stdio,
     _default_home_dir,
-    _default_path_env,
     _is_desktop_extension_codex,
-    _resolve_codex_model,
     _should_prefer_cli_exec,
+    default_path_env,
+    resolve_codex_model,
 )
 from core.prompt.context import ContextTracker
 
@@ -184,13 +184,13 @@ def _read_activity_jsonl(anima_dir: Path) -> list[dict]:
 
 
 class TestHelpers:
-    def test_resolve_codex_model_strips_prefix(self):
-        assert _resolve_codex_model("codex/o4-mini") == "o4-mini"
-        assert _resolve_codex_model("codex/gpt-4.1") == "gpt-4.1"
-        assert _resolve_codex_model("openai-codex/gpt-5.3-codex") == "gpt-5.3-codex"
+    def testresolve_codex_model_strips_prefix(self):
+        assert resolve_codex_model("codex/o4-mini") == "o4-mini"
+        assert resolve_codex_model("codex/gpt-4.1") == "gpt-4.1"
+        assert resolve_codex_model("openai-codex/gpt-5.3-codex") == "gpt-5.3-codex"
 
-    def test_resolve_codex_model_no_prefix(self):
-        assert _resolve_codex_model("o4-mini") == "o4-mini"
+    def testresolve_codex_model_no_prefix(self):
+        assert resolve_codex_model("o4-mini") == "o4-mini"
 
     def test_get_thread_id_from_id_attr(self):
         obj = MagicMock()
@@ -561,7 +561,7 @@ class TestExecutorInit:
             else:
                 assert name not in env
 
-    def test_default_path_env_prepends_embedded_codex(self):
+    def testdefault_path_env_prepends_embedded_codex(self):
         if os.name == "nt":
             codex_exe = r"C:\Tools\codex.exe"
             base_path = r"C:\Windows\System32"
@@ -572,11 +572,11 @@ class TestExecutorInit:
             patch("core.execution.engines.codex.setup.get_codex_executable", return_value=codex_exe),
             patch.dict("os.environ", {"PATH": base_path}, clear=True),
         ):
-            value = _default_path_env()
+            value = default_path_env()
         parts = value.split(os.pathsep)
         assert parts[0] == str(Path(codex_exe).resolve().parent)
 
-    def test_default_path_env_includes_launcher_python_dir(self):
+    def testdefault_path_env_includes_launcher_python_dir(self):
         if os.name == "nt":
             py_exe = r"E:\Projects\Tools\General\animaworks\.venv\Scripts\python.exe"
             base_path = r"C:\Windows\System32"
@@ -588,7 +588,7 @@ class TestExecutorInit:
             patch("core.execution.engines.codex.setup.sys.executable", py_exe),
             patch.dict("os.environ", {"PATH": base_path}, clear=True),
         ):
-            value = _default_path_env()
+            value = default_path_env()
         parts = value.split(os.pathsep)
         assert str(Path(py_exe).resolve().parent) in parts
 

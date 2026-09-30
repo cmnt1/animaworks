@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.platform.atomic_io import atomic_write_json
+from core.platform.env import get_env
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class IPCTransportEndpoint:
 
 
 def _transport_override() -> str:
-    value = os.environ.get("ANIMAWORKS_IPC_TRANSPORT", "auto").strip().lower()
+    value = get_env("ANIMAWORKS_IPC_TRANSPORT", "auto").strip().lower()
     if value in {"auto", "unix", "tcp"}:
         return value
     logger.warning("Ignoring invalid ANIMAWORKS_IPC_TRANSPORT=%r", value)

@@ -29,6 +29,7 @@ from core.i18n import t
 from core.integrations._base import ToolConfigError, dispatch_by_table, logger
 from core.integrations._comm_cli import cli_main_safely
 from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
+from core.platform.env import anima_dir_env
 
 # ── Execution Profile ─────────────────────────────────────
 
@@ -635,9 +636,8 @@ def cli_main(argv: list[str] | None = None) -> None:
 
 def _resolve_cli_token() -> str:
     """Resolve token for CLI (ANIMAWORKS_ANIMA_DIR env)."""
-    import os
 
-    args = {"anima_dir": os.environ.get("ANIMAWORKS_ANIMA_DIR")}
+    args = {"anima_dir": anima_dir_env()}
     return _resolve_token(args)
 
 

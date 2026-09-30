@@ -162,7 +162,7 @@ class TestPreflightSizeCheck:
             patch("core.agent.cycle._save_prompt_log"),
             patch("core.agent.cycle._save_prompt_log_end"),
             patch("core.agent.cycle._log_session_token_usage"),
-            patch("core.tooling.schemas.load_all_tool_schemas", return_value=[]),
+            patch("core.tooling.policy.schemas.load_all_tool_schemas", return_value=[]),
             caplog.at_level(logging.WARNING, logger="animaworks.agent"),
         ):
             result = await agent._run_cycle_inner_scoped("prompt", trigger="manual")

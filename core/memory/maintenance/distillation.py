@@ -80,7 +80,7 @@ class ProceduralDistiller:
             ``patterns_detected`` (int).
         """
         if not model:
-            from core.memory._llm_utils import get_consolidation_llm_kwargs
+            from core.llm.oneshot import get_consolidation_llm_kwargs
 
             model = get_consolidation_llm_kwargs()["model"]
 
@@ -134,7 +134,7 @@ class ProceduralDistiller:
         )
 
         try:
-            from core.memory._llm_utils import one_shot_completion
+            from core.llm.oneshot import one_shot_completion
 
             text = await one_shot_completion(prompt, model=model, max_tokens=2048, structured_output=True)
             if text is None:

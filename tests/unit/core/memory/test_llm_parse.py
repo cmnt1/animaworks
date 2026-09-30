@@ -23,8 +23,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.llm.oneshot import supports_structured_output
 from core.memory._llm_parse import is_none_marker, load_json, strip_code_fence
-from core.memory._llm_utils import supports_structured_output
 from core.memory.facts.extractor import FactExtractor
 from core.memory.facts.observability import reset_warning_rate_limits
 from core.memory.maintenance.distillation import ProceduralDistiller
@@ -56,7 +56,7 @@ def _run_extractor(ext: FactExtractor, content: str) -> tuple[dict, list]:
 
     with (
         patch("litellm.acompletion", side_effect=_fake_acompletion),
-        patch("core.memory._llm_utils.ensure_credentials_in_env"),
+        patch("core.llm.oneshot.ensure_credentials_in_env"),
         patch("core.config.load_config", return_value=_cfg(ext._model)),
     ):
         entities = _run(ext.extract_entities("テスト"))

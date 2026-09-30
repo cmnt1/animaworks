@@ -299,7 +299,7 @@ def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any)
 
 async def _complete_episode_prompt(prompt: str, model_configs: list[Any]) -> tuple[str | None, str]:
     """Try the primary one-shot model followed by configured model fallbacks."""
-    from core.memory._llm_utils import one_shot_completion
+    from core.llm.oneshot import one_shot_completion
 
     failures: list[str] = []
     for model_config in model_configs:

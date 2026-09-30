@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 
 from cli._gateway import gateway_request
+from core.platform.env import anima_dir_env
 
 logger = logging.getLogger("animaworks")
 
@@ -57,7 +57,7 @@ def _persist_replied_to_for_a1(to: str) -> None:
 
     from core.execution.session.session_context import RuntimeSessionContext
 
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if not anima_dir:
         return
     ctx = RuntimeSessionContext.from_env()

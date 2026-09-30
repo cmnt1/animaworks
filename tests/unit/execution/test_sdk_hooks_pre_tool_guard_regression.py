@@ -156,7 +156,7 @@ async def test_intercepted_submit_tasks_keeps_successful_tool_use_logging(hook_b
 
     with (
         patch(
-            "core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks",
+            "core.tooling.policy.submit_tasks.submit_tasks",
             return_value=success,
         ),
         patch("core.execution.engines.claude._sdk_hooks._log_tool_use") as log_tool_use,

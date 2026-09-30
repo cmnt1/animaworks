@@ -323,7 +323,7 @@ async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
             ),
         ),
         patch(
-            "core.memory._llm_utils.one_shot_completion",
+            "core.llm.oneshot.one_shot_completion",
             new_callable=AsyncMock,
             side_effect=fake_one_shot,
         ) as llm,

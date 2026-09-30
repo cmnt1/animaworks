@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import data_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,7 +12,6 @@ from __future__ import annotations
 """Messaging, human notification, and recent tool section building."""
 
 import logging
-import os
 from pathlib import Path
 
 from core.i18n import t
@@ -30,7 +31,7 @@ def _resolve_shared_dir_for_prompt(anima_dir: Path) -> Path | None:
 
     candidates.append(anima_dir.parent / "shared")
 
-    if os.environ.get("ANIMAWORKS_DATA_DIR"):
+    if data_dir_env():
         from core.paths import get_shared_dir
 
         candidates.append(get_shared_dir())

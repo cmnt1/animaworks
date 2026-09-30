@@ -297,7 +297,7 @@ class TestSubmitTasksInterceptDenyReason:
         )
 
         with patch(
-            "core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks",
+            "core.tooling.policy.submit_tasks.submit_tasks",
             return_value=success_result,
         ):
             hook = self._build_hook(
@@ -339,7 +339,7 @@ class TestSubmitTasksInterceptDenyReason:
         )
 
         with patch(
-            "core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks",
+            "core.tooling.policy.submit_tasks.submit_tasks",
             return_value=error_result,
         ):
             hook = self._build_hook(
@@ -413,7 +413,7 @@ class TestSubmitTasksInterceptDenyReason:
                 "tasks": [{"task_id": "t1", "title": "T1", "description": "D1"}],
             },
         }
-        with patch("core.tooling.handler_skills.SkillsToolsMixin._handle_submit_tasks") as handler:
+        with patch("core.tooling.policy.submit_tasks.submit_tasks") as handler:
             result = await hook(input_data, "tu_st_chat", mock_context)
 
         output = result.get("hookSpecificOutput")

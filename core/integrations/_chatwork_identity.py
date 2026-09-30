@@ -9,12 +9,12 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from core.credentials import resolve_env_style_credential
 from core.exceptions import ToolConfigError
+from core.platform.env import anima_dir_env
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class ChatworkIdentity:
 
 
 def _resolve_anima_name(anima_dir: str | Path | None = None) -> str:
-    resolved_dir = anima_dir or os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    resolved_dir = anima_dir or anima_dir_env()
     if not resolved_dir:
         return "owner"
     return Path(resolved_dir).name

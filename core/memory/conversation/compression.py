@@ -53,7 +53,7 @@ async def _call_llm(
     Raises RuntimeError when all LLM backends fail so callers
     can keep raw turns instead of saving an empty summary.
     """
-    from core.memory._llm_utils import one_shot_completion
+    from core.llm.oneshot import one_shot_completion
 
     result = await one_shot_completion(user_content, system_prompt=system, max_tokens=max_tokens)
     if result is None:
@@ -150,7 +150,7 @@ async def _generate_compression_summary(
         errors.append(f"primary failed: {type(e).__name__}: {e}")
 
     try:
-        from core.memory._llm_utils import one_shot_completion_with_model_config
+        from core.llm.oneshot import one_shot_completion_with_model_config
 
         system = load_prompt("memory/conversation_compression")
         user_content = ""

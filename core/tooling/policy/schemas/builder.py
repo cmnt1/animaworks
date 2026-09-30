@@ -11,17 +11,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.prompt.tool_content import apply_prompt_descriptions
-from core.tooling.schemas.admin import CC_TOOLS
-from core.tooling.schemas.channel import _channel_tools
-from core.tooling.schemas.memory import KNOWLEDGE_TOOLS, MEMORY_TOOLS, PROCEDURE_TOOLS
-from core.tooling.schemas.notification import _notification_tools
-from core.tooling.schemas.session_todo import _session_todo_tools
-from core.tooling.schemas.skill import _create_skill_schemas, _curator_skill_schemas
-from core.tooling.schemas.supervisor import _supervisor_tools
-from core.tooling.schemas.task import _submit_tasks_tools, _task_tools
-from core.tooling.schemas.workspace import WORKSPACE_TOOLS
-from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+from core.tooling.policy.schemas.admin import CC_TOOLS
+from core.tooling.policy.schemas.channel import _channel_tools
+from core.tooling.policy.schemas.memory import KNOWLEDGE_TOOLS, MEMORY_TOOLS, PROCEDURE_TOOLS
+from core.tooling.policy.schemas.notification import _notification_tools
+from core.tooling.policy.schemas.session_todo import _session_todo_tools
+from core.tooling.policy.schemas.skill import _create_skill_schemas, _curator_skill_schemas
+from core.tooling.policy.schemas.supervisor import _supervisor_tools
+from core.tooling.policy.schemas.task import _submit_tasks_tools, _task_tools
+from core.tooling.policy.schemas.workspace import WORKSPACE_TOOLS
+from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
+from core.tooling.policy.tool_content import apply_prompt_descriptions
 
 
 def build_unified_tool_list(

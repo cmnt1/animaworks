@@ -15,13 +15,13 @@ Resolution order (first non-empty wins):
   3. **Top-level config** ``icon_url_template`` in ``config.json`` — same template syntax.
   4. **Per-channel** ``icon_path_template`` on the Slack notification channel ``config`` dict
      (legacy; kept for backward compatibility).
-  5. **Internal asset** ``ANIMAWORKS_SERVER_URL`` + ``/api/animas/{name}/assets/<file>`` when
-     the asset file exists on disk.
+  5. **Internal asset** using the configured server base URL and
+     ``/api/animas/{name}/assets/<file>`` when the asset file exists on disk.
   6. ``""`` (no icon).
 
 Templates use ``{name}`` which is replaced by the Anima directory name.  Templates starting
 with ``http://`` or ``https://`` are treated as external URLs; otherwise they are internal
-path segments prepended by ``ANIMAWORKS_SERVER_URL``.
+path segments prepended by the configured server base URL.
 """
 
 from __future__ import annotations
@@ -33,6 +33,8 @@ import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+
+from core.platform.env import server_url
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +121,7 @@ def _format_template(template: str, anima_name: str) -> str:
     try:
         if template_is_external_icon_url(template):
             return template.format_map(safe_map)
-        base = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip().rstrip("/")
+        base = server_url(default="")
         if not base:
             return ""
         safe_map["name"] = quote(anima_name, safe="")
@@ -215,7 +217,7 @@ def resolve_anima_icon_url(
       2. ``ICON_URL_TEMPLATE`` env var (template with ``{name}``)
       3. ``config.json`` top-level ``icon_url_template``
       4. Per-channel ``icon_path_template`` (legacy)
-      5. Internal asset path via ``ANIMAWORKS_SERVER_URL``
+      5. Internal asset path via the configured server base URL
     """
     if not anima_name:
         return ""
@@ -241,7 +243,7 @@ def resolve_anima_icon_url(
         return _format_template(ch_template, anima_name)
 
     # 5. Internal asset fallback
-    base = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip().rstrip("/")
+    base = server_url(default="")
     asset = _icon_asset_for_url(anima_name)
     if asset is not None and base:
         _, filename = asset

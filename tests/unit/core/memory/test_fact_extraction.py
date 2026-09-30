@@ -73,7 +73,7 @@ class TestFactExtractorInit:
 
 class TestFactExtractorExtractEntities:
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_success(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -95,7 +95,7 @@ class TestFactExtractorExtractEntities:
         assert entities[1].entity_type == "Place"
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_forwards_custom_endpoint_settings(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -128,7 +128,7 @@ class TestFactExtractorExtractEntities:
         assert kwargs["structured_output"] is True
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_empty_content(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -139,7 +139,7 @@ class TestFactExtractorExtractEntities:
         assert entities == []
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_llm_failure(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -150,7 +150,7 @@ class TestFactExtractorExtractEntities:
         assert entities == []
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_invalid_json(self, mock_acompletion, caplog):
         from core.memory.facts.extractor import FactExtractor
 
@@ -166,7 +166,7 @@ class TestFactExtractorExtractEntities:
         assert "Failed to parse entity extraction LLM JSON response" in caplog.text
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_entities_filters_empty_names(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -186,7 +186,7 @@ class TestFactExtractorExtractEntities:
         assert entities[0].name == "Valid"
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     @patch("core.memory.facts.extractor.asyncio.sleep", new_callable=AsyncMock)
     async def test_call_llm_retries_none_until_exhausted(self, mock_sleep, mock_one_shot):
         from core.memory.facts.extractor import FactExtractor
@@ -201,7 +201,7 @@ class TestFactExtractorExtractEntities:
         assert mock_sleep.await_count == 2
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     @patch("core.memory.facts.extractor.asyncio.sleep", new_callable=AsyncMock)
     async def test_call_llm_succeeds_after_none(self, mock_sleep, mock_one_shot):
         from core.memory.facts.extractor import FactExtractor
@@ -256,7 +256,7 @@ class TestParseJsonResponse:
 
 class TestFactExtractorExtractFacts:
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_facts_success(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -293,7 +293,7 @@ class TestFactExtractorExtractFacts:
         assert facts == []
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_facts_filters_invalid_refs(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 
@@ -326,7 +326,7 @@ class TestFactExtractorExtractFacts:
         assert facts[0].target_entity == "東京"
 
     @pytest.mark.asyncio
-    @patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock)
+    @patch("core.llm.oneshot.one_shot_completion", new_callable=AsyncMock)
     async def test_extract_facts_llm_failure(self, mock_acompletion):
         from core.memory.facts.extractor import FactExtractor
 

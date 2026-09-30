@@ -26,7 +26,6 @@ require explicit ``external_tools.allow`` entries (``gmail_send``) even when
 never auto-allowed gated actions.
 """
 
-import importlib
 import importlib.util
 import logging
 from collections.abc import Mapping
@@ -99,7 +98,7 @@ def _permitted_names(
 
 def get_permitted_tools(config: PermissionsConfig) -> set[str]:
     """Get permitted tool names from structured permissions config."""
-    from core.integrations import TOOL_MODULES
+    from core.tooling.policy.registry import TOOL_MODULES
 
     all_tools = set(TOOL_MODULES.keys()) - _disabled_service_tools()
     return _permitted_names(config, all_tools, frozenset(_disabled_service_tools()))
@@ -115,11 +114,11 @@ def _load_execution_profile(tool_name: str) -> dict[str, dict[str, object]] | No
         The module's EXECUTION_PROFILE dict, or None if not found or load fails.
     """
     try:
-        from core.integrations import TOOL_MODULES
+        from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
 
         if tool_name not in TOOL_MODULES:
             return None
-        mod = importlib.import_module(TOOL_MODULES[tool_name])
+        mod = load_tool_module(tool_name)
         return getattr(mod, "EXECUTION_PROFILE", None)
     except Exception:
         logger.debug("Failed to load EXECUTION_PROFILE for %s", tool_name, exc_info=True)
@@ -174,7 +173,7 @@ def evaluate_tool_access(
          (explicit permission is required even when ``allow_all`` is true).
       5. Otherwise → ``ok``.
     """
-    from core.integrations import TOOL_MODULES
+    from core.tooling.policy.registry import TOOL_MODULES
 
     deny = set(config.external_tools.deny)
     allow = set(config.external_tools.allow)
@@ -283,7 +282,7 @@ def check_tool_access(
 
 
 def _core_tool_names() -> set[str]:
-    from core.integrations import TOOL_MODULES
+    from core.tooling.policy.registry import TOOL_MODULES
 
     return set(TOOL_MODULES.keys())
 

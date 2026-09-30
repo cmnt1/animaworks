@@ -9,20 +9,27 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
 
 from core.integrations._cache import BaseMessageCache, CacheTable
 from core.integrations._slack_client import JST
 from core.integrations._slack_markdown import format_slack_ts
+from core.platform.env import get_env
 
 # Cache directory for Slack message cache.
 # Can be overridden via ANIMAWORKS_SLACK_CACHE_DIR environment variable.
 # This allows TaskExec/Codex sandbox environments to redirect cache writes
 # to a writable location (e.g. /tmp/animaworks-cache/slack).
 _DEFAULT_CACHE_DIR = Path.home() / ".animaworks" / "cache" / "slack"
-DEFAULT_CACHE_DIR = Path(os.environ.get("ANIMAWORKS_SLACK_CACHE_DIR", str(_DEFAULT_CACHE_DIR)))
+DEFAULT_CACHE_DIR = _DEFAULT_CACHE_DIR
+
+
+def get_cache_dir() -> Path:
+    """Resolve the cache directory from the current environment."""
+    configured = get_env("ANIMAWORKS_SLACK_CACHE_DIR")
+    return Path(configured) if configured else DEFAULT_CACHE_DIR
+
 
 _SLACK_SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS channels (
@@ -110,7 +117,7 @@ class MessageCache(BaseMessageCache):
 
     def __init__(self, db_path: Path | None = None):
         if db_path is None:
-            db_path = DEFAULT_CACHE_DIR / "messages.db"
+            db_path = get_cache_dir() / "messages.db"
         super().__init__(db_path, _SLACK_SCHEMA_SQL)
 
     def upsert_channel(self, channel: dict):

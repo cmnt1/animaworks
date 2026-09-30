@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -24,7 +26,6 @@ Usage via animaworks-tool:
 import argparse
 import getpass
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -59,7 +60,7 @@ def cmd_vault(args: argparse.Namespace) -> None:
 
 
 def _get_anima_namespace() -> str:
-    anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir_str = anima_dir_env() or ""
     if not anima_dir_str:
         print("Error: ANIMAWORKS_ANIMA_DIR not set (set automatically inside an anima's tool context)", file=sys.stderr)
         sys.exit(1)

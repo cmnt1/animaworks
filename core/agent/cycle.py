@@ -629,7 +629,7 @@ class CycleMixin:
         )
 
         def _save_cycle_prompt_log() -> None:
-            from core.tooling.schemas import load_all_tool_schemas
+            from core.tooling.policy.schemas import load_all_tool_schemas
 
             tool_schemas = load_all_tool_schemas(
                 tool_registry=self._tool_registry,

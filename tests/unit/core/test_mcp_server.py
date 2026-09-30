@@ -107,7 +107,7 @@ class TestBuildMcpTools:
     def test_internal_tools_always_included(self) -> None:
         """The shared MCP profile is materialized by the MCP server."""
         from core.mcp.server import _build_mcp_tools
-        from core.tooling.surface import MCP_TOOL_NAMES
+        from core.tooling.policy.surface import MCP_TOOL_NAMES
 
         tools, exposed = _build_mcp_tools()
         expected = frozenset(MCP_TOOL_NAMES)
@@ -117,7 +117,7 @@ class TestBuildMcpTools:
 
     def test_outcome_tools_are_exposed(self) -> None:
         from core.mcp.server import _build_mcp_tools
-        from core.tooling.surface import MCP_TOOL_NAMES
+        from core.tooling.policy.surface import MCP_TOOL_NAMES
 
         tools, _ = _build_mcp_tools()
         actual_names = {t.name for t in tools}
@@ -169,7 +169,7 @@ class TestListToolsHandler:
         result_names = {t.name for t in result}
         assert "submit_tasks" in result_names
         # background is a scoped trigger -> skill-management tools are omitted
-        from core.tooling.surface import SKILL_MANAGEMENT_TOOL_NAMES
+        from core.tooling.policy.surface import SKILL_MANAGEMENT_TOOL_NAMES
 
         assert not result_names & SKILL_MANAGEMENT_TOOL_NAMES
 
@@ -218,7 +218,7 @@ class TestListToolsHandler:
         assert "create_anima" not in {t.name for t in result}
 
     def test_mcp_surface_has_only_delegate_task_for_supervisors(self) -> None:
-        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
         regular = set(resolve_tool_surface(ToolSurfaceContext(), "chat", "S"))
         supervisor = set(resolve_tool_surface(ToolSurfaceContext(has_subordinates=True), "chat", "S"))
@@ -505,11 +505,11 @@ class TestCallToolHandler:
 class TestTriggerScopedTools:
     """Tests for trigger-based aw MCP tool set selection."""
 
-    from core.tooling.surface import SKILL_MANAGEMENT_TOOL_NAMES as SKILL_MANAGEMENT
+    from core.tooling.policy.surface import SKILL_MANAGEMENT_TOOL_NAMES as SKILL_MANAGEMENT
 
     def test_default_triggers_omit_skill_management(self) -> None:
         """chat / inbox / cron / task (and friends) drop skill-management tools."""
-        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
         context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
         for trigger in ("chat", "inbox", "cron", "task", "message", "background:manual"):
@@ -520,7 +520,7 @@ class TestTriggerScopedTools:
 
     def test_heartbeat_keeps_skill_management(self) -> None:
         """heartbeat and consolidation keep every tool."""
-        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
         context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
         for trigger in ("heartbeat", "heartbeat:seeded", "consolidation", "consolidation:cc"):
@@ -530,7 +530,7 @@ class TestTriggerScopedTools:
 
     def test_empty_trigger_keeps_everything(self) -> None:
         """An unknown/empty trigger keeps the full default set (safe default)."""
-        from core.tooling.surface import MCP_TOOL_NAMES, ToolSurfaceContext, resolve_tool_surface
+        from core.tooling.policy.surface import MCP_TOOL_NAMES, ToolSurfaceContext, resolve_tool_surface
 
         context = ToolSurfaceContext(has_subordinates=True, has_newstaff_skill=True, include_notification_tools=True)
         assert set(resolve_tool_surface(context, "", "S")) == set(MCP_TOOL_NAMES) - {"submit_tasks"}
@@ -596,7 +596,7 @@ class TestTriggerScopedTools:
         + the runtime submit_tasks block.
         """
         import core.mcp.server as mcp_mod
-        from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+        from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
         tools, _exposed = mcp_mod._build_mcp_tools()
         by_name = {t.name: t for t in tools}
@@ -891,7 +891,7 @@ class TestGetToolHandler:
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.integrations.TOOL_MODULES", {"web_search": None}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": None}),
             patch("core.integrations.discover_common_tools", return_value={}),
             patch("core.integrations.discover_personal_tools", return_value={}),
         ):
@@ -941,7 +941,7 @@ class TestGetToolHandler:
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.integrations.TOOL_MODULES", {}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {}),
             patch("core.integrations.discover_common_tools", return_value={}),
             patch("core.integrations.discover_personal_tools", return_value={}),
         ):
@@ -977,7 +977,7 @@ class TestGetToolHandler:
             patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config", side_effect=RuntimeError("no config")),
-            patch("core.integrations.TOOL_MODULES", {}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {}),
             patch("core.integrations.discover_common_tools", return_value={}),
             patch("core.integrations.discover_personal_tools", return_value={}),
         ):
@@ -1012,7 +1012,7 @@ class TestGetToolHandler:
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
-            patch("core.integrations.TOOL_MODULES", side_effect=ImportError("no tools")),
+            patch("core.tooling.policy.registry.TOOL_MODULES", side_effect=ImportError("no tools")),
             patch("core.integrations.discover_common_tools", return_value={}),
             patch("core.integrations.discover_personal_tools", return_value={}),
         ):
@@ -1040,7 +1040,7 @@ class TestLoadPermittedCategories:
 
         with (
             patch(
-                "core.integrations.TOOL_MODULES",
+                "core.tooling.policy.registry.TOOL_MODULES",
                 {"chatwork": "core.integrations.chatwork", "slack": "core.integrations.slack"},
             ),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
@@ -1056,7 +1056,7 @@ class TestLoadPermittedCategories:
         perms.write_text("## 実行できるコマンド\n- git: OK\n", encoding="utf-8")
 
         with (
-            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -1073,7 +1073,7 @@ class TestLoadPermittedCategories:
         )
 
         with (
-            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -1088,7 +1088,7 @@ class TestLoadPermittedCategories:
         perms.write_text("## 外部ツール\n- all: yes\n", encoding="utf-8")
 
         with (
-            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -1102,7 +1102,7 @@ class TestLoadPermittedCategories:
         perms.write_text("## 外部ツール\n- all: yes\n- gmail: no\n", encoding="utf-8")
 
         with (
-            patch("core.integrations.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"chatwork": "x", "slack": "x", "gmail": "x"}),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             result = _load_permitted_categories(tmp_path)
@@ -1151,7 +1151,7 @@ class TestExternalToolsInMcpTools:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         with patch(
-            "core.tooling.schemas.load_external_schemas_by_category",
+            "core.tooling.policy.schemas.load_external_schemas_by_category",
             return_value=[],
         ):
             tools, exposed = _build_mcp_tools()

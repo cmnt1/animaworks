@@ -31,8 +31,8 @@ def test_trust_table_covers_all_runtime_tool_names(tmp_path: Path, monkeypatch) 
     """New runtime tools must have an explicit trust decision."""
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "data"))
 
-    from core.tooling.schemas import build_unified_tool_list
-    from core.tooling.surface import MCP_TOOL_NAMES
+    from core.tooling.policy.schemas import build_unified_tool_list
+    from core.tooling.policy.surface import MCP_TOOL_NAMES
 
     names = set(_make_tool_handler(tmp_path)._dispatch)
     names.update(MCP_TOOL_NAMES)

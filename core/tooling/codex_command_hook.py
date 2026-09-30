@@ -8,7 +8,7 @@ tool call on stdin and honours ``permissionDecision: deny``.
 
 All policy layers (injection, global deny, recursive-search guard, per-anima
 deny, allowlist, traversal, other-anima write) are applied by the shared
-``core.tooling.command_policy`` module — the same function the ToolHandler
+``core.tooling.policy.command_policy`` module — the same function the ToolHandler
 and Mode S use.  On any error the hook denies (fail-closed) rather than
 freezing the fleet with an un-translated Bash call.
 """
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from core.i18n import t
-from core.tooling.command_policy import (
+from core.tooling.policy.command_policy import (
     check_recursive_search,  # noqa: F401  (re-exported for imports)
     evaluate_command,
     load_command_policy_context,

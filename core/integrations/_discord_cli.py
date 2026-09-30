@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from core.integrations._comm_cli import print_json, run_cli_safely
 from core.integrations._discord_cache import MessageCache
 from core.integrations._discord_client import DiscordAPIError, DiscordClient
 from core.integrations._discord_markdown import clean_discord_markup
+from core.platform.env import anima_dir_env
 
 
 def get_cli_guide() -> str:
@@ -46,7 +46,7 @@ def _resolve_cli_token() -> str | None:
 
     return resolve_per_anima_token(
         "discord",
-        os.environ.get("ANIMAWORKS_ANIMA_DIR"),
+        anima_dir_env(),
         credential_lookup=lambda key: _lookup_vault_credential(key) or _lookup_shared_credentials(key),
     )
 
@@ -124,7 +124,7 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
         reply_to = getattr(args, "reply_to", None)
 
         # Prefer webhook (Anima identity) over bot token (AnimaWorks identity)
-        anima_name = Path(os.environ.get("ANIMAWORKS_ANIMA_DIR", "")).name or ""
+        anima_name = Path(anima_dir_env() or "").name or ""
         sent_via_webhook = False
         if anima_name:
             try:

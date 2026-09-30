@@ -74,9 +74,9 @@ def _load_chatwork_tool_config() -> dict:
     """Load tool-local config from cache dir / config.json."""
     import json
 
-    from core.integrations._chatwork_cache import DEFAULT_CACHE_DIR
+    from core.integrations._chatwork_cache import get_cache_dir
 
-    config_path = DEFAULT_CACHE_DIR / "config.json"
+    config_path = get_cache_dir() / "config.json"
     if config_path.exists():
         return json.loads(config_path.read_text())
     return {}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import server_url
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -464,12 +466,6 @@ def get_interaction_router() -> InteractionRouter:
 # write only when the server is unreachable (e.g. unit tests, CLI on host).
 
 
-def _server_base_url() -> str:
-    import os
-
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
-
-
 def _run_coro_sync(coro: Any) -> Any:
     """Run *coro* to completion from sync code, even inside a running loop."""
     try:
@@ -502,7 +498,7 @@ def create_interaction_resilient(
 
     try:
         resp = httpx.post(
-            f"{_server_base_url()}/api/internal/interaction/create",
+            f"{server_url()}/api/internal/interaction/create",
             json={
                 "anima_name": anima_name,
                 "category": category,
@@ -547,7 +543,7 @@ def update_interaction_message_ts_resilient(callback_id: str, platform: str, ts:
 
     try:
         resp = httpx.post(
-            f"{_server_base_url()}/api/internal/interaction/message-ts",
+            f"{server_url()}/api/internal/interaction/message-ts",
             headers=internal_api_headers(),
             json={"callback_id": callback_id, "platform": platform, "ts": ts},
             timeout=10.0,

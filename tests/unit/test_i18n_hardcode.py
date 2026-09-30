@@ -98,7 +98,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/tooling/handler_memory.py": 1,
     # tool descriptions — already have ja/en dict structure
     # Japanese field names in schema descriptions (上司, 基本情報)
-    "core/tooling/schemas/admin.py": 2,
+    "core/tooling/policy/schemas/admin.py": 2,
     # user-facing message (バックグラウンドタスク投入)
     "core/integrations/__init__.py": 1,
     # tool guide with Japanese content

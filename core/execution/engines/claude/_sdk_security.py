@@ -176,7 +176,7 @@ def _check_a1_bash_command(
 ) -> str | None:
     """Check a bash command against the shared command policy.
 
-    Thin wrapper over ``core.tooling.command_policy.evaluate_command`` so Mode S
+    Thin wrapper over ``core.tooling.policy.command_policy.evaluate_command`` so Mode S
     applies exactly the same layers (injection, global deny, recursive-search
     guard, per-anima deny, allowlist, traversal, other-anima write) as the
     ToolHandler and the Codex hook.  Returns a denial reason or None.
@@ -184,7 +184,7 @@ def _check_a1_bash_command(
     if superuser or not command or not command.strip():
         return None
 
-    from core.tooling.command_policy import (
+    from core.tooling.policy.command_policy import (
         evaluate_command,
         load_command_policy_context,
         record_injection_hit,

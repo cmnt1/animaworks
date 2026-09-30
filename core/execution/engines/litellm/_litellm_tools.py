@@ -25,7 +25,7 @@ from core.exceptions import ToolExecutionError
 from core.execution._tool_summary import make_tool_detail_chunk
 from core.execution.base import ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
 from core.execution.events import tool_end_event
-from core.tooling.schemas import (
+from core.tooling.policy.schemas import (
     build_unified_tool_list,
     to_litellm_format,
 )

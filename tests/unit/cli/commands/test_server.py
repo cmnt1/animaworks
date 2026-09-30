@@ -506,19 +506,23 @@ class TestCmdStart:
         mock_uvicorn,
         mock_watchdog,
         mock_remove,
+        monkeypatch,
     ):
         from cli.commands.server import cmd_start
+        from core.platform.env import SERVER_URL_ENV, server_url
 
+        monkeypatch.setenv(SERVER_URL_ENV, "")
         mock_app = MagicMock()
         mock_create.return_value = mock_app
 
-        args = argparse.Namespace(host="0.0.0.0", port=18500, foreground=True)
+        args = argparse.Namespace(host="0.0.0.0", port=18507, foreground=True)
         cmd_start(args)
 
+        assert server_url() == "http://localhost:18507"
         mock_uvicorn.assert_called_once_with(
             mock_app,
             host="0.0.0.0",
-            port=18500,
+            port=18507,
             log_level="info",
             timeout_keep_alive=65,
             ws_ping_interval=25,
@@ -549,9 +553,12 @@ class TestCmdStart:
         mock_uvicorn,
         mock_watchdog,
         mock_remove,
+        monkeypatch,
     ):
         from cli.commands.server import cmd_start
+        from core.platform.env import SERVER_URL_ENV
 
+        monkeypatch.setenv(SERVER_URL_ENV, "")
         mock_app = MagicMock()
         mock_create.return_value = mock_app
 
@@ -585,9 +592,12 @@ class TestCmdStart:
         mock_uvicorn,
         mock_watchdog,
         mock_remove,
+        monkeypatch,
     ):
         from cli.commands.server import cmd_start
+        from core.platform.env import SERVER_URL_ENV
 
+        monkeypatch.setenv(SERVER_URL_ENV, "")
         mock_app = MagicMock()
         mock_create.return_value = mock_app
 

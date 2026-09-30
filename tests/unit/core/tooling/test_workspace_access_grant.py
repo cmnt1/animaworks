@@ -11,7 +11,7 @@ from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, 
 from core.execution.engines.codex.executor import CodexSDKExecutor
 from core.schemas import ModelConfig
 from core.tooling.handler import ToolHandler
-from core.tooling.schemas import build_unified_tool_list
+from core.tooling.policy.schemas import build_unified_tool_list
 
 
 def _write_config(animas: dict[str, AnimaModelConfig]) -> None:
@@ -178,7 +178,7 @@ def test_grant_workspace_access_is_exposed_in_tool_schemas() -> None:
 
 def test_grant_workspace_access_is_exposed_via_mcp() -> None:
     from core.mcp.server import MCP_TOOLS
-    from core.tooling.surface import MCP_TOOL_NAMES
+    from core.tooling.policy.surface import MCP_TOOL_NAMES
 
     assert "grant_workspace_access" in MCP_TOOL_NAMES
     assert any(tool.name == "grant_workspace_access" for tool in MCP_TOOLS)

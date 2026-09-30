@@ -4,8 +4,9 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import logging
-import os
 from pathlib import Path
+
+from core.platform.env import get_env
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def internal_api_headers() -> dict[str, str]:
     (for human-driven CLI runs).  If neither is available we return an
     empty dict, keeping compatibility with servers running in off/log mode.
     """
-    token = os.environ.get("ANIMAWORKS_INTERNAL_AUTH")
+    token = get_env("ANIMAWORKS_INTERNAL_AUTH")
     if token:
         return {_HEADER: token}
     try:

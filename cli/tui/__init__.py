@@ -7,6 +7,8 @@ from __future__ import annotations
 import argparse
 import logging
 
+from core.platform.env import get_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,7 +175,6 @@ def _maybe_login(client, args) -> bool:
     login succeeded, or auth is disabled).
     """
     import getpass as _getpass
-    import os
     import sys
 
     try:
@@ -191,7 +192,7 @@ def _maybe_login(client, args) -> bool:
         except EOFError:
             print("Login required but no username given", file=sys.stderr)
             return False
-    password = getattr(args, "password", None) or os.environ.get("ANIMAWORKS_TUI_PASSWORD")
+    password = getattr(args, "password", None) or get_env("ANIMAWORKS_TUI_PASSWORD")
     if password is None:
         try:
             password = _getpass.getpass("Password: ")

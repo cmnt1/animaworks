@@ -24,12 +24,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from core.platform.atomic_io import atomic_write_json
+from core.platform.subprocess_entries import SubprocessEntry
 
 logger = logging.getLogger(__name__)
 
 LeaseLiveness = Literal["live", "dead", "unknown"]
 
-_RUNNER_CMDLINE_MARKERS = ("core.supervisor.runner", "core.supervisor.task_runner")
+_RUNNER_CMDLINE_MARKERS = (SubprocessEntry.SUPERVISOR_RUNNER.value, SubprocessEntry.TASK_RUNNER.value)
 
 
 def processing_lease_path(descriptor_path: Path) -> Path:
@@ -190,7 +191,7 @@ def _pid_exists(pid: int) -> bool | None:
 
 
 def _cmdline_matches_v1(cmdline: str, anima: str) -> bool:
-    return "core.supervisor.runner" in cmdline and anima in cmdline
+    return SubprocessEntry.SUPERVISOR_RUNNER.value in cmdline and anima in cmdline
 
 
 def _cmdline_matches_v2(cmdline: str, anima: str, job_id: str) -> bool:

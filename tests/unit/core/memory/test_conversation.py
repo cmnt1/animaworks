@@ -429,7 +429,7 @@ class TestCompressIfNeeded:
         with (
             patch("core.memory.conversation.compression._call_compression_llm", new_callable=AsyncMock) as mock_llm,
             patch(
-                "core.memory._llm_utils.one_shot_completion_with_model_config", new_callable=AsyncMock
+                "core.llm.oneshot.one_shot_completion_with_model_config", new_callable=AsyncMock
             ) as mock_active,
         ):
             mock_llm.side_effect = RuntimeError("API error")
@@ -450,7 +450,7 @@ class TestCompressIfNeeded:
         with (
             patch("core.memory.conversation.compression._call_compression_llm", new_callable=AsyncMock) as mock_llm,
             patch(
-                "core.memory._llm_utils.one_shot_completion_with_model_config", new_callable=AsyncMock
+                "core.llm.oneshot.one_shot_completion_with_model_config", new_callable=AsyncMock
             ) as mock_active,
         ):
             mock_llm.side_effect = RuntimeError("API error")

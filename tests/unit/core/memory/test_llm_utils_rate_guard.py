@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import core.memory._llm_utils as llm_utils
+import core.llm.oneshot as llm_utils
 from core.config.schemas import LlmRateGuardConfig
 from core.llm.guard.rate_guard import LlmRateGuard
 
@@ -41,25 +41,25 @@ def _make_guard(tmp_path: Path, **cfg) -> LlmRateGuard:
 @pytest.fixture(autouse=True)
 def _no_backoff_sleep():
     """Skip the real backoff sleep so rate-limit retries run instantly."""
-    with patch("core.memory._llm_utils.asyncio.sleep", new=AsyncMock()):
+    with patch("core.llm.oneshot.asyncio.sleep", new=AsyncMock()):
         yield
 
 
 @pytest.fixture(autouse=True)
 def _fixed_mode_s_realm():
     """Pin the Mode-S auth realm to ``max`` so SDK-stage keys are deterministic."""
-    with patch("core.memory._llm_utils._mode_s_realm", return_value="max"):
+    with patch("core.llm.oneshot._mode_s_realm", return_value="max"):
         yield
 
 
 async def test_content_policy_returns_none_without_fallback(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path)
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
         patch(
-            "core.memory._llm_utils._try_litellm", side_effect=_ApiError("violates our usage policies", status_code=400)
+            "core.llm.oneshot._try_litellm", side_effect=_ApiError("violates our usage policies", status_code=400)
         ),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -74,9 +74,9 @@ async def test_api_rate_limit_does_not_block_mode_s_sdk(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path)
     mock_litellm = AsyncMock(side_effect=_ApiError("Too Many Requests", status_code=429))
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -93,9 +93,9 @@ async def test_prior_api_block_skips_litellm_but_runs_max_sdk(tmp_path: Path) ->
     guard.report_block("anthropic:api", 300, "rate_limit")  # a peer already blocked the API realm
     mock_litellm = AsyncMock(return_value="should-not-run")
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -111,9 +111,9 @@ async def test_mode_s_realm_block_skips_agent_sdk(tmp_path: Path) -> None:
     guard.report_block("anthropic:max", 300, "rate_limit")
     mock_litellm = AsyncMock(side_effect=RuntimeError("weird"))  # unknown → fall through to SDK stage
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -129,9 +129,9 @@ async def test_all_realms_guarded_returns_none(tmp_path: Path) -> None:
     guard.report_block("anthropic:max", 300, "rate_limit")
     mock_litellm = AsyncMock(return_value="should-not-run")
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -149,9 +149,9 @@ async def test_large_retry_after_skips_inline_retry(tmp_path: Path) -> None:
         side_effect=_ApiError("Too Many Requests", status_code=429, headers={"retry-after": "300"})
     )
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -165,12 +165,12 @@ async def test_large_retry_after_skips_inline_retry(tmp_path: Path) -> None:
 async def test_auth_error_logs_error_and_falls_back(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     guard = _make_guard(tmp_path)
     with (
-        caplog.at_level(logging.ERROR, logger="core.memory._llm_utils"),
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        caplog.at_level(logging.ERROR, logger="core.llm.oneshot"),
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
         patch(
-            "core.memory._llm_utils._try_litellm", new=AsyncMock(side_effect=_ApiError("unauthorized", status_code=401))
+            "core.llm.oneshot._try_litellm", new=AsyncMock(side_effect=_ApiError("unauthorized", status_code=401))
         ),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -187,9 +187,9 @@ async def test_codex_realm_block_skips_codex_sdk_and_litellm(tmp_path: Path) -> 
     guard.report_block("openai:codex", 300, "rate_limit")  # codex realm blocked
     mock_litellm = AsyncMock(return_value="should-not-run")
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "codex/gpt-5.4-mini"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_codex_sdk", new=AsyncMock(return_value="codex")) as mock_codex,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "codex/gpt-5.4-mini"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_codex_sdk", new=AsyncMock(return_value="codex")) as mock_codex,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="codex/gpt-5.4-mini")
@@ -212,9 +212,9 @@ async def test_litellm_realm_recorded_from_model_prefix(tmp_path: Path, model: s
     guard = _make_guard(tmp_path)
     mock_litellm = AsyncMock(side_effect=_ApiError("Too Many Requests", status_code=429))
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": model}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")),
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": model}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")),
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         await llm_utils.one_shot_completion("hi", model=model)
@@ -226,11 +226,11 @@ async def test_litellm_realm_recorded_from_model_prefix(tmp_path: Path, model: s
 async def test_disabled_guard_does_not_record_block(tmp_path: Path) -> None:
     guard = _make_guard(tmp_path, enabled=False)
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
         patch(
-            "core.memory._llm_utils._try_litellm", new=AsyncMock(side_effect=_ApiError("rate limit", status_code=429))
+            "core.llm.oneshot._try_litellm", new=AsyncMock(side_effect=_ApiError("rate limit", status_code=429))
         ),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")
@@ -245,9 +245,9 @@ async def test_unknown_error_degrades_to_current_fallback(tmp_path: Path) -> Non
     guard = _make_guard(tmp_path)
     mock_litellm = AsyncMock(side_effect=RuntimeError("weird"))
     with (
-        patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
-        patch("core.memory._llm_utils._try_litellm", new=mock_litellm),
-        patch("core.memory._llm_utils._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
+        patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value={"model": "anthropic/claude-sonnet-4-6"}),
+        patch("core.llm.oneshot._try_litellm", new=mock_litellm),
+        patch("core.llm.oneshot._try_agent_sdk", new=AsyncMock(return_value="sdk")) as mock_sdk,
         patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
     ):
         result = await llm_utils.one_shot_completion("hi", model="anthropic/claude-sonnet-4-6")

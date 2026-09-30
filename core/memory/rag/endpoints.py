@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Configured service endpoints used by RAG clients and child processes."""
 
-import os
 import threading
 from dataclasses import dataclass
 
@@ -45,7 +46,7 @@ _lock = threading.Lock()
 
 
 def _env_url(name: str) -> str | None:
-    value = os.environ.get(name, "").strip()
+    value = get_env(name, "").strip()
     return value or None
 
 

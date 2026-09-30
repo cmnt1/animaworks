@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from core.mcp.server import _TOOL_TIMEOUT_OVERRIDES
-from core.tooling.surface import MCP_TOOL_NAMES
+from core.tooling.policy.surface import MCP_TOOL_NAMES
 
 
 def test_timeout_override_keys_are_exposed_tools() -> None:

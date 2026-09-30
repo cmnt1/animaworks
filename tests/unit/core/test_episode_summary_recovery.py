@@ -80,7 +80,7 @@ def test_episode_prompt_is_split_to_exact_utf8_byte_limit() -> None:
 async def test_episode_summary_tries_configured_fallback_after_json_rpc_failure() -> None:
     configs = [ModelConfig(model="primary/model"), ModelConfig(model="fallback/model", credential="secondary")]
     completion = AsyncMock(side_effect=[RuntimeError("JSON-RPC error -32602: payload too large"), "summary output"])
-    with patch("core.memory._llm_utils.one_shot_completion", completion):
+    with patch("core.llm.oneshot.one_shot_completion", completion):
         result, reason = await _complete_episode_prompt("prompt", configs)
 
     assert result == "summary output"
@@ -169,7 +169,7 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
         ),
         patch("core.config.load_config", return_value=config),
         patch(
-            "core.memory._llm_utils.one_shot_completion", new=AsyncMock(return_value="## 09:00 — Summary\n- recovered")
+            "core.llm.oneshot.one_shot_completion", new=AsyncMock(return_value="## 09:00 — Summary\n- recovered")
         ),
     ):
         result = await LifecycleMixin._run_daily_episode_summaries(
@@ -231,7 +231,7 @@ async def test_daily_episode_failure_logs_date_and_reason() -> None:
         patch("core.anima.lifecycle.now_local", return_value=reference),
         patch("core.anima.lifecycle.load_prompt", return_value="small prompt"),
         patch("core.config.load_config", return_value=config),
-        patch("core.memory._llm_utils.one_shot_completion", new=AsyncMock(return_value=None)),
+        patch("core.llm.oneshot.one_shot_completion", new=AsyncMock(return_value=None)),
         patch("core.anima.lifecycle.logger.warning") as warning,
     ):
         result = await LifecycleMixin._run_daily_episode_summaries(

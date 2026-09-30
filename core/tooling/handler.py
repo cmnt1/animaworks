@@ -541,7 +541,7 @@ class ToolHandler(
     def _attach_action_rules(self, name: str, args: dict[str, Any], result: str) -> str:
         """Append any relevant ACTION-RULE bodies to a side-effect tool result."""
         try:
-            from core.tooling.action_gate import (
+            from core.tooling.policy.action_gate import (
                 action_tool_name_for_handler,
                 find_action_rules,
                 format_action_rules,
@@ -733,9 +733,7 @@ class ToolHandler(
         delegates to the tool module's ``dispatch()`` function directly.
         Supports core tools (TOOL_MODULES), common tools, and personal tools.
         """
-        import importlib
-
-        from core.integrations import TOOL_MODULES
+        from core.tooling.policy.registry import TOOL_MODULES, load_tool_module
 
         tool_name = args.get("tool_name", "")
         action = args.get("action", "")
@@ -802,7 +800,7 @@ class ToolHandler(
                         "InvalidArguments",
                         f"Unknown tool module: {tool_name}",
                     )
-                mod = importlib.import_module(TOOL_MODULES[tool_name])
+                mod = load_tool_module(tool_name)
 
             result = ExternalToolDispatcher._call_module(mod, schema_name, dispatch_args)
             return self._attach_action_rules(schema_name, tool_args, result)

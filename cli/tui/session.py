@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from core.platform.atomic_io import atomic_write_json
+from core.platform.env import get_env
 
 MAX_SESSIONS = 50
 
@@ -34,7 +35,7 @@ _HOME_TUI = "~/.animaworks/tui"
 
 def tui_base_dir() -> Path:
     """The TUI data directory (sessions, keybindings, ...)."""
-    env = os.environ.get(_TUI_ENV)
+    env = get_env(_TUI_ENV)
     if env:
         return Path(env)
     return Path(os.path.expanduser(_HOME_TUI))
