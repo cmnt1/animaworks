@@ -124,22 +124,22 @@ Once you submit, move on to the next task immediately. Results are incorporated 
 
 ## Technical details (reference)
 
-### BackgroundTaskManager (`core/tasks/background.py`)
+### BackgroundTaskManager（`core/tasks/background.py`）
 
-- **Role**: Executes long-running tool calls as `asyncio` tasks in the background, and invokes `on_complete` (arbitrary asynchronous callbacks) on completion or failure via `await`. The constructor `mkdir(parents=True)`s `state/background_tasks/`.
-- **Synchronous tools**: `submit(tool_name, tool_args, execute_fn)` → executes `execute_fn(name, args) -> str | None` on a thread pool via `run_in_executor(None, ...)`.
-- **Asynchronous tools**: `submit_async` (same signature, with `execute_fn` being `Awaitable[str]`) → runs on the event loop via `await execute_fn(...)`.
-- **Scheduling**: Wrapped with `asyncio.create_task(..., name=f"bg-{task_id}")`. On completion, removes the relevant entry from `_async_tasks`.
-- **Persistence**: After each change, `_save_task` writes `to_dict()` to `state/background_tasks/{task_id}.json` (`ensure_ascii=False`, `indent=2`). Corrupted JSON is logged as a warning via `_load_task` and then `None`.
-- **Queries**: `get_task` prefers in-memory data, falling back to disk. `list_tasks(status=...)` merges with `*.json` on disk and sorts by `created_at` descending. `active_count` is the count of `RUNNING` items in memory.
-- **`on_complete`**: Even if an exception occurs inside a callback, the task's completion/failure status is maintained, and the failure is only recorded in the log.
-- **Qualified tool names** (`is_eligible`) merge the following **3 layers** (later wins). Keys are used as-is for dictionary lookup (both Mode A schema names `generate_3d_model` and Mode S submission `image_gen:3d` are possible):
-  1. In-code defaults `_DEFAULT_ELIGIBLE_TOOLS` (values are approximate seconds; current keys):
+- **Role**: Runs long-running tool calls as background `asyncio` tasks and, on completion or failure, `on_complete` (an optional asynchronous callback) `await`. The constructor `state/background_tasks/` `mkdir(parents=True)`.
+- **Synchronous tools**: `submit(tool_name, tool_args, execute_fn)` → execute `execute_fn(name, args) -> str | None` in a thread pool using `run_in_executor(None, ...)`.
+- **Asynchronous tools**: `submit_async` (with the same signature, `execute_fn` is `Awaitable[str]`) → `await execute_fn(...)` on the event loop.
+- **Scheduling**: Wrapped in `asyncio.create_task(..., name=f"bg-{task_id}")`. On completion, remove the corresponding entry from `_async_tasks`.
+- **Persistence**: After each change, `_save_task` `to_dict()` to `state/background_tasks/{task_id}.json` (`ensure_ascii=False`, `indent=2`). If the JSON is corrupted, log a warning with `_load_task` and then `None`.
+- **Queries**: `get_task` prioritizes in-memory data, falling back to disk. `list_tasks(status=...)` merges with `*.json` on disk and sorts by `created_at` in descending order. `active_count` is the number of in-memory `RUNNING`.
+- **`on_complete`**: Even if an exception occurs inside a callback, the task’s completion/failure status is preserved; the failure is only recorded in the log.
+- **Qualified tool names** (`is_eligible`) merge the following **3 layers** (later layers take precedence). Keys are used as-is for dictionary lookup (both Mode A schema names `generate_3d_model` and Mode S submission names `image_gen:3d` may be present):
+  1. Code defaults `_DEFAULT_ELIGIBLE_TOOLS` (values are approximate durations in seconds; current keys):
      `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations` (30 each), `local_llm` / `run_command` (60 each)
-  2. Via `BackgroundTaskManager.from_profiles`, extract subcommands of `background_eligible: true` from each module's `EXECUTION_PROFILE` (`core.integrations._base.get_eligible_tools_from_profiles`). Keys are `"{tool_name}:{subcmd}"`, seconds are `expected_seconds` (default 60 if not set)
-  3. `background_task.eligible_tools` in `config.json` — for each key, overwrite `threshold_s` as the number of seconds
-- **Disabling**: Setting `background_task.enabled: false` via `config.json` prevents `BackgroundTaskManager` itself from being created (in that case, the submit queue is still picked up but a warning appears on the execution side).
-- **Cleanup**: `cleanup_old_tasks(max_age_hours=24)` deletes `completed` / `failed` JSON files whose `completed_at` exceeds the caller-specified age, plus files left `running` for **more than 48 hours** (orphans from process crashes, etc.). The return value is the number of deletions. Callers set the completed-task retention with `max_age_hours`; there is no corresponding `config.json` key.
+  2. Via `BackgroundTaskManager.from_profiles`, extract subcommands from `EXECUTION_PROFILE` in each module using `background_eligible: true` (`core.integrations._base.get_eligible_tools_from_profiles`). Keys are `"{tool_name}:{subcmd}"`, and durations are `expected_seconds` (60 if unset)
+  3. `background_task.eligible_tools` in `config.json` — override each key’s duration with `threshold_s`
+- **Disabling**: Setting `background_task.enabled: false` to `config.json` means `BackgroundTaskManager` itself is not created (in that case, the submit queue is still picked up, but the executor will issue a warning).
+- **Cleanup**: `cleanup_old_tasks(max_age_hours=24)` deletes (1) JSON files whose `completed_at` exceeds the specified time in `completed` / `failed`, and (2) files where `running` and `created_at` is more than **48 hours** in the past (orphans left by process crashes, etc.). The return value is the number of deleted files. The caller specifies the retention period using `max_age_hours`; there is no corresponding `config.json` configuration key.
 
 ### Other APIs in the same file: `rotate_dm_logs`
 

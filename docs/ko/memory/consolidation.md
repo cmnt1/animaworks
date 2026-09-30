@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/memory/consolidation.md -->
-<!-- i18n: source-sha256=a37f02007d7805fe953c270b8af001c64b43c90d4e8873ce436a204a197977f9 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=a37f02007d7805fe953c270b8af001c64b43c90d4e8873ce436a204a197977f9 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: 193a5e72
 

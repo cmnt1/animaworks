@@ -40,15 +40,15 @@ At every startup, `common_skills` and `common_knowledge` are incrementally synch
 
 ## Overall Structure of config.json
 
-The AnimaWorks integrated configuration file is placed in `~/.animaworks/config.json`.
-All settings are defined in the `AnimaWorksConfig` model and have the following top-level fields.
+AnimaWorks’ integrated configuration file is located at `~/.animaworks/config.json`.
+All configuration is defined using the `AnimaWorksConfig` model, which has the following top-level fields.
 
 ```json
 {
   "version": 1,
   "setup_complete": true,
   "locale": "ja",
-  "system": { "mode": "server", "log_level": "INFO" },
+  "system": { "mode": "server" },
   "credentials": {
     "anthropic": { "api_key": "sk-ant-..." },
     "openai": { "api_key": "sk-..." }
@@ -61,26 +61,26 @@ All settings are defined in the `AnimaWorksConfig` model and have the following 
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "profile": "compact" },
+  "priming": { "max_tokens": 2000 },
   "image_gen": {}
 }
 ```
 
-**Note**: The `animas` section holds only the organization layout (`supervisor`, `speciality`). Model settings such as model name and credentials are recorded in each Anima's `status.json` (see "Anima Configuration Resolution" below).
+**Note**: The `animas` section contains only the organization layout (`supervisor`, `speciality`). Model settings such as model names and credentials are recorded in each Anima’s `status.json` (see “Resolving Anima Settings” below).
 
-Role of each section:
+Roles of each section:
 
 | Section | Description |
 |-----------|------|
 | `version` | Configuration schema version (currently `1`) |
 | `setup_complete` | Initial setup completion flag |
 | `locale` | UI language (`"ja"` / `"en"`) |
-| `system` | Server mode and log level |
-| `credentials` | API keys and endpoints (named) |
-| `model_modes` | Model name → execution mode override map |
-| `anima_defaults` | Default settings common to all Anima |
+| `system` | Server mode and time zone |
+| `credentials` | Named API keys and endpoints |
+| `model_modes` | Override map from model names to execution modes |
+| `anima_defaults` | Default settings shared by all Anima |
 | `animas` | Anima organization layout (supervisor, speciality). Model settings are in status.json |
-| `consolidation` | Consolidation (daily/weekly) settings |
+| `consolidation` | Daily/weekly consolidation settings |
 | `rag` | RAG (embedding vector search) settings |
 | `priming` | Priming (automatic memory retrieval) token budget |
 | `image_gen` | Image generation style settings |
@@ -135,30 +135,30 @@ Role of each section:
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig top level
+#### AnimaWorksConfig Top Level
 
 | Section | Description |
 |-----------|------|
 | `version` | Configuration file version |
 | `setup_complete` | Setup completion flag |
-| `locale` | Locale configuration |
-| `system` | System configuration (mode, log level) |
-| `credentials` | API authentication information |
-| `model_modes` | Model name to execution mode mapping |
+| `locale` | Locale settings |
+| `system` | System settings (mode, log level) |
+| `credentials` | API authentication credentials |
+| `model_modes` | Model name-to-execution mode mapping |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
-| `anima_defaults` | Anima configuration default values |
-| `animas` | Per-anima configuration overrides |
-| `consolidation` | Consolidation configuration |
+| `anima_defaults` | Anima configuration defaults |
+| `animas` | Per-Anima configuration overrides |
+| `consolidation` | Consolidation settings |
 | `background_review` |  |
-| `rag` | RAG (search-augmented generation) configuration |
+| `rag` | RAG (retrieval-augmented generation) settings |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | Priming (automatic memory recall) configuration |
-| `image_gen` | Image generation configuration |
+| `priming` | Priming (automatic memory recall) settings |
+| `image_gen` | Image generation settings |
 | `human_notification` |  |
 | `interaction` |  |
 | `server` |  |

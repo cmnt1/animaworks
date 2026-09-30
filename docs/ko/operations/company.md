@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/operations/company.md -->
-<!-- i18n: source-sha256=eef72adf793e641fbc9faf0bde9b9e5891bbced2bf077b33fbf3241b6cfa3c10 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=2327b7793a54d6271a2504245e4bb7059a9dd22cee520d3789b3fb4b120e5ece generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: 581e20f1
 
@@ -34,9 +34,9 @@ animaworks company assign sample-anima --unassign
 
 기존 자산을 회사 영역으로 옮길 경우 `animaworks company adopt <path> --to <company>`을 사용한다. 이동 전에 백업이 생성되며, 기본적으로 이전 위치에 상대 링크가 남는다. dry-run이 가능한 `split`은 manifest에서 회사 생성·소속 변경·자산 이동을 한꺼번에 계획하고, `--execute`를 붙인 경우에만 적용한다. `export`은 회사 이전용 bundle을 생성한다. 이동·분할·export는 범위를 확인한 후 실행하고, 완료 후에는 백업과 출력 내용을 대조한다.
 
-## 채널의 회사 귀속
+## 채널의 회사 소속
 
-open channel의 회사 스코프는 채널 metadata의 `company` 필드로 관리한다. 외부 메시징에서 생성하는 board에는 연동별 `default_channel_company` 설정을 사용할 수 있다. 기존 채널을 변경할 때는 대상 채널의 회사와 멤버를 확인한다. 설정의 전체 항목은 [설정 참조](../reference/config.md)를 참조한다.
+open channel의 회사 범위는 채널 메타데이터의 `company`에서 관리한다. 외부 메시징에서 생성하는 board에는 연동별 `default_channel_company`을 지정할 수 있다. 기존 채널을 변경하는 경우 대상 채널의 회사와 멤버를 확인한다. 설정의 모든 항목은 [설정 참조](../reference/config.md)를 참조한다.
 
 ## GitHub 계정 할당
 

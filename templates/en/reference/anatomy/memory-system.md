@@ -148,15 +148,15 @@ create_skill(skill_name="deploy-procedure", description="本番デプロイ手�
 
 ## Automatic Memory Processes
 
-Compact automatic recall includes sender information, incomplete tasks, explicitly stated resident pointers, recent send history, and human-facing unread notifications. It searches relevant knowledge for conversation and task requests or questions, and retrieves recent activity and episodes within shared limits for heartbeat, cron, and inbox triggers. `priming.max_tokens` defaults to 2,000, with notifications and mandatory resident rules held separately.
+Automatic recall during compact includes sender information, incomplete tasks, explicitly designated persistent pointers, recent send history, and items awaiting notification to a human. For conversation or task requests and questions, it searches for relevant knowledge; for heartbeat, cron, and inbox, it also retrieves recent activity and episodes within the shared configuration limit. Broad graph expansion is not automatically injected; use explicit search when needed. `priming.max_tokens` defaults to 2,000, while notifications and mandatory persistent rules are maintained separately.
 
-Search when past instructions, customer information, or ongoing work is needed. There is no need to search ritualistically for every response or report success after each use. Skill and procedure bodies are read when needed. Only explicitly stated memories are auto-resident; `[IMPORTANT]` alone does not designate residency.
+Search when past instructions, customer information, or ongoing work are needed. There is no need to search ritualistically for every response or report success every time you use it. Read the body of a skill or procedure when needed. Only explicitly designated memories are automatically persistent; `[IMPORTANT]` alone does not designate something as persistent.
 
-For actions with side effects, `[ACTION-RULE]`, permissions, approvals, and duplicate execution prevention continue to apply. If shutdown has occurred, read the specified rules. Untrusted search results are separated from trusted context.
+`[ACTION-RULE]`, permissions, approvals, and duplicate-execution prevention continue to apply to actions with side effects. If stopped, read the specified rules. Untrusted search results are kept separate from trusted context.
 
-Daily consolidation only generates episodes and does not rewrite knowledge (except for project archive consolidation). Activity source records and memory originals are retained. Weekly and monthly changes, distillation, deactivation, self-correction, automatic skill learning, and automatic fact generation are also disabled by default. Indexing, repair, and reading of existing facts are maintained. Optional maintenance preserves customer-specific details, sources, and safety rules. Skipping or making no changes is normal and is not a reason for retry.
+Daily consolidation only generates episodes and does not rewrite knowledge (except for consolidating project archives). Original activity records and memory sources are retained. Weekly/monthly changes, distillation, low-activation, self-correction, automatic skill learning, and automatic generation of facts are also disabled by default. Indexing, repair, and reading existing facts remain enabled. Optional maintenance also preserves customer-specific details, sources, and safety rules. Skipping or making no changes is normal and is not a reason to retry.
 
-Curator promotion and retirement are proposals only by default. Safety blocks can be isolated immediately, and operator manual operations are also possible. Usage result counts are diagnostic material and do not prove work quality.
+Curator promotion and retirement are suggestions only by default. Safety blocks can be quarantined immediately, and operators can also take explicit action. The number of usage results is diagnostic information and does not prove the quality of the work.
 
 ---
 
@@ -185,17 +185,18 @@ Curator promotion and retirement are proposals only by default. Safety blocks ca
 
 ## How RAG (Vector Search) Works
 
-RAG (Retrieval-Augmented Generation) is used for memory search:
+RAG (Retrieval-Augmented Generation) is used to search memory:
 
-1. **Indexing**: `knowledge/`, `episodes/`, `procedures/`, and shared `common_knowledge/` are chunked and stored in a vector store (default: Chroma, in a per-Anima persistent directory) via embeddings. File hashes are kept in `index_meta.json`, and **only changed files** are updated incrementally.
-2. **Separate conversation summary collection**: Reads **`compressed_summary`** from `state/conversation.json`, chunks by **`### `** headings, and places them in a **dedicated collection** (`memory_type: conversation_summary` / metadata `source: conversation_gist`). This is separate from the normal knowledge index, allowing compressed notes from long chats to be included in search results.
-3. **`.ragignore`**: Writing glob-style patterns in `.ragignore` directly under the data directory (`~/.animaworks/`) excludes matching paths from indexing (comment lines `#` allowed).
-4. **Embedding model**: `rag.embedding_model` in `config.json` (default when unset: `intfloat/multilingual-e5-small`). The vector DB (ChromaDB) is owned by each Anima's root process; other processes deliver to root via the server's internal API (`/api/internal/vector`). Embedding and reranking are computed in one place on the server.
-5. **Search**: Dense vector search and BM25 keyword search run together, their rankings are merged with RRF, and a cross-encoder reranks the top candidates. The lower bound for results can be set via `rag.min_retrieval_score` in `config.json`. The same lower bound is applied for Priming and tool-based searches.
-6. **Incremental updates and rebuilds**: In addition to re-indexing on file changes, **index rebuilds** run after daily, weekly, and monthly lifecycles to maintain consistency. If RAG inconsistency is detected, repair can isolate `vectordb` and rebuild.
+1. **Indexing**: `knowledge/`, `episodes/`, `procedures/`, shared `common_knowledge/`, and others are chunked and stored via embedding in a vector store (Chroma by default, in a persistent directory for each Anima). File hashes are stored in `index_meta.json`, and **only changed files** are updated via diff.
+2. **Separate collection for conversation summaries**: Read `state/conversation.json`’s **`compressed_summary`**, chunk by `### ` heading, and load into a **dedicated collection** (`memory_type: conversation_summary` / metadata `source: conversation_gist`). Separate from the regular knowledge index, it allows compressed notes from long-term chats to be included in search.
+3. **`.ragignore`**: Write glob-like patterns in `~/.animaworks/`, directly under the data directory (`.ragignore`), and matching paths will be excluded from indexing (comment lines `#` are allowed).
+4. **Embedding Model**: `config.json`’s `rag.embedding_model` (`intfloat/multilingual-e5-small` if unset). The vector DB (ChromaDB) is owned by each Anima’s root process; other processes deliver requests to root via the server’s internal API (`/api/internal/vector`). Embedding and reranking are computed in one place on the server.
+5. **Search**: Vector search and BM25 keyword search run in parallel, their rankings are combined using RRF, and the top candidates are reranked by a cross-encoder. The `rag.min_retrieval_score` in `config.json` can set a lower bound for results. The same lower bound is resolved for searches via Priming or tools.
 
-RAG is used automatically when `search_memory` is called. You do not need to be aware of the mechanism, but
-**tips for improving search accuracy**:
-- Use queries with specific keywords
-- When writing memories, make titles and content clear (file names affect keyword priority in Priming)
-- Group related information into the same file
+6. **Incremental Updates and Rebuilding**: In addition to re-indexing in response to file changes, **index rebuilding** runs after daily/weekly/monthly lifecycles to ensure consistency. If RAG inconsistencies are detected, repair can quarantine `vectordb` and rebuild.
+
+RAG is used automatically when `search_memory` is called. There is no need to think about how it works, but  
+**Tips for improving search accuracy**:
+- Use queries that include specific keywords
+- When writing memories, make the title and content clear (the filename affects keyword priority in Priming)
+- Keep related information together in the same file

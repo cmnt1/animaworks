@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=6d159be9b1cb266211d34e4ad5933a40ed1afe326c89fb302b903881b3ba8763 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=f369c6dcfdbdd7a840b46018630e53fc3baa21ce283a14b755228f872d1c5211 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # API 참조
 
@@ -163,18 +163,18 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/memory_routes.py`
 
-| DELETE | `/api/animas/{name}/conversation` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 대화 기록을 지우고 새로 시작합니다. | `server/routes/memory_routes.py:clear_conversation` |
-| GET | `/api/animas/{name}/conversation` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 대화 상태를 확인합니다. | `server/routes/memory_routes.py:get_conversation` |
-| POST | `/api/animas/{name}/conversation/compress` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 대화 압축을 수동으로 실행합니다. | `server/routes/memory_routes.py:compress_conversation` |
-| GET | `/api/animas/{name}/episodes` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_episodes` |
-| GET | `/api/animas/{name}/episodes/calendar` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 한 달 동안 매일의 가벼운 에피소드 가용성을 반환합니다. | `server/routes/memory_routes.py:episode_calendar` |
-| GET | `/api/animas/{name}/episodes/{date}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_episode` |
-| GET | `/api/animas/{name}/knowledge` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_knowledge` |
-| GET | `/api/animas/{name}/knowledge/{topic}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_knowledge` |
-| GET | `/api/animas/{name}/memory/graph` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 캐시된 메모리 그래프 또는 명시적 링크 전용 대체값을 반환합니다. | `server/routes/memory_routes.py:memory_graph` |
-| GET | `/api/animas/{name}/memory/stats` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 애니마의 메모리 저장 통계를 반환합니다. | `server/routes/memory_routes.py:memory_stats` |
-| GET | `/api/animas/{name}/procedures` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_procedures` |
-| GET | `/api/animas/{name}/procedures/{proc}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_procedure` |
+| DELETE | `/api/animas/{name}/conversation` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Clear conversation history for a fresh start. | `server/routes/memory_routes.py:clear_conversation` |
+| GET | `/api/animas/{name}/conversation` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | View current conversation state. | `server/routes/memory_routes.py:get_conversation` |
+| POST | `/api/animas/{name}/conversation/compress` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Manually trigger conversation compression. | `server/routes/memory_routes.py:compress_conversation` |
+| GET | `/api/animas/{name}/episodes` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_episodes` |
+| GET | `/api/animas/{name}/episodes/calendar` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return lightweight episode availability for every day in a month. | `server/routes/memory_routes.py:episode_calendar` |
+| GET | `/api/animas/{name}/episodes/{date}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_episode` |
+| GET | `/api/animas/{name}/knowledge` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_knowledge` |
+| GET | `/api/animas/{name}/knowledge/{topic}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_knowledge` |
+| GET | `/api/animas/{name}/memory/graph` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
+| GET | `/api/animas/{name}/memory/stats` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
+| GET | `/api/animas/{name}/procedures` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:list_procedures` |
+| GET | `/api/animas/{name}/procedures/{proc}` | 세션 필수(local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/memory_routes.py:get_procedure` |
 
 ## `server/routes/room.py`
 

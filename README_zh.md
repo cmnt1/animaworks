@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=ebdfb709d98a0ad5490cf073d9c3e29774738eb4a952fb786529414e2ca765c1 generated=2026-09-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5873b79def93ec69c755cedad7be34c37d29039ff2a295189885ef596de8ef3e generated=2026-09-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -449,17 +449,17 @@ CLI 面向高级用户和自动化场景。日常操作使用 Web UI 即可。
 | `animaworks reset [--restart]` | 重置运行时目录 |
 | `animaworks import hermes\|openclaw --path P [--apply]` | 从其他框架迁移智能体 |
 
-### Anima 管理
+### Anima管理
 
 | 命令 | 说明 |
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 新建 |
-| `animaworks anima list / info / status / restart / disable / enable` | 确认与控制 |
+| `animaworks anima list / info / status / restart / disable / enable` | 查看・控制 |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | 按 Anima 配置 |
 | `animaworks anima reload [--all]` | 从 status.json 热重载 |
 | `animaworks anima delete / rename` | 生命周期操作 |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | 独立的 anima 合并脚本（不属于核心 CLI） |
-| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 完成合并后的最终处理 |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 集成脚本（不属于 CLI 本体的维护范围） |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 集成完成后的最终处理 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 诊断 |
 
 ### 沟通

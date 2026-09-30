@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=ebdfb709d98a0ad5490cf073d9c3e29774738eb4a952fb786529414e2ca765c1 generated=2026-09-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5873b79def93ec69c755cedad7be34c37d29039ff2a295189885ef596de8ef3e generated=2026-09-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -451,15 +451,15 @@ CLI는 파워 유저와 자동화를 위한 것입니다. 일상적인 조작은
 
 ### Anima 관리
 
-| 명령 | 설명 |
+| 명령어 | 설명 |
 |---|---|
-| `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 신규 생성 |
+| `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 새로 만들기 |
 | `animaworks anima list / info / status / restart / disable / enable` | 확인·제어 |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima 단위 설정 |
 | `animaworks anima reload [--all]` | status.json에서 핫 리로드 |
-| `animaworks anima delete / rename` | 라이프사이클 조작 |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | 독립 anima 병합 스크립트 (핵심 CLI 유지보수 대상 아님) |
-| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 완료된 병합 최종 처리 |
+| `animaworks anima delete / rename` | 라이프사이클 작업 |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 통합 스크립트(CLI 본체의 유지보수 대상 아님) |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 통합 완료 후 확정 처리 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 진단 |
 
 ### 커뮤니케이션

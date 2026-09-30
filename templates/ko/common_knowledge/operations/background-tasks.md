@@ -137,22 +137,22 @@ submit하면 즉시 다음 작업으로 넘어갈 것.
 
 ## 기술적 구조(참고)
 
-### BackgroundTaskManager(`core/tasks/background.py`)
+### BackgroundTaskManager（`core/tasks/background.py`）
 
-- **역할**: 장시간 도구 호출을 `asyncio` 작업으로 백그라운드 실행하고, 완료·실패 시 `on_complete`(임의의 비동기 콜백)을 `await`한다. 생성자에서 `state/background_tasks/`을 `mkdir(parents=True)`한다.
-- **동기 도구**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None`을 `run_in_executor(None, ...)`로 스레드 풀 실행.
-- **비동기 도구**: `submit_async`(동일 시그니처로 `execute_fn`이 `Awaitable[str]`) → 이벤트 루프에서 `await execute_fn(...)`.
-- **스케줄링**: `asyncio.create_task(..., name=f"bg-{task_id}")`으로 래핑. 완료 시 `_async_tasks`에서 해당 항목을 제거.
-- **영속화**: 각 변경 후 `_save_task`로 `state/background_tasks/{task_id}.json`에 `to_dict()`(`ensure_ascii=False`, `indent=2`). 손상된 JSON은 `_load_task`으로 경고 로그 후 `None`.
-- **조회**: `get_task`는 인메모리 우선, 없으면 디스크. `list_tasks(status=...)`은 디스크의 `*.json`과 병합하고, `created_at` 내림차순. `active_count`은 인메모리의 `RUNNING` 개수.
-- **`on_complete`**: 콜백 내에서 예외가 발생해도 작업의 완료/실패 상태는 유지되며, 실패는 로그에 기록될 뿐.
-- **자격 있는 도구 이름**(`is_eligible`)은 다음 **3계층**을 병합(나중 것이 우선). 키는 그대로 사전 조회(Mode A의 스키마 이름 `generate_3d_model`과 Mode S 제출용 `image_gen:3d`의 **둘 다** 가능):
-  1. 코드 내 기본값 `_DEFAULT_ELIGIBLE_TOOLS`(값은 기준 초. 현재 키):
+- **역할**: 장시간 도구 호출을 `asyncio` 작업으로 백그라운드에서 실행하고, 완료·실패 시 `on_complete`(임의의 비동기 콜백)을 `await` 한다. 생성자에서 `state/background_tasks/` 를 `mkdir(parents=True)` 한다.
+- **동기 도구**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None` 를 `run_in_executor(None, ...)` 로 스레드 풀에서 실행한다.
+- **비동기 도구**: `submit_async`(동일한 시그니처로 `execute_fn` 가 `Awaitable[str]`) → 이벤트 루프에서 `await execute_fn(...)`.
+- **스케줄링**: `asyncio.create_task(..., name=f"bg-{task_id}")` 로 감싼다. 완료 시 `_async_tasks` 에서 해당 항목을 제거한다.
+- **영속화**: 변경 후마다 `_save_task` 로 `state/background_tasks/{task_id}.json` 에 `to_dict()` 한다(`ensure_ascii=False`, `indent=2`). 손상된 JSON은 `_load_task` 에서 경고 로그를 남긴 뒤 `None`.
+- **조회**: `get_task` 는 메모리 내 데이터를 우선하며, 없으면 디스크를 조회한다. `list_tasks(status=...)` 는 디스크의 `*.json` 와 병합한 뒤 `created_at` 내림차순으로 정렬한다. `active_count` 은 메모리에 있는 `RUNNING` 의 개수다.
+- **`on_complete`**: 콜백 안에서 예외가 발생해도 작업의 완료/실패 상태는 유지되며, 실패는 로그에만 기록된다.
+- **자격이 있는 도구 이름**(`is_eligible`)은 다음 **3개 계층**을 병합한다(뒤에 오는 값이 우선). 키는 그대로 딕셔너리에서 조회한다(Mode A의 스키마 이름 `generate_3d_model` 과 Mode S 제출용 `image_gen:3d` 이 **모두** 있을 수 있음):
+  1. 코드 내 기본값 `_DEFAULT_ELIGIBLE_TOOLS`(값은 대략적인 초 단위 시간. 현재 키):
      `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations`(각 30), `local_llm` / `run_command`(각 60)
-  2. `BackgroundTaskManager.from_profiles`을 통해 각 모듈의 `EXECUTION_PROFILE`에서 `background_eligible: true`의 하위 명령을 추출(`core.integrations._base.get_eligible_tools_from_profiles`). 키는 `"{tool_name}:{subcmd}"`, 초는 `expected_seconds`(미설정 시 60)
-  3. `config.json`의 `background_task.eligible_tools` — 각 키에 대해 `threshold_s`을 초로 덮어쓰기
-- **비활성화**: `config.json`로 `background_task.enabled: false`으로 하면 `BackgroundTaskManager` 자체가 생성되지 않음(그 경우, submit 큐는 가져와도 실행 측에서 경고가 됨).
-- **정리**: `cleanup_old_tasks(max_age_hours=24)`는 호출 측이 지정한 시간보다 오래된 `completed` / `failed` JSON과, `running` 상태로 **48시간 초과** 지난 파일(프로세스 크래시 등의 고아)을 삭제한다. 반환 값은 삭제 개수다. 완료 작업의 보존 시간은 호출 측이 `max_age_hours`로 지정하며, 대응하는 `config.json` 키는 없다.
+  2. `BackgroundTaskManager.from_profiles` 를 통해 각 모듈의 `EXECUTION_PROFILE` 에서 `background_eligible: true` 의 하위 명령을 추출한다(`core.integrations._base.get_eligible_tools_from_profiles`). 키는 `"{tool_name}:{subcmd}"`, 초 단위 시간은 `expected_seconds`(설정되지 않은 경우 60)
+  3. `config.json` 의 `background_task.eligible_tools` — 각 키에 대해 `threshold_s` 를 초 단위 시간으로 덮어쓴다.
+- **비활성화**: `config.json` 를 `background_task.enabled: false` 로 설정하면 `BackgroundTaskManager` 자체가 생성되지 않는다(이 경우 제출 큐는 가져오더라도 실행 측에서 경고가 발생한다).
+- **정리**: `cleanup_old_tasks(max_age_hours=24)` 는 (1) `completed` / `failed` 에서 `completed_at` 가 지정된 시간을 초과한 JSON 파일, (2) `running` 상태인 채 `created_at` 가 **48시간 넘게** 지난 파일(프로세스 충돌 등으로 남은 고아 파일)을 삭제한다. 반환값은 삭제 건수다. 보존 기간은 호출 측에서 `max_age_hours` 로 지정하며, 이에 대응하는 `config.json` 설정 키는 없다.
 
 ### 같은 파일 내 기타 API: `rotate_dm_logs`
 

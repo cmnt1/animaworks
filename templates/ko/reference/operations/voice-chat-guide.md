@@ -48,9 +48,9 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 
 ## 설정
 
-### 글로벌 설정 (config.json의 `voice` 섹션)
+### 글로벌 설정(config.json의 `voice` 섹션)
 
-전체 Anima 공통의 기본 설정입니다:
+모든 Anima에 공통으로 적용되는 기본 설정:
 
 ```json
 {
@@ -69,13 +69,13 @@ TTS는 외부 서비스로 별도 기동이 필요합니다:
 ```
 
 | 필드 | 기본값 | 설명 |
-|------|--------|------|
-| `stt_model` | `large-v3-turbo` | Whisper 모델 이름. 선택지: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo` |
-| `stt_device` | `auto` | `auto` (GPU 우선) / `cpu` / `cuda` |
+|-----------|-----------|------|
+| `stt_model` | `large-v3-turbo` | Whisper 모델 이름. 선택 항목: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo` |
+| `stt_device` | `auto` | `auto`(GPU 우선) / `cpu` / `cuda` |
 | `stt_compute_type` | `default` | CTranslate2 양자화 유형: `default`, `int8`, `float16` |
-| `stt_language` | `null` | 언어 코드 (`ja`, `en` 등). `null`이면 자동 감지 |
-| `stt_refine_enabled` | `false` | STT 결과의 LLM 후처리 (활성화 시 레이턴시 1-3초 추가) |
-| `default_tts_provider` | `voicevox` | 기본 TTS 프로바이더: `voicevox` / `style_bert_vits2` / `elevenlabs` |
+| `stt_language` | `null` | 언어 코드(`ja`, `en` 등). `null`에서 자동 감지 |
+| `stt_refine_enabled` | `false` | STT 결과의 LLM 후처리(활성화하면 지연 시간 1~3초 추가) |
+| `default_tts_provider` | `voicevox` | 기본 TTS 제공자: `voicevox` / `style_bert_vits2` / `elevenlabs` |
 
 ### Per-Anima 음성 설정 (status.json의 `voice` 섹션)
 

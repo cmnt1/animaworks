@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/prompt.md -->
-<!-- i18n: source-sha256=87c388a389b02d102bc322504f639598ced27b0c348ed22fafb70fde9f3e49a6 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=87c388a389b02d102bc322504f639598ced27b0c348ed22fafb70fde9f3e49a6 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 

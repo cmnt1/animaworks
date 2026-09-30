@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=ebdfb709d98a0ad5490cf073d9c3e29774738eb4a952fb786529414e2ca765c1 generated=2026-09-28 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
+<!-- i18n: source-sha256=5873b79def93ec69c755cedad7be34c37d29039ff2a295189885ef596de8ef3e generated=2026-09-30 engine=luna model=gpt-6-luna-2026-09-22 translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -449,17 +449,17 @@ The CLI is for power users and automation. For daily operations, the Web UI is s
 | `animaworks reset [--restart]` | Reset runtime directory |
 | `animaworks import hermes\|openclaw --path P [--apply]` | Migrate agents from other frameworks |
 
-### Anima management
+### Anima Management
 
 | Command | Description |
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | Create new |
 | `animaworks anima list / info / status / restart / disable / enable` | Inspect and control |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Per-Anima configuration |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima-specific configuration |
 | `animaworks anima reload [--all]` | Hot reload from status.json |
 | `animaworks anima delete / rename` | Lifecycle operations |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | Standalone anima merge script |
-| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | Finalize a completed merge |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | Anima integration script (not maintained as part of the CLI itself) |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | Finalization after integration completion |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | Diagnostics |
 
 ### Communication

@@ -90,16 +90,16 @@ Limits applied within a single session (heartbeat, conversation, task execution,
 
 ## Conversation Depth Limit (Two-Party DM)
 
-When a two-party exchange exceeds `max_depth` within `depth_window_s`, `Messenger.send` addressed to an **internal Anima** is blocked (`check_depth`. See the `dm_sent`/`dm_received` in activity_log and its alias, `message_sent`/`message_received`).
+When a two-party exchange exceeds `max_depth` within `depth_window_s`, `Messenger.send` addressed to the **internal Anima** are blocked (`check_depth`; see `dm_sent`/`dm_received` in activity_log and its alias, `message_sent`/`message_received`).
 
 | Configuration | Default value | Configuration key | Description |
 |------|-------------|----------|------|
 | Depth window | 600 seconds (10 minutes) | `heartbeat.depth_window_s` | Sliding window |
-| Maximum depth | 6 turns | `heartbeat.max_depth` | 6 turns = 3 round trips expected. Sends are blocked if exceeded |
+| Maximum depth | 6 turns | `heartbeat.max_depth` | 6 turns = 3 round trips assumed. Sending is blocked if exceeded |
 
-The displayed message is `messenger.depth_exceeded` in `core/i18n`; its turn count and time window are interpolated from `heartbeat.max_depth` and `heartbeat.depth_window_s`.
+The displayed text is `messenger.depth_exceeded` in `core/i18n`, and the turn count and time follow the configuration values of `heartbeat.max_depth` / `heartbeat.depth_window_s`.
 
-If reading the log fails, the depth check is **fail-closed** (sending is blocked).
+If reading the log fails, the depth check is **fail-closed** (sending is not allowed).
 
 ## Message-Triggered Heartbeat Suppression (Inbox)
 

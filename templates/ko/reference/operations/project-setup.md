@@ -38,9 +38,9 @@ AnimaWorks의 설정 구조와 Anima 추가 절차에 대한 참조.
 
 시작할 때마다 `common_skills`와 `common_knowledge`은 템플릿에서 증분 동기화되며, 새 항목만 추가된다(기존 파일은 유지).
 
-## config.json의 전체 구조
+## config.json 전체 구조
 
-AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
+AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 모든 설정은 `AnimaWorksConfig` 모델로 정의되며, 다음 최상위 필드를 가진다.
 
 ```json
@@ -48,7 +48,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
   "version": 1,
   "setup_complete": true,
   "locale": "ja",
-  "system": { "mode": "server", "log_level": "INFO" },
+  "system": { "mode": "server" },
   "credentials": {
     "anthropic": { "api_key": "sk-ant-..." },
     "openai": { "api_key": "sk-..." }
@@ -61,12 +61,12 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "profile": "compact" },
+  "priming": { "max_tokens": 2000 },
   "image_gen": {}
 }
 ```
 
-**주의**: `animas` 섹션은 조직 레이아웃(`supervisor`, `speciality`)만 보유한다. 모델명·credential 등의 모델 설정은 각 Anima의 `status.json`에 기록된다(후술의 「Anima 설정의 해결」 참조).
+**주의**: `animas` 섹션에는 조직 레이아웃(`supervisor`, `speciality`)만 저장된다. 모델명, 자격 증명 등의 모델 설정은 각 Anima의 `status.json`에 기록된다(아래의 「Anima 설정 확인」 참조).
 
 각 섹션의 역할:
 
@@ -75,15 +75,15 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `version` | 설정 스키마 버전(현재 `1`) |
 | `setup_complete` | 최초 설정 완료 플래그 |
 | `locale` | UI 언어(`"ja"` / `"en"`) |
-| `system` | 서버 모드·로그 레벨 |
+| `system` | 서버 모드·시간대 |
 | `credentials` | API 키·엔드포인트(이름 지정) |
-| `model_modes` | 모델명→실행 모드의 덮어쓰기 맵 |
-| `anima_defaults` | 모든 Anima 공통의 기본 설정 |
-| `animas` | Anima의 조직 레이아웃(supervisor, speciality). 모델 설정은 status.json |
+| `model_modes` | 모델명→실행 모드 재정의 맵 |
+| `anima_defaults` | 모든 Anima에 공통으로 적용되는 기본 설정 |
+| `animas` | Anima의 조직 레이아웃(supervisor, 전문 분야). 모델 설정은 status.json |
 | `consolidation` | 기억 통합(일간/주간) 설정 |
 | `rag` | RAG(임베딩 벡터 검색) 설정 |
-| `priming` | 프라이밍(자동 기억 획득)의 토큰 예산 |
-| `image_gen` | 이미지 생성의 스타일 설정 |
+| `priming` | 프라이밍(자동 기억 검색) 토큰 예산 |
+| `image_gen` | 이미지 생성 스타일 설정 |
 
 <!-- AUTO-GENERATED:START config_fields -->
 ### 설정 항목 참조(자동 생성)
@@ -135,29 +135,29 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `heartbeat_enabled` | `bool` | `True` |  |
 | `token_budget_monthly` | `int | None` | None |  |
 
-#### AnimaWorksConfig 최상위 레벨
+#### AnimaWorksConfig 최상위 항목
 
 | 섹션 | 설명 |
 |-----------|------|
 | `version` | 설정 파일 버전 |
 | `setup_complete` | 설정 완료 플래그 |
 | `locale` | 로케일 설정 |
-| `system` | 시스템 설정 (모드, 로그 레벨) |
+| `system` | 시스템 설정(모드, 로그 수준) |
 | `credentials` | API 인증 정보 |
-| `model_modes` | 모델 이름 → 실행 모드 매핑 |
+| `model_modes` | 모델명→실행 모드 매핑 |
 | `model_context_windows` |  |
 | `model_max_tokens` |  |
 | `anima_defaults` | Anima 설정 기본값 |
 | `animas` | Anima별 설정 재정의 |
 | `consolidation` | 기억 통합 설정 |
 | `background_review` |  |
-| `rag` | RAG (검색 확장 생성) 설정 |
+| `rag` | RAG(검색 증강 생성) 설정 |
 | `gpu` |  |
 | `memory` |  |
 | `skills` |  |
 | `chatwork_tool` |  |
 | `prompt` |  |
-| `priming` | 프라이밍 (자동 기억 회상) 설정 |
+| `priming` | 프라이밍(자동 기억 회상) 설정 |
 | `image_gen` | 이미지 생성 설정 |
 | `human_notification` |  |
 | `interaction` |  |

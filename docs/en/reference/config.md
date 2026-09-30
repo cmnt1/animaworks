@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=5d34f82b44e18d77e54f60048602e456b6eda90bb6be0f3b87ccedb51d3464e3 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=d8fc475eeb91191b55188b30bc7b258c137e537b9a0a0d9e2ec440e5da0b1c43 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Configuration Reference
 
@@ -12,9 +12,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `version` | `int` | `1` | Configuration file format version. |
 | `setup_complete` | `bool` | `false` | Whether initial setup has been completed. |
 | `locale` | `str` | `"ja"` | Default language used across the system. |
-| `system` | `SystemConfig` | `{SystemConfig}` | Settings for the runtime environment, timezone, and basic behavior. |
+| `system` | `SystemConfig` | `{SystemConfig}` | Settings for runtime environment, timezone, and basic behavior. |
 | `system.mode` | `str` | `"server"` | — |
-| `system.log_level` | `str` | `"INFO"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
 | `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | Authentication information for external models and services. |
 | `credentials.type` | `str` | `"api_key"` | — |
@@ -52,7 +51,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.max_recipients_per_run` | `int \| None` | `null` | — |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. If false, only disables periodic heartbeats. Message-triggered heartbeats and cron are unaffected. |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. Set false to disable only the periodic heartbeat. Message-triggered heartbeats and cron are unaffected. |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
 | `animas` | `dict[str, AnimaModelConfig]` | `{}` | Per-anima model configuration overrides. |
 | `animas.supervisor` | `str \| None` | `null` | — |
@@ -107,14 +106,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `rag.embedding_document_prefix` | `str` | `"passage: "` | — |
 | `rag.embedding_max_seq_length` | `int` | `2048` | Cap on the embedding model's max sequence length (tokens). Long-context models like ruri-v3 default to 8192, which blows up GPU activation memory during bulk encode. 0 = use model default. |
 | `rag.use_gpu` | `bool` | `false` | — |
-| `rag.enable_spreading_activation` | `bool` | `true` | — |
-| `rag.graph_cache_enabled` | `bool` | `true` | — |
-| `rag.implicit_link_threshold` | `float` | `0.75` | — |
-| `rag.spreading_memory_types` | `list[str]` | `["knowledge","episodes"]` | — |
-| `rag.entity_aware_graph_enabled` | `bool` | `false` | Enable Legacy NetworkX graph nodes/edges for facts and entities. |
-| `rag.graph_entity_edge_cap` | `int` | `8` | Maximum co-mentioned memory/fact carriers connected per entity. |
-| `rag.graph_inverse_fan_enabled` | `bool` | `true` | Reduce graph edge weights for high-fanout entity nodes. |
-| `rag.graph_recency_weight_enabled` | `bool` | `true` | Apply a conservative recency multiplier to graph edge weights. |
 | `rag.min_retrieval_score` | `float` | `0.3` | — |
 | `rag.skill_match_min_score` | `float` | `0.75` | — |
 | `rag.repair_enabled` | `bool` | `true` | — |
@@ -129,7 +120,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `rag.shared_check_ttl_seconds` | `float` | `30.0` | — |
 | `rag.shared_check_backoff_initial_seconds` | `float` | `5.0` | — |
 | `rag.shared_check_backoff_max_seconds` | `float` | `300.0` | — |
-| `rag.quick_check_timeout_seconds` | `float` | `10.0` | — |
 | `rag.rerank_enabled` | `bool` | `true` | — |
 | `rag.rerank_candidate_pool` | `int` | `50` | — |
 | `rag.cross_encoder_model` | `str` | `"cross-encoder/ms-marco-MiniLM-L-12-v2"` | — |
@@ -141,17 +131,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | Minimum facts vector similarity before strict LLM duplicate/contradiction/complement labeling. |
 | `rag.facts_reconcile_top_k` | `int` | `5` | Maximum similar active facts considered during legacy fact reconciliation. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
-| `rag.entity_boost_enabled` | `bool` | `true` | — |
-| `rag.entity_boost` | `float` | `0.2` | — |
-| `rag.entity_boost_cap` | `float` | `0.8` | — |
-| `rag.temporal_boost_enabled` | `bool` | `true` | — |
-| `rag.temporal_boost` | `float` | `0.05` | — |
-| `rag.temporal_boost_max` | `float` | `0.1` | — |
-| `rag.temporal_half_life_days` | `float` | `7.0` | — |
-| `rag.access_boost_enabled` | `bool` | `true` | — |
-| `rag.access_boost_weight` | `float` | `0.05` | — |
-| `rag.access_boost_cap` | `float` | `0.25` | — |
-| `rag.access_boost_half_life_days` | `float` | `30.0` | — |
 | `gpu` | `GPUConfig` | `{GPUConfig}` | GPU usage and device selection settings. |
 | `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |
@@ -180,7 +159,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `skills.external_roots.enabled` | `bool` | `true` | — |
 | `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Chatwork tool permission settings. |
 | `chatwork_tool.grants` | `dict[str, dict[str, str]]` | `{}` | — |
-| `prompt` | `PromptConfig` | `{PromptConfig}` | Settings for system prompts and prompt construction. |
+| `prompt` | `PromptConfig` | `{PromptConfig}` | Settings for system prompt and prompt construction. |
 | `prompt.injection_size_warning_chars` | `int` | `2000` | — |
 | `prompt.identity_business_exclude_headings` | `list[str]` | `["外見","基本プロフィール","Appearance","Basic Profile"]` | — |
 | `prompt.system_prompt_target_tokens` | `int` | `6000` | — |
@@ -193,18 +172,17 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `prompt.skill_catalog_router_dense_weight` | `float` | `8.0` | — |
 | `prompt.skill_catalog_max_items` | `int` | `3` | — |
 | `priming` | `PrimingConfig` | `{PrimingConfig}` | Settings for information loaded at anima startup. |
-| `priming.profile` | `Literal['compact', 'full']` | `"compact"` | Profile used for startup context. compact prioritizes key points; full loads broader information. |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
 | `priming.compact_background_recall_enabled` | `bool` | `true` | — |
-| `priming.compact_background_recall` | `dict[str, CompactBackgroundRecallConfig]` | `…` | — |
+| `priming.compact_background_recall` | `CompactBackgroundRecallConfig` | `{CompactBackgroundRecallConfig}` | — |
 | `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
 | `priming.compact_background_recall.related_knowledge_max_tokens` | `int` | `180` | — |
 | `priming.compact_background_recall.episodes_max_items` | `int` | `2` | — |
 | `priming.compact_background_recall.episodes_max_tokens` | `int` | `400` | — |
 | `priming.compact_background_recall.recent_activity_max_items` | `int` | `5` | — |
 | `priming.compact_background_recall.recent_activity_max_tokens` | `int` | `300` | — |
-| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation provider and default parameters. |
+| `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation providers and default parameters. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
 | `image_gen.prefer_codex` | `bool` | `true` | Use codex CLI with top priority for image generation if available |
@@ -226,7 +204,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen.diffusers_img2img_strength` | `float` | `0.55` | — |
 | `image_gen.ip_adapter_model` | `str` | `"h94/IP-Adapter"` | — |
 | `image_gen.ip_adapter_scale` | `float` | `0.6` | IP-Adapter face reference blend weight (0.0-1.0) |
-| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Notification methods and destinations for humans. |
+| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Methods and destinations for notifying humans. |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
@@ -355,18 +333,17 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `background_task.shutdown_drain_seconds` | `float` | `600.0` | — |
 | `background_task.eligible_tools` | `dict[str, BackgroundToolConfig]` | `…` | — |
 | `background_task.eligible_tools.threshold_s` | `int` | `30` | — |
-| `background_task.result_retention_hours` | `int` | `24` | disk cleanup retention (cleanup is explicitly invoked) |
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
-| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for saving operation and activity logs. |
+| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for storing operation and activity logs. |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
 | `activity_log.rotation_mode` | `Literal['size', 'time', 'both']` | `"size"` | — |
 | `activity_log.max_size_mb` | `int` | `1024` | per-anima total, default 1GB |
 | `activity_log.max_file_size_mb` | `int` | `100` | per-file bloat trigger; 0 disables |
 | `activity_log.max_age_days` | `int` | `7` | mode="time"\|"both" で使用 |
 | `activity_log.rotation_time` | `str` | `"05:00"` | Execution time (configured TZ) |
-| `logging` | `LoggingConfig` | `{LoggingConfig}` | Log level, output destination, and sensitive information masking. |
+| `logging` | `LoggingConfig` | `{LoggingConfig}` | Log level, output destination, and masking of sensitive information. |
 | `logging.redaction_enabled` | `bool` | `true` | Mask secrets in log output; disable for raw-log debugging. |
 | `heartbeat` | `HeartbeatConfig` | `{HeartbeatConfig}` | Settings for periodic heartbeat execution. |
 | `heartbeat.interval_minutes` | `int` | `30` | — |
@@ -478,7 +455,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 ## Per-anima `status.json`
 
-| Key | ModelConfig type | Default | Description |
+| Key | ModelConfig type | Default value | Description |
 |---|---|---|---|
 | `background_credential` | `str \| None` | `null` | — |
 | `background_model` | `str \| None` | `null` | Model override used for heartbeat and cron. |
@@ -489,32 +466,31 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `conversation_history_threshold` | `float` | `0.3` | — |
 | `credential` | `str \| None` | `null` | Name of the authentication credentials associated with the anima. |
 | `default_workspace` | `—` | `—` | — |
-| `execution_mode` | `str \| None` | `null` | Execution mode of the anima. |
+| `execution_mode` | `str \| None` | `null` | The anima's execution mode. |
 | `extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
 | `fallback_model` | `str \| None` | `null` | Fallback model used when the primary model fails. |
 | `fallback_models` | `list[str]` | `[]` | — |
-| `heartbeat_enabled` | `bool` | `true` | Enables or disables the periodic heartbeat. |
+| `heartbeat_enabled` | `bool` | `true` | Enables or disables periodic heartbeats. |
 | `max_outbound_per_day` | `—` | `—` | — |
 | `max_outbound_per_hour` | `—` | `—` | — |
 | `max_recipients_per_run` | `—` | `—` | — |
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | Maximum number of output tokens for the model. |
 | `mode_s_auth` | `str \| None` | `null` | — |
-| `model` | `str` | `"claude-sonnet-4-6"` | Primary model of the anima. |
-| `supervisor` | `str \| None` | `null` | Name of the higher-level supervisor anima. |
+| `model` | `str` | `"claude-sonnet-4-6"` | The anima's primary model. |
+| `supervisor` | `str \| None` | `null` | Name of the parent supervisor anima. |
 | `task_compaction_max` | `int` | `6` | — |
 | `task_compaction_tokens` | `int` | `0` | — |
 | `thinking` | `bool \| None` | `null` | — |
 | `thinking_effort` | `str \| None` | `null` | — |
 | `token_budget_monthly` | `int \| None` | `null` | — |
 | `voice_thinking_effort` | `str \| None` | `null` | — |
-| `bootstrap_state` | `—` | `—` | Status of the initialization process. |
+| `bootstrap_state` | `—` | `—` | Initialization status. |
 | `company` | `—` | `—` | Company the anima belongs to. |
 | `department` | `—` | `—` | Department the anima belongs to. |
 | `enabled` | `—` | `—` | Enables or disables the anima. |
 | `needs_user_input` | `—` | `—` | Whether user input is required. |
-| `priming_profile` | `—` | `—` | Profile for the startup context. |
-| `role` | `—` | `—` | Role template of the anima. |
+| `role` | `—` | `—` | The anima's role template. |
 
 ## `models.json`
 

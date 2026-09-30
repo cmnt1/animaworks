@@ -48,9 +48,9 @@ TTS must be started separately as an external service:
 
 ## Configuration
 
-### Global Configuration (config.json section of `voice`)
+### Global Configuration (config.json’s `voice` section)
 
-Default settings common to all Anima:
+Default configuration shared by all Anima:
 
 ```json
 {
@@ -73,8 +73,8 @@ Default settings common to all Anima:
 | `stt_model` | `large-v3-turbo` | Whisper model name. Options: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo` |
 | `stt_device` | `auto` | `auto` (GPU preferred) / `cpu` / `cuda` |
 | `stt_compute_type` | `default` | CTranslate2 quantization type: `default`, `int8`, `float16` |
-| `stt_language` | `null` | Language code (`ja`, `en`, etc.). Auto-detection with `null` |
-| `stt_refine_enabled` | `false` | LLM post-processing of STT results (adds 1-3 seconds latency when enabled) |
+| `stt_language` | `null` | Language code (`ja`, `en`, etc.). Automatically detected with `null` |
+| `stt_refine_enabled` | `false` | LLM post-processing of STT results (enabling it adds 1–3 seconds of latency) |
 | `default_tts_provider` | `voicevox` | Default TTS provider: `voicevox` / `style_bert_vits2` / `elevenlabs` |
 
 ### Per-Anima Voice Settings (status.json section of `voice`)

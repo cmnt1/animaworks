@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/lifecycle.md -->
-<!-- i18n: source-sha256=de6fcde4cf6062283624864367afb218ffffe243f3589f600913606fad8f582f generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=de6fcde4cf6062283624864367afb218ffffe243f3589f600913606fad8f582f generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 

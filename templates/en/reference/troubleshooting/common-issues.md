@@ -385,10 +385,10 @@ See `operations/tool-usage-overview.md` for the overall tool architecture.
 
 ### Symptoms
 
-- An error was returned when executing `send_message` or `post_channel`
-- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` or a 24-hour version of the same type of message was displayed
-- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` was displayed (`core/messaging/cascade_limiter.py` — when the sender's `activity_log` cannot be read)
-- `ConversationDepthExceeded: ...` was displayed; its turn count and time window reflect `heartbeat.max_depth` and `heartbeat.depth_window_s`
+- An error was returned when running `send_message` or `post_channel`
+- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` or a similar 24-hour message was displayed
+- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` was displayed (`core/messaging/cascade_limiter.py` — when the sender’s `activity_log` cannot be read)
+- `ConversationDepthExceeded: ...` was displayed (conversation depth exceeded. Turn count and time reflect the configuration values of `heartbeat.max_depth` / `heartbeat.depth_window_s`)
 
 ### Cause
 
@@ -460,22 +460,22 @@ See `communication/sending-limits.md` for details.
 - The system prompt is thinner than usual, and Priming (automatic recall) is nearly empty
 - After long conversations or large user messages, there is behavior as if the prompt was rebuilt before responding
 
-### Cause
+### Causes
 
 There are two main layers.
 
-**1. Priming (automatic recall) tiers** — `resolve_prompt_tier(context_window)` of `core/prompt/builder.py` determines the tier from the estimated context window. The window resolution order is `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json` (SSoT)** → deprecated `config.json` `model_context_windows` → code fallback such as `MODEL_CONTEXT_WINDOWS` → default 128k.
+**1. Priming (automatic recall) tiers** — `resolve_prompt_tier(context_window)` in `core/prompt/builder.py` determines the tier based on the estimated context window. The window resolution order is `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json` (SSoT)** → deprecated `config.json` `model_context_windows` → in-code fallbacks such as `MODEL_CONTEXT_WINDOWS` → default 128k.
 
-| Tier | Condition (`context_window`) | Priming handling (`core/agent/priming.py`) |
-|------|--------------------------|---------------------------------------------|
-| full | **≥ 128_000** | Format the normal compact retrieval within `priming.max_tokens` and include it |
-| standard | **≥ 32_000 and < 128_000** | Use the same compact path, with retrieval capped at 1,000 tokens |
-| light | **≥ 16_000 and < 32_000** | Retrieve compact base context while suppressing related-knowledge and episode searches |
-| minimal | **< 16_000** | Keep compact base context while suppressing related-knowledge and episode searches |
+| Tier | Condition (`context_window`) | Priming behavior (`core/agent/priming.py`) |
+|--------|--------------------------|---------------------------------------------|
+| full | **≥ 128_000** | Format and include normal compact retrieval within the bounds of `priming.max_tokens` |
+| standard | **≥ 32_000 and < 128_000** | Same compact path, but limit the retrieval budget to a maximum of 1000 tokens |
+| light | **≥ 16_000 and < 32_000** | Retrieve the basic compact context and suppress related knowledge and episode searches |
+| minimal | **< 16_000** | Retain the basic compact context and suppress related knowledge and episode searches |
 
-The query text for heartbeat/cron is text collected from activity_log for the most recent `[REFLECTION]` (not the full long template).
+Heartbeat/cron query text consists of text collected from recent `[REFLECTION]` in activity_log (not the full, lengthy template).
 
-**2. System prompt body contraction** — `core/agent/priming.py` `_fit_prompt_to_context_window`: When the estimated tokens for system + user plus tool schema overhead exceed **approximately 80% of the context window**, `build_system_prompt` is rebuilt by gradually reducing the **system budget from 75% → 50% → 25%**. At the **25% or below stage**, the **Priming block and the human notification block are emptied** before applying. If it still does not fit, the system prompt is **hard-truncated at the byte level**.
+**2. Shrinking the system prompt itself** — `core/agent/priming.py` `_fit_prompt_to_context_window`: when the estimated tokens for system + user messages, plus tool schema overhead, exceed **about 80% of the context window**, rebuild by progressively shrinking `build_system_prompt`’s system budget from **75% → 50% → 25%**. At the **25% or lower tier**, empty the **Priming block and human-facing notification block** before applying it. If it still doesn’t fit, **hard-truncate the system prompt byte by byte**.
 
 ### Resolution Steps
 

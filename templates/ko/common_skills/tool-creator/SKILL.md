@@ -1,8 +1,8 @@
 ---
 name: tool-creator
 description: >-
-  AnimaWorks용 Python 외부 도구 모듈을 작성하는 메타스킬.core/integrations연동·get_credential·permissions를 다룬다.
-  Use when: core/integrations에 새 모듈 추가, Web API 래퍼 구현, animaworks-tool에서 호출하는 커스텀 도구 개발이 필요할 때.
+  AnimaWorks용 Python 외부 도구 모듈을 만드는 메타 스킬.core/integrations연동·get_credential·permissions를 다룬다.
+  Use when: core/integrations에 새 모듈을 추가하거나, Web API 래퍼를 구현하거나, animaworks-tool에서 호출할 사용자 지정 도구를 개발해야 할 때.
 ---
 
 
@@ -228,11 +228,11 @@ share_tool(tool_name="my_tool")
 | `cli_main(argv)` | **CLI 이용 시 필수** | `animaworks-tool` 엔트리. |
 | `EXECUTION_PROFILE` | 선택 | `expected_seconds`, `background_eligible`, 코어 도구에서는 **`gated: True`**로 전송 계열 등을 허용 목록 필수로 할 수 있다(`core/tooling/permissions.py`). |
 
-## 호출과 스키마 이름
+## 호출 및 스키마 이름
 
-- **`use_tool`**: `schema_name = f"{tool_name}_{action}"`에서 모듈의 `dispatch`(또는 동일 이름 함수)에 전달된다. 허가 판정은 **코어**: `tool_registry`(`get_permitted_tools`의 결과에 `tool_name`가 포함될 것), **파일 기반(공통·개인)**: 병합된 `_personal_tools`에 `tool_name`가 있을 것(`core/tooling/handler.py`의 `_handle_use_tool`).
-- **`animaworks-tool`**: 첫 번째 토큰이 `submit`인 경우 백그라운드 투입(아래). **코어**는 `TOOL_MODULES`에서 import하여 `cli_main`, **공통·개인**은 파일에서 로드하여 `cli_main`. 알 수 없는 첫 번째 인자는 메인 CLI(`animaworks`)로 폴백하는 경우가 있다(`cli/tool_dispatch.py`).
-- **게이트 부착 서브커맨드(코어만)**: `EXECUTION_PROFILE`의 해당 액션에 `"gated": True`가 있으면, `permissions`의 허가 집합에 **`{tool_name}_{action}`**(예: `gmail_send`)가 포함되어 있지 않으면 CLI / 디스패치 양쪽에서 블록된다. **파일 기반의 개인·공유 도구**는 `TOOL_MODULES`에 없으므로 이 게이트 메커니즘의 대상 외.
+- **`use_tool`**: `schema_name = f"{tool_name}_{action}"`에서 모듈의 `dispatch`(또는 같은 이름의 함수)에 전달된다. 허용 여부 판정은 **코어**: `tool_registry`(`get_permitted_tools`의 결과에 `tool_name`가 포함되어 있을 것), **파일 기반(공유·개인)**: 병합된 `_personal_tools`에 `tool_name`가 있을 것(`core/tooling/handler.py`의 `_handle_use_tool`).
+- **`animaworks-tool`**: 첫 번째 토큰이 `submit`이면 백그라운드 작업으로 투입된다(아래 참조). **코어**는 `TOOL_MODULES`에서 import한 뒤 `cli_main`하고, **공유·개인**은 파일에서 로드한 뒤 `cli_main`한다. 알 수 없는 첫 번째 인수는 메인 CLI(`animaworks`)로 폴백할 수 있다(`cli/tool_dispatch.py`).
+- **게이트가 적용되는 하위 명령(코어만)**: `EXECUTION_PROFILE`의 해당 작업에 `"gated": True`가 있으면, `permissions`의 허용 목록에 **`{tool_name}_{action}`**(예: `gmail_send`)이 포함되지 않은 경우 CLI와 디스패치 양쪽에서 차단된다. **파일 기반 개인·공유 도구**는 `TOOL_MODULES`에 없으므로 이 게이트 메커니즘의 대상이 아니다.
 
 ## 스키마 정규화
 

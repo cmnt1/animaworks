@@ -237,7 +237,7 @@ animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
 ```
 
-**Note**: `status.json` is the SSoT for Anima models, credentials, etc. Direct configuration via `animas.{名前}.model` etc. is deprecated. Use `animaworks anima set-model` instead.
+**Note**: `status.json` is the SSoT for Anima's models, credentials, and so on. Direct configuration of `animas.{名前}.model` and similar items is deprecated. Use `animaworks anima set-model`.
 
 ---
 

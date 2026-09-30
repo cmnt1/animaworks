@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/execution.md -->
-<!-- i18n: source-sha256=bd59837486f618bd44a589c0dcbad8e70fbd20f544b32a74ad0edc4f2a6e0873 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=bd59837486f618bd44a589c0dcbad8e70fbd20f544b32a74ad0edc4f2a6e0873 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 

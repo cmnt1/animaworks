@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=6d159be9b1cb266211d34e4ad5933a40ed1afe326c89fb302b903881b3ba8763 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=f369c6dcfdbdd7a840b46018630e53fc3baa21ce283a14b755228f872d1c5211 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # API Reference
 
@@ -163,18 +163,18 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/memory_routes.py`
 
-| DELETE | `/api/animas/{name}/conversation` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Clear conversation history for a fresh start. | `server/routes/memory_routes.py:clear_conversation` |
-| GET | `/api/animas/{name}/conversation` | Session required (optional in local_trust mode, or if localhost trust is enabled) | View current conversation state. | `server/routes/memory_routes.py:get_conversation` |
-| POST | `/api/animas/{name}/conversation/compress` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Manually trigger conversation compression. | `server/routes/memory_routes.py:compress_conversation` |
-| GET | `/api/animas/{name}/episodes` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_episodes` |
-| GET | `/api/animas/{name}/episodes/calendar` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return lightweight episode availability for every day in a month. | `server/routes/memory_routes.py:episode_calendar` |
-| GET | `/api/animas/{name}/episodes/{date}` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_episode` |
-| GET | `/api/animas/{name}/knowledge` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_knowledge` |
-| GET | `/api/animas/{name}/knowledge/{topic}` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_knowledge` |
-| GET | `/api/animas/{name}/memory/graph` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return the cached memory graph or an explicit-link-only fallback. | `server/routes/memory_routes.py:memory_graph` |
-| GET | `/api/animas/{name}/memory/stats` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
-| GET | `/api/animas/{name}/procedures` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_procedures` |
-| GET | `/api/animas/{name}/procedures/{proc}` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_procedure` |
+| DELETE | `/api/animas/{name}/conversation` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Clear conversation history for a fresh start. | `server/routes/memory_routes.py:clear_conversation` |
+| GET | `/api/animas/{name}/conversation` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | View current conversation state. | `server/routes/memory_routes.py:get_conversation` |
+| POST | `/api/animas/{name}/conversation/compress` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Manually trigger conversation compression. | `server/routes/memory_routes.py:compress_conversation` |
+| GET | `/api/animas/{name}/episodes` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_episodes` |
+| GET | `/api/animas/{name}/episodes/calendar` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return lightweight episode availability for every day in a month. | `server/routes/memory_routes.py:episode_calendar` |
+| GET | `/api/animas/{name}/episodes/{date}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_episode` |
+| GET | `/api/animas/{name}/knowledge` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_knowledge` |
+| GET | `/api/animas/{name}/knowledge/{topic}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_knowledge` |
+| GET | `/api/animas/{name}/memory/graph` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return the explicit-link memory graph for UI display. | `server/routes/memory_routes.py:memory_graph` |
+| GET | `/api/animas/{name}/memory/stats` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | Return memory storage statistics for an anima. | `server/routes/memory_routes.py:memory_stats` |
+| GET | `/api/animas/{name}/procedures` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:list_procedures` |
+| GET | `/api/animas/{name}/procedures/{proc}` | Session required (may be omitted in local_trust mode or if localhost trust is enabled) | — | `server/routes/memory_routes.py:get_procedure` |
 
 ## `server/routes/room.py`
 

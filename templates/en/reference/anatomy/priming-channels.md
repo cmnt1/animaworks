@@ -1,8 +1,8 @@
 # Priming Channel Technical Reference
 
-Priming always follows a single compact retrieval path. It retrieves the sender, tasks, resident knowledge, recent outbound messages, and pending human notifications, and searches related knowledge when conditions are met. Heartbeat, inbox, and cron triggers also retrieve recent activity and episodes within shared limits.
+Priming operates through a single compact path. It retrieves the sender, task, resident knowledge, recent sends, and human-facing notifications, and searches for related knowledge when conditions are met. For heartbeat / inbox / cron, it also retrieves recent activity and episodes according to the shared limits.
 
-`PrimingEngine` specifies the channels and budget that are retrieved. C0 (important_knowledge) is an auxiliary block within Channel C's knowledge pipeline.
+`PrimingEngine` describes the channels and budgets retrieved. C0 (important_knowledge) is an auxiliary block within Channel C’s knowledge pipeline.
 
 ## Channel List
 
@@ -40,9 +40,9 @@ Injects the sender's user profile.
 
 Injects a recent activity timeline.
 
-- **Source**: `activity_log/{date}.jsonl` + latest posts from shared channels
+- **Source**: `activity_log/{date}.jsonl` + the latest posts in shared channels
 
-**Difference between Priming injection and explicit search**: Channel B is retrieved within shared limits for compact background recall on heartbeat, inbox, and cron triggers. For broadly searching past action logs by keyword, use `search_memory(scope="activity_log")`. Injection and tool search are separate paths.
+**Difference between Priming injection and explicit search**: Channel B provides compact background recall for heartbeat / inbox / cron, retrieving within the shared configuration limits. Use `search_memory(scope="activity_log")` to broadly search past activity logs by keyword. Injection and tool search are separate paths.
 
 ### Trigger-specific filtering
 
@@ -106,13 +106,13 @@ Injects related episodes via RAG vector search.
 
 ---
 
-## Budget and Settings
+## Budgets and configuration
 
-There is no profile selection; Priming always uses the compact retrieval path. `priming.max_tokens` is the recall budget (default: 2000), and `priming.channel_timeout_seconds` is the per-channel retrieval timeout (default: 60 seconds). `compact_background_recall` is one shared set of limits for heartbeat, inbox, and cron; `compact_background_recall_enabled` disables it for all three triggers.
+There is no profile selection; Priming always uses the compact retrieval path. `priming.max_tokens` is the recall budget (default: 2000), and `priming.channel_timeout_seconds` is the per-channel retrieval timeout (default: 60 seconds). `compact_background_recall` is a shared set of limits for heartbeat / inbox / cron, and they can all be disabled together with `compact_background_recall_enabled`.
 
-- A (sender) is limited to `min(400, max_tokens // 4)`, E (tasks) to `min(500, max_tokens // 3)`. Recent outbound is limited to 3 items and 250 tokens.
-- C (related knowledge) is retrieved on chat/task triggers, or when there is a question/request/delegation intent and a message exists.
-- B (recent activity) is retrieved within configured limits on heartbeat, inbox, and cron. F (episodes) is retrieved within the same shared limits for these triggers when a message exists and related retrieval is enabled.
+- A (sender) is limited by `min(400, max_tokens // 4)`, and E (task) by `min(500, max_tokens // 3)`. Recent sends are limited to 3 items and 250 tokens.
+- C (related knowledge) is retrieved when there is a chat/task trigger or question/request/delegation intent, and a message is present.
+- B (recent activity) is retrieved within the configured limits for heartbeat / inbox / cron. F (episodes) is retrieved within the configured limits when the same trigger is present, a message is available, and related retrieval is enabled.
 - Pending human notifications are handled separately from the recall budget.
 
 ---

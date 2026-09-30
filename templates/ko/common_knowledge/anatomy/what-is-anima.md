@@ -60,22 +60,22 @@ identity와 injection을 충실히 하고, heartbeat와 cron을 설계한다.
 
 Chat과 Heartbeat(그리고 cron / TaskExec 등의 백그라운드 처리)는 **별도 락**으로 움직이므로, Heartbeat 실행 중에도 인간의 대화에 즉시 응답할 수 있다.
 
-#### 백그라운드 도구 실행(BackgroundTaskManager)
+#### 백그라운드 도구 실행（BackgroundTaskManager）
 
-`core/tasks/background.py` 의 `BackgroundTaskManager` 은, **장시간이 되기 쉬운 외부 도구 호출을 백그라운드에서 실행**하고, 상태와 결과를 디스크에 남겨 나중에 참조할 수 있게 한다. `config.json` 의 `background_task.enabled` 이 `false` 일 때는 매니저 자체가 무효화되고, 에이전트 경유의 백그라운드 투입도 이루어지지 않는다.
+`core/tasks/background.py`의 `BackgroundTaskManager`는 **오래 걸리기 쉬운 외부 도구 호출을 백그라운드에서 실행**하고, 상태와 결과를 디스크에 저장해 나중에 참조할 수 있게 한다. `config.json`의 `background_task.enabled`이 `false`이면 매니저 자체가 비활성화되어 에이전트를 통한 백그라운드 작업 제출도 수행되지 않는다.
 
-- **영속화**: 각 작업은 `TaskStatus`(`running` / `completed` / `failed` 등)과 결과 문자열을 `state/background_tasks/{task_id}.json` 에 저장한다. 메모리상의 캐시와 디스크 양쪽에서 `get_task` / `list_tasks` 로 참조할 수 있다.
-- **투입 API**: `submit` 은 `task_id` 을 즉시 반환하고, `asyncio.create_task` 로 감싼 `_run_task` 이 본체를 실행한다. 동기 도구 구현은 `run_in_executor` 에서 스레드 풀 위에서 실행된다. 비동기 도구용으로 `submit_async` 도 있다. 완료 시 임의의 `on_complete` 콜백을 `await` 한다(콜백 내의 예외는 로그에 떨어지고, 작업 결과에는 영향을 주지 않는다).
-- **대상 도구의 결정 방법**(`BackgroundTaskManager.from_profiles`, **나중 것이 우선**):
-  1. `_DEFAULT_ELIGIBLE_TOOLS`(코드 기본·Mode A용 스키마 이름. 예: `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations`, `local_llm`, `run_command` 등)
-  2. `load_execution_profiles(TOOL_MODULES)` 에서 읽어들인 각 모듈의 `EXECUTION_PROFILE` 중 `background_eligible: true` 의 엔트리. 키는 **`tool:subcmd`** 형식이 되고, 값은 `expected_seconds`(미설정 시 60)
-  3. `config.json` 의 `background_task.eligible_tools`(각 도구의 `threshold_s` 이 같은 맵의 값으로 덮어씀)
-  `is_eligible(name)` 은 **이름이 맵에 포함되는지만** 본다(값은 참고 초수로 유지되고, 임계값 비교에는 사용되지 않는다).
-- **에이전트 경유**: `ToolHandler` 이 미등록 도구를 외부 디스패치할 때, 이름이 위 맵에 있으면 `BackgroundTaskManager.submit` 로 돌리고, 즉시 `task_id` 을 포함한 JSON을 반환한다. 결과 확인은 `check_background_task` / `list_background_tasks` 등의 도구로 수행한다.
-- **CLI 경유(`animaworks-tool submit`)**: 커맨드형 도구의 디스크립터는 계속 **`state/background_tasks/pending/`** 과 processing의 흐름을 사용한다. `PendingTaskExecutor` 은 이 커맨드 큐를 모니터링하고, 별도로 정규 작업 스토어에서 LLM 작업을 가져온다. LLM 작업 투입을 위해 파일을 만들지 않는다.
-- **정리**: `cleanup_old_tasks(max_age_hours=24)` 은 호출 측이 지정한 시간보다 오래된 `completed` / `failed` JSON과, `running` 인 채로 **48시간 초과** 경과한 파일(프로세스 크래시 등의 고아)을 삭제한다. 완료 작업의 보존 시간은 호출 측이 인수 `max_age_hours` 로 지정하며, 대응하는 `config.json` 키는 없다.
+- **영속화**: 각 작업은 `TaskStatus`（`running` / `completed` / `failed` 등）과 결과 문자열을 `state/background_tasks/{task_id}.json`에 저장한다. 메모리 캐시와 디스크 모두에서 `get_task` / `list_tasks`로 조회할 수 있다.
+- **제출 API**: `submit`는 `task_id`을 즉시 반환하고, `asyncio.create_task`로 감싼 `_run_task`가 실제 작업을 실행한다. 동기 도구 구현은 `run_in_executor`에서 스레드 풀을 통해 실행된다. 비동기 도구용으로 `submit_async`도 있다. 완료 시 선택적으로 `on_complete` 콜백을 `await`한다（콜백 내부의 예외는 로그에 기록되며 작업 결과에는 영향을 주지 않는다）。
+- **대상 도구 결정 방법**（`BackgroundTaskManager.from_profiles`, **나중 항목이 우선**）:
+  1. `_DEFAULT_ELIGIBLE_TOOLS`（코드 기본값・Mode A용 스키마 이름. 예: `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations`, `local_llm`, `run_command` 등）
+  2. `load_execution_profiles(TOOL_MODULES)`에서 불러온 각 모듈의 `EXECUTION_PROFILE` 중 `background_eligible: true` 항목. 키는 **`tool:subcmd`** 형식이며, 값은 `expected_seconds`（미설정 시 60）
+  3. `config.json`의 `background_task.eligible_tools`（각 도구의 `threshold_s`가 같은 맵의 값으로 덮어씀）
+  `is_eligible(name)`은 **이름이 맵에 포함되어 있는지만** 확인한다（값은 참고용 초 단위로 저장되며, 임계값 비교에는 사용되지 않는다）。
+- **에이전트를 통한 실행**: `ToolHandler`가 미등록 도구를 외부 디스패치할 때, 이름이 위 맵에 있으면 `BackgroundTaskManager.submit`로 보내고 `task_id`을 포함하는 JSON을 즉시 반환한다. 결과는 `check_background_task` / `list_background_tasks` 등의 도구로 확인한다.
+- **CLI를 통한 실행（`animaworks-tool submit`）**: 명령형 도구의 설명자는 계속해서 **`state/background_tasks/pending/`**과 processing 흐름을 사용한다. `PendingTaskExecutor`은 이 명령 대기열을 모니터링하고, 별도로 정식 작업 저장소에서 LLM 작업을 가져온다. LLM 작업 제출을 위해 파일을 만들지는 않는다.
+- **정리**: `cleanup_old_tasks(max_age_hours=24)`는 `completed` / `failed`에서 `completed_at`부터 지정된 시간을 초과한 JSON과, `running` 상태로 `created_at`부터 **48시간 초과** 경과한 파일（프로세스 충돌 등으로 남은 고아 파일）을 삭제한다. 보존 시간은 호출 측에서 인수 `max_age_hours`로 지정하며, 설정 키는 없다.
 
-같은 모듈의 **`rotate_dm_logs`** 은, `shared/dm_logs/*.jsonl` 중 `max_age_days`(기본 7일)보다 오래된 행을 `{元ファイル名}.{YYYYMMDD}.archive.jsonl` 에 추가 아카이브하고, 활성 파일을 최근 행만으로 다시 쓴다(DM 이력의 비대화 대책).
+같은 모듈의 **`rotate_dm_logs`**은 `shared/dm_logs/*.jsonl` 중 `max_age_days`（기본값 7일）보다 오래된 행을 `{元ファイル名}.{YYYYMMDD}.archive.jsonl`에 추가해 아카이브하고, 활성 파일에는 최근 행만 남도록 다시 쓴다（DM 기록 비대화 방지）。
 
 ### 4. 성장
 

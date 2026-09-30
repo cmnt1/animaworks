@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/tool-cli.md -->
-<!-- i18n: source-sha256=2dd0bf986da2e5faac901c75f9ef3b0bda08cbfbe7cb2552c07e2a246dbb3261 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=2dd0bf986da2e5faac901c75f9ef3b0bda08cbfbe7cb2552c07e2a246dbb3261 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Tool CLI Reference: `animaworks-tool`
 

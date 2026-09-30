@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/messaging.md -->
-<!-- i18n: source-sha256=0975054575d95fdef233b9b53480548abb790dd9b8d8f084e1d3a0a4a55e18d4 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=0975054575d95fdef233b9b53480548abb790dd9b8d8f084e1d3a0a4a55e18d4 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 

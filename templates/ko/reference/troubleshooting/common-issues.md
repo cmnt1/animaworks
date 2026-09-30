@@ -385,10 +385,10 @@ send_message(
 
 ### 증상
 
-- `send_message`이나 `post_channel`을 실행했더니 오류가 반환됨
-- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` 또는 24시간 버전의 동종 메시지가 표시됨
-- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました`으로 표시됨(`core/messaging/cascade_limiter.py` — 발신자의 `activity_log`을 읽을 수 없을 때)
-- `ConversationDepthExceeded: ...`으로 표시되며 턴 수와 시간은 `heartbeat.max_depth` / `heartbeat.depth_window_s` 설정을 반영
+- `send_message` 또는 `post_channel`을 실행했을 때 오류가 반환됨
+- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` 또는 24시간 버전의 유사한 메시지가 표시됨
+- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました`이 표시됨(`core/messaging/cascade_limiter.py` — 발신자의 `activity_log`을 읽을 수 없을 때)
+- `ConversationDepthExceeded: ...`이 표시됨(대화 깊이 초과. 턴 수와 시간은 `heartbeat.max_depth` / `heartbeat.depth_window_s`의 설정값을 반영)
 
 ### 원인
 
@@ -462,20 +462,20 @@ send_message(
 
 ### 원인
 
-크게 2개 층이 있음.
+크게 두 계층이 있다.
 
-**1. Priming(자동 회상)의 티어** — `core/prompt/builder.py`의 `resolve_prompt_tier(context_window)`이 추정 컨텍스트 윈도우에서 티어를 결정. 윈도우의 해결 순서는 `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json`(SSoT)** → 비권장 `config.json` `model_context_windows` → `MODEL_CONTEXT_WINDOWS` 등의 코드 내 폴백 → 기본 128k.
+**1. 프라이밍(자동 회상) 티어** — `core/prompt/builder.py`의 `resolve_prompt_tier(context_window)`이 추정 컨텍스트 창을 바탕으로 티어를 결정한다. 창의 해석 순서는 `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json`(SSoT)** → 더 이상 사용되지 않는 `config.json` `model_context_windows` → `MODEL_CONTEXT_WINDOWS` 등의 코드 내 대체값 → 기본값 128k.
 
-| 티어 | 조건(`context_window`) | Priming 처리(`core/agent/priming.py`) |
+| 티어 | 조건(`context_window`) | 프라이밍 처리(`core/agent/priming.py`) |
 |--------|--------------------------|---------------------------------------------|
-| full | **≥ 128_000** | 일반 compact 검색을 `priming.max_tokens` 범위에서 정형화하여 게재 |
-| standard | **≥ 32_000 그리고 < 128_000** | 같은 compact 경로를 사용하되 검색 예산을 최대 1000토큰으로 제한 |
-| light | **≥ 16_000 그리고 < 32_000** | compact 기본 컨텍스트를 가져오고 관련 지식·에피소드 검색은 억제 |
-| minimal | **< 16_000** | compact 기본 컨텍스트를 유지하고 관련 지식·에피소드 검색은 억제 |
+| full | **≥ 128_000** | compact의 일반 검색 결과를 `priming.max_tokens` 범위에 맞춰 구성해 포함 |
+| standard | **≥ 32_000 및 < 128_000** | 동일한 compact 경로를 사용하지만 검색 예산을 최대 1000 토큰으로 제한 |
+| light | **≥ 16_000 및 < 32_000** | compact의 기본 컨텍스트를 검색하고, 관련 지식 및 에피소드 검색은 억제 |
+| minimal | **< 16_000** | compact의 기본 컨텍스트를 유지하고, 관련 지식 및 에피소드 검색은 억제 |
 
-하트비트/cron용 쿼리 문은 최근 `[REFLECTION]`을 activity_log에서 모은 텍스트가 됨(긴 템플릿 전문이 아님).
+하트비트/cron용 쿼리 문구는 activity_log에서 수집한 최근 `[REFLECTION]`의 텍스트가 된다(긴 템플릿 전체가 아님).
 
-**2. 시스템 프롬프트 본체의 수축** — `core/agent/priming.py` `_fit_prompt_to_context_window`: 시스템+사용자의 추정 토큰 + 도구 스키마 overhead가 **컨텍스트 윈도우의 약 80%**를 초과하면 `build_system_prompt`을 **시스템 예산 75% → 50% → 25%**로 단계적으로 줄여 재구축. **25% 이하 단계**에서는 **Priming 블록과 인간용 알림 블록을 비운 후** 적용. 그래도 들어가지 않으면 시스템 프롬프트를 **바이트 단위로 하드 트렁케이트**.
+**2. 시스템 프롬프트 본문의 축소** — `core/agent/priming.py` `_fit_prompt_to_context_window`: 시스템 및 사용자 토큰의 추정치 + 도구 스키마 오버헤드가 **컨텍스트 창의 약 80%**를 초과하면, `build_system_prompt`을 **시스템 예산 75% → 50% → 25%**로 단계적으로 축소해 다시 구성한다. **25% 이하 단계**에서는 **프라이밍 블록과 사용자용 알림 블록을 비운 뒤** 적용한다. 그래도 들어가지 않으면 시스템 프롬프트를 **바이트 단위로 강제 잘라낸다**.
 
 ### 조치 절차
 

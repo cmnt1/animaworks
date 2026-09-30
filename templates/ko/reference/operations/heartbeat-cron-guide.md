@@ -165,15 +165,15 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 
 #### BackgroundTaskManager
 
-- **저장 위치**: `state/background_tasks/{task_id}.json`. `task_id`은 UUID의 앞 12자리(16진). 각 파일에 `task_id`, `anima_name`, `tool_name`, `tool_args`, `status`, `created_at`, `completed_at`, `result`, `error`이 기록된다.
-- **상태(`TaskStatus`)**: `pending` / `running` / `completed` / `failed`. `submit` / `submit_async`에서는 투입 직후부터 `running`으로 JSON이 기록되고, 완료 또는 예외로 `completed` / `failed`으로 업데이트된다.
-- **실행 API**: `submit(tool_name, tool_args, execute_fn)`은 동기 callable을 `asyncio`의 `run_in_executor`으로 스레드 풀 실행한다. `submit_async`은 비동기 callable을 그대로 await한다. `get_task`(메모리 우선, 없으면 디스크), `list_tasks`(디스크의 JSON도 병합, 생성 시각의 새로운 순), `active_count`(메모리의 `running` 건수)을 제공한다.
-- **완료 콜백**: `on_complete`에 전달한 비동기 함수는 작업 저장 후 호출된다. 콜백 내에서 예외가 나와도 작업 결과는 유지되고 로그에 기록될 뿐이다(전형적으로는 `state/background_notifications/`에의 쓰기와 조합, **다음 하트비트**에서 읽기·삭제되어 대화 컨텍스트로取り込まれる 경로).
-- **후보 판정 `is_eligible(tool_name)`**: 맵에 키가 존재하면 백그라운드 대상. 키는 다음 두 가지를 모두 받는다. (1) **스키마 이름**(예: `generate_3d_model`) — Mode A의 외부 도구 디스패치 등. (2) **`ツール名:サブコマンド`**(예: `image_gen:pipeline`) — 각 도구 모듈의 `EXECUTION_PROFILE`에서 `background_eligible: true`의 엔트리가 `get_eligible_tools_from_profiles()`에 의해 이 형식으로 등록된다(Mode S의 `submit` 경로 등).
-- **후보 도구 맵의 구축 `from_profiles()`**: 다음 3층을 dict의 `update`으로 병합하고, **후승**으로 덮어쓴다. (1) `_DEFAULT_ELIGIBLE_TOOLS`(코드 기본) (2) 인수 `profiles`(`EXECUTION_PROFILE` 집약) (3) 인수 `config_eligible`(보통은 `config.json`의 `background_task.eligible_tools`에서 `threshold_s`을 전개한 `名前 → 秒`). 값은 프로필 연계용 기대 초(정수).
-- **코드 기본 `_DEFAULT_ELIGIBLE_TOOLS`(초)**: `generate_character_assets` 30, `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 각 30, `generate_3d_model` / `generate_rigged_model` / `generate_animations` 각 30, `local_llm` 60, `run_command` 60.
-- **청소 `cleanup_old_tasks(max_age_hours=24)`**: `status`이 `completed` / `failed`으로 `completed_at`이 **인수로 지정한 시간(기본 24시간)보다 오래된** JSON을 삭제한다. 추가로 `running`인 채로 `created_at`부터 **48시간 초과** 경과한 파일은 크래시 고아로 삭제한다. 반환값은 삭제 건수.
-- **보존 시간**: `cleanup_old_tasks`의 완료 작업 보존 시간은 인수 `max_age_hours`(기본값 24시간)로 지정한다. 대응하는 `config.json` 키는 없다.
+- **저장 위치**: `state/background_tasks/{task_id}.json`. `task_id`은 UUID의 앞 12자리(16진수)입니다. 각 파일에는 `task_id`, `anima_name`, `tool_name`, `tool_args`, `status`, `created_at`, `completed_at`, `result`, `error`이 기록됩니다.
+- **상태 (`TaskStatus`)**: `pending` / `running` / `completed` / `failed`. `submit` / `submit_async`에서는 작업이 제출된 직후부터 `running` 상태로 JSON이 기록되고, 완료 또는 예외 발생 시 `completed` / `failed`으로 업데이트됩니다.
+- **실행 API**: `submit(tool_name, tool_args, execute_fn)`은 동기 callable을 `asyncio`의 `run_in_executor`에서 스레드 풀로 실행합니다. `submit_async`는 비동기 callable을 그대로 await합니다. `get_task`(메모리 우선, 없으면 디스크), `list_tasks`(디스크의 JSON도 병합, 생성 시각이 최신인 순), `active_count`(메모리의 `running` 개수)을 제공합니다.
+- **완료 콜백**: `on_complete`에 전달한 비동기 함수는 작업을 저장한 뒤 호출됩니다. 콜백에서 예외가 발생해도 작업 결과는 유지되며 로그에만 기록됩니다(일반적으로 `state/background_notifications/`에 기록하고, **다음 하트비트**에서 읽고 삭제해 대화 컨텍스트에 포함하는 경로와 함께 사용).
+- **후보 판정 `is_eligible(tool_name)`**: 맵에 키가 있으면 백그라운드 대상입니다. 키는 다음 두 가지 형식을 모두 지원합니다. (1) **스키마 이름**(예: `generate_3d_model`) — Mode A의 외부 도구 디스패치 등. (2) **`ツール名:サブコマンド`**(예: `image_gen:pipeline`) — 각 도구 모듈의 `EXECUTION_PROFILE`에서 `background_eligible: true` 항목을 `get_eligible_tools_from_profiles()`가 이 형식으로 등록합니다(Mode S의 `submit` 경로 등).
+- **후보 도구 맵 구성 `from_profiles()`**: 다음 3개 계층을 dict의 `update`으로 병합하고, **나중 항목이 우선**하도록 덮어씁니다. (1) `_DEFAULT_ELIGIBLE_TOOLS`(코드 기본값) (2) 인수 `profiles`(`EXECUTION_PROFILE` 집계) (3) 인수 `config_eligible`(일반적으로 `config.json`의 `background_task.eligible_tools`에서 `threshold_s`을 펼친 `名前 → 秒`). 값은 프로필 연동에 사용할 예상 시간(정수)입니다.
+- **코드 기본값 `_DEFAULT_ELIGIBLE_TOOLS`(초)**: `generate_character_assets` 30, `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 각 30, `generate_3d_model` / `generate_rigged_model` / `generate_animations` 각 30, `local_llm` 60, `run_command` 60.
+- **정리 `cleanup_old_tasks(max_age_hours=24)`**: `status`이 `completed` / `failed`에서 `completed_at`가 **인수로 지정한 시간(기본값 24시간)보다 오래된** JSON을 삭제합니다. 또한 `running` 상태로 `created_at`부터 **48시간 초과** 경과한 파일은 크래시 고아 파일로 삭제합니다. 반환값은 삭제한 항목 수입니다.
+- **보존 시간**: `cleanup_old_tasks`의 완료 작업 보존 시간은 인수 `max_age_hours`(기본값 24시간)으로 지정합니다. 이에 대응하는 `config.json` 설정 키는 없습니다.
 
 #### rotate_dm_logs(시스템 Cron)
 

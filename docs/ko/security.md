@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/security.md -->
-<!-- i18n: source-sha256=9efcb666c04a3459cbe0b3f825deff0bd2f4bcf9f165216c31a6af574c8ca609 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=9efcb666c04a3459cbe0b3f825deff0bd2f4bcf9f165216c31a6af574c8ca609 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: 581e20f1
 

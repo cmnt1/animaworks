@@ -224,7 +224,7 @@ animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
 
 ---
 
-## 설정 관리(config 서브커맨드)
+## 설정 관리(config 하위 명령)
 
 ```bash
 animaworks config                        # ヘルプ表示（子コマンドまたは -i が無い場合）
@@ -237,7 +237,7 @@ animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
 ```
 
-**주의**: Anima의 모델·credential 등은 `status.json`이 SSoT. `animas.{名前}.model` 등의 직접 설정은 비권장. `animaworks anima set-model`을 사용할 것.
+**주의**: Anima의 모델·credential 등은 `status.json`가 SSoT입니다. `animas.{名前}.model` 등의 직접 설정은 권장하지 않습니다. `animaworks anima set-model`을 사용하세요.
 
 ---
 

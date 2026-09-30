@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/operations/company.md -->
-<!-- i18n: source-sha256=eef72adf793e641fbc9faf0bde9b9e5891bbced2bf077b33fbf3241b6cfa3c10 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=2327b7793a54d6271a2504245e4bb7059a9dd22cee520d3789b3fb4b120e5ece generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Verified commit: 581e20f1
 
@@ -34,9 +34,9 @@ animaworks company assign sample-anima --unassign
 
 To move existing assets into a company area, use `animaworks company adopt <path> --to <company>`. A backup is created before the move, and by default a relative link remains at the previous location. The dry-run capable `split` plans company creation, membership changes, and asset moves together from a manifest, and applies them only when `--execute` is specified. `export` generates a bundle for company migration. For moves, splits, and exports, check the scope before executing, and after completion, verify the backup against the output.
 
-## Channel Company Assignment
+## Channel Company Ownership
 
-The company scope of an open channel is stored in the channel metadata's `company` field. Boards created from external messaging can use the per-integration `default_channel_company` setting. When modifying an existing channel, check its company and members. See the [configuration reference](../reference/config.md) for all configuration items.
+The company scope of an open channel is managed in the channel metadata `company`. For boards created from external messaging, you can specify an integration-specific `default_channel_company`. When changing an existing channel, check the company and members of the target channel. For all configuration items, see the [Configuration Reference](../reference/config.md).
 
 ## GitHub Account Assignment
 
