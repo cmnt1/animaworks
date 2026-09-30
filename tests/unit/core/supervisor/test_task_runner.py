@@ -209,3 +209,36 @@ async def test_heartbeat_lane_execution_returns_result(
             None,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_prepare_execution_routes_root_command_followup_without_rerunning_command(
+    monkeypatch: pytest.MonkeyPatch,
+    identity: IPCV2Identity,
+    args: argparse.Namespace,
+) -> None:
+    anima = object()
+    followup = AsyncMock(return_value={"task_type": "command_followup", "success": True})
+    execute_command = AsyncMock()
+    monkeypatch.setattr(task_runner, "DigitalAnima", lambda **_kwargs: anima)
+    monkeypatch.setattr(task_runner, "execute_cron_followup_contract", followup)
+    monkeypatch.setattr(task_runner, "execute_cron_contract", execute_command)
+    params = {
+        "task": {
+            "name": "daily",
+            "schedule": "0 9 * * *",
+            "type": "command",
+            "command": "echo data",
+        },
+        "command_output": "data",
+    }
+
+    execution = await task_runner._prepare_execution(args, identity, params)
+    result = await execution
+
+    followup.assert_awaited_once()
+    assert followup.await_args.args[0] is anima
+    assert followup.await_args.args[1].name == "daily"
+    assert followup.await_args.args[2] == "data"
+    execute_command.assert_not_awaited()
+    assert result == {"task_type": "command_followup", "success": True}

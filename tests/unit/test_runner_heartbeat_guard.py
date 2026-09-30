@@ -35,7 +35,7 @@ def _make_scheduler_mgr(tmp_path: Path) -> SchedulerManager:
         anima_dir=_anima_dir(tmp_path),
         emit_event=MagicMock(),
     )
-    # Always-isolated: route heartbeat/cron through the task runner supervisor.
+    # Heartbeat and LLM cron work use the task runner supervisor; shell commands run in the root.
     mgr._task_runner_supervisor.run_heartbeat = AsyncMock(
         return_value={"result": {"action": "completed", "summary": "ok"}, "success": True}
     )

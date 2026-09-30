@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.schemas import CronTask, CycleResult
-from core.supervisor.task_runner import execute_cron_contract
+from core.supervisor.task_runner import execute_cron_contract, execute_cron_followup_contract
 
 
 @pytest.mark.asyncio
@@ -55,3 +55,35 @@ async def test_execute_cron_contract_followup(
     assert anima.run_cron_task.await_count == int(expected)
     if expected and stderr:
         assert stderr in anima.run_cron_task.call_args.kwargs["command_output"]
+
+
+@pytest.mark.asyncio
+async def test_execute_cron_followup_contract_does_not_run_the_command() -> None:
+    anima = MagicMock()
+    anima.run_cron_command = AsyncMock()
+    result = CycleResult(trigger="cron:sensor", action="completed", summary="reviewed")
+    anima.run_cron_task = AsyncMock(return_value=result)
+    task = CronTask(
+        name="sensor",
+        schedule="*/10 * * * *",
+        type="command",
+        command="sensor",
+        description="Review sensor output",
+        skills=["monitoring"],
+    )
+
+    outcome = await execute_cron_followup_contract(anima, task, '{"exit_code": 1}')
+
+    anima.run_cron_command.assert_not_awaited()
+    anima.run_cron_task.assert_awaited_once_with(
+        "sensor",
+        "Review sensor output",
+        command_output='{"exit_code": 1}',
+        skills=["monitoring"],
+    )
+    assert outcome == {
+        "task_type": "command_followup",
+        "result": result.model_dump(mode="json"),
+        "success": True,
+        "usage": result.usage,
+    }

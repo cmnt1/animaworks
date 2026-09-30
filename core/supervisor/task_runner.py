@@ -128,6 +128,28 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
     }
 
 
+async def execute_cron_followup_contract(
+    anima: DigitalAnima,
+    task: CronTask,
+    command_output: str,
+) -> dict[str, Any]:
+    """Run only a command cron's LLM follow-up after root-side execution."""
+    if task.type != "command":
+        raise ValueError("command follow-up requires a command cron task")
+    result = await anima.run_cron_task(
+        task.name,
+        task.description or t("scheduler.cron_fallback_description", task_name=task.name),
+        command_output=command_output,
+        **({"skills": task.skills} if task.skills else {}),
+    )
+    return {
+        "task_type": "command_followup",
+        "result": result.model_dump(mode="json"),
+        "success": result.action not in {"error", "cancelled", "failed"},
+        "usage": result.usage,
+    }
+
+
 async def execute_heartbeat_contract(
     anima: DigitalAnima,
     *,
@@ -651,6 +673,11 @@ async def _prepare_execution(
     if not isinstance(task_data, dict):
         raise ValueError("run contract requires task")
     task = CronTask.model_validate(task_data)
+    if "command_output" in params:
+        command_output = params.get("command_output")
+        if task.type != "command" or not isinstance(command_output, str):
+            raise ValueError("command follow-up requires a command task and string output")
+        return asyncio.create_task(execute_cron_followup_contract(anima, task, command_output))
     return asyncio.create_task(execute_cron_contract(anima, task))
 
 

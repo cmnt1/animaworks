@@ -1,4 +1,4 @@
-"""phase3-fixed: root always isolates via TaskRunnerSupervisor (no process model branching)."""
+"""phase3-fixed: execution routing is independent of process model."""
 
 from __future__ import annotations
 
@@ -75,22 +75,31 @@ async def test_heartbeat_tick_delegates_even_with_legacy_status(tmp_path: Path, 
 
 
 @pytest.mark.asyncio
-async def test_cron_both_types_delegate_to_run_cron(tmp_path: Path) -> None:
+async def test_llm_cron_uses_runner_but_shell_command_runs_in_root(tmp_path: Path) -> None:
     manager, anima = _mk_manager(tmp_path)
     manager._task_runner_supervisor.run_cron = AsyncMock(
         return_value={"result": {"action": "completed", "summary": "ok"}, "success": True}
     )
+    manager._task_runner_supervisor.run_cron_followup = AsyncMock()
+    anima.run_cron_command = AsyncMock(
+        return_value={"task": "cmd", "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+    )
 
     llm_task = CronTask(name="llm", schedule="0 9 * * *", description="d", type="llm")
-    cmd_task = CronTask(name="cmd", schedule="0 9 * * *", type="command", command="echo hi")
+    cmd_task = CronTask(
+        name="cmd",
+        schedule="0 9 * * *",
+        type="command",
+        command="echo hi",
+        trigger_heartbeat=False,
+    )
     await manager._run_cron_task(llm_task)
     await manager._run_cron_task(cmd_task)
 
     anima.run_cron_task.assert_not_awaited()
-    anima.run_cron_command.assert_not_awaited()
-    assert manager._task_runner_supervisor.run_cron.await_count == 2
-    manager._task_runner_supervisor.run_cron.assert_any_await(llm_task)
-    manager._task_runner_supervisor.run_cron.assert_any_await(cmd_task)
+    anima.run_cron_command.assert_awaited_once()
+    manager._task_runner_supervisor.run_cron.assert_awaited_once_with(llm_task)
+    manager._task_runner_supervisor.run_cron_followup.assert_not_awaited()
 
 
 def test_runner_has_no_run_cron_task_handler(tmp_path: Path) -> None:

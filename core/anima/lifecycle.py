@@ -14,8 +14,9 @@ import asyncio
 import logging
 import os
 import re
+import signal
 import time
-from contextlib import nullcontext
+from contextlib import AsyncExitStack, nullcontext
 from datetime import date, timedelta
 from typing import Any
 
@@ -23,10 +24,32 @@ from core.execution._sanitize import ORIGIN_SYSTEM
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.paths import load_prompt
+from core.platform.process import kill_tree, signal_tree, snapshot_descendants, subprocess_session_kwargs
 from core.schemas import CycleResult
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")
+
+_CRON_COMMAND_TIMEOUT_SECONDS = 600.0
+
+
+async def _kill_cron_command_group(proc: asyncio.subprocess.Process) -> None:
+    """Kill and reap a timed-out or cancelled cron command and its descendants."""
+    descendants = await asyncio.to_thread(snapshot_descendants, proc.pid)
+    if os.name == "nt":
+        await asyncio.to_thread(kill_tree, proc.pid, descendants=descendants, include_root=True)
+    else:
+        await asyncio.to_thread(
+            signal_tree,
+            proc.pid,
+            signal.SIGKILL,
+            pgid=proc.pid,
+            descendants=descendants,
+        )
+    try:
+        await proc.wait()
+    except ProcessLookupError:
+        pass
 
 
 def _cron_thread_id(task_name: str) -> str:
@@ -1171,6 +1194,8 @@ class LifecycleMixin:
         command: str | None = None,
         tool: str | None = None,
         args: dict[str, Any] | None = None,
+        env: dict[str, str] | None = None,
+        serialize: bool = True,
     ) -> dict[str, Any]:
         """Execute a command-type cron task (bash or internal tool).
 
@@ -1179,6 +1204,8 @@ class LifecycleMixin:
             command: Bash command to execute (mutually exclusive with tool)
             tool: Internal tool name (mutually exclusive with command)
             args: Tool arguments (only used with tool)
+            env: Optional command environment; ``None`` inherits the current environment.
+            serialize: Acquire the shared background lock before running the command.
 
         Returns:
             Dictionary with execution results (exit_code, stdout, stderr, duration_ms)
@@ -1193,11 +1220,10 @@ class LifecycleMixin:
         from core.tooling.handler import active_session_type
 
         try:
-            async with self._background_lock:
+            async with AsyncExitStack() as lock_stack:
+                if serialize:
+                    await lock_stack.enter_async_context(self._background_lock)
                 logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
-                self._mark_busy_start()
-                self._status_slots["background"] = "working"
-                self._task_slots["background"] = task_name
                 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 
                 _runtime_ctx = RuntimeSessionContext.create(
@@ -1205,6 +1231,21 @@ class LifecycleMixin:
                     thread_id=_cron_thread_id(task_name),
                     trigger=f"cron:{task_name}",
                 )
+                active_commands = getattr(self, "_active_cron_commands", None)
+                if active_commands is None:
+                    active_commands = {}
+                    self._active_cron_commands = active_commands
+                active_key = f"{task_name}:{id(asyncio.current_task())}"
+                first_command = not active_commands
+                active_commands[active_key] = (task_name, None)
+                if first_command:
+                    self._mark_busy_start()
+                else:
+                    mark_progress = getattr(self, "_mark_busy_progress", None)
+                    if callable(mark_progress):
+                        mark_progress()
+                self._status_slots["background"] = "working"
+                self._task_slots["background"] = task_name
 
                 proc = None
                 try:
@@ -1249,24 +1290,27 @@ class LifecycleMixin:
                             command,
                             stdout=asyncio.subprocess.PIPE,
                             stderr=asyncio.subprocess.PIPE,
+                            env=env,
+                            **subprocess_session_kwargs(),
                         )
+                        active_commands[active_key] = (task_name, proc.pid)
+                        mark_progress = getattr(self, "_mark_busy_progress", None)
+                        if callable(mark_progress):
+                            mark_progress()
                         try:
-                            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=600.0)
+                            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                                proc.communicate(),
+                                timeout=_CRON_COMMAND_TIMEOUT_SECONDS,
+                            )
                         except TimeoutError:
                             logger.warning(
-                                "[%s] Cron command '%s' timed out after 600s, killing subprocess",
+                                "[%s] Cron command '%s' timed out after %.0fs, killing process group",
                                 self.name,
                                 task_name,
+                                _CRON_COMMAND_TIMEOUT_SECONDS,
                             )
-                            try:
-                                proc.kill()
-                            except ProcessLookupError:
-                                pass
-                            try:
-                                await proc.wait()
-                            except ProcessLookupError:
-                                pass
-                            stderr = "TimeoutError: cron command exceeded 600s limit"
+                            await _kill_cron_command_group(proc)
+                            stderr = f"TimeoutError: cron command exceeded {_CRON_COMMAND_TIMEOUT_SECONDS:g}s limit"
                             exit_code = 1
                         else:
                             stdout = stdout_bytes.decode("utf-8", errors="replace")
@@ -1308,21 +1352,24 @@ class LifecycleMixin:
                     )
                 finally:
                     if proc is not None and proc.returncode is None:
-                        try:
-                            proc.kill()
-                        except ProcessLookupError:
-                            pass
-                        try:
-                            await proc.wait()
-                        except ProcessLookupError:
-                            pass
-                    self._status_slots["background"] = "idle"
-                    self._task_slots["background"] = ""
+                        await _kill_cron_command_group(proc)
+                    active_commands.pop(active_key, None)
+                    if active_commands:
+                        remaining = list(active_commands.values())[-1][0]
+                        self._status_slots["background"] = "working"
+                        self._task_slots["background"] = remaining
+                        mark_progress = getattr(self, "_mark_busy_progress", None)
+                        if callable(mark_progress):
+                            mark_progress()
+                    else:
+                        self._status_slots["background"] = "idle"
+                        self._task_slots["background"] = ""
 
             duration_ms = (time.time_ns() // 1_000_000) - start_ms
 
             # Log to cron_log with command-specific format
-            self.memory.append_cron_command_log(
+            await asyncio.to_thread(
+                self.memory.append_cron_command_log,
                 task_name,
                 exit_code=exit_code,
                 stdout=stdout,
