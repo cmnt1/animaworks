@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _SkillsToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -40,7 +44,7 @@ class SkillsToolsMixin:
 
     # ── Tool management ───────────────────────────────────────
 
-    def _handle_refresh_tools(self, args: dict[str, Any]) -> str:
+    def _handle_refresh_tools(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Re-discover personal and common tools, update dispatcher."""
         from core.integrations import discover_common_tools, discover_personal_tools
 
@@ -56,7 +60,7 @@ class SkillsToolsMixin:
         logger.info("refresh_tools: discovered %d tools: %s", len(merged), names)
         return f"Refreshed tools ({len(merged)} discovered): {names}\nThese tools are now available for use."
 
-    def _handle_share_tool(self, args: dict[str, Any]) -> str:
+    def _handle_share_tool(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Copy a personal tool to common_tools/ for all animas."""
         import shutil
 
@@ -101,7 +105,7 @@ class SkillsToolsMixin:
 
     # ── Procedure/Skill outcome tracking ─────────────────────
 
-    def _handle_report_procedure_outcome(self, args: dict[str, Any]) -> str:
+    def _handle_report_procedure_outcome(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Report success/failure of a procedure or skill and update its metadata."""
         rel = args.get("path", "")
         success = args.get("success", True)
@@ -201,7 +205,7 @@ class SkillsToolsMixin:
 
     # ── Knowledge outcome tracking ────────────────────────────
 
-    def _handle_report_knowledge_outcome(self, args: dict[str, Any]) -> str:
+    def _handle_report_knowledge_outcome(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Report success/failure of a knowledge file and update its metadata."""
         rel = args.get("path", "")
         success = args.get("success", True)
@@ -269,7 +273,7 @@ class SkillsToolsMixin:
             recorder(rel)
         return result
 
-    def _handle_create_skill(self, args: dict[str, Any]) -> str:
+    def _handle_create_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Handle create_skill tool — create skill directory structure."""
         from core.paths import get_common_skills_dir
         from core.tooling.skill_creator import create_skill_directory
@@ -389,7 +393,7 @@ class SkillsToolsMixin:
 
         return result
 
-    def _handle_trust_skill(self, args: dict[str, Any]) -> str:
+    def _handle_trust_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Promote a safe skill to trusted operating guidance."""
         from core.skills.trust import promote_skill_to_trusted
         from core.skills.trust_gate import trust_skill_enabled_for_context
@@ -414,19 +418,19 @@ class SkillsToolsMixin:
             return _error_result("TrustSkillFailed", str(exc))
         return _json.dumps({"status": "trusted", **result.to_dict()}, ensure_ascii=False, indent=2)
 
-    def _handle_promote_procedure_to_skill(self, args: dict[str, Any]) -> str:
+    def _handle_promote_procedure_to_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Create or approve a reviewed skill generated from a procedure."""
         from core.tooling.skill_promotion_tool import handle_promote_procedure_to_skill
 
         return handle_promote_procedure_to_skill(self, args)
 
-    def _curator(self):
+    def _curator(self: _SkillsToolsHost):
         from core.paths import get_common_skills_dir
         from core.skills.curator import SkillCurator
 
         return SkillCurator(self._anima_dir, common_skills_dir=get_common_skills_dir())
 
-    def _curator_index_entries(self):
+    def _curator_index_entries(self: _SkillsToolsHost):
         from core.paths import get_common_skills_dir
         from core.skills.index import SkillIndex
 
@@ -439,7 +443,7 @@ class SkillsToolsMixin:
         index.build_index()
         return index.search("", include_blocked=True)
 
-    def _handle_curate_skills(self, args: dict[str, Any]) -> str:
+    def _handle_curate_skills(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Return a deterministic curator report for the current skill catalog."""
         del args
         try:
@@ -450,7 +454,7 @@ class SkillsToolsMixin:
         self._mark_curator_reviewed()
         return _json.dumps(report, ensure_ascii=False, indent=2, default=str)
 
-    def _mark_curator_reviewed(self) -> None:
+    def _mark_curator_reviewed(self: _SkillsToolsHost) -> None:
         """Record the curator review time so heartbeat stops re-injecting reports."""
         try:
             marker_dir = self._anima_dir / "state" / "skill_curator"
@@ -462,28 +466,28 @@ class SkillsToolsMixin:
         except Exception:
             logger.debug("Failed to update curator review marker", exc_info=True)
 
-    def _handle_archive_skill(self, args: dict[str, Any]) -> str:
+    def _handle_archive_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "archived")
 
-    def _handle_restore_skill(self, args: dict[str, Any]) -> str:
+    def _handle_restore_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "active")
 
-    def _handle_block_skill(self, args: dict[str, Any]) -> str:
+    def _handle_block_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "blocked")
 
-    def _handle_unblock_skill(self, args: dict[str, Any]) -> str:
+    def _handle_unblock_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "active")
 
-    def _handle_delete_skill(self, args: dict[str, Any]) -> str:
+    def _handle_delete_skill(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         return self._handle_curator_state_change(args, "deleted")
 
-    def _handle_set_skill_lifecycle(self, args: dict[str, Any]) -> str:
+    def _handle_set_skill_lifecycle(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         state = args.get("state", "")
         if not state:
             return _error_result("InvalidArguments", "state is required")
         return self._handle_curator_state_change(args, state)
 
-    def _handle_curator_state_change(self, args: dict[str, Any], state: str) -> str:
+    def _handle_curator_state_change(self: _SkillsToolsHost, args: dict[str, Any], state: str) -> str:
         skill_name = str(args.get("skill_name") or "").strip()
         reason = str(args.get("reason") or "").strip()
         absorbed_into = args.get("absorbed_into")
@@ -564,7 +568,7 @@ class SkillsToolsMixin:
         return _json.dumps(payload, ensure_ascii=False, indent=2)
 
     def _scan_created_skill(
-        self,
+        self: _SkillsToolsHost,
         skill_dir: Path,
         trust_level: str | None,
         *,
@@ -635,7 +639,7 @@ class SkillsToolsMixin:
 
     # ── Task queue handlers ───────────────────────────────────
 
-    def _handle_backlog_task(self, args: dict[str, Any]) -> str:
+    def _handle_backlog_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(self._anima_dir)
@@ -672,7 +676,7 @@ class SkillsToolsMixin:
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    def _handle_update_task(self, args: dict[str, Any]) -> str:
+    def _handle_update_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         from core.tasks.dispatch import update_task
         from core.tasks.queue import TaskQueueManager
 
@@ -728,7 +732,7 @@ class SkillsToolsMixin:
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    def _handle_list_tasks(self, args: dict[str, Any]) -> str:
+    def _handle_list_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         from core.tasks.queue import TaskQueueManager, mark_executability
 
         manager = TaskQueueManager(self._anima_dir)
@@ -771,7 +775,7 @@ class SkillsToolsMixin:
 
     # ── submit_tasks handler (DAG batch submission) ────────────
 
-    def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
+    def _handle_submit_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         """Validate a complete DAG batch, then publish it in one transaction."""
         from core.tooling.policy.submit_tasks import submit_tasks
 
@@ -784,7 +788,7 @@ class SkillsToolsMixin:
 
     # ── Background task handlers ─────────────────────────────
 
-    def _handle_check_background_task(self, args: dict[str, Any]) -> str:
+    def _handle_check_background_task(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         task_id = args.get("task_id", "")
         if not task_id:
             return _error_result("ValidationError", t("handler.bg_task_id_required"))
@@ -802,7 +806,7 @@ class SkillsToolsMixin:
 
         return _json.dumps(task.to_dict(), ensure_ascii=False, indent=2)
 
-    def _handle_list_background_tasks(self, args: dict[str, Any]) -> str:
+    def _handle_list_background_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         mgr = self._background_manager
         if mgr is None:
             return _error_result("NotEnabled", t("handler.bg_not_enabled"))

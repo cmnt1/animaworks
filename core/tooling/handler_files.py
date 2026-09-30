@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _FileToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -121,7 +125,7 @@ class FileToolsMixin:
 
     # ── File budget ───────────────────────────────────────────
 
-    def _read_file_budget(self) -> tuple[int, int]:
+    def _read_file_budget(self: _FileToolsHost) -> tuple[int, int]:
         """Calculate (max_lines, max_chars) from context window.
 
         Two-tier budget matching Claude Code Read tool constraints:
@@ -142,7 +146,7 @@ class FileToolsMixin:
 
     # ── File operations ───────────────────────────────────────
 
-    def _handle_read_file(self, args: dict[str, Any]) -> str:
+    def _handle_read_file(self: _FileToolsHost, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
         err = self._check_file_permission(path_str)
         if err:
@@ -228,7 +232,7 @@ class FileToolsMixin:
         )
         return "\n".join(parts)
 
-    def _handle_write_file(self, args: dict[str, Any]) -> str:
+    def _handle_write_file(self: _FileToolsHost, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
         err = self._check_file_permission(path_str, write=True)
         if err:
@@ -278,7 +282,7 @@ class FileToolsMixin:
         except Exception as e:
             return _error_result("WriteError", f"Error writing {path_str}: {e}")
 
-    def _try_write_with_frontmatter(self, path: Path, content: str) -> bool:
+    def _try_write_with_frontmatter(self: _FileToolsHost, path: Path, content: str) -> bool:
         """Auto-inject frontmatter when writing to knowledge/ or procedures/.
 
         Returns True if the write was handled, False to fall back to plain write.
@@ -333,7 +337,7 @@ class FileToolsMixin:
             )
         return False
 
-    def _handle_edit_file(self, args: dict[str, Any]) -> str:
+    def _handle_edit_file(self: _FileToolsHost, args: dict[str, Any]) -> str:
         path_str = args.get("path", "")
         err = self._check_file_permission(path_str, write=True)
         if err:
@@ -453,7 +457,7 @@ class FileToolsMixin:
         return False
 
     def _iter_permitted_tree_paths(
-        self,
+        self: _FileToolsHost,
         root: Path,
         *,
         pattern: str = "",
@@ -500,7 +504,7 @@ class FileToolsMixin:
             logger.debug("Failed while walking %s", root, exc_info=True)
         return visible
 
-    def _handle_search_code(self, args: dict[str, Any]) -> str:
+    def _handle_search_code(self: _FileToolsHost, args: dict[str, Any]) -> str:
         import re as _re
 
         pattern_str = args.get("pattern", "")
@@ -586,7 +590,7 @@ class FileToolsMixin:
 
     # ── Directory listing ─────────────────────────────────────
 
-    def _handle_list_directory(self, args: dict[str, Any]) -> str:
+    def _handle_list_directory(self: _FileToolsHost, args: dict[str, Any]) -> str:
         dir_path_str = args.get("path", "")
         config = self._load_permissions_config()
         denied_roots = self._resolved_file_deny_roots(config)
@@ -668,7 +672,7 @@ class FileToolsMixin:
             result += f"\n(truncated at {max_entries} entries, total: {len(items)})"
         return result
 
-    def _handle_glob(self, args: dict[str, Any]) -> str:
+    def _handle_glob(self: _FileToolsHost, args: dict[str, Any]) -> str:
         """Handle Claude Code-compatible Glob tool.
 
         Maps Glob(pattern, path?) to list_directory(path, pattern, recursive=True).
@@ -708,7 +712,7 @@ class FileToolsMixin:
             return True
         return False
 
-    def _handle_web_fetch(self, args: dict[str, Any]) -> str:
+    def _handle_web_fetch(self: _FileToolsHost, args: dict[str, Any]) -> str:
         import time
         from urllib.parse import urlparse
 
@@ -845,7 +849,7 @@ class FileToolsMixin:
 
     # ── Web search ────────────────────────────────────────────
 
-    def _handle_web_search(self, args: dict[str, Any]) -> str:
+    def _handle_web_search(self: _FileToolsHost, args: dict[str, Any]) -> str:
         """Handle Claude Code-compatible WebSearch tool.
 
         Delegates to the web_search external tool module.

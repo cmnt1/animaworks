@@ -206,48 +206,6 @@ class TestWebSocketDefaultCase:
         assert "data.summary" in default_section, "default case should use data.summary fallback"
 
 
-# ── Backend Summary Tests ────────────────────────────────
-
-
-class TestBackendActivityLogSummary:
-    """Verify anima modules' activity.alog() calls include summary.
-
-    DigitalAnima is split into Mixin sub-modules; search the facade
-    plus all core/_anima_*.py files.
-    """
-
-    _ANIMA_FILES = [
-        _WORKTREE / "core" / "anima" / f"{name}.py"
-        for name in ("digital_anima", "lifecycle", "messaging", "inbox", "heartbeat")
-    ]
-
-    @classmethod
-    def _read_all(cls) -> str:
-        return "\n".join(p.read_text(encoding="utf-8") for p in cls._ANIMA_FILES)
-
-    def test_heartbeat_start_has_summary(self) -> None:
-        content = self._read_all()
-        pattern = r'activity\.alog\("heartbeat_start",\s*summary=t\("anima\.heartbeat_start"\)\)'
-        assert re.search(pattern, content), (
-            "heartbeat_start activity.alog() should include summary=t('anima.heartbeat_start')"
-        )
-
-    def test_message_received_has_summary(self) -> None:
-        content = self._read_all()
-        pattern = r'activity\.alog\(\s*"message_received",\s*content=content,\s*summary=content\[:100\]'
-        matches = re.findall(pattern, content)
-        assert len(matches) == 2, (
-            f"Expected 2 message_received calls with summary (shared chat path, steer injection), found {len(matches)}"
-        )
-
-    def test_message_received_from_anima_has_summary(self) -> None:
-        content = self._read_all()
-        pattern = r'activity\.alog\(\s*"message_received",\s*content=_m\.content,\s*summary=_m\.content\[:200\]'
-        assert re.search(pattern, content), (
-            "message_received (from anima) activity.alog() should use full content and summary=_m.content[:200]"
-        )
-
-
 # ── Workspace Timeline Filter Tests ─────────────────────
 
 

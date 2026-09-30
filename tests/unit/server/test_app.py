@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,11 +20,19 @@ from server.stream_registry import StreamRegistry
 class TestCreateApp:
     """Tests for create_app factory."""
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
+    @pytest.fixture(autouse=True)
+    def _completed_setup_config(self, data_dir_at_tmp_path: Path) -> None:
+        config_path = data_dir_at_tmp_path / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["setup_complete"] = True
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        from core.config import invalidate_cache
+
+        invalidate_cache()
+
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_no_animas_dir(self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path):
+    def test_create_app_no_animas_dir(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -31,8 +41,6 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
@@ -40,11 +48,9 @@ class TestCreateApp:
         assert app.state.animas_dir == animas_dir
         assert app.state.shared_dir == shared_dir
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_with_animas(self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path):
+    def test_create_app_with_animas(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -58,20 +64,14 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
         assert "alice" in app.state.anima_names
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_skips_dirs_without_identity(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_skips_dirs_without_identity(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -83,20 +83,14 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
         assert app.state.anima_names == []
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_skips_files_in_animas_dir(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_skips_files_in_animas_dir(self, mock_ws_cls, mock_sup_cls, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -108,23 +102,15 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 
         assert app.state.anima_names == []
 
-    @patch("core.paths.get_data_dir")
-    @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_skips_disabled_anima(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_skips_disabled_anima(self, mock_ws_cls, mock_sup_cls, tmp_path):
         """Anima with status.json enabled:false is excluded from anima_names."""
-        import json
-
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -145,8 +131,6 @@ class TestCreateApp:
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
-        mock_load_config.return_value = MagicMock(setup_complete=True)
-        mock_get_data_dir.return_value = tmp_path
 
         app = create_app(animas_dir, shared_dir)
 

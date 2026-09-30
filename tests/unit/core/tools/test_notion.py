@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -51,6 +52,17 @@ def notion_client(mock_httpx_client):
     client._httpx = mock_httpx_module
     client._client = mock_instance
     return client
+
+
+@pytest.fixture(autouse=True)
+def _isolated_notion_credentials(data_dir, monkeypatch: pytest.MonkeyPatch):
+    """Resolve Notion credentials through the temporary runtime data directory."""
+    from core.config.vault import invalidate_vault_cache
+
+    invalidate_vault_cache()
+    monkeypatch.setenv("NOTION_API_TOKEN", "test-notion-token")
+    yield data_dir
+    invalidate_vault_cache()
 
 
 # ── TestBuildPageUrl ────────────────────────────────────────
@@ -707,7 +719,17 @@ class TestErrorHandling:
         mock_resp.headers = {"Retry-After": "2"}
         mock_resp.text = "Rate limited"
 
-        with patch("core.integrations._retry.time.sleep"), pytest.raises(RateLimitError) as exc_info:
+        import core.integrations.notion as notion_module
+
+        retry_on_rate_limit = notion_module.retry_on_rate_limit
+
+        def retry_without_wait(fn, *args, **kwargs):
+            return retry_on_rate_limit(fn, *args, sleep_fn=lambda _delay: None, **kwargs)
+
+        with (
+            patch("core.integrations.notion.retry_on_rate_limit", side_effect=retry_without_wait),
+            pytest.raises(RateLimitError) as exc_info,
+        ):
             notion_client.get_page("abc")
 
         assert exc_info.value.retry_after == 2.0
@@ -746,20 +768,12 @@ class TestErrorHandling:
 
         assert "500000" in str(exc_info.value) or "payload" in str(exc_info.value).lower()
 
-    def test_httpx_not_installed_raises_import_error(self) -> None:
-        import builtins
-
+    def test_httpx_not_installed_raises_import_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         client = NotionClient(token="test")
         client._httpx = None
+        monkeypatch.setitem(sys.modules, "httpx", None)
 
-        real_import = builtins.__import__
-
-        def fake_import(name: str, *args: object, **kwargs: object):
-            if name == "httpx":
-                raise ImportError("No module named 'httpx'")
-            return real_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=fake_import), pytest.raises(ImportError, match="httpx"):
+        with pytest.raises(ImportError, match="httpx"):
             client._get_httpx()
 
 
@@ -767,46 +781,43 @@ class TestErrorHandling:
 
 
 class TestCredentialResolution:
-    """Tests for _resolve_token credential resolution."""
+    """Verify token lookup through the public tool dispatcher and credential stores."""
 
-    def test_per_anima_token_found(self) -> None:
-        from core.integrations.notion import _resolve_token
+    def test_per_anima_token_found(self, data_dir):
+        from core.config.vault import get_vault_manager
 
-        with (
-            patch(
-                "core.credentials._lookup_vault_credential",
-                return_value="per-anima-token",
-            ) as mock_vault,
-            patch("core.credentials._lookup_shared_credentials"),
-        ):
-            result = _resolve_token({"anima_dir": "/tmp/animas/alice"})
-            assert result == "per-anima-token"
-            mock_vault.assert_called_once()
-            assert mock_vault.call_args[0][0] == "NOTION_API_TOKEN__alice"
+        anima_dir = data_dir / "animas" / "alice"
+        get_vault_manager().store("shared", "NOTION_API_TOKEN__alice", "per-anima-token")
 
-    def test_per_anima_not_found_shared_fallback(self) -> None:
-        from core.integrations.notion import _resolve_token
+        with patch("core.integrations.notion.NotionClient") as mock_client:
+            dispatch("notion_search", {"anima_dir": str(anima_dir), "query": "test"})
 
-        with (
-            patch("core.credentials._lookup_vault_credential", return_value=None),
-            patch(
-                "core.credentials._lookup_shared_credentials",
-                return_value="shared-token",
-            ),
-        ):
-            result = _resolve_token({"anima_dir": "/tmp/animas/alice"})
-            assert result == "shared-token"
+        mock_client.assert_called_once_with(token="per-anima-token")
 
-    def test_no_token_at_all_raises_tool_config_error(self) -> None:
-        from core.integrations.notion import _resolve_token
+    def test_per_anima_not_found_shared_fallback(self, data_dir):
+        anima_dir = data_dir / "animas" / "alice"
+        credentials_path = data_dir / "shared" / "credentials.json"
+        credentials_path.write_text(
+            json.dumps({"NOTION_API_TOKEN__alice": "shared-token"}),
+            encoding="utf-8",
+        )
 
-        with (
-            patch("core.credentials._lookup_vault_credential", return_value=None),
-            patch("core.credentials._lookup_shared_credentials", return_value=None),
-            patch("core.integrations.notion.get_credential", side_effect=ToolConfigError("missing")),
-            pytest.raises(ToolConfigError, match="notion"),
-        ):
-            _resolve_token({"anima_dir": "/tmp/animas/alice"})
+        with patch("core.integrations.notion.NotionClient") as mock_client:
+            dispatch("notion_search", {"anima_dir": str(anima_dir), "query": "test"})
+
+        mock_client.assert_called_once_with(token="shared-token")
+
+    def test_no_token_at_all_raises_tool_config_error(self, data_dir, monkeypatch: pytest.MonkeyPatch):
+        from core.config.vault import get_vault_manager
+
+        monkeypatch.delenv("NOTION_API_TOKEN")
+        get_vault_manager().delete("shared", "NOTION_API_TOKEN__alice")
+        credentials_path = data_dir / "shared" / "credentials.json"
+        credentials_path.write_text("{}", encoding="utf-8")
+        anima_dir = data_dir / "animas" / "alice"
+
+        with pytest.raises(ToolConfigError, match="notion"):
+            dispatch("notion_search", {"anima_dir": str(anima_dir), "query": "test"})
 
 
 # ── TestDispatch ────────────────────────────────────────────
@@ -818,23 +829,22 @@ def _dispatch_test_helper(
     expected_method: str,
     expected_call_args: dict | None = None,
 ) -> None:
-    """Helper to test dispatch routes to correct client method."""
-    with patch("core.integrations.notion._resolve_token") as mock_resolve:
-        mock_resolve.return_value = "token"
-        with patch("core.integrations.notion.NotionClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_method = getattr(mock_client, expected_method)
-            mock_method.return_value = {"id": "abc"}
+    """Helper to test dispatch routes to the public Notion client API."""
+    with patch("core.integrations.notion.NotionClient") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_method = getattr(mock_client, expected_method)
+        mock_method.return_value = {"id": "abc"}
 
-            result = dispatch(action, args)
+        result = dispatch(action, args)
 
-            assert result == {"id": "abc"}
-            mock_method.assert_called_once()
-            if expected_call_args:
-                call_kw = mock_method.call_args[1]
-                for k, v in expected_call_args.items():
-                    assert call_kw.get(k) == v
+        assert result == {"id": "abc"}
+        mock_cls.assert_called_once_with(token="test-notion-token")
+        mock_method.assert_called_once()
+        if expected_call_args:
+            call_kw = mock_method.call_args[1]
+            for k, v in expected_call_args.items():
+                assert call_kw.get(k) == v
 
 
 class TestDispatchActions:
@@ -919,43 +929,31 @@ class TestDispatchValidationErrors:
     """Test dispatch raises ValueError for missing required args."""
 
     def test_missing_page_id_get_page(self) -> None:
-        with patch("core.integrations.notion._resolve_token") as mock_resolve:
-            mock_resolve.return_value = "token"
-            with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="page_id"):
-                dispatch("notion_get_page", {})
+        with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="page_id"):
+            dispatch("notion_get_page", {})
 
     def test_missing_page_id_get_page_content(self) -> None:
-        with patch("core.integrations.notion._resolve_token") as mock_resolve:
-            mock_resolve.return_value = "token"
-            with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="page_id"):
-                dispatch("notion_get_page_content", {})
+        with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="page_id"):
+            dispatch("notion_get_page_content", {})
 
     def test_missing_database_id(self) -> None:
-        with patch("core.integrations.notion._resolve_token") as mock_resolve:
-            mock_resolve.return_value = "token"
-            with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="database_id"):
-                dispatch("notion_get_database", {})
+        with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="database_id"):
+            dispatch("notion_get_database", {})
 
     def test_missing_parent_create_page(self) -> None:
-        with patch("core.integrations.notion._resolve_token") as mock_resolve:
-            mock_resolve.return_value = "token"
-            with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="parent"):
-                dispatch("notion_create_page", {"properties": {}})
+        with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="parent"):
+            dispatch("notion_create_page", {"properties": {}})
 
     def test_missing_parent_page_id_create_database(self) -> None:
-        with patch("core.integrations.notion._resolve_token") as mock_resolve:
-            mock_resolve.return_value = "token"
-            with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="parent_page_id"):
-                dispatch(
-                    "notion_create_database",
-                    {"title": "T", "properties": {}},
-                )
+        with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="parent_page_id"):
+            dispatch(
+                "notion_create_database",
+                {"title": "T", "properties": {}},
+            )
 
     def test_unknown_action_raises_value_error(self) -> None:
-        with patch("core.integrations.notion._resolve_token") as mock_resolve:
-            mock_resolve.return_value = "token"
-            with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="unknown"):
-                dispatch("notion_unknown_action", {})
+        with patch("core.integrations.notion.NotionClient"), pytest.raises(ValueError, match="unknown"):
+            dispatch("notion_unknown_action", {})
 
 
 # ── TestGetToolSchemas ──────────────────────────────────────
@@ -1009,7 +1007,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1041,7 +1038,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1055,7 +1051,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1069,7 +1064,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1086,7 +1080,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1100,7 +1093,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1114,7 +1106,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1127,7 +1118,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1148,7 +1138,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1171,7 +1160,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -1182,7 +1170,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1195,7 +1182,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1218,7 +1204,6 @@ class TestCliMain:
         from core.integrations.notion import cli_main
 
         with (
-            patch("core.integrations.notion._resolve_cli_token", return_value="tok"),
             patch("core.integrations.notion.NotionClient") as mock_cls,
         ):
             inst = mock_cls.return_value
@@ -1227,13 +1212,17 @@ class TestCliMain:
                 cli_main(["search", "test"])
             assert exc_info.value.code == 1
 
-    def test_cli_tool_config_error_exits(self, capsys: pytest.CaptureFixture) -> None:
+    def test_cli_tool_config_error_exits(
+        self,
+        capsys: pytest.CaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         from core.integrations.notion import cli_main
 
-        with patch("core.integrations.notion._resolve_cli_token", side_effect=ToolConfigError("no token")):
-            with pytest.raises(SystemExit) as exc_info:
-                cli_main(["search", "test"])
-            assert exc_info.value.code == 1
+        monkeypatch.delenv("NOTION_API_TOKEN")
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(["search", "test"])
+        assert exc_info.value.code == 1
 
 
 # ── TestGetClient ───────────────────────────────────────────

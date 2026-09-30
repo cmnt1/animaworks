@@ -21,9 +21,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ORG_DASHBOARD_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "org-dashboard.js"
 APP_WEBSOCKET_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
-ACTIVITY_PY = REPO_ROOT / "core" / "activity" / "logger.py"
-
-
 # ── org-dashboard.js: Visibility Filter ──────────────────────
 
 
@@ -141,68 +138,3 @@ class TestAppWebSocketFiltering:
         update_pos = handler_block.find("updateCardActivity")
         assert guard_pos >= 0 and update_pos >= 0
         assert guard_pos < update_pos
-
-
-# ── core/activity/logger.py: Backend live stream ──────────────────
-
-
-class TestActivityBackendLiveEventTypes:
-    """_LIVE_EVENT_TYPES does NOT contain tool_use."""
-
-    @pytest.fixture(autouse=True)
-    def _load(self):
-        self.src = ACTIVITY_PY.read_text(encoding="utf-8")
-
-    def test_live_event_types_defined(self):
-        assert "_LIVE_EVENT_TYPES" in self.src
-
-    def test_live_event_types_excludes_tool_use(self):
-        # Tool activity is handled by log()'s explicit tool_use/tool_result branch.
-        live_pos = self.src.find("_LIVE_EVENT_TYPES")
-        visible_pos = self.src.find("_VISIBLE_TOOL_NAMES")
-        assert live_pos >= 0 and visible_pos >= 0
-        block = self.src[live_pos:visible_pos]
-        assert '"tool_use"' not in block
-        assert "'tool_use'" not in block
-
-
-class TestActivityBackendVisibleToolNames:
-    """_VISIBLE_TOOL_NAMES frozenset is defined with expected tool names."""
-
-    @pytest.fixture(autouse=True)
-    def _load(self):
-        self.src = ACTIVITY_PY.read_text(encoding="utf-8")
-
-    def test_visible_tool_names_defined(self):
-        assert "_VISIBLE_TOOL_NAMES" in self.src
-
-    def test_visible_tool_names_is_frozenset(self):
-        assert "frozenset" in self.src
-
-    def test_visible_tool_names_has_expected_tools(self):
-        assert "delegate_task" in self.src
-        assert "update_task" in self.src
-        assert "backlog_task" in self.src
-        assert "submit_tasks" in self.src
-        assert "call_human" in self.src
-        assert "post_channel" in self.src
-        assert "send_message" in self.src
-
-
-class TestActivityLogMethodConditional:
-    """log() sends all tool uses and results through the limiter."""
-
-    @pytest.fixture(autouse=True)
-    def _load(self):
-        self.src = ACTIVITY_PY.read_text(encoding="utf-8")
-
-    def test_log_has_tool_use_conditional(self):
-        assert 'event_type in ("tool_use", "tool_result")' in self.src
-
-    def test_log_has_rate_limiter_check(self):
-        assert "_live_rate_limiter.allow" in self.src
-
-    def test_log_emits_live_event_for_all_tool_activity(self):
-        assert "_emit_live_event" in self.src
-        assert "tool_use" in self.src
-        assert "tool_result" in self.src

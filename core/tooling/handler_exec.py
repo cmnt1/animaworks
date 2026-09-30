@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import _ExecutionToolsHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -259,20 +261,18 @@ class CommandRunner:
 class ExecutionToolsMixin:
     """Run foreground or background shell commands after permission checks."""
 
-    _anima_dir: Path
-    _task_cwd: Path | None
-
-    def _handle_execute_command(self, args: dict[str, Any]) -> str:
+    def _handle_execute_command(self: _ExecutionToolsHost, args: dict[str, Any]) -> str:
+        context = self._tool_context
         command = args.get("command", "")
-        err = self._check_command_permission(command)
+        err = context.check_command_permission(command)
         if err:
             return err
 
         background = args.get("background", False)
         if background:
             timeout = args.get("timeout", _BG_CMD_TIMEOUT_DEFAULT)
-            runner = CommandRunner(command, self._task_cwd or self._anima_dir, timeout)
-            output_dir = self._anima_dir / "state" / "cmd_output"
+            runner = CommandRunner(command, context.task_cwd or context.anima_dir, timeout)
+            output_dir = context.anima_dir / "state" / "cmd_output"
             try:
                 cmd_id = runner.start(output_dir)
             except Exception as exc:
@@ -304,7 +304,7 @@ class ExecutionToolsMixin:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    cwd=str(self._task_cwd or self._anima_dir),
+                    cwd=str(context.task_cwd or context.anima_dir),
                     **shell_kwargs,
                 )
             else:
@@ -318,7 +318,7 @@ class ExecutionToolsMixin:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    cwd=str(self._task_cwd or self._anima_dir),
+                    cwd=str(context.task_cwd or context.anima_dir),
                 )
             output = proc.stdout
             if proc.stderr:

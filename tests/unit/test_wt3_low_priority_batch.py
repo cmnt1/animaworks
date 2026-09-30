@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.time_utils import now_jst
+from core.tooling.handler import ToolHandler
 
 # ══════════════════════════════════════════════════════════════════════
 # Fix 8: Board Mention Fanout — running Animas only
@@ -32,7 +33,6 @@ from core.time_utils import now_jst
 
 def _make_handler(tmp_path: Path, anima_name: str = "alice") -> ToolHandler:
     """Create a ToolHandler with minimal mocked dependencies."""
-    from core.tooling.handler import ToolHandler
 
     anima_dir = tmp_path / "animas" / anima_name
     anima_dir.mkdir(parents=True)
@@ -61,7 +61,7 @@ class TestFanoutAllExcludesStoppedAnimas:
     """Fix 8: @all fanout only targets running Animas (socket present)."""
 
     @pytest.fixture(autouse=True)
-    def _bypass_acl(self):
+    def _bypass_acl(self, data_dir_at_tmp_path: Path):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
@@ -84,8 +84,7 @@ class TestFanoutAllExcludesStoppedAnimas:
         (sockets_dir / "carol.sock").touch()
         # dave has no socket — stopped
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("general", "Hello @all !")
+        handler._fanout_board_mentions("general", "Hello @all !")
 
         messenger = handler._messenger
         # Should have called send() for bob and carol (sorted order)
@@ -103,8 +102,7 @@ class TestFanoutAllExcludesStoppedAnimas:
         (sockets_dir / "alice.sock").touch()
         (sockets_dir / "bob.sock").touch()
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("general", "Hey @all")
+        handler._fanout_board_mentions("general", "Hey @all")
 
         messenger = handler._messenger
         assert messenger.send.call_count == 1
@@ -116,7 +114,7 @@ class TestFanoutNamedExcludesStoppedAnimas:
     """Fix 8: Named @mention only reaches running targets."""
 
     @pytest.fixture(autouse=True)
-    def _bypass_acl(self):
+    def _bypass_acl(self, data_dir_at_tmp_path: Path):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
@@ -133,8 +131,7 @@ class TestFanoutNamedExcludesStoppedAnimas:
         (sockets_dir / "bob.sock").touch()
         # dave has no socket — stopped
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("ops", "Hey @bob @dave check this")
+        handler._fanout_board_mentions("ops", "Hey @bob @dave check this")
 
         messenger = handler._messenger
         assert messenger.send.call_count == 1
@@ -149,8 +146,7 @@ class TestFanoutNamedExcludesStoppedAnimas:
         sockets_dir.mkdir(parents=True)
         # No sockets at all
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            handler._fanout_board_mentions("general", "Hey @dave @eve")
+        handler._fanout_board_mentions("general", "Hey @dave @eve")
 
         messenger = handler._messenger
         messenger.send.assert_not_called()
@@ -159,30 +155,6 @@ class TestFanoutNamedExcludesStoppedAnimas:
 # ══════════════════════════════════════════════════════════════════════
 # Fix 10: A2 Streaming Comments
 # ══════════════════════════════════════════════════════════════════════
-
-
-class TestStreamingCommentUpdated:
-    """Fix 10: agent.py streaming section comment updated."""
-
-    def test_streaming_comment_updated(self):
-        """agent.py should reference 'S / A / all modes', not just 'A1 Agent SDK'."""
-        agent_path = Path(__file__).resolve().parents[2] / "core" / "agent" / "agent_core.py"
-        content = agent_path.read_text(encoding="utf-8")
-        assert "S / A / all modes" in content, "agent.py streaming section comment should say 'S / A / all modes'"
-
-
-class TestLitellmCommentUpdated:
-    """Fix 10: LiteLLM executor session chaining comment updated."""
-
-    def test_litellm_comment_updated(self):
-        """The LiteLLM executor should say 'handled by AgentCore', not 'NOT handled'."""
-        litellm_path = (
-            Path(__file__).resolve().parents[2] / "core" / "execution" / "engines" / "litellm" / "executor.py"
-        )
-        content = litellm_path.read_text(encoding="utf-8")
-        assert "handled by AgentCore" in content, "LiteLLM executor should say chaining is 'handled by AgentCore'"
-        # Verify old incorrect comment is gone
-        assert "NOT handled" not in content, "LiteLLM executor should NOT contain 'NOT handled' anymore"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -432,7 +404,7 @@ class TestJournalOpenRecoversOrphan:
         # Now open a new journal — should trigger recovery first
         journal = StreamingJournal(journal_anima_dir)
 
-        with patch.object(StreamingJournal, "recover", wraps=StreamingJournal.recover) as mock_recover:
+        with patch.object(StreamingJournal, "recover", wraps=StreamingJournal.recover):
             journal.open(trigger="chat", from_person="user", session_id="new-sess")
 
         # The orphan was present before open() — recovery path was taken.

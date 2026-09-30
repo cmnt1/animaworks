@@ -197,7 +197,6 @@ class TestCreateAnimaCLISupervisor:
         with (
             patch("core.anima.factory.create_from_md") as mock_create,
             patch("core.infra.runtime_init.ensure_runtime_dir"),
-            patch("core.paths.get_data_dir", return_value=data_dir),
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
             patch("core.config.register_anima_in_config"),
         ):
@@ -241,7 +240,6 @@ class TestCreateAnimaCLISupervisor:
         with (
             patch("core.anima.factory.create_from_md") as mock_create,
             patch("core.infra.runtime_init.ensure_runtime_dir"),
-            patch("core.paths.get_data_dir", return_value=data_dir),
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
             patch("core.config.register_anima_in_config"),
         ):

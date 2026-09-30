@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ── cmd_board_read ───────────────────────────────────────
 
 
@@ -424,6 +426,10 @@ class TestCmdBoardDmHistory:
 class TestFanoutBoardMentions:
     """Tests for _fanout_board_mentions — @mention fanout logic."""
 
+    @pytest.fixture(autouse=True)
+    def _runtime_data_dir(self, data_dir_at_tmp_path: Path) -> None:
+        """Use the real path accessor with each test's temporary root."""
+
     def test_at_name_sends_dm_to_running_anima(self, tmp_path):
         """@sakura sends a DM to sakura if she has a running socket."""
         from cli.commands.board import _fanout_board_mentions
@@ -435,13 +441,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "general",
-                "Hey @sakura, check this",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "Hey @sakura, check this",
+        )
 
         # Should send exactly one board_mention DM
         assert mock_messenger.send.call_count == 1
@@ -463,13 +468,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "general",
-                "Hello @all!",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "Hello @all!",
+        )
 
         # alice is excluded (sender); bob and charlie should receive DMs
         assert mock_messenger.send.call_count == 2
@@ -489,13 +493,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "general",
-                "No mentions here",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "No mentions here",
+        )
 
         mock_messenger.send.assert_not_called()
 
@@ -511,13 +514,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "charlie",
-                "dev",
-                "Hey @bob, are you there?",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "charlie",
+            "dev",
+            "Hey @bob, are you there?",
+        )
 
         mock_messenger.send.assert_not_called()
 
@@ -533,13 +535,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "general",
-                "@all standup time",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "@all standup time",
+        )
 
         targets = {c.kwargs["to"] for c in mock_messenger.send.call_args_list}
         assert "alice" not in targets
@@ -553,13 +554,12 @@ class TestFanoutBoardMentions:
         # Do NOT create sockets_dir
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "general",
-                "@all hello",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "@all hello",
+        )
 
         mock_messenger.send.assert_not_called()
 
@@ -575,13 +575,12 @@ class TestFanoutBoardMentions:
         mock_messenger = MagicMock(spec=Messenger)
 
         original_text = "Hey @bob, please review the PR"
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "dev",
-                original_text,
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "dev",
+            original_text,
+        )
 
         assert mock_messenger.send.call_count == 1
         content = mock_messenger.send.call_args.kwargs["content"]
@@ -607,13 +606,12 @@ class TestFanoutBoardMentions:
 
         mock_messenger = MagicMock(spec=Messenger)
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            _fanout_board_mentions(
-                mock_messenger,
-                "dave",
-                "project",
-                "@bob @charlie please review",
-            )
+        _fanout_board_mentions(
+            mock_messenger,
+            "dave",
+            "project",
+            "@bob @charlie please review",
+        )
 
         targets = {c.kwargs["to"] for c in mock_messenger.send.call_args_list}
         assert targets == {"bob", "charlie"}
@@ -631,14 +629,13 @@ class TestFanoutBoardMentions:
         mock_messenger = MagicMock(spec=Messenger)
         mock_messenger.send.side_effect = RuntimeError("IPC failure")
 
-        with patch("core.paths.get_data_dir", return_value=tmp_path):
-            # Should not raise
-            _fanout_board_mentions(
-                mock_messenger,
-                "alice",
-                "general",
-                "Hey @bob",
-            )
+        # Should not raise
+        _fanout_board_mentions(
+            mock_messenger,
+            "alice",
+            "general",
+            "Hey @bob",
+        )
 
         mock_messenger.send.assert_called_once()
 

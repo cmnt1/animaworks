@@ -18,6 +18,11 @@ from core.memory.retrieval.rag_search import _compute_dir_hash
 from core.supervisor._mgr_scheduler import _marker_dir
 
 
+@pytest.fixture(autouse=True)
+def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
+    """Resolve runtime data paths from each test's temporary root."""
+
+
 def _make_supervisor(tmp_path: Path):
     from core.supervisor.manager import ProcessSupervisor
 
@@ -57,7 +62,6 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
         return mock_store
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", side_effect=capture_get_vs),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
@@ -87,7 +91,6 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
@@ -125,7 +128,6 @@ async def test_daily_indexing_includes_facts(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
@@ -152,7 +154,6 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
@@ -177,7 +178,6 @@ async def test_daily_indexing_rebuilds_entity_collection(tmp_path: Path) -> None
     mock_store = MagicMock()
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
@@ -202,7 +202,6 @@ async def test_daily_indexing_skips_repair_locked_anima(tmp_path: Path) -> None:
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.repair.is_repair_locked", return_value=True),
         patch("core.memory.rag.vector_registry.get_vector_store") as mock_get_vs,
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
@@ -222,7 +221,6 @@ async def test_daily_indexing_writes_marker(tmp_path: Path) -> None:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
@@ -250,7 +248,6 @@ async def test_daily_indexing_does_not_write_shared_hash_after_failure(tmp_path:
 
     mock_store = MagicMock()
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
@@ -284,7 +281,6 @@ async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(t
     mock_store = MagicMock()
     mock_store.collection_exists.return_value = CollectionExistence.UNAVAILABLE
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch("core.memory.rag.vector_registry.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
@@ -314,7 +310,6 @@ async def test_daily_indexing_skips_on_model_change(tmp_path: Path) -> None:
         return MagicMock()
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch(
             "core.memory.rag.embedding.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",
@@ -344,7 +339,6 @@ async def test_daily_indexing_skips_on_e5_prefix_change(tmp_path: Path) -> None:
         return MagicMock()
 
     with (
-        patch("core.paths.get_data_dir", return_value=tmp_path),
         patch(
             "core.memory.rag.embedding.get_embedding_model_name",
             return_value="intfloat/multilingual-e5-small",

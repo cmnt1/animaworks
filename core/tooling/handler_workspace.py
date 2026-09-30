@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from core.tooling._handler_protocols import (
+    _WorkspaceToolsHost,
+)
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -46,7 +50,7 @@ class WorkspaceToolsMixin:
     _session_origin_chain: list[str]
     _trigger: str
 
-    def _handle_grant_workspace_access(self, args: dict[str, Any]) -> str:
+    def _handle_grant_workspace_access(self: _WorkspaceToolsHost, args: dict[str, Any]) -> str:
         alias = str(args.get("alias", "")).strip()
         raw_path = str(args.get("path", "")).strip()
         target_raw = str(args.get("target_anima", "") or "").strip()
@@ -148,7 +152,7 @@ class WorkspaceToolsMixin:
             indent=2,
         )
 
-    def _workspace_grant_has_human_origin(self) -> bool:
+    def _workspace_grant_has_human_origin(self: _WorkspaceToolsHost) -> bool:
         if self._session_origin == ORIGIN_HUMAN:
             return True
         if ORIGIN_HUMAN in self._session_origin_chain:
@@ -164,7 +168,7 @@ class WorkspaceToolsMixin:
             return value.strip().lower() not in {"0", "false", "no", "off"}
         return bool(value)
 
-    def _workspace_grant_is_descendant(self, config: Any, target_name: str) -> bool:
+    def _workspace_grant_is_descendant(self: _WorkspaceToolsHost, config: Any, target_name: str) -> bool:
         current = target_name
         seen: set[str] = set()
         while current and current not in seen:
@@ -180,7 +184,7 @@ class WorkspaceToolsMixin:
             current = supervisor
         return False
 
-    def _workspace_grant_path_error(self, workspace_path: Path) -> str | None:
+    def _workspace_grant_path_error(self: _WorkspaceToolsHost, workspace_path: Path) -> str | None:
         if not workspace_path.is_dir():
             return _error_result("InvalidArguments", f"Workspace path is not an existing directory: {workspace_path}")
         if workspace_path == Path("/"):
@@ -217,7 +221,9 @@ class WorkspaceToolsMixin:
             pass
         return None
 
-    def _workspace_grant_update_permissions(self, target_dir: Path, workspace_path: Path) -> tuple[bool, bool]:
+    def _workspace_grant_update_permissions(
+        self: _WorkspaceToolsHost, target_dir: Path, workspace_path: Path
+    ) -> tuple[bool, bool]:
         from core.config.models import load_permissions
 
         permissions = load_permissions(target_dir)
@@ -235,7 +241,7 @@ class WorkspaceToolsMixin:
         atomic_write_json(target_dir / "permissions.json", payload, indent=2, ensure_ascii=False)
         return True, False
 
-    def _workspace_grant_update_status(self, target_dir: Path, qualified: str) -> bool:
+    def _workspace_grant_update_status(self: _WorkspaceToolsHost, target_dir: Path, qualified: str) -> bool:
         from core.platform.status_store import update_status
 
         changed = False

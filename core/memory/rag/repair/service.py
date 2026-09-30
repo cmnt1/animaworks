@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any, Protocol
 
 from core.platform.tasks import spawn
 
@@ -18,10 +19,32 @@ from . import state as repair_state
 logger = logging.getLogger(__name__)
 
 
+class _RAGRepairHost(Protocol):
+    """Structural supervisor members used by RAGRepairMixin."""
+
+    _broadcast_event: Any
+    _broadcast_rag_repair_event: Any
+    _handle_failed_rag_repair: Any
+    _last_rag_repair_poll_at: Any
+    _rag_repair_max_concurrent: Any
+    _rag_repair_poll_interval_seconds: Any
+    _rag_repair_timeout_seconds: Any
+    _rag_repairs_in_progress: Any
+    _read_rag_repair_state: Any
+    _restarting: Any
+    _run_rag_repair_step: Any
+    _run_supervised_rag_repair: Any
+    _run_uninterrupted_rag_repair: Any
+    _write_rag_repair_state: Any
+    animas_dir: Any
+    processes: Any
+    send_request: Any
+
+
 class RAGRepairMixin:
     """Supervisor-owned RAG repair lifecycle helpers."""
 
-    async def _poll_requested_rag_repairs(self) -> None:
+    async def _poll_requested_rag_repairs(self: _RAGRepairHost) -> None:
         """Start supervised RAG repairs requested by anima processes."""
         now = asyncio.get_running_loop().time()
         interval = self._rag_repair_poll_interval_seconds()
@@ -53,7 +76,7 @@ class RAGRepairMixin:
                     name=f"rag-repair-{anima_name}",
                 )
 
-    async def _run_supervised_rag_repair(self, anima_name: str, state: dict[str, object]) -> None:
+    async def _run_supervised_rag_repair(self: _RAGRepairHost, anima_name: str, state: dict[str, object]) -> None:
         """Repair one anima's RAG DB through its root memory owner.
 
         The caller (``_poll_requested_rag_repairs``) has already reserved this
@@ -72,7 +95,7 @@ class RAGRepairMixin:
             in_progress.discard(anima_name)
 
     async def _run_uninterrupted_rag_repair(
-        self,
+        self: _RAGRepairHost,
         anima_name: str,
         reason: str,
         include_shared: bool,
@@ -141,7 +164,7 @@ class RAGRepairMixin:
                 await self._broadcast_rag_repair_event(anima_name, "healthy", reason, None)
 
     async def _run_rag_repair_step(
-        self,
+        self: _RAGRepairHost,
         anima_name: str,
         reason: str,
         include_shared: bool,
@@ -170,7 +193,7 @@ class RAGRepairMixin:
             return {"ok": False, "status": "failed", "error": str(exc)}
 
     async def _handle_failed_rag_repair(
-        self,
+        self: _RAGRepairHost,
         anima_name: str,
         reason: str,
         include_shared: bool,
@@ -192,7 +215,7 @@ class RAGRepairMixin:
         await self._broadcast_rag_repair_event(anima_name, "failed", reason, error)
 
     async def _broadcast_rag_repair_event(
-        self,
+        self: _RAGRepairHost,
         anima_name: str,
         status: str,
         reason: str,
@@ -211,7 +234,7 @@ class RAGRepairMixin:
         except Exception:
             logger.debug("Failed to broadcast rag_repair event", exc_info=True)
 
-    def _rag_repair_timeout_seconds(self) -> int:
+    def _rag_repair_timeout_seconds(self: _RAGRepairHost) -> int:
         try:
             from core.config import load_config
 
@@ -219,7 +242,7 @@ class RAGRepairMixin:
         except Exception:
             return 1800
 
-    def _rag_repair_poll_interval_seconds(self) -> float:
+    def _rag_repair_poll_interval_seconds(self: _RAGRepairHost) -> float:
         try:
             from core.config import load_config
 
@@ -227,7 +250,7 @@ class RAGRepairMixin:
         except Exception:
             return 5.0
 
-    def _rag_repair_max_concurrent(self) -> int:
+    def _rag_repair_max_concurrent(self: _RAGRepairHost) -> int:
         try:
             from core.config import load_config
 
@@ -235,10 +258,10 @@ class RAGRepairMixin:
         except Exception:
             return 1
 
-    def _read_rag_repair_state(self, anima_name: str) -> dict[str, object]:
+    def _read_rag_repair_state(self: _RAGRepairHost, anima_name: str) -> dict[str, object]:
         return repair_state.read_state(anima_name, animas_dir=self.animas_dir)
 
-    def _write_rag_repair_state(self, anima_name: str, updates: dict[str, object]) -> None:
+    def _write_rag_repair_state(self: _RAGRepairHost, anima_name: str, updates: dict[str, object]) -> None:
         repair_state.update_repair_state(
             anima_name,
             animas_dir=self.animas_dir,

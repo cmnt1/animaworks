@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.anima._mixin_protocols import _LifecycleHost
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -338,7 +340,7 @@ async def _complete_episode_prompt(prompt: str, model_configs: list[Any]) -> tup
 class LifecycleMixin:
     """Mixin: heartbeat orchestration, memory consolidation, cron task execution."""
 
-    async def _keepalive_while_busy(self, interval: float = 60.0) -> None:
+    async def _keepalive_while_busy(self: _LifecycleHost, interval: float = 60.0) -> None:
         """Periodically update _last_progress_at to prevent busy-hang false positives.
 
         Start this as a background task during long-running operations (heartbeat,
@@ -355,7 +357,7 @@ class LifecycleMixin:
         except asyncio.CancelledError:
             pass
 
-    async def run_heartbeat(self) -> CycleResult:
+    async def run_heartbeat(self: _LifecycleHost) -> CycleResult:
         self._get_interrupt_event("_background").clear()
         # START is logged only after the background lock is held: "START" must mean
         # "running", not "queued behind another background lane".
@@ -398,7 +400,7 @@ class LifecycleMixin:
             self._trigger_pending_task_execution()
 
     async def _run_heartbeat_agent_session(
-        self,
+        self: _LifecycleHost,
         heartbeat_text: str,
         keepalive: asyncio.Task[None],
     ) -> CycleResult:
@@ -442,7 +444,7 @@ class LifecycleMixin:
                 active_session_type.reset(session_token)
                 keepalive.cancel()
 
-    async def _finalize_session_if_ended(self) -> None:
+    async def _finalize_session_if_ended(self: _LifecycleHost) -> None:
         """Session-boundary finalize; must not be skippable by cycle timeout/cancel."""
         try:
             from core.memory.conversation.memory import ConversationMemory
@@ -453,7 +455,7 @@ class LifecycleMixin:
 
     # ── Hard timeout helper ───────────────────────────────────
 
-    def _handle_hard_timeout(self, hard_timeout: int) -> CycleResult:
+    def _handle_hard_timeout(self: _LifecycleHost, hard_timeout: int) -> CycleResult:
         """Write recovery note and return a timeout CycleResult."""
         logger.warning(
             "[%s] Heartbeat hard timeout (%ds) — forced termination",
@@ -482,7 +484,7 @@ class LifecycleMixin:
         )
 
     async def run_consolidation(
-        self,
+        self: _LifecycleHost,
         consolidation_type: str = "daily",
         project: str | None = None,
     ) -> CycleResult:
@@ -591,7 +593,7 @@ class LifecycleMixin:
             self._notify_lock_released()
 
     async def _run_daily_episode_summaries(
-        self,
+        self: _LifecycleHost,
         engine: Any,
         *,
         cfg: Any,
@@ -784,7 +786,7 @@ class LifecycleMixin:
         )
 
     async def _run_daily_consolidation(
-        self,
+        self: _LifecycleHost,
         engine: Any,
     ) -> CycleResult:
         """Run daily episode extraction or project archive consolidation.
@@ -892,7 +894,7 @@ class LifecycleMixin:
         )
 
     async def _run_weekly_consolidation(
-        self,
+        self: _LifecycleHost,
         engine: Any,
     ) -> CycleResult:
         """Execute weekly consolidation with the configured consolidation model."""
@@ -996,7 +998,7 @@ class LifecycleMixin:
             duration_ms=elapsed_ms,
         )
 
-    def _run_autonomous_skill_learning(self):
+    def _run_autonomous_skill_learning(self: _LifecycleHost):
         """Run deterministic skill auto-learning after successful consolidation."""
         from core.config import load_config
 
@@ -1007,7 +1009,7 @@ class LifecycleMixin:
         return run_autonomous_skill_learning_for(self)
 
     async def run_cron_task(
-        self,
+        self: _LifecycleHost,
         task_name: str,
         description: str,
         command_output: str | None = None,
@@ -1185,7 +1187,7 @@ class LifecycleMixin:
             self._notify_lock_released()
 
     async def run_cron_command(
-        self,
+        self: _LifecycleHost,
         task_name: str,
         *,
         command: str | None = None,

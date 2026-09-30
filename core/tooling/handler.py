@@ -60,6 +60,7 @@ from core.tooling.handler_org import OrgToolsMixin
 from core.tooling.handler_perms import PermissionsMixin
 from core.tooling.handler_skills import SkillsToolsMixin
 from core.tooling.handler_workspace import WorkspaceToolsMixin
+from core.tooling.tool_context import ToolContext
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -117,6 +118,11 @@ class ToolHandler(
         self._superuser = superuser
         self._default_project = default_project
         self._anima_name = anima_dir.name
+        self._tool_context = ToolContext(
+            anima_dir=anima_dir,
+            anima_name=self._anima_name,
+            check_command_permission=self._check_command_permission,
+        )
         self._memory = memory
         self._messenger = messenger
         self._on_message_sent = on_message_sent
@@ -156,9 +162,6 @@ class ToolHandler(
         # ── Session origin tracking (provenance Phase 3) ──
         self._session_origin: str = ""
         self._session_origin_chain: list[str] = []
-
-        # ── TaskExec CWD override ──
-        self._task_cwd: Path | None = None
 
         # ── Current trigger (set by caller before execution) ──
         self._trigger: str = ""
@@ -420,6 +423,15 @@ class ToolHandler(
     def set_state_file_lock(self, lock: StateFileLock) -> None:
         """Attach a process-safe state-file lock for concurrent write protection."""
         self._state_file_lock = lock
+
+    @property
+    def _task_cwd(self) -> Path | None:
+        """Current TaskExec CWD override, backed by the shared tool context."""
+        return self._tool_context.task_cwd
+
+    @_task_cwd.setter
+    def _task_cwd(self, cwd: Path | None) -> None:
+        self._tool_context.task_cwd = cwd
 
     def set_task_cwd(self, cwd: Path | None) -> None:
         """Set override cwd for TaskExec command execution."""

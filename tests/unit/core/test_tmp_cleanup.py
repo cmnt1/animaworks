@@ -7,7 +7,6 @@ from __future__ import annotations
 """Unit tests for core/infra/tmp_cleanup.py."""
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -41,8 +40,12 @@ class TestFormatSize:
 
 
 class TestTmpCleanup:
+    @pytest.fixture(autouse=True)
+    def _runtime_data_dir(self, data_dir_at_tmp_path: Path) -> None:
+        """Use the real path accessor with the test's temporary root."""
+
     def test_scan_and_clean_old_entries(self, tmp_path: Path):
-        data_dir = tmp_path / ".animaworks"
+        data_dir = tmp_path
         tmp_root = data_dir / "tmp"
         tmp_root.mkdir(parents=True)
         old_file = tmp_root / "old.txt"
@@ -56,47 +59,44 @@ class TestTmpCleanup:
         new_file = tmp_root / "new.txt"
         new_file.write_text("new", encoding="utf-8")
 
-        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
-            scan = scan_tmp_dir(tmp_root)
-            assert scan.entry_count == 2
-            assert scan.total_bytes > 0
+        scan = scan_tmp_dir(tmp_root)
+        assert scan.entry_count == 2
+        assert scan.total_bytes > 0
 
-            candidates = select_clean_candidates(tmp_root, older_than_days=7)
-            assert [entry.path.name for entry in candidates] == ["old.txt"]
+        candidates = select_clean_candidates(tmp_root, older_than_days=7)
+        assert [entry.path.name for entry in candidates] == ["old.txt"]
 
-            result = clean_tmp_dir(tmp_root, older_than_days=7)
-            assert result.removed_count == 1
-            assert new_file.exists()
-            assert not old_file.exists()
-            assert (tmp_root / "attachments").is_dir()
+        result = clean_tmp_dir(tmp_root, older_than_days=7)
+        assert result.removed_count == 1
+        assert new_file.exists()
+        assert not old_file.exists()
+        assert (tmp_root / "attachments").is_dir()
 
     def test_clean_all_requires_force_flag_in_cli_only(self, tmp_path: Path):
-        data_dir = tmp_path / ".animaworks"
+        data_dir = tmp_path
         tmp_root = data_dir / "tmp"
         tmp_root.mkdir(parents=True)
         target = tmp_root / "large.json"
         target.write_text("x" * 1024, encoding="utf-8")
 
-        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
-            result = clean_tmp_dir(tmp_root, clean_all=True)
-            assert result.removed_count == 1
-            assert not target.exists()
-            assert (tmp_root / "attachments").is_dir()
+        result = clean_tmp_dir(tmp_root, clean_all=True)
+        assert result.removed_count == 1
+        assert not target.exists()
+        assert (tmp_root / "attachments").is_dir()
 
     def test_dry_run_does_not_delete(self, tmp_path: Path):
-        data_dir = tmp_path / ".animaworks"
+        data_dir = tmp_path
         tmp_root = data_dir / "tmp"
         tmp_root.mkdir(parents=True)
         target = tmp_root / "keep.txt"
         target.write_text("keep", encoding="utf-8")
 
-        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
-            result = clean_tmp_dir(tmp_root, clean_all=True, dry_run=True)
-            assert result.removed_count == 1
-            assert target.exists()
+        result = clean_tmp_dir(tmp_root, clean_all=True, dry_run=True)
+        assert result.removed_count == 1
+        assert target.exists()
 
     def test_min_size_filter(self, tmp_path: Path):
-        data_dir = tmp_path / ".animaworks"
+        data_dir = tmp_path
         tmp_root = data_dir / "tmp"
         tmp_root.mkdir(parents=True)
         small = tmp_root / "small.txt"
@@ -104,6 +104,5 @@ class TestTmpCleanup:
         large = tmp_root / "large.bin"
         large.write_bytes(b"x" * 2048)
 
-        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
-            candidates = select_clean_candidates(tmp_root, older_than_days=None, min_size_bytes=1024)
-            assert [entry.path.name for entry in candidates] == ["large.bin"]
+        candidates = select_clean_candidates(tmp_root, older_than_days=None, min_size_bytes=1024)
+        assert [entry.path.name for entry in candidates] == ["large.bin"]

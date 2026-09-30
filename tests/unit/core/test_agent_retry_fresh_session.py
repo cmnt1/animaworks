@@ -11,6 +11,7 @@ Verifies that:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,31 +24,39 @@ from core.schemas import ModelConfig
 # ── Helpers ───────────────────────────────────────────────────
 
 
+def _configure_stream_retry(data_dir: Path, retry_max: int) -> None:
+    """Use real config loading with deterministic, immediate stream retries."""
+    from core.config import invalidate_cache
+
+    config_path = data_dir / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["server"] = {
+        "stream_checkpoint_enabled": False,
+        "stream_retry_max": retry_max,
+        "stream_retry_delay_s": 0.0,
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    invalidate_cache()
+
+
 def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-6"):
-    """Create AgentCore with all external dependencies mocked."""
+    """Create an AgentCore and replace only its public executor boundary."""
     mc = ModelConfig(
         model=model,
         api_key="test-key",
         context_threshold=0.50,
+        resolved_mode="A",
     )
     memory = MagicMock()
     memory.read_permissions.return_value = ""
     memory.anima_dir = anima_dir
     messenger = MagicMock()
 
-    with (
-        patch("core.agent.agent_core.ToolHandler"),
-        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
-    ):
-        mock_executor = MagicMock()
-        mock_create.return_value = mock_executor
+    with patch("core.agent.agent_core.ToolHandler"):
         from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
-        agent._executor = mock_executor
+    agent._executor = MagicMock()
     return agent
 
 
@@ -59,19 +68,12 @@ def _build_result_mock() -> MagicMock:
     return result
 
 
-def _common_patches(*, spy_clear=None, retry_max=2):
-    """Return the common patch context manager args for run_cycle_streaming tests."""
-    clear_side_effect = spy_clear if spy_clear is not None else MagicMock()
-    return [
-        patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
-        patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
-        patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
-        patch("core.agent.agent_core.AgentCore._preflight_size_check"),
-        patch("core.agent.agent_core.AgentCore._load_stream_retry_config"),
-        patch("core.agent.cycle._save_prompt_log"),
-        patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=clear_side_effect),
-        patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock, return_value=("", "")),
-    ]
+@pytest.fixture(autouse=True)
+def _stub_public_priming_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep priming deterministic through the public memory-engine method."""
+    from core.memory.priming import PrimingEngine, PrimingResult
+
+    monkeypatch.setattr(PrimingEngine, "prime_memories", AsyncMock(return_value=PrimingResult()))
 
 
 # ── retry_count == 1 clears session ID ───────────────────────
@@ -81,8 +83,9 @@ class TestRetryFreshSession:
     """On retry_count == 1, _clear_session_id('chat') is called exactly once."""
 
     @pytest.mark.asyncio
-    async def test_clear_session_id_called_on_first_retry(self, tmp_path: Path) -> None:
-        """retry_count == 1: _clear_session_id('chat') is called."""
+    async def test_clear_session_id_called_on_first_retry(self, tmp_path: Path, data_dir: Path) -> None:
+        """retry_count == 1: the active executor's clear_session API is called."""
+        _configure_stream_retry(data_dir, retry_max=2)
         agent = _make_agent(tmp_path)
 
         # Track executor session cleanup calls.
@@ -117,21 +120,7 @@ class TestRetryFreshSession:
         with (
             patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
-            patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
-            patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
-            patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-            patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=_spy_clear),
-            patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt")
-            mock_retry_cfg.return_value = {
-                "checkpoint_enabled": False,
-                "retry_max": 2,
-                "retry_delay_s": 0.0,
-            }
-            mock_priming.return_value = ("", "")
-
             events = []
             async for event in agent.run_cycle_streaming(
                 "test prompt",
@@ -142,8 +131,9 @@ class TestRetryFreshSession:
         assert clear_calls == [("chat", "default")]
 
     @pytest.mark.asyncio
-    async def test_retry_start_event_emitted(self, tmp_path: Path) -> None:
+    async def test_retry_start_event_emitted(self, tmp_path: Path, data_dir: Path) -> None:
         """retry_start event is emitted with correct retry count."""
+        _configure_stream_retry(data_dir, retry_max=2)
         agent = _make_agent(tmp_path)
 
         call_count = [0]
@@ -167,21 +157,7 @@ class TestRetryFreshSession:
         with (
             patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
-            patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
-            patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
-            patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-            patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution.engines.claude._sdk_session._clear_session_id"),
-            patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt")
-            mock_retry_cfg.return_value = {
-                "checkpoint_enabled": False,
-                "retry_max": 2,
-                "retry_delay_s": 0.0,
-            }
-            mock_priming.return_value = ("", "")
-
             events = []
             async for event in agent.run_cycle_streaming(
                 "test prompt",
@@ -194,8 +170,9 @@ class TestRetryFreshSession:
         assert retry_events[0]["retry"] == 1
 
     @pytest.mark.asyncio
-    async def test_no_clear_session_id_on_second_retry(self, tmp_path: Path) -> None:
-        """retry_count == 2 does NOT call _clear_session_id again."""
+    async def test_no_clear_session_id_on_second_retry(self, tmp_path: Path, data_dir: Path) -> None:
+        """Retry 2 does not clear the active executor session a second time."""
+        _configure_stream_retry(data_dir, retry_max=3)
         agent = _make_agent(tmp_path)
 
         clear_calls: list[tuple[str, str]] = []
@@ -226,21 +203,7 @@ class TestRetryFreshSession:
         with (
             patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
-            patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
-            patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
-            patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-            patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=_spy_clear),
-            patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt")
-            mock_retry_cfg.return_value = {
-                "checkpoint_enabled": False,
-                "retry_max": 3,
-                "retry_delay_s": 0.0,
-            }
-            mock_priming.return_value = ("", "")
-
             events = []
             async for event in agent.run_cycle_streaming(
                 "test prompt",
@@ -258,8 +221,9 @@ class TestRetryExhausted:
     """When retry_count reaches max_retries, an error event is emitted."""
 
     @pytest.mark.asyncio
-    async def test_error_event_on_retry_exhausted(self, tmp_path: Path) -> None:
+    async def test_error_event_on_retry_exhausted(self, tmp_path: Path, data_dir: Path) -> None:
         """After max_retries failures, an error event with the retry count is emitted."""
+        _configure_stream_retry(data_dir, retry_max=1)
         agent = _make_agent(tmp_path)
 
         async def _always_fail(*args, **kwargs):
@@ -272,21 +236,7 @@ class TestRetryExhausted:
         with (
             patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
-            patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
-            patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
-            patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-            patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution.engines.claude._sdk_session._clear_session_id"),
-            patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt")
-            mock_retry_cfg.return_value = {
-                "checkpoint_enabled": False,
-                "retry_max": 1,
-                "retry_delay_s": 0.0,
-            }
-            mock_priming.return_value = ("", "")
-
             events = []
             async for event in agent.run_cycle_streaming(
                 "test prompt",
@@ -316,7 +266,9 @@ class TestTerminalErrorChunk:
     async def test_terminal_error_followed_by_done_finishes_as_error(
         self,
         tmp_path: Path,
+        data_dir: Path,
     ) -> None:
+        _configure_stream_retry(data_dir, retry_max=2)
         agent = _make_agent(tmp_path, model="codex/o4-mini")
         call_count = 0
 
@@ -344,20 +296,7 @@ class TestTerminalErrorChunk:
         with (
             patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
-            patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="c"),
-            patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
-            patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
-            patch("core.agent.cycle._save_prompt_log"),
-            patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt")
-            mock_retry_cfg.return_value = {
-                "checkpoint_enabled": False,
-                "retry_max": 2,
-                "retry_delay_s": 0.0,
-            }
-            mock_priming.return_value = ("", "")
-
             events = []
             async for event in agent.run_cycle_streaming(
                 "test prompt",

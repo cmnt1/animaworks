@@ -181,7 +181,7 @@ class TestIPCReloadHandler:
 class TestCLIReloadCommand:
     """Test cmd_anima_reload() HTTP calls."""
 
-    def test_single_reload(self, tmp_path):
+    def test_single_reload(self, tmp_path, data_dir_at_tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
@@ -198,7 +198,6 @@ class TestCLIReloadCommand:
         )
 
         with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
             patch("cli.commands.anima_mgmt.gateway_request", return_value=mock_response) as mock_gateway,
         ):
             cmd_anima_reload(args)
@@ -211,7 +210,7 @@ class TestCLIReloadCommand:
             raw_response=True,
         )
 
-    def test_reload_all(self, tmp_path):
+    def test_reload_all(self, tmp_path, data_dir_at_tmp_path):
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
@@ -231,7 +230,6 @@ class TestCLIReloadCommand:
         )
 
         with (
-            patch("core.paths.get_data_dir", return_value=tmp_path),
             patch("cli.commands.anima_mgmt.gateway_request", return_value=mock_response) as mock_gateway,
         ):
             cmd_anima_reload(args)

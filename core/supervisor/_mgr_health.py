@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from core.platform.tasks import spawn
+from core.supervisor._manager_protocols import _HealthMixinHost
 from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
 
@@ -25,18 +26,18 @@ logger = logging.getLogger(__name__)
 class HealthMixin:
     """Health-check loop, failure handling, and hang detection."""
 
-    def is_bootstrapping(self, anima_name: str) -> bool:
+    def is_bootstrapping(self: _HealthMixinHost, anima_name: str) -> bool:
         """Return True if the anima is currently in bootstrap mode."""
         return anima_name in getattr(self, "_bootstrapping", set())
 
-    def _busy_sidecar_path(self, anima_name: str) -> Path | None:
+    def _busy_sidecar_path(self: _HealthMixinHost, anima_name: str) -> Path | None:
         """Return the IPC-independent busy marker path, if run_dir is available."""
         run_dir = getattr(self, "run_dir", None)
         if run_dir is None:
             return None
         return Path(run_dir) / "animas" / f"{anima_name}.busy.json"
 
-    def _read_busy_sidecar(self, anima_name: str, handle: ProcessHandle) -> dict[str, Any] | None:
+    def _read_busy_sidecar(self: _HealthMixinHost, anima_name: str, handle: ProcessHandle) -> dict[str, Any] | None:
         """Read a child-written busy marker for ping-timeout fallback."""
         path = self._busy_sidecar_path(anima_name)
         if path is None or not path.exists():
@@ -64,7 +65,7 @@ class HealthMixin:
             data["last_progress_at"] = last_progress
         return data
 
-    def _health_warmup_reason(self, anima_name: str, handle: ProcessHandle) -> str | None:
+    def _health_warmup_reason(self: _HealthMixinHost, anima_name: str, handle: ProcessHandle) -> str | None:
         """Return a reason to suppress unresponsive-runner restarts, if any."""
         try:
             from core.infra import startup_progress
@@ -87,7 +88,7 @@ class HealthMixin:
             return f"runner warmup {uptime:.0f}s/{runner_warmup:.0f}s"
         return None
 
-    async def _health_check_loop(self) -> None:
+    async def _health_check_loop(self: _HealthMixinHost) -> None:
         """Periodically pings all processes and handles failures."""
         logger.info("Health check loop started")
 
@@ -112,7 +113,7 @@ class HealthMixin:
         logger.info("Health check loop stopped")
 
     async def _check_process_health(
-        self,
+        self: _HealthMixinHost,
         anima_name: str,
         handle: ProcessHandle,
     ) -> None:
@@ -300,7 +301,7 @@ class HealthMixin:
             )
 
     async def _handle_process_failure(
-        self,
+        self: _HealthMixinHost,
         anima_name: str,
         handle: ProcessHandle,
         reason: str = "",
@@ -349,14 +350,14 @@ class HealthMixin:
             if not self._shutdown and self._restart_ctl is not None and self._restart_ctl.get(anima_name) is not None:
                 self._ensure_restart_worker(anima_name)
 
-    def _ensure_restart_worker(self, anima_name: str) -> None:
+    def _ensure_restart_worker(self: _HealthMixinHost, anima_name: str) -> None:
         """Spawn a singleton restart worker for ``anima_name`` if needed."""
         if anima_name in self._restarting:
             return
         self._restarting.add(anima_name)
         self._restart_worker_tasks[anima_name] = asyncio.create_task(self._restart_worker(anima_name))
 
-    async def _restart_worker(self, anima_name: str) -> None:
+    async def _restart_worker(self: _HealthMixinHost, anima_name: str) -> None:
         """Single restart worker: await backoff, then one spawn attempt.
 
         Loops until a spawn succeeds, the anima is disabled, or shutdown.
@@ -439,7 +440,7 @@ class HealthMixin:
                 self._restart_worker_tasks.pop(anima_name, None)
 
     async def _handle_process_hang(
-        self,
+        self: _HealthMixinHost,
         anima_name: str,
         handle: ProcessHandle,
     ) -> None:

@@ -13,13 +13,15 @@ import json
 import logging
 import time
 
+from core.supervisor._manager_protocols import _ReconcileMixinHost
+
 logger = logging.getLogger(__name__)
 
 
 class ReconcileMixin:
     """Reconciliation loop: syncs desired state (disk) with actual processes."""
 
-    async def _reconciliation_loop(self) -> None:
+    async def _reconciliation_loop(self: _ReconcileMixinHost) -> None:
         """Periodically reconcile desired state (disk) with actual state (processes)."""
         logger.info("Reconciliation loop started (interval=%.0fs)", self.reconciliation_config.interval_sec)
 
@@ -35,7 +37,7 @@ class ReconcileMixin:
 
         logger.info("Reconciliation loop stopped")
 
-    async def _flush_task_notices(self) -> None:
+    async def _flush_task_notices(self: _ReconcileMixinHost) -> None:
         """Send batched task board notices whose actor has gone quiet."""
         from core.tasks.board.notices import flush_task_notices
 
@@ -44,7 +46,7 @@ class ReconcileMixin:
         except Exception:
             logger.exception("Task notice flush failed")
 
-    async def _reconcile(self) -> None:
+    async def _reconcile(self: _ReconcileMixinHost) -> None:
         """Scan animas_dir and sync desired state with actual process state."""
         if self._shutdown:
             return
@@ -247,7 +249,7 @@ class ReconcileMixin:
                         name,
                     )
 
-    async def _reconcile_assets(self) -> None:
+    async def _reconcile_assets(self: _ReconcileMixinHost) -> None:
         """Explicitly generate missing assets for animas when requested."""
         try:
             from core.anima.asset_reconciler import find_animas_with_missing_assets, reconcile_anima_assets
@@ -293,7 +295,7 @@ class ReconcileMixin:
         except Exception:
             logger.exception("Asset reconciliation failed")
 
-    def _check_config_freshness(self) -> None:
+    def _check_config_freshness(self: _ReconcileMixinHost) -> None:
         """Detect config.json changes and refresh the singleton cache.
 
         This is a supplementary auto-detection mechanism.  The primary

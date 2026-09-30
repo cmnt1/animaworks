@@ -363,7 +363,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
     """Tests for ToolHandler._fanout_board_mentions() including stopped Animas."""
 
     @pytest.fixture(autouse=True)
-    def _bypass_acl(self):
+    def _bypass_acl(self, data_dir_at_tmp_path: Path):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         from unittest.mock import patch
 
@@ -375,7 +375,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         from core.tooling.handler import ToolHandler
 
         # Setup directories
-        data_dir = tmp_path / "data"
+        data_dir = tmp_path
         sockets_dir = data_dir / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
         animas_dir = data_dir / "animas"
@@ -407,11 +407,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
             messenger=mock_messenger,
         )
 
-        # Patch get_data_dir to return our temp directory.
-        # get_data_dir is imported locally inside _fanout_board_mentions,
-        # so we patch it at the source module level.
-        with patch("core.paths.get_data_dir", return_value=data_dir):
-            handler._fanout_board_mentions("general", "Hey @all check this out")
+        handler._fanout_board_mentions("general", "Hey @all check this out")
 
         # Verify both running and stopped animas received mentions
         sent_targets = set()
@@ -429,7 +425,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         """Verify @all mentions only reach running Animas (Fix 8)."""
         from core.tooling.handler import ToolHandler
 
-        data_dir = tmp_path / "data"
+        data_dir = tmp_path
         sockets_dir = data_dir / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
         animas_dir = data_dir / "animas"
@@ -459,8 +455,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
             messenger=mock_messenger,
         )
 
-        with patch("core.paths.get_data_dir", return_value=data_dir):
-            handler._fanout_board_mentions("general", "Hey @all check this out")
+        handler._fanout_board_mentions("general", "Hey @all check this out")
 
         sent_targets = set()
         for call in mock_messenger.send.call_args_list:
@@ -476,7 +471,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
         """Verify named @mentions do NOT reach stopped Animas (Fix 8: running only)."""
         from core.tooling.handler import ToolHandler
 
-        data_dir = tmp_path / "data"
+        data_dir = tmp_path
         sockets_dir = data_dir / "run" / "sockets"
         sockets_dir.mkdir(parents=True)
         animas_dir = data_dir / "animas"
@@ -499,8 +494,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
             messenger=mock_messenger,
         )
 
-        with patch("core.paths.get_data_dir", return_value=data_dir):
-            handler._fanout_board_mentions("ops", "Hey @stopped_target please review")
+        handler._fanout_board_mentions("ops", "Hey @stopped_target please review")
 
         sent_targets = set()
         for call in mock_messenger.send.call_args_list:
