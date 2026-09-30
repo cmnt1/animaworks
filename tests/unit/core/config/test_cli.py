@@ -193,17 +193,17 @@ class TestCmdConfigSet:
         invalidate_cache()
 
     def test_set_value(self, data_dir, capsys):
-        args = argparse.Namespace(key="system.log_level", value="DEBUG")
+        args = argparse.Namespace(key="system.timezone", value="Asia/Tokyo")
         cmd_config_set(args)
         captured = capsys.readouterr()
-        assert "DEBUG" in captured.out
+        assert "Asia/Tokyo" in captured.out
 
         # Verify persisted
         invalidate_cache()
         from core.config.models import load_config
 
         config = load_config(data_dir / "config.json")
-        assert config.system.log_level == "DEBUG"
+        assert config.system.timezone == "Asia/Tokyo"
 
     def test_set_new_anima(self, data_dir, capsys):
         """animas.X.model triggers deprecation warning and writes to status.json."""

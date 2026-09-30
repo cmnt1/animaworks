@@ -194,7 +194,7 @@ class TestPrimeMemoriesWithActivity:
         monkeypatch.setattr("core.memory.priming.PrimingEngine._channel_c_related_knowledge", _stub_c)
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine.prime_memories("hello", sender_name="owner")
+        result = await engine.prime_memories("hello", sender_name="owner", channel="heartbeat")
         assert result.recent_activity != ""
 
     async def test_fallback_populates_recent_activity(self, anima_dir, shared_dir, monkeypatch):
@@ -226,7 +226,7 @@ class TestPrimeMemoriesWithActivity:
         monkeypatch.setattr("core.memory.priming.PrimingEngine._channel_c_related_knowledge", _stub_c)
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine.prime_memories("hello", sender_name="owner")
+        result = await engine.prime_memories("hello", sender_name="owner", channel="heartbeat")
         assert result.recent_activity != ""
         assert "Fallback msg" in result.recent_activity
 

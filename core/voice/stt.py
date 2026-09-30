@@ -11,16 +11,22 @@ import logging
 import shutil
 from typing import Any
 
-try:
-    from faster_whisper import WhisperModel
-except ImportError:
-    WhisperModel = None  # type: ignore[assignment, misc]
-
 logger = logging.getLogger(__name__)
 
 # ── Whisper singleton ──────────────────────────────────────────
 
-_whisper_model: WhisperModel | None = None
+_whisper_model: Any | None = None
+
+
+def _load_whisper_model_class():
+    """Import the optional STT dependency only when transcription is requested."""
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as exc:
+        raise ImportError(
+            "Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]"
+        ) from exc
+    return WhisperModel
 
 
 # ── VoiceSTT ───────────────────────────────────────────────────
@@ -48,23 +54,20 @@ class VoiceSTT:
         self._device = device
         self._compute_type = compute_type
         self._language = language
-        self._model: WhisperModel | None = None
+        self._model: Any | None = None
 
-    def _ensure_model(self) -> WhisperModel:
+    def _ensure_model(self) -> Any:
         """Lazy-load WhisperModel singleton."""
         global _whisper_model
         if _whisper_model is None:
-            if WhisperModel is None:
-                raise ImportError(
-                    "Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]"
-                )
+            whisper_model_class = _load_whisper_model_class()
             device = self._device
             if device == "auto":
                 device = "cuda" if shutil.which("nvidia-smi") else "cpu"
             compute = self._compute_type
             if compute == "default":
                 compute = "float16" if device == "cuda" else "int8"
-            _whisper_model = WhisperModel(self._model_name, device=device, compute_type=compute)
+            _whisper_model = whisper_model_class(self._model_name, device=device, compute_type=compute)
         return _whisper_model
 
     def transcribe_buffer(
@@ -90,8 +93,6 @@ class VoiceSTT:
         """
         import numpy as np
 
-        if WhisperModel is None:
-            raise ImportError("Voice STT requires 'faster-whisper'. Install with: pip install animaworks[transcribe]")
         model = self._ensure_model()
         audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
         transcribe_options: dict[str, Any] = {

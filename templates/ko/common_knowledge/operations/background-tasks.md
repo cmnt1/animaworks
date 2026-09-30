@@ -152,7 +152,7 @@ submit하면 즉시 다음 작업으로 넘어갈 것.
   2. `BackgroundTaskManager.from_profiles`을 통해 각 모듈의 `EXECUTION_PROFILE`에서 `background_eligible: true`의 하위 명령을 추출(`core.integrations._base.get_eligible_tools_from_profiles`). 키는 `"{tool_name}:{subcmd}"`, 초는 `expected_seconds`(미설정 시 60)
   3. `config.json`의 `background_task.eligible_tools` — 각 키에 대해 `threshold_s`을 초로 덮어쓰기
 - **비활성화**: `config.json`로 `background_task.enabled: false`으로 하면 `BackgroundTaskManager` 자체가 생성되지 않음(그 경우, submit 큐는 가져와도 실행 측에서 경고가 됨).
-- **정리**: `cleanup_old_tasks(max_age_hours=24)`는 (1) `completed` / `failed`로 `completed_at`이 **24시간 초과** 지난 JSON을 삭제, (2) `running` 상태로 `created_at`이 **48시간 초과** 지난 파일(프로세스 크래시 등의 고아)을 삭제. 반환 값은 삭제 개수. `config.json`의 `background_task.result_retention_hours`는 스키마에 존재하지만, **현행 `BackgroundTaskManager` 구현에서는 참조되지 않음**(호출 측이 `cleanup_old_tasks`에 임의의 `max_age_hours`을 전달하는 API만 있음).
+- **정리**: `cleanup_old_tasks(max_age_hours=24)`는 호출 측이 지정한 시간보다 오래된 `completed` / `failed` JSON과, `running` 상태로 **48시간 초과** 지난 파일(프로세스 크래시 등의 고아)을 삭제한다. 반환 값은 삭제 개수다. 완료 작업의 보존 시간은 호출 측이 `max_age_hours`로 지정하며, 대응하는 `config.json` 키는 없다.
 
 ### 같은 파일 내 기타 API: `rotate_dm_logs`
 

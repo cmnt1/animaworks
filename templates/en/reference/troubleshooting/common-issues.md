@@ -468,10 +468,10 @@ There are two main layers.
 
 | Tier | Condition (`context_window`) | Priming handling (`core/agent/priming.py`) |
 |------|--------------------------|---------------------------------------------|
-| full | **≥ 128_000** | Format 6 channels with `format_priming_section` and include as-is |
-| standard | **≥ 32_000 and < 128_000** | Retrieve as above, but **if the formatted text exceeds 4000 characters, use the first 4000 characters + an ellipsis marker** |
-| light | **≥ 16_000 and < 32_000** | **Sender profile (Channel A) only** (with i18n header). Other channels are discarded |
-| minimal | **< 16_000** | **Skip Priming entirely** (empty string) |
+| full | **≥ 128_000** | Format the normal compact retrieval within `priming.max_tokens` and include it |
+| standard | **≥ 32_000 and < 128_000** | Use the same compact path, with retrieval capped at 1,000 tokens |
+| light | **≥ 16_000 and < 32_000** | Retrieve compact base context while suppressing related-knowledge and episode searches |
+| minimal | **< 16_000** | Keep compact base context while suppressing related-knowledge and episode searches |
 
 The query text for heartbeat/cron is text collected from activity_log for the most recent `[REFLECTION]` (not the full long template).
 

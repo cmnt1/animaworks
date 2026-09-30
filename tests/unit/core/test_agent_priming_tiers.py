@@ -88,7 +88,7 @@ class TestPrimingTierMinimal:
                 prompt_tier=TIER_MINIMAL,
             )
             assert notifications == "approval pending"
-            assert mock_pe.return_value.prime_memories.call_args.kwargs["profile"] == "compact"
+            assert "profile" not in mock_pe.return_value.prime_memories.call_args.kwargs
             assert mock_pe.return_value.prime_memories.call_args.kwargs["include_related"] is False
 
 
@@ -121,7 +121,7 @@ class TestPrimingTierMicro:
                 prompt_tier=TIER_MICRO,
             )
             assert notifications == "approval pending"
-            assert mock_pe.return_value.prime_memories.call_args.kwargs["profile"] == "compact"
+            assert "profile" not in mock_pe.return_value.prime_memories.call_args.kwargs
             assert mock_pe.return_value.prime_memories.call_args.kwargs["include_related"] is False
 
 

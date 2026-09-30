@@ -73,7 +73,7 @@ Chat과 Heartbeat(그리고 cron / TaskExec 등의 백그라운드 처리)는 **
   `is_eligible(name)` 은 **이름이 맵에 포함되는지만** 본다(값은 참고 초수로 유지되고, 임계값 비교에는 사용되지 않는다).
 - **에이전트 경유**: `ToolHandler` 이 미등록 도구를 외부 디스패치할 때, 이름이 위 맵에 있으면 `BackgroundTaskManager.submit` 로 돌리고, 즉시 `task_id` 을 포함한 JSON을 반환한다. 결과 확인은 `check_background_task` / `list_background_tasks` 등의 도구로 수행한다.
 - **CLI 경유(`animaworks-tool submit`)**: 커맨드형 도구의 디스크립터는 계속 **`state/background_tasks/pending/`** 과 processing의 흐름을 사용한다. `PendingTaskExecutor` 은 이 커맨드 큐를 모니터링하고, 별도로 정규 작업 스토어에서 LLM 작업을 가져온다. LLM 작업 투입을 위해 파일을 만들지 않는다.
-- **정리**: `cleanup_old_tasks(max_age_hours=24)` 은, `completed` / `failed` 로 `completed_at` 에서 **24시간 초과** 경과한 JSON을 삭제하고, 또한 `running` 인 채로 `created_at` 에서 **48시간 초과** 경과한 파일(프로세스 크래시 등의 고아)도 삭제한다. `config.json` 의 `background_task.result_retention_hours` 은 스키마상 있지만, **현행의 `BackgroundTaskManager` 은 참조하지 않는다**(호출 측이 `cleanup_old_tasks` 에 넘기는 시간으로 제어할 예정).
+- **정리**: `cleanup_old_tasks(max_age_hours=24)` 은 호출 측이 지정한 시간보다 오래된 `completed` / `failed` JSON과, `running` 인 채로 **48시간 초과** 경과한 파일(프로세스 크래시 등의 고아)을 삭제한다. 완료 작업의 보존 시간은 호출 측이 인수 `max_age_hours` 로 지정하며, 대응하는 `config.json` 키는 없다.
 
 같은 모듈의 **`rotate_dm_logs`** 은, `shared/dm_logs/*.jsonl` 중 `max_age_days`(기본 7일)보다 오래된 행을 `{元ファイル名}.{YYYYMMDD}.archive.jsonl` 에 추가 아카이브하고, 활성 파일을 최근 행만으로 다시 쓴다(DM 이력의 비대화 대책).
 

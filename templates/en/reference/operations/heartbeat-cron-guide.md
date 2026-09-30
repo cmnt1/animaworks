@@ -173,7 +173,7 @@ Otherwise (e.g., effective 61 minutes, or an interval like 43 minutes that does 
 - **Candidate tool map construction `from_profiles()`**: Merges the following 3 layers with dict `update`, overwriting with **last-write-wins**: (1) `_DEFAULT_ELIGIBLE_TOOLS` (code defaults) (2) argument `profiles` (`EXECUTION_PROFILE` aggregation) (3) argument `config_eligible` (usually `名前 → 秒` expanded from `threshold_s` in `background_task.eligible_tools` of `config.json`). Values are expected seconds (integers) for profile integration.
 - **Code defaults `_DEFAULT_ELIGIBLE_TOOLS` (seconds)**: `generate_character_assets` 30, `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 30 each, `generate_3d_model` / `generate_rigged_model` / `generate_animations` 30 each, `local_llm` 60, `run_command` 60.
 - **Cleanup `cleanup_old_tasks(max_age_hours=24)`**: `status` deletes JSON files where `completed_at` is **older than the time specified by the argument (default 24 hours)** via `completed` / `failed`. Additionally, files that remain in `running` for **more than 48 hours** from `created_at` are deleted as crash orphans. The return value is the number of deletions.
-- **About `result_retention_hours`**: `background_task.result_retention_hours` of `config.json` exists in the schema, but **`BackgroundTaskManager.cleanup_old_tasks` does not read this value** (the default is the method argument `max_age_hours=24`). If the retention time needs to be changed in operations, the caller is expected to match `max_age_hours`.
+- **Retention**: The completed-task retention for `cleanup_old_tasks` is set by the `max_age_hours` argument (default 24 hours). There is no corresponding `config.json` key.
 
 #### rotate_dm_logs (System Cron)
 

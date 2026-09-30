@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 5cc33c05cb69993fe7413d6844f394f4685a0a402e9c8887c9e6b1483209ce8a -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 7b157dac70da947981cf0e39947a011fd7ae76ec31b91026666cdd2ccac35fdf -->
 
 # 設定リファレンス
 
@@ -14,7 +14,6 @@
 | `locale` | `str` | `"ja"` | システム全体で使用する既定の言語。 |
 | `system` | `SystemConfig` | `{SystemConfig}` | 実行環境、タイムゾーン、基本動作に関する設定。 |
 | `system.mode` | `str` | `"server"` | — |
-| `system.log_level` | `str` | `"INFO"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
 | `credentials` | `dict[str, CredentialConfig]` | `{"anthropic":{"model":"CredentialConfig"}}` | 外部モデル・サービスの認証情報。 |
 | `credentials.type` | `str` | `"api_key"` | — |
@@ -121,7 +120,6 @@
 | `rag.shared_check_ttl_seconds` | `float` | `30.0` | — |
 | `rag.shared_check_backoff_initial_seconds` | `float` | `5.0` | — |
 | `rag.shared_check_backoff_max_seconds` | `float` | `300.0` | — |
-| `rag.quick_check_timeout_seconds` | `float` | `10.0` | — |
 | `rag.rerank_enabled` | `bool` | `true` | — |
 | `rag.rerank_candidate_pool` | `int` | `50` | — |
 | `rag.cross_encoder_model` | `str` | `"cross-encoder/ms-marco-MiniLM-L-12-v2"` | — |
@@ -174,11 +172,10 @@
 | `prompt.skill_catalog_router_dense_weight` | `float` | `8.0` | — |
 | `prompt.skill_catalog_max_items` | `int` | `3` | — |
 | `priming` | `PrimingConfig` | `{PrimingConfig}` | anima の起動時に読み込む情報の設定。 |
-| `priming.profile` | `Literal['compact', 'full']` | `"compact"` | 起動時コンテキストに使用するプロファイル。compact は要点を優先し、full は広い情報を読み込みます。 |
 | `priming.max_tokens` | `int` | `2000` | — |
 | `priming.channel_timeout_seconds` | `float` | `60.0` | — |
 | `priming.compact_background_recall_enabled` | `bool` | `true` | — |
-| `priming.compact_background_recall` | `dict[str, CompactBackgroundRecallConfig]` | `…` | — |
+| `priming.compact_background_recall` | `CompactBackgroundRecallConfig` | `{CompactBackgroundRecallConfig}` | — |
 | `priming.compact_background_recall.related_knowledge_max_items` | `int` | `3` | — |
 | `priming.compact_background_recall.related_knowledge_max_tokens` | `int` | `180` | — |
 | `priming.compact_background_recall.episodes_max_items` | `int` | `2` | — |
@@ -336,7 +333,6 @@
 | `background_task.shutdown_drain_seconds` | `float` | `600.0` | — |
 | `background_task.eligible_tools` | `dict[str, BackgroundToolConfig]` | `…` | — |
 | `background_task.eligible_tools.threshold_s` | `int` | `30` | — |
-| `background_task.result_retention_hours` | `int` | `24` | disk cleanup retention (cleanup is explicitly invoked) |
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
@@ -494,7 +490,6 @@
 | `department` | `—` | `—` | 所属する部署。 |
 | `enabled` | `—` | `—` | anima の有効・無効。 |
 | `needs_user_input` | `—` | `—` | ユーザー入力が必要な状態かどうか。 |
-| `priming_profile` | `—` | `—` | 起動時コンテキストのプロファイル。 |
 | `role` | `—` | `—` | anima の役割テンプレート。 |
 
 ## `models.json`

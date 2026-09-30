@@ -146,15 +146,19 @@ class TestTTSFactory:
 
 
 class TestVoiceSTT:
-    def test_init(self) -> None:
+    def test_init_does_not_load_optional_stt_dependency(self) -> None:
+        from core.voice import stt as stt_module
         from core.voice.stt import VoiceSTT
 
-        stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8", language="ja")
+        with patch.object(stt_module, "_load_whisper_model_class") as load_model_class:
+            stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8", language="ja")
+
         assert stt._model_name == "tiny"
         assert stt._language == "ja"
-        assert stt._model is None  # lazy
+        assert stt._model is None
+        load_model_class.assert_not_called()
 
-    @patch("core.voice.stt.WhisperModel")
+    @patch("core.voice.stt._load_whisper_model_class")
     def test_transcribe_buffer(self, mock_whisper_cls: MagicMock) -> None:
         from core.voice.stt import VoiceSTT
 
@@ -171,7 +175,7 @@ class TestVoiceSTT:
         mock_info.duration = 1.0
 
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
-        mock_whisper_cls.return_value = mock_model
+        mock_whisper_cls.return_value.return_value = mock_model
 
         from core.voice import stt as stt_module
 
@@ -188,7 +192,7 @@ class TestVoiceSTT:
         assert result["language"] == "ja"
         assert "language" not in mock_model.transcribe.call_args.kwargs
 
-    @patch("core.voice.stt.WhisperModel")
+    @patch("core.voice.stt._load_whisper_model_class")
     def test_configured_language_passed_to_transcribe(self, mock_whisper_cls: MagicMock) -> None:
         from core.voice import stt as stt_module
         from core.voice.stt import VoiceSTT
@@ -196,7 +200,7 @@ class TestVoiceSTT:
         stt_module._whisper_model = None
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([], MagicMock(language="ja", duration=0.0))
-        mock_whisper_cls.return_value = mock_model
+        mock_whisper_cls.return_value.return_value = mock_model
         stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8", language="ja")
 
         stt.transcribe_buffer(np.zeros(8, dtype=np.int16).tobytes())
@@ -204,7 +208,7 @@ class TestVoiceSTT:
         assert mock_model.transcribe.call_args.kwargs["language"] == "ja"
 
     @pytest.mark.asyncio
-    @patch("core.voice.stt.WhisperModel")
+    @patch("core.voice.stt._load_whisper_model_class")
     async def test_transcribe_buffer_async(self, mock_whisper_cls: MagicMock) -> None:
         from core.voice import stt
 
@@ -223,7 +227,7 @@ class TestVoiceSTT:
         mock_info.language_probability = 0.99
         mock_info.duration = 0.5
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
-        mock_whisper_cls.return_value = mock_model
+        mock_whisper_cls.return_value.return_value = mock_model
 
         stt_instance = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")
 

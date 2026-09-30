@@ -21,7 +21,6 @@
     "core/memory/facts/config.py",
     "core/memory/facts/invalidation_llm.py",
     "core/memory/facts/ontology.py",
-    "core/memory/priming/policy.py",
     "core/memory/rag/repair_service.py",
     "core/memory/rag/repair_snapshot.py",
     "core/migrations/steps.py",

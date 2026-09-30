@@ -1,6 +1,6 @@
 # Priming チャネル技術リファレンス
 
-既定の `compact` は送信者、タスク、常駐知識を取得し、条件を満たす場合だけ関連知識を検索する。オプトインの `full` は最近の活動とエピソードも取得する。チャネル構成は `priming.profile` で選択され、すべてのトリガーで全チャネルが動くわけではない。
+Priming は compact の単一路線で動作する。送信者・タスク・常駐知識・直近の送信・人間向け通知を取得し、条件を満たす場合は関連知識も検索する。heartbeat / inbox / cron では、共通の上限設定に従って最近の活動やエピソードも取得する。
 
 `PrimingEngine` が取得するチャネルと予算の仕様を示す。C0（important_knowledge）は Channel C の知識パイプライン内の補助ブロック。
 
@@ -42,7 +42,7 @@
 
 - **ソース**: `activity_log/{date}.jsonl` + 共有チャネルの最新投稿
 
-**Priming 注入と明示検索の違い**: Channel B は `full` プロファイルで取得する。過去の行動ログをキーワードで広く探す用途は `search_memory(scope="activity_log")` を使う。注入とツール検索は別の経路である。
+**Priming 注入と明示検索の違い**: Channel B は heartbeat / inbox / cron の compact な背景想起で、共通設定の上限内で取得する。過去の行動ログをキーワードで広く探す用途は `search_memory(scope="activity_log")` を使う。注入とツール検索は別の経路である。
 
 ### トリガー別フィルタリング
 
@@ -106,13 +106,13 @@ RAG ベクトル検索で関連エピソードを注入する。
 
 ---
 
-## 予算とプロファイル
+## 予算と設定
 
-`config.json` の `priming.profile` は `compact` または `full` を指定する（デフォルト: `compact`）。Anima ごとの `status.json` に `priming_profile` を指定すると、その設定が優先される。`priming.max_tokens` は想起のトークン予算（デフォルト: 2000）、`priming.channel_timeout_seconds` はチャネルごとの取得タイムアウト（デフォルト: 60秒）。
+プロファイル選択はなく、Priming は常に compact の取得経路を使う。`priming.max_tokens` は想起予算（デフォルト: 2000）、`priming.channel_timeout_seconds` はチャネルごとの取得タイムアウト（デフォルト: 60秒）。`compact_background_recall` は heartbeat / inbox / cron で共有する1組の上限で、`compact_background_recall_enabled` で一括して無効化できる。
 
-- `compact` は A（送信者）、E（タスク）、C0（常駐知識）、最近の送信、保留中の人間通知を取得する。C（関連知識）は chat/task トリガー、または question/request/delegation 意図があり、メッセージがある場合に取得する。B（最近の活動）・F（エピソード）・G（並列タスク表示）は取得しない。
-- `full` は A / B / C0 / C / E / F と最近の送信、人間通知を取得する。
-- A の上限は `min(400, max_tokens // 4)`、E の上限は `min(500, max_tokens // 3)`。最近の送信は最大3件・250トークン。`full` のチャネル項目と `compact` の関連知識は、`max_tokens` の残り枠に収める。
+- A（送信者）は `min(400, max_tokens // 4)`、E（タスク）は `min(500, max_tokens // 3)` が上限。最近の送信は最大3件・250トークン。
+- C（関連知識）は chat/task トリガー、または question/request/delegation 意図があり、メッセージがある場合に取得する。
+- B（最近の活動）は heartbeat / inbox / cron で設定上限内に取得する。F（エピソード）は同じトリガーでメッセージがあり、関連取得が有効な場合に設定上限内で取得する。
 - 保留中の人間通知は想起予算とは別に扱われる。
 
 ---
