@@ -98,7 +98,7 @@ class TestModeCFallback:
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
-            patch("core.execution.LiteLLMExecutor", return_value=sentinel) as litellm,
+            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor", return_value=sentinel) as litellm,
         ):
             created = agent._create_executor()
 
@@ -113,7 +113,7 @@ class TestModeCFallback:
         agent.model_config.api_key_env = "OPENAI_API_KEY"
         with (
             patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError, match="fallback_models"),
         ):
             agent._create_executor()
@@ -126,7 +126,7 @@ class TestModeCFallback:
         agent.model_config.api_key = "sk-ant-test"
         with (
             patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):
             agent._create_executor()
@@ -155,7 +155,7 @@ def test_missing_claude_sdk_uses_only_configured_fallback(tmp_path):
     with (
         patch("core.config.model_config.resolve_unavailable_model_config", return_value=fallback) as resolve,
         patch("core.execution.fallback_activity.log_model_fallback"),
-        patch("core.execution.LiteLLMExecutor") as adapter,
+        patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor") as adapter,
     ):
         assert agent._create_executor() is adapter.return_value
     resolve.assert_called_once_with(agent.model_config, unavailable_modes=frozenset({"S"}))
@@ -177,7 +177,7 @@ class TestModeXExecutor:
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
-            patch("core.execution.LiteLLMExecutor", return_value=sentinel) as litellm,
+            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor", return_value=sentinel) as litellm,
         ):
             created = agent._create_executor()
 
@@ -214,7 +214,7 @@ class TestModeXExecutor:
         agent = _make_agent(tmp_path, model="grok/grok-4.5", resolved_mode="X")
         with (
             patch("core.execution.engines.grok.grok_cli.is_grok_cli_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):
             agent._create_executor()
