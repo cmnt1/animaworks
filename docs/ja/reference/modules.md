@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 9fe895e5682a626908a8de46e0098a77c217a91c5e4378235af39c111c7b9bba -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 737e87047d4f502ead5a46c968c1435997640accdca2d6158384a9a7fd4e487a -->
 
 # モジュール一覧
 
@@ -107,9 +107,9 @@ LLM エージェントの実行、会話制御、エンジン連携。
 |---|---:|---|
 | `core.agent` | 23 | — |
 | `core.agent.agent_core` | 324 | — |
-| `core.agent.cycle` | 1598 | — |
+| `core.agent.cycle` | 1518 | — |
 | `core.agent.executor_factory` | 176 | — |
-| `core.agent.priming` | 464 | — |
+| `core.agent.priming` | 493 | — |
 | `core.agent.prompt_log` | 194 | — |
 | `core.agent.session_compactor` | 557 | Per-Anima × per-thread_id idle compaction timer management. |
 
@@ -122,14 +122,14 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima` | 23 | — |
 | `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 576 | — |
-| `core.anima.digital_anima` | 674 | — |
+| `core.anima.digital_anima` | 682 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
 | `core.anima.factory` | 773 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 959 | — |
 | `core.anima.image_artifacts` | 219 | — |
 | `core.anima.inbox` | 1013 | — |
 | `core.anima.inbox_overflow` | 130 | — |
-| `core.anima.lifecycle` | 1359 | — |
+| `core.anima.lifecycle` | 1406 | — |
 | `core.anima.messaging` | 1612 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -193,26 +193,26 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution._streaming（非公開）` | 303 | — |
 | `core.execution._tool_summary（非公開）` | 102 | — |
 | `core.execution.backoff` | 42 | Backoff timing helpers for coordinated LLM retry. |
-| `core.execution.base` | 902 | — |
+| `core.execution.base` | 903 | — |
 | `core.execution.busy_probe` | 68 | Congestion probe for self-hosted fallback models (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 295 | — |
 | `core.execution.engine_base` | 75 | — |
 | `core.execution.engine_session` | 101 | — |
 | `core.execution.engines.claude._sdk_hooks（非公開）` | 685 | — |
 | `core.execution.engines.claude._sdk_interrupt（非公開）` | 106 | — |
-| `core.execution.engines.claude._sdk_options（非公開）` | 556 | — |
+| `core.execution.engines.claude._sdk_options（非公開）` | 563 | — |
 | `core.execution.engines.claude._sdk_patch（非公開）` | 261 | — |
 | `core.execution.engines.claude._sdk_security（非公開）` | 294 | — |
 | `core.execution.engines.claude._sdk_session（非公開）` | 524 | — |
-| `core.execution.engines.claude._sdk_stream（非公開）` | 461 | — |
-| `core.execution.engines.claude.agent_sdk` | 896 | — |
+| `core.execution.engines.claude._sdk_stream（非公開）` | 488 | — |
+| `core.execution.engines.claude.agent_sdk` | 838 | — |
 | `core.execution.engines.codex.codex_sdk` | 847 | — |
 | `core.execution.engines.codex.events` | 667 | — |
 | `core.execution.engines.codex.setup` | 960 | — |
 | `core.execution.engines.cursor.cursor_agent` | 717 | — |
 | `core.execution.engines.gemini.gemini_cli` | 474 | — |
 | `core.execution.engines.grok.grok_cli` | 1089 | — |
-| `core.execution.engines.litellm._litellm_context（非公開）` | 524 | — |
+| `core.execution.engines.litellm._litellm_context（非公開）` | 526 | — |
 | `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
 | `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
 | `core.execution.engines.litellm.litellm_loop` | 1047 | — |
@@ -347,38 +347,38 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations` | 394 | AnimaWorks external tools package. |
 | `core.integrations._anima_icon_url（非公開）` | 308 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
 | `core.integrations._async_compat（非公開）` | 41 | Async compatibility helpers for tools with synchronous HTTP clients. |
-| `core.integrations._base（非公開）` | 372 | Base infrastructure for AnimaWorks tools. |
-| `core.integrations._cache（非公開）` | 96 | Shared SQLite message cache base class for communication tools. |
-| `core.integrations._chatwork_cache（非公開）` | 300 | SQLite message cache for Chatwork offline search and unreplied detection. |
+| `core.integrations._base（非公開）` | 397 | Base infrastructure for AnimaWorks tools. |
+| `core.integrations._cache（非公開）` | 172 | Shared SQLite message cache base class for communication tools. |
+| `core.integrations._chatwork_cache（非公開）` | 309 | SQLite message cache for Chatwork offline search and unreplied detection. |
 | `core.integrations._chatwork_client（非公開）` | 235 | HTTP client for the Chatwork v2 API. |
 | `core.integrations._chatwork_cli（非公開）` | 633 | Standalone CLI entry point for the Chatwork tool. |
 | `core.integrations._chatwork_identity（非公開）` | 76 | Chatwork identity and delegation resolution. |
 | `core.integrations._chatwork_markdown（非公開）` | 162 | Markdown-to-Chatwork format conversion utilities. |
-| `core.integrations._comm_cli（非公開）` | 52 | — |
-| `core.integrations._discord_cache（非公開）` | 266 | SQLite message cache for Discord (offline search, sync state). |
+| `core.integrations._comm_cli（非公開）` | 64 | — |
+| `core.integrations._discord_cache（非公開）` | 293 | SQLite message cache for Discord (offline search, sync state). |
 | `core.integrations._discord_client（非公開）` | 47 | Backward-compatible Discord client import path. |
 | `core.integrations._discord_cli（非公開）` | 297 | Standalone CLI entry point for Discord tools. |
 | `core.integrations._discord_markdown（非公開）` | 138 | Discord markup helpers: plain-text cleanup and length limits. |
 | `core.integrations._google_auth（非公開）` | 174 | Shared OAuth2 credential handling for Google integrations. |
 | `core.integrations._image_clients（非公開）` | 93 | API clients and shared constants for image/3D generation. |
-| `core.integrations._image_cli（非公開）` | 369 | CLI entry point for ``animaworks-tool image_gen``. |
+| `core.integrations._image_cli（非公開）` | 371 | CLI entry point for ``animaworks-tool image_gen``. |
 | `core.integrations._image_glb（非公開）` | 473 | GLB/FBX asset conversion, optimisation, and compression. |
 | `core.integrations._image_pipeline（非公開）` | 809 | ImageGenPipeline – orchestrates the full character asset generation. |
 | `core.integrations._image_schemas（非公開）` | 42 | Tool schemas and CLI guide for image generation. |
 | `core.integrations._retry（非公開）` | 170 | Shared retry/backoff utility for AnimaWorks tools. |
-| `core.integrations._slack_cache（非公開）` | 387 | SQLite message cache for Slack (offline search, unreplied detection). |
+| `core.integrations._slack_cache（非公開）` | 423 | SQLite message cache for Slack (offline search, unreplied detection). |
 | `core.integrations._slack_client（非公開）` | 307 | Slack Web API client with rate-limit retry and pagination. |
 | `core.integrations._slack_cli（非公開）` | 308 | Standalone CLI entry point for Slack tools. |
 | `core.integrations._slack_markdown（非公開）` | 240 | Slack markdown conversion and formatting utilities. |
-| `core.integrations.aws_collector` | 393 | AnimaWorks AWS collector tool — ECS status, CloudWatch logs & metrics. |
-| `core.integrations.call_human` | 400 | — |
-| `core.integrations.chatwork` | 192 | Chatwork integration for AnimaWorks. |
-| `core.integrations.discord` | 261 | Discord integration for AnimaWorks. |
-| `core.integrations.github` | 400 | AnimaWorks GitHub tool — gh CLI wrapper. |
-| `core.integrations.gmail` | 1213 | AnimaWorks Gmail tool -- direct Gmail API access. |
-| `core.integrations.google_calendar` | 593 | — |
-| `core.integrations.google_sheets` | 449 | — |
-| `core.integrations.google_tasks` | 421 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
+| `core.integrations.aws_collector` | 408 | AnimaWorks AWS collector tool — ECS status, CloudWatch logs & metrics. |
+| `core.integrations.call_human` | 402 | — |
+| `core.integrations.chatwork` | 281 | Chatwork integration for AnimaWorks. |
+| `core.integrations.discord` | 284 | Discord integration for AnimaWorks. |
+| `core.integrations.github` | 418 | AnimaWorks GitHub tool — gh CLI wrapper. |
+| `core.integrations.gmail` | 1254 | AnimaWorks Gmail tool -- direct Gmail API access. |
+| `core.integrations.google_calendar` | 615 | — |
+| `core.integrations.google_sheets` | 469 | — |
+| `core.integrations.google_tasks` | 445 | AnimaWorks Google Tasks tool -- Google Tasks API access. |
 | `core.integrations.image.atlascloud` | 156 | Optional Atlas Cloud backend for character images and reference edits. |
 | `core.integrations.image.codex` | 319 | Codex CLI image generation client (image_gen tool via local codex). |
 | `core.integrations.image.constants` | 57 | URL constants, timeouts, and execution profiles for image/3D generation. |
@@ -388,13 +388,13 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.integrations.image.novelai` | 192 | NovelAI V4.5 API client for anime full-body image generation. |
 | `core.integrations.image.prompts` | 197 | Prompt constants for bustup, chibi, and expression variants. |
 | `core.integrations.image.utils` | 135 | Shared utilities for image/3D generation clients. |
-| `core.integrations.image_gen` | 426 | Character image & 3-D model generation tool for AnimaWorks. |
-| `core.integrations.local_llm` | 534 | AnimaWorks local LLM tool -- Ollama API client. |
-| `core.integrations.notion` | 825 | Notion integration for AnimaWorks. |
-| `core.integrations.slack` | 231 | Slack integration for AnimaWorks. |
-| `core.integrations.transcribe` | 420 | AnimaWorks transcribe tool -- Whisper speech-to-text with LLM refinement. |
-| `core.integrations.web_search` | 399 | Web Search tool for AnimaWorks. |
-| `core.integrations.x_search` | 335 | X (Twitter) Search tool for AnimaWorks. |
+| `core.integrations.image_gen` | 429 | Character image & 3-D model generation tool for AnimaWorks. |
+| `core.integrations.local_llm` | 552 | AnimaWorks local LLM tool -- Ollama API client. |
+| `core.integrations.notion` | 861 | Notion integration for AnimaWorks. |
+| `core.integrations.slack` | 261 | Slack integration for AnimaWorks. |
+| `core.integrations.transcribe` | 429 | AnimaWorks transcribe tool -- Whisper speech-to-text with LLM refinement. |
+| `core.integrations.web_search` | 408 | Web Search tool for AnimaWorks. |
+| `core.integrations.x_search` | 347 | X (Twitter) Search tool for AnimaWorks. |
 
 ## `core.integrations.image`
 
@@ -783,10 +783,10 @@ anima の監督、委任、実行調整。
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1249 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
-| `core.supervisor.scheduler_manager` | 835 | APScheduler management for heartbeat and cron tasks. |
+| `core.supervisor.scheduler_manager` | 885 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
-| `core.supervisor.task_runner` | 953 | Disposable task runner entry point. |
-| `core.supervisor.task_runner_supervisor` | 1109 | Root-side lifecycle manager for disposable task runner processes. |
+| `core.supervisor.task_runner` | 980 | Disposable task runner entry point. |
+| `core.supervisor.task_runner_supervisor` | 1131 | Root-side lifecycle manager for disposable task runner processes. |
 | `core.supervisor.transport` | 239 | Transport helpers for IPC server/client communication. |
 
 ## `core.tasks`
