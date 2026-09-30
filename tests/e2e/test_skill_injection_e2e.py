@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from core.prompt.builder import build_system_prompt
 from core.schemas import SkillMeta
-from core.tooling.schemas import build_unified_tool_list
+from core.tooling.policy.schemas import build_unified_tool_list
 
 # ── Helpers ──────────────────────────────────────────────
 

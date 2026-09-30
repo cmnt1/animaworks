@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tests for ConversationMemory._call_llm() consolidation model usage.
 
-Since _call_llm() always uses the consolidation model (via _llm_utils),
+Since _call_llm() always uses the consolidation model (via core.llm.oneshot),
 these tests verify that the consolidation model kwargs are correctly
 applied and that anima-specific provider kwargs are NOT injected.
 """
@@ -43,7 +43,7 @@ class TestCallLlmConsolidationModel:
 
         consolidation_kwargs = {"model": "anthropic/claude-sonnet-4-6", "api_key": "test-key"}
         with (
-            patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
+            patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
             patch("litellm.acompletion", mock_ac),
         ):
             await conv._call_llm("sys", "user msg")
@@ -71,7 +71,7 @@ class TestCallLlmConsolidationModel:
 
         consolidation_kwargs = {"model": "anthropic/claude-sonnet-4-6"}
         with (
-            patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
+            patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
             patch("litellm.acompletion", mock_ac),
         ):
             await conv._call_llm("sys", "user msg")
@@ -98,7 +98,7 @@ class TestCallLlmConsolidationModel:
 
         consolidation_kwargs = {"model": "anthropic/claude-sonnet-4-6"}
         with (
-            patch("core.memory._llm_utils.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
+            patch("core.llm.oneshot.get_llm_kwargs_for_model", return_value=consolidation_kwargs),
             patch("litellm.acompletion", mock_ac),
         ):
             await conv._call_llm("sys", "user msg")

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -44,6 +43,7 @@ from cli.tui.widgets import (
     format_input_summary,
 )
 from cli.tui.widgets.response_status import ResponseStatus
+from core.platform.env import get_env
 
 logger = logging.getLogger(__name__)
 from cli.tui.widgets.sidebar import AnimaChosen
@@ -330,7 +330,7 @@ class AnimaChatApp(App):
         the UI inherits whatever the user's terminal is set to. Override
         with ``ANIMAWORKS_TUI_THEME`` (any built-in Textual theme name).
         """
-        wanted = os.environ.get("ANIMAWORKS_TUI_THEME") or "ansi-light"
+        wanted = get_env("ANIMAWORKS_TUI_THEME") or "ansi-light"
         try:
             self.theme = wanted
         except Exception:

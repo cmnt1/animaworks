@@ -89,7 +89,7 @@ class TestDispatchFromRegistry:
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with patch("importlib.import_module") as mock_import:
             mock_import.return_value = MagicMock()
-            with patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}):
+            with patch("core.tooling.policy.registry.TOOL_MODULES", {"slack": "core.integrations.slack"}):
                 result = d._dispatch_from_registry("slack_send", {})
         assert result is None
 
@@ -102,7 +102,7 @@ class TestDispatchFromRegistry:
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = d._dispatch_from_registry("web_search", {"query": "test"})
@@ -116,7 +116,7 @@ class TestDispatchFromRegistry:
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = d._dispatch_from_registry("web_search", {"query": "test"})
@@ -128,7 +128,7 @@ class TestDispatchFromRegistry:
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = d._dispatch_from_registry("web_search", {})
@@ -141,7 +141,7 @@ class TestDispatchFromRegistry:
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = d._dispatch_from_registry("web_search", {})
@@ -155,7 +155,7 @@ class TestDispatchFromRegistry:
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = d._dispatch_from_registry("web_search", {})
@@ -166,7 +166,7 @@ class TestDispatchFromRegistry:
     def test_handles_import_error(self):
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch(
                 "importlib.import_module",
                 side_effect=ImportError("no module"),
@@ -185,7 +185,7 @@ class TestDispatchFromRegistry:
         d = ExternalToolDispatcher(tool_registry=["gmail", "slack"])
         with (
             patch(
-                "core.integrations.TOOL_MODULES",
+                "core.tooling.policy.registry.TOOL_MODULES",
                 {
                     "gmail": "core.integrations.gmail",
                     "slack": "core.integrations.slack",
@@ -202,7 +202,7 @@ class TestDispatchFromRegistry:
         d = ExternalToolDispatcher(tool_registry=["gmail", "slack"])
         with (
             patch(
-                "core.integrations.TOOL_MODULES",
+                "core.tooling.policy.registry.TOOL_MODULES",
                 {
                     "gmail": "core.integrations.gmail",
                     "slack": "core.integrations.slack",

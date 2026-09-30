@@ -16,6 +16,7 @@ from pathlib import Path
 
 import psutil
 
+from core.platform.env import DATA_DIR_ENV, SERVER_URL_ENV, get_env, read_process_env, set_server_url
 from core.platform.pid import read_server_pid
 from core.platform.process import (
     find_first_matching_pid,
@@ -77,7 +78,7 @@ def _find_server_pid_by_process(
     excluded = {os.getpid(), os.getppid()}
     if extra_exclude_pids:
         excluded |= extra_exclude_pids
-    helper_pid_str = os.environ.get("_ANIMAWORKS_RESTART_HELPER_PID")
+    helper_pid_str = get_env("_ANIMAWORKS_RESTART_HELPER_PID")
     if helper_pid_str:
         try:
             excluded.add(int(helper_pid_str))
@@ -138,21 +139,8 @@ def _read_process_cmdline(pid: int) -> list[str] | None:
 
 
 def _read_process_environ_data_dir(pid: int) -> tuple[bool, str | None]:
-    """Read only ANIMAWORKS_DATA_DIR from ``/proc/<pid>/environ``.
-
-    The boolean indicates whether the environment was readable.  Other
-    environment variables may contain secrets, so they are neither decoded
-    nor retained.
-    """
-    try:
-        raw = (Path("/proc") / str(pid) / "environ").read_bytes()
-    except OSError:
-        return False, None
-    prefix = b"ANIMAWORKS_DATA_DIR="
-    for entry in raw.split(b"\0"):
-        if entry.startswith(prefix):
-            return True, os.fsdecode(entry[len(prefix) :])
-    return True, None
+    """Read the runtime data directory from a candidate server process."""
+    return read_process_env(pid, DATA_DIR_ENV)
 
 
 def _command_option(cmdline: list[str] | None, option: str) -> str | None:
@@ -493,6 +481,10 @@ def _start_foreground(args: argparse.Namespace) -> None:
         print(f"Error: Server is already running (pid={orphan_pid}, PID file was missing).")
         print("Use 'animaworks stop' first, or 'animaworks restart'.")
         sys.exit(EXIT_ALREADY_RUNNING)
+
+    if not (get_env(SERVER_URL_ENV) or "").strip():
+        port = int(getattr(args, "port", 18500))
+        set_server_url(f"http://localhost:{port}")
 
     orphan_count = _kill_orphan_runners()
     if orphan_count:

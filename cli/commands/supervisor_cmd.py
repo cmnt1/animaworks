@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -19,7 +21,6 @@ matches what the MCP / Mode A executors return for the same tool.
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -27,7 +28,7 @@ logger = logging.getLogger("animaworks")
 
 
 def _get_anima_dir() -> Path:
-    anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir_str = anima_dir_env() or ""
     if not anima_dir_str:
         print("Error: ANIMAWORKS_ANIMA_DIR not set (set automatically inside an anima's tool context)", file=sys.stderr)
         sys.exit(1)

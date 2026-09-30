@@ -13,27 +13,10 @@ import logging
 import sys
 from pathlib import Path
 
+from core.platform.env import anima_dir_env
+from core.tooling.policy.registry import TOOL_MODULES, discover_core_tools, load_tool_module  # noqa: F401
+
 logger = logging.getLogger("animaworks.tools")
-
-
-def discover_core_tools() -> dict[str, str]:
-    """Scan core/integrations/ for tool modules.
-
-    Returns: Mapping of tool_name → module path (e.g., "core.integrations.web_search").
-    Skips files starting with _ (private/internal modules, e.g. ``_anima_icon_url.py``).
-    """
-    tools_dir = Path(__file__).parent
-    core: dict[str, str] = {}
-    for f in sorted(tools_dir.glob("*.py")):
-        if f.name.startswith("_"):
-            continue
-        tool_name = f.stem
-        core[tool_name] = f"core.integrations.{tool_name}"
-    return core
-
-
-# Backward-compatible module-level variable
-TOOL_MODULES = discover_core_tools()
 
 
 def discover_common_tools(data_dir: Path | None = None) -> dict[str, str]:
@@ -105,9 +88,7 @@ def _load_cli_profile(
         if origin == "core":
             if tool_name not in TOOL_MODULES:
                 return None
-            import importlib
-
-            mod = importlib.import_module(TOOL_MODULES[tool_name])
+            mod = load_tool_module(tool_name, TOOL_MODULES)
             return getattr(mod, "EXECUTION_PROFILE", None)
         if tool_file is None:
             return None
@@ -153,7 +134,6 @@ def _handle_submit(argv: list[str]) -> None:
     claims it and executes the tool in the background lane.
     """
     import json
-    import os
     import shlex
     import time
     import uuid
@@ -167,7 +147,7 @@ def _handle_submit(argv: list[str]) -> None:
     tool_name = argv[0]
     tool_args = argv[1:]
 
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir = anima_dir_env() or ""
     if not anima_dir:
         print(
             "Error: ANIMAWORKS_ANIMA_DIR not set. Cannot determine the task owner.",
@@ -222,9 +202,7 @@ def _handle_submit(argv: list[str]) -> None:
     # Optional: check EXECUTION_PROFILE for warning
     try:
         if tool_name in TOOL_MODULES:
-            import importlib
-
-            mod = importlib.import_module(TOOL_MODULES[tool_name])
+            mod = load_tool_module(tool_name, TOOL_MODULES)
             profile = getattr(mod, "EXECUTION_PROFILE", None)
             if profile and subcommand and subcommand in profile:
                 info = profile[subcommand]
@@ -277,13 +255,11 @@ def cli_dispatch():
     (from ``common_tools/``), and personal tools discovered via
     the ``ANIMAWORKS_ANIMA_DIR`` environment variable.
     """
-    import os
-
     # Discover common tools
     common = discover_common_tools()
 
     # Discover personal tools if anima_dir is set
-    anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir_str = anima_dir_env() or ""
     personal: dict[str, str] = {}
     if anima_dir_str:
         personal = discover_personal_tools(Path(anima_dir_str))
@@ -306,7 +282,7 @@ def cli_dispatch():
     # Attach relevant ACTION-RULES to stderr (before loading tool modules).
     if anima_dir_str:
         try:
-            from core.tooling.action_gate import (
+            from core.tooling.policy.action_gate import (
                 action_tool_name_from_cli_argv,
                 find_action_rules,
                 format_action_rules,
@@ -360,9 +336,7 @@ def cli_dispatch():
 
     # Try core tools first
     if tool_name in TOOL_MODULES:
-        import importlib
-
-        mod = importlib.import_module(TOOL_MODULES[tool_name])
+        mod = load_tool_module(tool_name, TOOL_MODULES)
         if not hasattr(mod, "cli_main"):
             print(f"Tool '{tool_name}' has no CLI interface")
             sys.exit(1)

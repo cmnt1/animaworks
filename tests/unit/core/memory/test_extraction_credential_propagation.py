@@ -19,7 +19,7 @@ async def test_fact_extractor_passes_credential():
     )
 
     with patch(
-        "core.memory._llm_utils.one_shot_completion",
+        "core.llm.oneshot.one_shot_completion",
         new_callable=AsyncMock,
         return_value='{"entities": []}',
     ) as mock_one_shot:

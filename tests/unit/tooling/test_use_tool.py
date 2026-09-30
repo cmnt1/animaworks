@@ -119,7 +119,7 @@ class TestUseToolRejectsUnknownModule:
         anima_dir: Path,
     ):
         """Registry has web_search but TOOL_MODULES excludes it → unknown module."""
-        with patch("core.integrations.TOOL_MODULES", {"other_tool": "core.integrations.other"}):
+        with patch("core.tooling.policy.registry.TOOL_MODULES", {"other_tool": "core.integrations.other"}):
             result = handler_with_web_search.handle(
                 "use_tool",
                 {
@@ -149,7 +149,7 @@ class TestUseToolDispatchesCorrectly:
         mock_mod.dispatch = mock_call
 
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = handler_with_web_search.handle(
@@ -185,7 +185,7 @@ class TestUseToolPassesArgsWithAnimaDir:
         mock_mod.dispatch = mock_dispatch
 
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             handler_with_web_search.handle(
@@ -216,7 +216,7 @@ class TestUseToolHandlesDispatchException:
     ):
         """Exception during import or dispatch raises ToolExecutionError."""
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch(
                 "importlib.import_module",
                 side_effect=ImportError("module not found"),
@@ -313,7 +313,7 @@ class TestUseToolPersonalTools:
         handler_with_personal_tool: ToolHandler,
     ):
         """Personal tool is loaded from file, not TOOL_MODULES."""
-        with patch("core.integrations.TOOL_MODULES", {}):
+        with patch("core.tooling.policy.registry.TOOL_MODULES", {}):
             result = handler_with_personal_tool.handle(
                 "use_tool",
                 {"tool_name": "my_tool", "action": "check", "args": {}},
@@ -344,7 +344,7 @@ class TestUseToolMCPPermissionGate:
     ):
         """Handler with web_search in registry allows it (dispatch may still fail)."""
         with (
-            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch(
                 "importlib.import_module",
                 return_value=MagicMock(

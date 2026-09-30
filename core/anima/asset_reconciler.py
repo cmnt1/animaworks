@@ -686,7 +686,7 @@ async def _synthesize_prompt_via_llm(
         system_prompt_name = "fragments/asset_synthesis_system"
         user_prompt_key = "asset_reconciler.llm_user_prompt"
 
-    from core.memory._llm_utils import one_shot_completion
+    from core.llm.oneshot import one_shot_completion
 
     system_content = load_prompt(system_prompt_name)
     user_content = t(user_prompt_key, character_text=character_text)

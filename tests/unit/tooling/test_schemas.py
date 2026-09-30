@@ -1,4 +1,4 @@
-"""Tests for core.tooling.schemas — canonical tool schema definitions and converters."""
+"""Tests for core.tooling.policy.schemas — canonical tool schema definitions and converters."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,7 +8,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import core.integrations
-from core.tooling.schemas import (
+from core.tooling.policy.schemas import (
     MEMORY_TOOLS,
     load_external_schemas,
     to_litellm_format,
@@ -122,7 +122,7 @@ class TestLoadExternalSchemas:
         ]
 
         with (
-            patch.dict(core.integrations.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
+            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = load_external_schemas(["web_search"])
@@ -138,7 +138,7 @@ class TestLoadExternalSchemas:
         mock_mod = MagicMock(spec=[])  # No get_tool_schemas attribute
 
         with (
-            patch.dict(core.integrations.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
+            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = load_external_schemas(["web_search"])
@@ -147,7 +147,7 @@ class TestLoadExternalSchemas:
 
     def test_handles_import_error(self):
         with (
-            patch.dict(core.integrations.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
+            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True),
             patch("importlib.import_module", side_effect=ImportError("no module")),
         ):
             result = load_external_schemas(["web_search"])
@@ -155,7 +155,7 @@ class TestLoadExternalSchemas:
         assert result == []
 
     def test_skips_tool_not_in_registry(self):
-        with patch.dict(core.integrations.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True):
+        with patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"web_search": "core.integrations.web_search"}, clear=True):
             result = load_external_schemas(["slack"])
 
         assert result == []
@@ -171,7 +171,7 @@ class TestLoadExternalSchemas:
         ]
 
         with (
-            patch.dict(core.integrations.TOOL_MODULES, {"test": "core.integrations.test"}, clear=True),
+            patch.dict(core.tooling.policy.registry.TOOL_MODULES, {"test": "core.integrations.test"}, clear=True),
             patch("importlib.import_module", return_value=mock_mod),
         ):
             result = load_external_schemas(["test"])

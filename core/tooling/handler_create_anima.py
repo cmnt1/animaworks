@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import server_url
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -7,7 +9,6 @@ from __future__ import annotations
 """CreateAnimaMixin — anima creation from character sheet."""
 
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,10 +18,6 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger("animaworks.tool_handler")
-
-
-def _server_base_url() -> str:
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
 
 
 class CreateAnimaMixin:
@@ -146,7 +143,7 @@ class CreateAnimaMixin:
 
         try:
             resp = httpx.post(
-                f"{_server_base_url()}/api/internal/anima/create",
+                f"{server_url()}/api/internal/anima/create",
                 json=payload,
                 headers=internal_api_headers(),
                 timeout=60.0,

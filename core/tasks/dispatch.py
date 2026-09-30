@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import server_url
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,7 +10,6 @@ from __future__ import annotations
 
 import errno
 import logging
-import os
 import re
 import sqlite3
 from pathlib import Path
@@ -19,10 +20,6 @@ from core.schemas import TaskEntry
 from core.tasks.queue import TaskQueueManager
 
 logger = logging.getLogger("animaworks.tasks_dispatch")
-
-
-def _server_url() -> str:
-    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
 
 
 def _post_tasks(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -37,7 +34,7 @@ def _post_tasks(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
 
         try:
             response = httpx.post(
-                f"{_server_url()}/api/internal/{endpoint}",
+                f"{server_url()}/api/internal/{endpoint}",
                 json=payload,
                 headers=internal_api_headers(),
                 timeout=60.0,
@@ -147,7 +144,7 @@ def read_tasks_via_server(
     from core.internal_api import internal_api_headers
 
     response = httpx.get(
-        f"{_server_url()}/api/internal/tasks",
+        f"{server_url()}/api/internal/tasks",
         params=params,
         headers=internal_api_headers(),
         timeout=30.0,
@@ -163,7 +160,7 @@ def read_executable_ids_via_server(anima_name: str) -> set[str]:
     from core.internal_api import internal_api_headers
 
     response = httpx.get(
-        f"{_server_url()}/api/internal/tasks",
+        f"{server_url()}/api/internal/tasks",
         params={"anima_name": anima_name},
         headers=internal_api_headers(),
         timeout=30.0,

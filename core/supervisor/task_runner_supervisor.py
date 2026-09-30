@@ -17,7 +17,9 @@ from typing import Any
 import psutil
 
 from core.i18n import t
+from core.platform.env import ANIMAWORKS_ENV_PREFIX, env_items_with_prefix
 from core.platform.process import process_group_exists, signal_tree, snapshot_descendants, subprocess_session_kwargs
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.schemas import CronTask
 from core.supervisor.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
@@ -154,8 +156,8 @@ class TaskRunnerSupervisor:
         """Copy model-service URLs explicitly, failing closed when absent."""
         values = {
             name: value.strip()
-            for name, value in os.environ.items()
-            if name.startswith("ANIMAWORKS_") and name.endswith("_URL") and value.strip()
+            for name, value in env_items_with_prefix(ANIMAWORKS_ENV_PREFIX, suffix="_URL").items()
+            if value.strip()
         }
         if "ANIMAWORKS_EMBED_URL" not in values:
             raise TaskRunnerError("required task runner URL is missing: ANIMAWORKS_EMBED_URL")
@@ -176,7 +178,7 @@ class TaskRunnerSupervisor:
         """
         env = os.environ.copy()
         for name in tuple(env):
-            if name.startswith("ANIMAWORKS_") and name.endswith("_URL"):
+            if name.startswith(ANIMAWORKS_ENV_PREFIX) and name.endswith("_URL"):
                 env.pop(name)
         env.update(url_env)
         env.update(
@@ -197,8 +199,8 @@ class TaskRunnerSupervisor:
         """Build the per-Anima environment formerly inherited from a cron runner."""
         url_env = {
             name: value.strip()
-            for name, value in os.environ.items()
-            if name.startswith("ANIMAWORKS_") and name.endswith("_URL") and value.strip()
+            for name, value in env_items_with_prefix(ANIMAWORKS_ENV_PREFIX, suffix="_URL").items()
+            if value.strip()
         }
         return self._build_child_environment(url_env, attempt=1, display_lane="background")
 
@@ -552,8 +554,7 @@ class TaskRunnerSupervisor:
             stderr_file = stderr_path.open("ab")
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
-                "-m",
-                "core.supervisor.task_runner",
+                *module_args(SubprocessEntry.TASK_RUNNER),
                 "--anima",
                 self.anima_name,
                 "--lane",

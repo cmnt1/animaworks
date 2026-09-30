@@ -333,6 +333,7 @@ class TestDiscoveryAndHelperEnvironment:
             servers = executor._mcp_servers()
         env_map = {item["name"]: item["value"] for item in servers[0]["env"]}
         assert env_map["ANIMAWORKS_TRIGGER"] == "cron:daily"
+        assert env_map["ANIMAWORKS_SERVER_URL"].startswith("http")
 
     def test_mcp_env_passes_embed_and_vector_urls(self, executor: GrokCLIExecutor):
         """MCP server env must include embed/vector/rerank URLs so it delegates
@@ -622,6 +623,7 @@ class TestACPProtocol:
         assert {entry["name"] for entry in aw["env"]} == {
             "ANIMAWORKS_ANIMA_DIR",
             "ANIMAWORKS_PROJECT_DIR",
+            "ANIMAWORKS_SERVER_URL",
             "PYTHONPATH",
             "PATH",
         }

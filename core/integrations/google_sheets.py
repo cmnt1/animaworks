@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -17,7 +19,6 @@ and Google Calendar tools.
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 from functools import partial
@@ -51,7 +52,7 @@ _SPREADSHEET_URL_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 def _credentials_dir() -> Path:
     """Prefer credentials isolated to the running Anima's company."""
-    anima_dir_value = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir_value = anima_dir_env()
     if anima_dir_value:
         from core.org.company import get_company
 

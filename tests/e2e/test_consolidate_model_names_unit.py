@@ -74,7 +74,7 @@ def _assert_model_in_acompletion(mock_llm: AsyncMock, expected_model: str) -> No
 
 
 def _current_consolidation_helper_model() -> str:
-    from core.memory._llm_utils import get_consolidation_llm_kwargs
+    from core.llm.oneshot import get_consolidation_llm_kwargs
 
     return str(get_consolidation_llm_kwargs()["model"])
 

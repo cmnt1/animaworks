@@ -279,7 +279,7 @@ class TestNotificationToolSchema:
     """Test that notify_human tool schema is properly defined."""
 
     def test_notify_human_in_notification_tools(self):
-        from core.tooling.schemas import _notification_tools
+        from core.tooling.policy.schemas import _notification_tools
 
         notification_tools = _notification_tools()
         assert len(notification_tools) == 1
@@ -292,14 +292,14 @@ class TestNotificationToolSchema:
         assert "body" in schema["parameters"]["required"]
 
     def test_build_unified_tool_list_includes_notification(self):
-        from core.tooling.schemas import build_unified_tool_list
+        from core.tooling.policy.schemas import build_unified_tool_list
 
         tools = build_unified_tool_list(include_notification_tools=True)
         names = [t["name"] for t in tools]
         assert "call_human" in names
 
     def test_build_unified_tool_list_excludes_notification_by_default(self):
-        from core.tooling.schemas import build_unified_tool_list
+        from core.tooling.policy.schemas import build_unified_tool_list
 
         tools = build_unified_tool_list()
         names = [t["name"] for t in tools]

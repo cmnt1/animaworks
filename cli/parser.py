@@ -8,6 +8,7 @@ import argparse
 import os
 
 from core.i18n import t
+from core.platform.env import get_env
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -623,7 +624,7 @@ def cli_main() -> None:
         _cfg = None
 
     setup_logging(
-        level=os.environ.get("ANIMAWORKS_LOG_LEVEL", "INFO"),
+        level=get_env("ANIMAWORKS_LOG_LEVEL", "INFO"),
         log_dir=get_data_dir() / "logs",
         redaction_enabled=_cfg.logging.redaction_enabled if _cfg else True,
     )

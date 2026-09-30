@@ -22,7 +22,7 @@ from contextlib import aclosing
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from core.exceptions import LLMAPIError
 from core.execution._session import save_threshold_shortterm
@@ -96,9 +96,6 @@ from core.memory import MemoryManager
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
-
-if TYPE_CHECKING:
-    from core.tooling.handler import ToolHandler
 
 logger = logging.getLogger("animaworks.execution.litellm_loop")
 
@@ -936,7 +933,7 @@ class LiteLLMExecutor(ToolProcessingMixin, ContextMixin, BaseExecutor):
         self,
         model_config: ModelConfig,
         anima_dir: Path,
-        tool_handler: ToolHandler,
+        tool_handler: Any,
         tool_registry: list[str],
         memory: MemoryManager,
         personal_tools: dict[str, str] | None = None,

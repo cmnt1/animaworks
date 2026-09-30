@@ -192,7 +192,7 @@ async def test_daily_phase_a_uses_previous_local_day_window_and_existing_episode
         patch("core.config.resolve_execution_mode", return_value="D"),
         patch("core.anima.lifecycle.now_local", return_value=fixed_now),
         patch("core.anima.lifecycle.load_prompt", side_effect=fake_load_prompt),
-        patch("core.memory._llm_utils.one_shot_completion", side_effect=fake_one_shot),
+        patch("core.llm.oneshot.one_shot_completion", side_effect=fake_one_shot),
     ):
         await anima._run_daily_consolidation(engine)
 
@@ -267,7 +267,7 @@ async def test_daily_phase_a_llm_failure_leaves_existing_episode_unchanged(tmp_p
         patch("core.config.load_config", return_value=config),
         patch("core.anima.lifecycle.now_local", return_value=fixed_now),
         patch("core.anima.lifecycle.load_prompt", return_value="episode prompt"),
-        patch("core.memory._llm_utils.one_shot_completion", side_effect=RuntimeError("llm timeout")),
+        patch("core.llm.oneshot.one_shot_completion", side_effect=RuntimeError("llm timeout")),
         patch("core.anima.lifecycle.logger.warning") as warning,
     ):
         result = await anima._run_daily_consolidation(engine)

@@ -74,7 +74,7 @@ def resolve_locomo_litellm_kwargs(model: str, *, credential: str | None = None) 
       3. ``LOCOMO_LLM_CREDENTIAL`` or ``config.consolidation.llm_credential`` (default ``vllm-lb``)
       4. Bare model + ``api_base`` → ``openai/{model}`` via ``get_memory_llm_kwargs_for_model``
     """
-    from core.memory._llm_utils import get_memory_llm_kwargs_for_model
+    from core.llm.oneshot import get_memory_llm_kwargs_for_model
 
     model_lower = model.lower()
     extras: dict[str, Any] = {}

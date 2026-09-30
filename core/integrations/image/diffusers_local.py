@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.integrations._base import logger
+from core.platform.env import get_env
 
 if TYPE_CHECKING:
     from core.config.models import ImageGenConfig
@@ -223,7 +224,7 @@ def _resolve_model_source(value: str | None) -> str:
     if value and value not in {"", "auto"}:
         return value
 
-    env_model = os.getenv("ANIMAWORKS_DIFFUSERS_MODEL")
+    env_model = get_env("ANIMAWORKS_DIFFUSERS_MODEL")
     if env_model:
         return env_model
 

@@ -33,7 +33,7 @@ from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFE
 from core.execution.engines.claude._sdk_stream import _log_tool_use
 from core.platform.tasks import spawn
 from core.prompt.context import CHARS_PER_TOKEN
-from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 from core.trust import TRUST_RANK, record_session_trust, resolve_tool_trust
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -330,22 +330,26 @@ def _build_pre_tool_hook(
                     )
                 )
 
-            from core.tooling.handler_base import _error_result
-            from core.tooling.handler_skills import SkillsToolsMixin
-
-            class _SubmitTasksProxy(SkillsToolsMixin):
-                _anima_dir = anima_dir
-                _anima_name = anima_dir.name
-
-            proxy = _SubmitTasksProxy()
             from core.execution.session_context import current_runtime_session
+            from core.tooling.policy.submit_tasks import submit_tasks
 
             _runtime = current_runtime_session()
-            proxy._session_origin = _runtime.origin if _runtime is not None else ""
             try:
-                result_str = proxy._handle_submit_tasks(tool_input)
+                result_str = submit_tasks(
+                    anima_dir,
+                    anima_dir.name,
+                    tool_input,
+                    session_origin=_runtime.origin if _runtime is not None else "",
+                )
             except Exception as exc:
-                result_str = _error_result("SubmitTasksError", str(exc))
+                result_str = json.dumps(
+                    {
+                        "status": "error",
+                        "error_type": "SubmitTasksError",
+                        "message": str(exc),
+                    },
+                    ensure_ascii=False,
+                )
 
             _log_tool_use(
                 anima_dir,
@@ -611,7 +615,7 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
         # Attach here only for SDK-native tool names (Bash, Write, ...).
         if not tool_name.startswith("mcp__aw__"):
             try:
-                from core.tooling.action_gate import (
+                from core.tooling.policy.action_gate import (
                     action_tool_name_for_sdk,
                     find_action_rules,
                     format_action_rules,

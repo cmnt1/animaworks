@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env, server_url_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -40,6 +42,7 @@ from core.execution.engines.claude._sdk_session import (
     _SDK_MAX_BUFFER_SIZE,
     _is_debug_superuser,
 )
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
@@ -255,6 +258,7 @@ class SDKOptionsMixin:
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
+        env.update(server_url_env())
         # Without the embed/vector/rerank URLs the MCP server cannot delegate
         # to the animaworks server and silently loads SentenceTransformer /
         # CrossEncoder models in-process (2026-07-17 OOM / 2026-08-07 rerank
@@ -265,7 +269,7 @@ class SDKOptionsMixin:
             "ANIMAWORKS_RERANK_URL",
             "ANIMAWORKS_INTERNAL_AUTH",
         ):
-            value = os.environ.get(key)
+            value = get_env(key)
             if value:
                 env[key] = value
         ctx = current_runtime_session()
@@ -305,7 +309,7 @@ class SDKOptionsMixin:
         return {
             "aw": {
                 "command": sys.executable,
-                "args": ["-m", "core.mcp.server"],
+                "args": list(module_args(SubprocessEntry.MCP_SERVER)),
                 "env": self._build_mcp_env(),
             },
             **self._extra_mcp_servers,

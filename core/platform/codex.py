@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -59,7 +61,7 @@ def _iter_codex_candidates() -> list[str]:
     candidates: list[str] = []
 
     for env_name in ("ANIMAWORKS_CODEX_PATH", "CODEX_PATH"):
-        configured = os.environ.get(env_name)
+        configured = get_env(env_name)
         if configured:
             path = str(Path(configured).expanduser())
             if path not in seen:

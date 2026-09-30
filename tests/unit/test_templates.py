@@ -233,7 +233,7 @@ class TestRuntimeTemplateAccuracy:
                 assert term not in content, f"{path} contains retired reference {term!r}"
 
     def test_tool_usage_overview_lists_every_exposed_mcp_tool(self):
-        from core.tooling.surface import MCP_TOOL_NAMES
+        from core.tooling.policy.surface import MCP_TOOL_NAMES
 
         overview = (TEMPLATES_ROOT / "ja" / "reference" / "operations" / "tool-usage-overview.md").read_text(
             encoding="utf-8"
@@ -250,7 +250,7 @@ class TestRuntimeTemplateAccuracy:
             assert not re.search(r"\btaka\b", content), f"{path} contains an organization-specific name"
 
     def test_delegate_task_required_arguments_match_the_subordinate_guide(self):
-        from core.tooling.schemas.supervisor import _supervisor_tools
+        from core.tooling.policy.schemas.supervisor import _supervisor_tools
 
         schema = next(tool for tool in _supervisor_tools() if tool["name"] == "delegate_task")
         required = set(schema["parameters"]["required"])

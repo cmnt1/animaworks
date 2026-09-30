@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env, get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -23,7 +25,6 @@ in the corresponding execution engine's tool namespace.
 import asyncio
 import json
 import logging
-import os
 import sys
 import time
 from pathlib import Path
@@ -35,7 +36,7 @@ from mcp.types import TextContent, Tool
 
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 from core.tooling.handler_base import active_session_type
-from core.tooling.surface import (
+from core.tooling.policy.surface import (
     CONSOLIDATION_BLOCKED_TOOL_NAMES,
     MCP_TOOL_NAMES,
     SKILL_MANAGEMENT_TOOL_NAMES,
@@ -57,7 +58,7 @@ logger = logging.getLogger(__name__)
 server = Server("aw")
 
 # ── Tool selection ───────────────────────────────────────
-# MCP schemas and runtime visibility are resolved by core.tooling.surface.
+# MCP schemas and runtime visibility are resolved by core.tooling.policy.surface.
 
 
 def _trigger_scoped_tools_enabled() -> bool:
@@ -130,7 +131,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         Tuple of (tool_list, exposed_name_set) where exposed_name_set
         is the set of internal tool names.
     """
-    from core.tooling.schemas import (
+    from core.tooling.policy.schemas import (
         ADMIN_TOOLS,
         KNOWLEDGE_TOOLS,
         MEMORY_TOOLS,
@@ -146,7 +147,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         _task_tools,
         _vault_tools,
     )
-    from core.tooling.schemas.workspace import WORKSPACE_TOOLS
+    from core.tooling.policy.schemas.workspace import WORKSPACE_TOOLS
 
     all_schemas: list[dict[str, Any]] = [
         *MEMORY_TOOLS,
@@ -180,13 +181,13 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
             "S",
         )
     )
-    configured = os.environ.get("ANIMAWORKS_MCP_TOOLS")
+    configured = get_env("ANIMAWORKS_MCP_TOOLS")
     if configured is not None:
         requested = {name.strip() for name in configured.split(",") if name.strip()}
         exposed.intersection_update(requested)
 
     # Apply file-backed description overrides
-    from core.tooling.schemas import apply_prompt_descriptions
+    from core.tooling.policy.schemas import apply_prompt_descriptions
 
     all_schemas = apply_prompt_descriptions(all_schemas)
 
@@ -246,11 +247,11 @@ def _has_subordinates_for_anima() -> bool:
         return _is_supervisor
 
     try:
-        anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-        if not anima_dir_env:
+        anima_dir_value = anima_dir_env() or ""
+        if not anima_dir_value:
             _is_supervisor = False
             return False
-        anima_name = Path(anima_dir_env).name
+        anima_name = Path(anima_dir_value).name
 
         from core.paths import get_data_dir
 
@@ -293,13 +294,13 @@ def _has_newstaff_skill_for_anima() -> bool:
         return _has_newstaff
 
     try:
-        anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-        if not anima_dir_env:
+        anima_dir_value = anima_dir_env() or ""
+        if not anima_dir_value:
             _has_newstaff = False
             return False
         from core.anima.skills_check import has_newstaff_skill
 
-        _has_newstaff = has_newstaff_skill(Path(anima_dir_env))
+        _has_newstaff = has_newstaff_skill(Path(anima_dir_value))
         return _has_newstaff
     except Exception:
         logger.debug("Failed to check newstaff skill, defaulting to False")
@@ -321,13 +322,13 @@ def _get_tool_handler() -> Any:
         return None
 
     try:
-        anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-        if not anima_dir_env:
+        anima_dir_value = anima_dir_env() or ""
+        if not anima_dir_value:
             _init_error = "ANIMAWORKS_ANIMA_DIR environment variable is not set"
             logger.error(_init_error)
             return None
 
-        anima_dir = Path(anima_dir_env).resolve()
+        anima_dir = Path(anima_dir_value).resolve()
         if not anima_dir.is_dir():
             _init_error = f"ANIMAWORKS_ANIMA_DIR does not exist: {anima_dir}"
             logger.error(_init_error)
@@ -403,7 +404,7 @@ def _resolve_tool_timeout(name: str) -> float | None:
     default; parse failures fall back to the hard-coded value.
     """
     default = _DEFAULT_TOOL_TIMEOUT_S
-    env_val = os.environ.get("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT")
+    env_val = get_env("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT")
     if env_val is not None:
         try:
             default = float(env_val)
@@ -442,10 +443,10 @@ def _is_consolidation_mode() -> bool:
     Reads a flag file written by ``run_consolidation()`` in the main process.
     Markers older than ``_CONSOLIDATION_MARKER_MAX_AGE_S`` are treated as stale.
     """
-    anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
-    if not anima_dir_env:
+    anima_dir_value = anima_dir_env() or ""
+    if not anima_dir_value:
         return False
-    marker = Path(anima_dir_env) / "state" / ".consolidation_mode"
+    marker = Path(anima_dir_value) / "state" / ".consolidation_mode"
     try:
         age = time.time() - marker.stat().st_mtime
     except OSError:
@@ -469,7 +470,7 @@ def _has_notification_channels_for_anima() -> bool:
 
 def _mcp_surface_context() -> ToolSurfaceContext:
     """Resolve runtime-only inputs for the shared MCP tool-surface policy."""
-    env_flag = os.environ.get("ANIMAWORKS_ENABLE_SUBMIT_TASKS", "").strip().lower()
+    env_flag = get_env("ANIMAWORKS_ENABLE_SUBMIT_TASKS", "").strip().lower()
     return ToolSurfaceContext(
         has_subordinates=_has_subordinates_for_anima(),
         has_newstaff_skill=_has_newstaff_skill_for_anima(),
@@ -484,7 +485,7 @@ def _current_mcp_tool_names(
     context: ToolSurfaceContext | None = None,
     trigger: str | None = None,
 ) -> frozenset[str]:
-    current_trigger = trigger if trigger is not None else (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
+    current_trigger = trigger if trigger is not None else (get_env("ANIMAWORKS_TRIGGER", "") or "").strip()
     resolved = frozenset(resolve_tool_surface(context or _mcp_surface_context(), current_trigger, "S"))
     exposed_external_tools = _EXPOSED_NAMES - frozenset(MCP_TOOL_NAMES)
     return (resolved & _EXPOSED_NAMES) | exposed_external_tools
@@ -505,7 +506,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
     (file reads, subprocess calls), so we run it via ``asyncio.to_thread``
     to keep the MCP event loop responsive.
     """
-    trigger = (os.environ.get("ANIMAWORKS_TRIGGER", "") or "").strip()
+    trigger = (get_env("ANIMAWORKS_TRIGGER", "") or "").strip()
     surface_context = _mcp_surface_context()
     visible_names = _current_mcp_tool_names(surface_context, trigger)
 
@@ -595,7 +596,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
 
     coerced_args = _coerce_integers(dict(arguments or {}), name)
     if name == "search_memory" and "project" not in coerced_args:
-        project = os.environ.get("ANIMAWORKS_MCP_PROJECT")
+        project = get_env("ANIMAWORKS_MCP_PROJECT")
         if project is not None:
             coerced_args["project"] = project
     timeout = _resolve_tool_timeout(name)

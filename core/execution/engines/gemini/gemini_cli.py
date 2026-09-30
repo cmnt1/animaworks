@@ -36,8 +36,10 @@ from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
+from core.platform.env import server_url_env
 from core.platform.gemini import find_gemini_binary as _find_gemini_binary
 from core.platform.gemini import is_gemini_cli_available
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -153,6 +155,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
+        mcp_env.update(server_url_env())
         from core.execution.session_context import current_runtime_session
 
         runtime_ctx = current_runtime_session()
@@ -161,7 +164,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
         existing["mcpServers"] = {
             "aw": {
                 "command": sys.executable,
-                "args": ["-m", "core.mcp.server"],
+                "args": list(module_args(SubprocessEntry.MCP_SERVER)),
                 "env": mcp_env,
             }
         }

@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.platform.env import get_env
 from core.schemas import TaskEntry
 from core.time_utils import now_iso
 
@@ -36,7 +37,7 @@ def current_attempt_identity() -> dict[str, str] | None:
     value = _attempt_identity.get()
     if value is not None:
         return value
-    raw = os.environ.get("ANIMAWORKS_TASK_IDENTITY", "")
+    raw = get_env("ANIMAWORKS_TASK_IDENTITY", "")
     if not raw:
         return None
     value = json.loads(raw)

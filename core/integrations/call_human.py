@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env, get_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -54,7 +56,7 @@ def _get_bot_token(channel_cfg: dict) -> str:
             return token
 
     # Per-anima vault/shared (Mode S subprocess sets ANIMAWORKS_ANIMA_DIR)
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if anima_dir:
         from core.channels.tokens import resolve_per_anima_token
         from core.credentials import _lookup_shared_credentials, _lookup_vault_credential
@@ -77,7 +79,7 @@ def _get_bot_token(channel_cfg: dict) -> str:
 
 
 def _resolve_cli_anima_name() -> str:
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if anima_dir:
         return Path(anima_dir).name
     return ""
@@ -90,7 +92,7 @@ def _resolve_cli_anima_identity(channel_cfg: dict) -> tuple[str, str]:
     """
     from core.integrations._anima_icon_url import resolve_anima_icon_identity
 
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if not anima_dir:
         return ("", "")
 
@@ -221,11 +223,11 @@ def _check_confirm_key_via_server(anima_name: str, session_id: str, sha: str) ->
     Fails open when the server is unreachable so escalations are never lost.
     """
     from core.internal_api import internal_api_headers
-    from core.notification.interactive import _server_base_url
+    from core.platform.env import server_url
 
     try:
         resp = httpx.post(
-            f"{_server_base_url()}/api/internal/call-human/confirm",
+            f"{server_url()}/api/internal/call-human/confirm",
             headers=internal_api_headers(),
             json={"anima_name": anima_name, "session_id": session_id, "sha": sha},
             timeout=10.0,
@@ -312,7 +314,7 @@ def cli_main(args: list[str]) -> None:
 
     # Same confirmation as the call_human tool, so Bash is not a bypass.
     # Only Anima-launched processes carry a tool session id; humans pass freely.
-    session_id = os.environ.get("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
+    session_id = get_env("ANIMAWORKS_TOOL_SESSION_ID", "").strip()
     if session_id:
         issued_key = _check_confirm_key_via_server(_resolve_cli_anima_name(), session_id, ns.sha)
         if issued_key:

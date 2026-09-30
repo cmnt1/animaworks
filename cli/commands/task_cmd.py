@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import anima_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,7 +16,6 @@ Usage via animaworks-tool:
 
 import argparse
 import json
-import os
 import re
 import sys
 import uuid
@@ -35,7 +36,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         _cmd_lease_action(args)
         return
 
-    anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    anima_dir_str = anima_dir_env() or ""
     if not anima_dir_str:
         print(
             "Error: ANIMAWORKS_ANIMA_DIR not set.\n"
@@ -162,7 +163,7 @@ def _cmd_board(args: argparse.Namespace) -> None:
     from core.paths import get_animas_dir
 
     store = _get_task_store()
-    actor_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    actor_dir = anima_dir_env() or ""
     if actor_dir and not Path(actor_dir).is_dir():
         print(f"Error: anima_dir not found: {actor_dir}", file=sys.stderr)
         sys.exit(1)
@@ -279,7 +280,7 @@ def _parse_ttl(value: str) -> int:
 
 
 def _actor() -> str:
-    actor_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    actor_dir = anima_dir_env() or ""
     if not actor_dir:
         return "human"
     path = Path(actor_dir)
@@ -294,10 +295,10 @@ def _post_board_action(payload: dict) -> dict:
     import httpx
 
     from core.internal_api import internal_api_headers
-    from core.tasks.dispatch import _server_url
+    from core.platform.env import server_url
 
     response = httpx.post(
-        f"{_server_url()}/api/internal/task-board-action",
+        f"{server_url()}/api/internal/task-board-action",
         json=payload,
         headers=internal_api_headers(),
         timeout=60.0,

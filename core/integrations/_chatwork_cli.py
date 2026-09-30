@@ -18,9 +18,9 @@ from pathlib import Path
 
 from core.integrations._base import ToolConfigError, logger
 from core.integrations._chatwork_cache import (
-    DEFAULT_CACHE_DIR,
     MessageCache,
     _format_timestamp,
+    get_cache_dir,
     resolve_cache_db_path,
 )
 from core.integrations._chatwork_client import ChatworkClient
@@ -32,8 +32,8 @@ from core.integrations._comm_cli import run_cli_safely
 
 
 def _load_chatwork_tool_config() -> dict:
-    """Load tool-local config from DEFAULT_CACHE_DIR / config.json."""
-    config_path = DEFAULT_CACHE_DIR / "config.json"
+    """Load tool-local config from the current cache directory."""
+    config_path = get_cache_dir() / "config.json"
     if config_path.exists():
         return json.loads(config_path.read_text())
     return {}

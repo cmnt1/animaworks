@@ -61,8 +61,8 @@ def _build_agent(tmp_path: Path, config_dict: dict | None = None) -> AgentCore:
         patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
         patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
         patch("core.agent.agent_core.AgentCore._create_executor"),
-        patch("core.integrations.TOOL_MODULES", _FAKE_TOOL_MODULES),
-        patch("core.integrations.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
+        patch("core.tooling.policy.registry.TOOL_MODULES", _FAKE_TOOL_MODULES),
+        patch("core.tooling.policy.registry.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
         # chatwork/slack default to enabled=False in config; suppress so tests
         # exercise the permissions logic in isolation from live config values
         patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
@@ -137,8 +137,8 @@ class TestToolPermissionsDefaultAll:
             patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
             patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
             patch("core.agent.agent_core.AgentCore._create_executor"),
-            patch("core.integrations.TOOL_MODULES", _FAKE_TOOL_MODULES),
-            patch("core.integrations.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
+            patch("core.tooling.policy.registry.TOOL_MODULES", _FAKE_TOOL_MODULES),
+            patch("core.tooling.policy.registry.discover_core_tools", return_value=_FAKE_TOOL_MODULES),
             patch("core.tooling.permissions._disabled_service_tools", return_value=set()),
         ):
             from core.agent.agent_core import AgentCore

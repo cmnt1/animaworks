@@ -20,7 +20,7 @@ from core.anima.factory import (
 )
 from core.paths import _prompt_cache, load_prompt, resolve_template_path
 from core.prompt.builder import _load_fallback_strings, _load_section_strings
-from core.prompt.tool_content import load_guide
+from core.tooling.policy.tool_content import load_guide
 
 # ── TestLoadPromptLocale ─────────────────────────────────────
 

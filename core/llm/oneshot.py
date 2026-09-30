@@ -415,7 +415,7 @@ async def _try_agent_sdk(
     max_tokens: int,
 ) -> str | None:
     """Attempt one-shot completion via Agent SDK.  Returns text or None."""
-    from core.execution.engines.claude._sdk_patch import apply_sdk_transport_patch
+    from core.execution.engines.claude import apply_sdk_transport_patch, resolve_sdk_cli_path
 
     apply_sdk_transport_patch()
     try:
@@ -427,9 +427,7 @@ async def _try_agent_sdk(
     sdk_model = _strip_provider_prefix(model)
     env = _build_sdk_env()
 
-    from core.execution.engines.claude._sdk_options import _resolve_sdk_cli_path
-
-    _cli = _resolve_sdk_cli_path()
+    _cli = resolve_sdk_cli_path()
     # env は ClaudeAgentOptions.env で渡す（SDKが継承環境に上書きマージする）。
     # 旧実装の ClaudeSDKClient(env=...) は存在しないkwargでTypeError→envなしに
     # フォールバックしており、_build_sdk_env が適用されていなかった（2026-07-03修正）。
@@ -481,11 +479,11 @@ async def _try_codex_sdk(
         logger.debug("Codex SDK not available for one-shot fallback")
         return None
 
-    from core.execution.engines.codex.setup import _default_path_env, _resolve_codex_model
+    from core.execution.engines.codex.setup import default_path_env, resolve_codex_model
     from core.platform.codex import default_home_dir, get_codex_executable
 
     env: dict[str, str] = {
-        "PATH": _default_path_env(),
+        "PATH": default_path_env(),
         "HOME": default_home_dir(),
     }
     if llm_kwargs.get("api_key"):
@@ -508,14 +506,14 @@ async def _try_codex_sdk(
             approval_mode=ApprovalMode.deny_all,
             base_instructions=system_prompt or None,
             cwd=os.getcwd(),
-            model=_resolve_codex_model(model),
+            model=resolve_codex_model(model),
             sandbox=Sandbox.read_only,
         )
         turn = await thread.run(
             prompt,
             approval_mode=ApprovalMode.deny_all,
             cwd=os.getcwd(),
-            model=_resolve_codex_model(model),
+            model=resolve_codex_model(model),
             sandbox=Sandbox.read_only,
         )
         return getattr(turn, "final_response", None) or None

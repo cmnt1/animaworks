@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from core.tooling.schemas import _task_tools
+from core.tooling.policy.schemas import _task_tools
 
 
 class TestTaskToolSchemas:

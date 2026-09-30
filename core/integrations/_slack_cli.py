@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from core.integrations._comm_cli import run_cli_safely
 from core.integrations._slack_cache import MessageCache
 from core.integrations._slack_client import SlackClient, _require_slack_sdk
 from core.integrations._slack_markdown import clean_slack_markup, md_to_slack_mrkdwn
+from core.platform.env import anima_dir_env
 
 
 def get_cli_guide() -> str:
@@ -46,7 +46,7 @@ def _resolve_cli_token() -> str | None:
 
     return resolve_per_anima_token(
         "slack",
-        os.environ.get("ANIMAWORKS_ANIMA_DIR"),
+        anima_dir_env(),
         credential_lookup=resolve_env_style_credential,
     )
 
@@ -57,7 +57,7 @@ def _resolve_cli_identity() -> tuple[str, str]:
     Uses ``ANIMAWORKS_ANIMA_DIR`` env var (set by framework for subprocesses).
     Returns (username, icon_url) — either may be empty string.
     """
-    anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    anima_dir = anima_dir_env()
     if not anima_dir:
         return ("", "")
     return _resolve_slack_identity({"anima_dir": anima_dir})

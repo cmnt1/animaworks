@@ -15,8 +15,8 @@ from core.prompt.builder import (
     _build_human_notification_guidance,
     build_system_prompt,
 )
-from core.prompt.tool_content import load_guide
 from core.schemas import VALID_EMOTIONS
+from core.tooling.policy.tool_content import load_guide
 
 
 def _prompt_config(*, threshold: int = 5) -> SimpleNamespace:

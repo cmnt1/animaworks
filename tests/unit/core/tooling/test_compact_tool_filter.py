@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from core.tooling.schemas import build_unified_tool_list
-from core.tooling.surface import COMPACT_TOOL_NAMES
+from core.tooling.policy.schemas import build_unified_tool_list
+from core.tooling.policy.surface import COMPACT_TOOL_NAMES
 
 
 def _tool_names(tools: list[dict]) -> set[str]:

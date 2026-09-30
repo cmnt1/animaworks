@@ -17,6 +17,7 @@ from typing import Any
 from core.anima.digital_anima import DigitalAnima
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
+from core.platform.env import get_env
 from core.platform.process import snapshot_descendants, terminate_tree
 from core.platform.tasks import spawn
 from core.schemas import CronTask
@@ -59,13 +60,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _required_environment(args: argparse.Namespace) -> tuple[Path, IPCV2Identity]:
-    embed_url = os.environ.get("ANIMAWORKS_EMBED_URL", "").strip()
+    embed_url = get_env("ANIMAWORKS_EMBED_URL", "").strip()
     if not embed_url:
         raise RuntimeError("ANIMAWORKS_EMBED_URL is required in a task runner")
-    socket_value = os.environ.get("ANIMAWORKS_TASK_IPC_PATH", "").strip()
-    root_epoch = os.environ.get("ANIMAWORKS_TASK_ROOT_EPOCH", "").strip()
-    attempt_value = os.environ.get("ANIMAWORKS_TASK_ATTEMPT", "").strip()
-    display_lane = os.environ.get("ANIMAWORKS_TASK_DISPLAY_LANE", "").strip()
+    socket_value = get_env("ANIMAWORKS_TASK_IPC_PATH", "").strip()
+    root_epoch = get_env("ANIMAWORKS_TASK_ROOT_EPOCH", "").strip()
+    attempt_value = get_env("ANIMAWORKS_TASK_ATTEMPT", "").strip()
+    display_lane = get_env("ANIMAWORKS_TASK_DISPLAY_LANE", "").strip()
     if not socket_value or not root_epoch or not attempt_value or not display_lane:
         raise RuntimeError("task runner IPC environment is incomplete")
     identity = IPCV2Identity(
@@ -661,7 +662,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
     request_id = run_envelope.body["request_id"]
     params = run_envelope.body["params"]
     contract_urls = (params.get("environment") or {}).get("urls")
-    if not isinstance(contract_urls, dict) or contract_urls.get("ANIMAWORKS_EMBED_URL") != os.environ.get(
+    if not isinstance(contract_urls, dict) or contract_urls.get("ANIMAWORKS_EMBED_URL") != get_env(
         "ANIMAWORKS_EMBED_URL"
     ):
         await connection.send_response(
@@ -727,7 +728,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         await connection.close()
         return 1
     progress = asyncio.create_task(_progress_loop(link, identity))
-    expected_parent_pid = int(os.environ.get("ANIMAWORKS_TASK_ROOT_PID", os.getppid()))
+    expected_parent_pid = int(get_env("ANIMAWORKS_TASK_ROOT_PID", str(os.getppid())))
     parent_monitor = asyncio.create_task(_parent_monitor(expected_parent_pid))
     receiver: asyncio.Task[IPCV2Envelope] | None = asyncio.create_task(connection.receive())
     cancelled = False

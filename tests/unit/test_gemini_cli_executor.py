@@ -153,6 +153,7 @@ class TestWorkspace:
         assert "-m" in aw_conf["args"]
         assert "core.mcp.server" in aw_conf["args"]
         assert "ANIMAWORKS_ANIMA_DIR" in aw_conf["env"]
+        assert aw_conf["env"]["ANIMAWORKS_SERVER_URL"].startswith("http")
 
 
 # ── System prompt ────────────────────────────────────────────

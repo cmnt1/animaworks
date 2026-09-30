@@ -773,64 +773,13 @@ class SkillsToolsMixin:
 
     def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
         """Validate a complete DAG batch, then publish it in one transaction."""
-        from core.tasks.dispatch import publish_tasks
-        from core.tasks.wake import request_wake
-        from core.trust import ORIGIN_HUMAN
+        from core.tooling.policy.submit_tasks import submit_tasks
 
-        source = "human" if getattr(self, "_session_origin", "") == ORIGIN_HUMAN else "anima"
-
-        batch_id = args.get("batch_id", "")
-        tasks = args.get("tasks", [])
-        if not isinstance(batch_id, str) or not batch_id:
-            return _error_result("InvalidArguments", "batch_id is required")
-        if not isinstance(tasks, list) or not tasks or not all(isinstance(task, dict) for task in tasks):
-            return _error_result("InvalidArguments", "tasks must contain at least one task")
-        submitted_at = now_iso()
-        payloads = [
-            dict(task)
-            if task.get("resume") is True
-            else {
-                "task_type": "llm",
-                "task_id": task.get("task_id"),
-                "batch_id": batch_id,
-                "title": task.get("title"),
-                "description": task.get("description"),
-                "parallel": task.get("parallel", False),
-                "depends_on": task.get("depends_on", []),
-                "context": task.get("context", ""),
-                "acceptance_criteria": task.get("acceptance_criteria", []),
-                "constraints": task.get("constraints", []),
-                "file_paths": task.get("file_paths", []),
-                "submitted_by": self._anima_name,
-                "submitted_at": submitted_at,
-                "reply_to": task.get("reply_to", self._anima_name),
-                "workspace": task.get("workspace", ""),
-                "model": task.get("model", ""),
-            }
-            for task in tasks
-        ]
-        try:
-            entries = publish_tasks(self._anima_dir, payloads, source=source)
-        except ValueError as exc:
-            return _error_result("InvalidArguments", str(exc))
-        except Exception as exc:
-            logger.exception("Failed to submit task batch %s", batch_id)
-            return _error_result("PersistenceFailed", str(exc))
-
-        request_wake(self._anima_dir.name)
-        return _json.dumps(
-            {
-                "status": "submitted",
-                "batch_id": batch_id,
-                "task_count": len(entries),
-                "task_ids": [entry.task_id for entry in entries],
-                "message": (
-                    f"Batch '{batch_id}' submitted with {len(entries)} tasks. "
-                    "Parallel tasks will execute concurrently. "
-                    "Tasks with depends_on will wait for dependencies."
-                ),
-            },
-            ensure_ascii=False,
+        return submit_tasks(
+            self._anima_dir,
+            self._anima_name,
+            args,
+            session_origin=getattr(self, "_session_origin", ""),
         )
 
     # ── Background task handlers ─────────────────────────────

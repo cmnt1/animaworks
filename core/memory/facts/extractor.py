@@ -200,7 +200,7 @@ class FactExtractor:
         Raises:
             Exception: If all retry attempts fail.
         """
-        from core.memory._llm_utils import one_shot_completion
+        from core.llm.oneshot import one_shot_completion
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):

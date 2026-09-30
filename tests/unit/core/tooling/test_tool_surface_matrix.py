@@ -171,7 +171,7 @@ async def test_resolver_and_mcp_tool_surface_table(
 ) -> None:
     """Every MCP-backed mode resolves to the same names as the MCP endpoint."""
     import core.mcp.server as mcp
-    from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+    from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
     monkeypatch.delenv("ANIMAWORKS_MCP_TOOLS", raising=False)
     monkeypatch.delenv("ANIMAWORKS_ENABLE_SUBMIT_TASKS", raising=False)
@@ -230,8 +230,8 @@ def test_resolver_and_builder_tool_surface_table(
     builder_kind: str,
 ) -> None:
     """Mode A/B schemas are exactly the names selected by the shared resolver."""
-    from core.tooling.schemas import build_unified_tool_list
-    from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+    from core.tooling.policy.schemas import build_unified_tool_list
+    from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
     for has_subordinates in (False, True):
         for include_notification_tools in (False, True):
@@ -263,7 +263,7 @@ def test_resolver_and_builder_tool_surface_table(
 
 
 def test_consolidation_disagreement_is_resolved_by_the_stricter_surface() -> None:
-    from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+    from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
     # Mode A already omitted workspace tools in consolidation, so MCP now hides grant_workspace_access too.
     context = ToolSurfaceContext(has_subordinates=True, include_notification_tools=True)
@@ -276,7 +276,7 @@ def test_consolidation_disagreement_is_resolved_by_the_stricter_surface() -> Non
 
 
 def test_mode_specific_schema_names_remain_distinct() -> None:
-    from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+    from core.tooling.policy.surface import ToolSurfaceContext, resolve_tool_surface
 
     context = ToolSurfaceContext(has_subordinates=True, include_notification_tools=True)
     mcp_names = set(resolve_tool_surface(context, "chat", "S"))

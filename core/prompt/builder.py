@@ -50,8 +50,8 @@ from core.prompt.sections import (
     _load_fallback_strings,
     _load_section_strings,
 )
-from core.prompt.tool_content import load_guide
 from core.time_utils import now_local
+from core.tooling.policy.tool_content import load_guide
 
 logger = logging.getLogger("animaworks.prompt_builder")
 

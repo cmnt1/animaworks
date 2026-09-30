@@ -25,6 +25,7 @@ from typing import Any
 from core.config.models import read_anima_company, read_anima_company_checked
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
+from core.platform.env import server_url
 
 logger = logging.getLogger(__name__)
 
@@ -1169,9 +1170,9 @@ def check_company_boundary(
 
         from core.internal_api import internal_api_headers
 
-        server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
+        base_url = server_url()
         response = httpx.get(
-            f"{server_url}/api/internal/company/boundary",
+            f"{base_url}/api/internal/company/boundary",
             params={"from_anima": from_anima, "to_anima": to_anima},
             headers=internal_api_headers(),
             timeout=5.0,

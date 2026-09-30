@@ -13,9 +13,10 @@ Runtime data directory can be overridden via ANIMAWORKS_DATA_DIR environment var
 
 from __future__ import annotations
 
-import os
 from importlib import resources
 from pathlib import Path
+
+from core.platform.env import data_dir_env, get_env
 
 # Project root: where the code lives (immutable, git-tracked)
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -29,7 +30,7 @@ def _resolve_templates_dir() -> Path:
       2. PROJECT_DIR / "templates" (development / editable install)
       3. Installed ``templates`` package resources
     """
-    env = os.environ.get("ANIMAWORKS_TEMPLATES_DIR")
+    env = get_env("ANIMAWORKS_TEMPLATES_DIR")
     if env:
         return Path(env).resolve()
     project_templates = PROJECT_DIR / "templates"
@@ -50,7 +51,7 @@ _DEFAULT_DATA_DIR = Path.home() / ".animaworks"
 
 def get_data_dir() -> Path:
     """Return the runtime data directory, respecting ANIMAWORKS_DATA_DIR env var."""
-    env_val = os.environ.get("ANIMAWORKS_DATA_DIR")
+    env_val = data_dir_env()
     if env_val:
         return Path(env_val).expanduser().resolve()
     return _DEFAULT_DATA_DIR

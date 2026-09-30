@@ -32,6 +32,7 @@ from core.anima.digital_anima import DigitalAnima
 from core.exceptions import AnimaNotRunningError, ProcessError  # noqa: F401
 from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
+from core.platform.env import get_env
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids
 from core.platform.tasks import spawn
@@ -83,7 +84,7 @@ class AnimaRunner:
         self._event_keepalive_interval = 20.0
         self._ready_event = asyncio.Event()
         self._startup_ack_event = asyncio.Event()
-        self._expects_startup_ack = os.environ.get("ANIMAWORKS_EXPECT_STARTUP_ACK") == "1"
+        self._expects_startup_ack = get_env("ANIMAWORKS_EXPECT_STARTUP_ACK") == "1"
         self._started_at = now_local()
         self._lock_file: Any | None = None
 

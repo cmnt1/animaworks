@@ -158,7 +158,7 @@ class ReconsolidationEngine:
             Dict with counts: "updated", "skipped", "errors".
         """
         if not model:
-            from core.memory._llm_utils import get_consolidation_llm_kwargs
+            from core.llm.oneshot import get_consolidation_llm_kwargs
 
             model = get_consolidation_llm_kwargs()["model"]
         results: dict[str, int] = {"updated": 0, "skipped": 0, "errors": 0}
@@ -242,7 +242,7 @@ class ReconsolidationEngine:
             Dict with counts: ``created``, ``skipped``, ``errors``.
         """
         if not model:
-            from core.memory._llm_utils import get_consolidation_llm_kwargs
+            from core.llm.oneshot import get_consolidation_llm_kwargs
 
             model = get_consolidation_llm_kwargs()["model"]
 
@@ -295,7 +295,7 @@ class ReconsolidationEngine:
                     existing_procedures=existing_procedures[:2000],
                 )
 
-                from core.memory._llm_utils import one_shot_completion
+                from core.llm.oneshot import one_shot_completion
 
                 text = await one_shot_completion(prompt, model=model, max_tokens=2048)
                 if text is None:
@@ -377,7 +377,7 @@ class ReconsolidationEngine:
         )
 
         try:
-            from core.memory._llm_utils import one_shot_completion
+            from core.llm.oneshot import one_shot_completion
 
             text = await one_shot_completion(prompt, model=model, max_tokens=2048) or ""
 
@@ -502,7 +502,7 @@ class ReconsolidationEngine:
             Dict with counts: "targets_found", "updated", "skipped", "errors".
         """
         if not model:
-            from core.memory._llm_utils import get_consolidation_llm_kwargs
+            from core.llm.oneshot import get_consolidation_llm_kwargs
 
             model = get_consolidation_llm_kwargs()["model"]
         targets = await self.find_knowledge_reconsolidation_targets(
@@ -614,7 +614,7 @@ class ReconsolidationEngine:
         )
 
         try:
-            from core.memory._llm_utils import one_shot_completion
+            from core.llm.oneshot import one_shot_completion
 
             text = await one_shot_completion(prompt, model=model, max_tokens=2048) or ""
 

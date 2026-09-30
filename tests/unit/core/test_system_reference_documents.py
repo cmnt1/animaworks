@@ -523,7 +523,7 @@ class TestGenerateToolParameters:
         result = _generate_tool_parameters()
 
         # Should reference the canonical tool names from MEMORY_TOOLS
-        from core.tooling.schemas import MEMORY_TOOLS
+        from core.tooling.policy.schemas import MEMORY_TOOLS
 
         for tool in MEMORY_TOOLS:
             assert tool["name"] in result, f"Missing tool name: {tool['name']}"

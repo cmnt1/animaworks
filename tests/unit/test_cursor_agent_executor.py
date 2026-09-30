@@ -124,6 +124,7 @@ class TestWorkspace:
         assert "-m" in aw_conf["args"]
         assert "core.mcp.server" in aw_conf["args"]
         assert "ANIMAWORKS_ANIMA_DIR" in aw_conf["env"]
+        assert aw_conf["env"]["ANIMAWORKS_SERVER_URL"].startswith("http")
 
     def test_write_mcp_config_propagates_runtime_trigger(self, executor):
         from core.execution.session_context import RuntimeSessionContext, runtime_session_scope

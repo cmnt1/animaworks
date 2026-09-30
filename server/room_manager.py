@@ -368,7 +368,7 @@ class RoomManager:
 
     async def _call_summary_llm(self, entries: list[dict]) -> str:
         """Summarize conversation entries using the consolidation LLM."""
-        from core.memory._llm_utils import one_shot_completion
+        from core.llm.oneshot import one_shot_completion
 
         formatted = self._format_entries(entries)
         system = (

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env, server_url_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -38,6 +40,7 @@ from core.execution.session_store import SessionRecord, SessionStore
 from core.i18n import t
 from core.platform.grok import get_grok_executable as _find_grok_binary
 from core.platform.grok import is_grok_cli_available
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -363,14 +366,15 @@ class GrokCLIExecutor(CLIStreamExecutor):
             {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
             {"name": "PYTHONPATH", "value": str(PROJECT_DIR)},
             {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
+            *({"name": name, "value": value} for name, value in server_url_env().items()),
             *(
-                {"name": key, "value": os.environ[key]}
+                {"name": key, "value": get_env(key)}
                 for key in (
                     "ANIMAWORKS_EMBED_URL",
                     "ANIMAWORKS_VECTOR_URL",
                     "ANIMAWORKS_RERANK_URL",
                 )
-                if os.environ.get(key)
+                if get_env(key)
             ),
         ]
         from core.execution.session_context import current_runtime_session
@@ -382,7 +386,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
             {
                 "name": "aw",
                 "command": sys.executable,
-                "args": ["-m", "core.mcp.server"],
+                "args": list(module_args(SubprocessEntry.MCP_SERVER)),
                 "env": env,
             }
         ]

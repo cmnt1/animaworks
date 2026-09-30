@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import get_env, server_url_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -24,6 +26,7 @@ from typing import Any
 from core.execution.process_runner import ProcessRunner
 from core.platform.atomic_io import atomic_write_json
 from core.platform.codex import default_home_dir, get_codex_executable
+from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.schemas import ModelConfig
 
 logger = logging.getLogger("animaworks.execution.codex_sdk")
@@ -35,7 +38,7 @@ _CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC = 2.0
 _SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MB
 
 
-def _resolve_codex_model(model: str) -> str:
+def resolve_codex_model(model: str) -> str:
     """Strip supported Codex provider prefixes to get the bare CLI model name."""
     if model.startswith("codex/"):
         return model[len("codex/") :]
@@ -115,7 +118,7 @@ def _normalize_azure_openai_base_url(base_url: str) -> str:
 def _resolve_codex_provider_config(model_config: ModelConfig) -> _CodexProviderConfig:
     """Resolve Codex CLI provider settings from the AnimaWorks model config."""
     extra = model_config.extra_keys or {}
-    model = extra.get("codex_model") or _resolve_codex_model(model_config.model)
+    model = extra.get("codex_model") or resolve_codex_model(model_config.model)
 
     if not _is_codex_azure_config(model_config):
         return _CodexProviderConfig(model=model, provider="openai")
@@ -221,13 +224,7 @@ def _default_home_dir() -> str:
     return default_home_dir()
 
 
-def _resolve_animaworks_server_url() -> str:
-    """Resolve ANIMAWORKS_SERVER_URL for MCP subprocess env."""
-    existing = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip()
-    return existing.rstrip("/") if existing else "http://localhost:18500"
-
-
-def _default_path_env() -> str:
+def default_path_env() -> str:
     """Return a non-empty PATH fallback for Codex child processes."""
     path_parts: list[str] = []
     executable = get_codex_executable()
@@ -267,7 +264,7 @@ def _is_desktop_extension_codex(executable: str | None) -> bool:
 
 def _should_prefer_cli_exec(trigger: str) -> bool:
     """Prefer direct ``codex exec`` for unstable desktop-bundled background sessions."""
-    forced = os.environ.get("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", "").strip().lower()
+    forced = get_env("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", "").strip().lower()
     if forced in {"1", "true", "yes", "on"}:
         return True
 
@@ -434,14 +431,14 @@ class CodexSetupMixin:
         env: dict[str, str] = {
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": _default_path_env(),
+            "PATH": default_path_env(),
             "CODEX_HOME": str(self._codex_home),
             "HOME": _default_home_dir(),
         }
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())
-        if internal_auth := os.environ.get("ANIMAWORKS_INTERNAL_AUTH"):
+        if internal_auth := get_env("ANIMAWORKS_INTERNAL_AUTH"):
             env["ANIMAWORKS_INTERNAL_AUTH"] = internal_auth
         # Windows requires SYSTEMROOT for Winsock/TLS initialisation and
         # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
@@ -490,16 +487,16 @@ class CodexSetupMixin:
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": _default_path_env(),
-            "ANIMAWORKS_SERVER_URL": _resolve_animaworks_server_url(),
+            "PATH": default_path_env(),
         }
+        env.update(server_url_env())
         for name in (
             "ANIMAWORKS_EMBED_URL",
             "ANIMAWORKS_VECTOR_URL",
             "ANIMAWORKS_RERANK_URL",
             "ANIMAWORKS_INTERNAL_AUTH",
         ):
-            if value := os.environ.get(name):
+            if value := get_env(name):
                 env[name] = value
         ctx = current_runtime_session()
         if ctx is not None:
@@ -748,14 +745,13 @@ class CodexSetupMixin:
                 "animaworks_mcp",
                 "--",
                 sys.executable,
-                "-m",
-                "core.mcp.server",
+                *module_args(SubprocessEntry.MCP_SERVER),
             ]
         else:
             # Preserve the pre-profile MCP command exactly for Animas that do
             # not opt in to read-deny enforcement.
             mcp_command = sys.executable
-            mcp_args = ["-m", "core.mcp.server"]
+            mcp_args = list(module_args(SubprocessEntry.MCP_SERVER))
         mcp_args_toml = ", ".join(f'"{esc(arg)}"' for arg in mcp_args)
         provider_section = ""
         if provider_config.is_azure:
@@ -826,8 +822,7 @@ class CodexSetupMixin:
             shlex.quote(part)
             for part in (
                 sys.executable,
-                "-m",
-                "core.tooling.codex_command_hook",
+                *module_args(SubprocessEntry.CODEX_COMMAND_HOOK),
                 "--anima-dir",
                 str(self._anima_dir.resolve()),
                 "--global-permissions",

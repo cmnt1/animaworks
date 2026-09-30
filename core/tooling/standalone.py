@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import has_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +18,6 @@ Shared by the MCP subprocess (``core.mcp.server``) and the
 
 import json as _json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -45,9 +46,9 @@ def _build_background_manager(anima_dir: Path) -> Any:
         if not config.background_task.enabled:
             return None
 
-        from core.integrations import TOOL_MODULES
         from core.integrations._base import load_execution_profiles
         from core.tasks.background import BackgroundTaskManager
+        from core.tooling.policy.registry import TOOL_MODULES
 
         profiles = load_execution_profiles(TOOL_MODULES)
         config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
@@ -160,7 +161,7 @@ def build_standalone_tool_handler(anima_dir: Path, *, for_mcp: bool) -> Any:
     # Check debug_superuser flag from status.json
     _superuser = False
     _status_path = anima_dir / "status.json"
-    if not (for_mcp and "ANIMAWORKS_MCP_TOOLS" in os.environ) and _status_path.is_file():
+    if not (for_mcp and has_env("ANIMAWORKS_MCP_TOOLS")) and _status_path.is_file():
         try:
             _su_data = _json.loads(_status_path.read_text(encoding="utf-8"))
             _superuser = bool(_su_data.get("debug_superuser"))

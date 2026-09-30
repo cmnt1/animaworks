@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.platform.env import data_dir_env
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -127,9 +129,9 @@ def _discover_claude_cred_paths() -> list[str]:
             if cred.is_file():
                 paths.append(str(cred))
     # Also check env variable pointing to specific directories
-    data_dir_env = os.environ.get("ANIMAWORKS_DATA_DIR")
-    if data_dir_env:
-        p = Path(data_dir_env).parent / ".claude" / ".credentials.json"
+    data_dir_override = data_dir_env()
+    if data_dir_override:
+        p = Path(data_dir_override).parent / ".claude" / ".credentials.json"
         paths.append(str(p))
     return paths
 

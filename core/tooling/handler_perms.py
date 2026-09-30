@@ -57,7 +57,7 @@ class PermissionsMixin:
         external_enabled: list[str] = []
         external_available: list[str] = []
         try:
-            from core.integrations import TOOL_MODULES
+            from core.tooling.policy.registry import TOOL_MODULES
 
             all_categories = sorted(TOOL_MODULES.keys())
             for cat in all_categories:
@@ -332,7 +332,7 @@ class PermissionsMixin:
 
         # Single shared command-policy decision function (all layers, same order
         # as Mode S and the Codex hook).  Loader failures are fail-closed.
-        from core.tooling.command_policy import (
+        from core.tooling.policy.command_policy import (
             evaluate_command,
             load_command_policy_context,
             record_injection_hit,

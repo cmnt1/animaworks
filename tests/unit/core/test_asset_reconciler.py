@@ -315,7 +315,7 @@ class TestExtractPrompt:
             patch("core.config.models.load_model_config", return_value=mock_model_config),
             patch("litellm.acompletion", new_callable=AsyncMock, side_effect=RuntimeError("API error")),
             patch(
-                "core.memory._llm_utils._try_agent_sdk",
+                "core.llm.oneshot._try_agent_sdk",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("Agent SDK error"),
             ),
