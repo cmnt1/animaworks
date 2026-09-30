@@ -13,9 +13,10 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from cli._gateway import gateway_request
-from core.platform.atomic_io import atomic_write_json
+from core.platform.status_store import update_status
 
 logger = logging.getLogger(__name__)
 
@@ -203,25 +204,21 @@ def _read_model_from_status_json(anima_dir: Path) -> tuple[str, str]:
     Returns:
         (model_name, execution_mode) — either may be empty string.
     """
-    status_file = anima_dir / "status.json"
-    if not status_file.exists():
-        return ("", "")
-    try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        model = data.get("model", "")
-        if not model:
-            return ("", "")
-        mode = data.get("execution_mode", "")
-        if not mode and model:
-            try:
-                from core.config.models import load_config, resolve_execution_mode
+    from core.platform.status_store import read_status
 
-                mode = resolve_execution_mode(load_config(), model)
-            except Exception:
-                logger.debug("Best-effort operation failed", exc_info=True)
-        return (model, mode)
-    except Exception:
+    data = read_status(anima_dir)
+    model = data.get("model", "")
+    if not model:
         return ("", "")
+    mode = data.get("execution_mode", "")
+    if not mode:
+        try:
+            from core.config.models import load_config, resolve_execution_mode
+
+            mode = resolve_execution_mode(load_config(), model)
+        except Exception:
+            logger.debug("Best-effort operation failed", exc_info=True)
+    return (model, mode)
 
 
 def cmd_anima_info(args: argparse.Namespace) -> None:
@@ -435,15 +432,11 @@ def cmd_anima_disable(args: argparse.Namespace) -> None:
 
     if not api_success:
         # Direct file update (offline mode)
-        status_file = anima_dir / "status.json"
-        status_data: dict = {}
-        if status_file.exists():
-            try:
-                status_data = json.loads(status_file.read_text(encoding="utf-8"))
-            except Exception:
-                logger.debug("Best-effort operation failed", exc_info=True)
-        status_data["enabled"] = False
-        atomic_write_json(status_file, status_data, indent=2, ensure_ascii=False)
+        try:
+            update_status(anima_dir, lambda status: status.update(enabled=False))
+        except (OSError, ValueError) as exc:
+            print(f"Error updating status.json: {exc}", file=sys.stderr)
+            sys.exit(1)
         print(f"Disabled anima '{name}' (offline mode)")
 
 
@@ -484,15 +477,11 @@ def cmd_anima_enable(args: argparse.Namespace) -> None:
 
     if not api_success:
         # Direct file update (offline mode)
-        status_file = anima_dir / "status.json"
-        status_data: dict = {}
-        if status_file.exists():
-            try:
-                status_data = json.loads(status_file.read_text(encoding="utf-8"))
-            except Exception:
-                logger.debug("Best-effort operation failed", exc_info=True)
-        status_data["enabled"] = True
-        atomic_write_json(status_file, status_data, indent=2, ensure_ascii=False)
+        try:
+            update_status(anima_dir, lambda status: status.update(enabled=True))
+        except (OSError, ValueError) as exc:
+            print(f"Error updating status.json: {exc}", file=sys.stderr)
+            sys.exit(1)
         print(f"Enabled anima '{name}' (offline mode)")
 
 
@@ -517,32 +506,33 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
         print(f"Error: Anima '{name}' not found (missing identity.md)")
         sys.exit(1)
 
-    # Read current status.json
-    status_file = anima_dir / "status.json"
-    status_data: dict = {}
-    if status_file.exists():
-        try:
-            status_data = json.loads(status_file.read_text(encoding="utf-8"))
-        except Exception:
-            logger.debug("Best-effort operation failed", exc_info=True)
-
-    old_role = status_data.get("role", "-")
-    status_data["role"] = new_role
-
+    role_defaults: dict[str, object] = {}
     if not args.status_only:
-        # Merge defaults.json values into status.json
         defaults_path = SHARED_ROLES_DIR / new_role / "defaults.json"
         if defaults_path.is_file():
             try:
                 role_defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
-                for key in ("model", "context_threshold", "conversation_history_threshold"):
-                    if key in role_defaults:
-                        status_data[key] = role_defaults[key]
             except Exception:
                 logger.warning("Failed to load role defaults for '%s'", new_role)
-        apply_local_llm_role_to_status(status_data, load_config(), new_role)
+        config = load_config()
 
-    atomic_write_json(status_file, status_data, indent=2, ensure_ascii=False)
+    old_role = "-"
+
+    def apply_role(status_data: dict[str, object]) -> None:
+        nonlocal old_role
+        old_role = status_data.get("role", "-")
+        status_data["role"] = new_role
+        if not args.status_only:
+            for key in ("model", "context_threshold", "conversation_history_threshold"):
+                if key in role_defaults:
+                    status_data[key] = role_defaults[key]
+            apply_local_llm_role_to_status(status_data, config, new_role)
+
+    try:
+        update_status(anima_dir, apply_role)
+    except (OSError, ValueError) as exc:
+        print(f"Error updating status.json: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     if not args.status_only:
         # Re-apply role template files (specialty_prompt.md, permissions.json)
@@ -573,14 +563,9 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
 
 
 def _read_status_json(anima_dir: Path) -> dict[str, object]:
-    status_file = anima_dir / "status.json"
-    if not status_file.is_file():
-        return {}
-    try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
+    from core.platform.status_store import read_status
+
+    return read_status(anima_dir)
 
 
 def cmd_anima_set_model(args: argparse.Namespace) -> None:
@@ -784,13 +769,15 @@ def cmd_anima_set_outbound_limit(args: argparse.Namespace) -> None:
         print(f"Error: status.json not found for '{name}'")
         sys.exit(1)
 
-    data = json.loads(status_path.read_text(encoding="utf-8"))
     fields = ("max_outbound_per_hour", "max_outbound_per_day", "max_recipients_per_run")
 
     if args.clear:
-        for f in fields:
-            data.pop(f, None)
-        atomic_write_json(status_path, data)
+
+        def clear_limits(data: dict[str, Any]) -> None:
+            for field in fields:
+                data.pop(field, None)
+
+        update_status(anima_dir, clear_limits)
         print(t("cli.set_outbound_limit_cleared", name=name))
         return
 
@@ -799,17 +786,19 @@ def cmd_anima_set_outbound_limit(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     details = []
-    if args.per_hour is not None:
-        data["max_outbound_per_hour"] = args.per_hour
-        details.append(f"per_hour={args.per_hour}")
-    if args.per_day is not None:
-        data["max_outbound_per_day"] = args.per_day
-        details.append(f"per_day={args.per_day}")
-    if args.per_run is not None:
-        data["max_recipients_per_run"] = args.per_run
-        details.append(f"per_run={args.per_run}")
 
-    atomic_write_json(status_path, data)
+    def set_limits(data: dict[str, Any]) -> None:
+        if args.per_hour is not None:
+            data["max_outbound_per_hour"] = args.per_hour
+            details.append(f"per_hour={args.per_hour}")
+        if args.per_day is not None:
+            data["max_outbound_per_day"] = args.per_day
+            details.append(f"per_day={args.per_day}")
+        if args.per_run is not None:
+            data["max_recipients_per_run"] = args.per_run
+            details.append(f"per_run={args.per_run}")
+
+    update_status(anima_dir, set_limits)
     print(t("cli.set_outbound_limit_success", name=name, details=", ".join(details)))
 
 
@@ -1009,12 +998,17 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
             status_file = other_dir / "status.json"
             if not status_file.exists():
                 continue
-            try:
-                status_data = json.loads(status_file.read_text(encoding="utf-8"))
+            changed = False
+
+            def rename_supervisor(status_data: dict[str, Any]) -> None:
+                nonlocal changed
                 if status_data.get("supervisor") == old_name:
                     status_data["supervisor"] = new_name
-                    atomic_write_json(status_file, status_data)
-                    status_updated += 1
+                    changed = True
+
+            try:
+                update_status(other_dir, rename_supervisor)
+                status_updated += int(changed)
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
         if status_updated:

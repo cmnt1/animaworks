@@ -68,7 +68,8 @@ class WorkspaceToolsMixin:
             )
 
         try:
-            from core.config.models import load_config, save_config
+            from core.config.io import update_config
+            from core.config.models import load_config
             from core.org.workspace import qualified_alias
             from core.paths import get_animas_dir
 
@@ -111,9 +112,8 @@ class WorkspaceToolsMixin:
         if not target_dir.is_dir():
             return _error_result("AnimaNotFound", f"Target Anima directory not found: {target_dir}")
 
-        config.workspaces[alias] = str(workspace_path)
         try:
-            save_config(config)
+            update_config(lambda current: current.workspaces.__setitem__(alias, str(workspace_path)))
         except Exception as exc:
             logger.warning("workspace grant config save failed: %s", exc)
             return _error_result("ConfigError", f"Failed to save global config: {exc}")
@@ -236,17 +236,15 @@ class WorkspaceToolsMixin:
         return True, False
 
     def _workspace_grant_update_status(self, target_dir: Path, qualified: str) -> bool:
-        status_path = target_dir / "status.json"
-        data: dict[str, Any] = {}
-        if status_path.is_file():
-            try:
-                parsed = json.loads(status_path.read_text(encoding="utf-8"))
-                if isinstance(parsed, dict):
-                    data = parsed
-            except (json.JSONDecodeError, OSError):
-                data = {}
-        if data.get("default_workspace") == qualified:
-            return False
-        data["default_workspace"] = qualified
-        atomic_write_json(status_path, data, indent=2, ensure_ascii=False)
-        return True
+        from core.platform.status_store import update_status
+
+        changed = False
+
+        def set_workspace(status: dict[str, Any]) -> None:
+            nonlocal changed
+            if status.get("default_workspace") != qualified:
+                status["default_workspace"] = qualified
+                changed = True
+
+        update_status(target_dir, set_workspace)
+        return changed

@@ -13,8 +13,6 @@ import json
 import logging
 import time
 
-from core.platform.atomic_io import atomic_write_json
-
 logger = logging.getLogger(__name__)
 
 
@@ -113,19 +111,27 @@ class ReconcileMixin:
         rag_repairs_in_progress: set[str] = getattr(self, "_rag_repairs_in_progress", set())
         for name in list(on_disk.keys()):
             anima_dir = self.animas_dir / name
-            status_file = anima_dir / "status.json"
-            try:
-                status = json.loads(status_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                continue
-            if not status.get("restart_requested"):
+            from core.platform.status_store import read_status, update_status
+
+            if not read_status(anima_dir).get("restart_requested"):
                 continue
             if name in rag_repairs_in_progress:
                 logger.info("Reconciliation: deferring restart for %s (RAG repair in progress)", name)
                 continue
-            # Clear flag to prevent re-trigger
-            status.pop("restart_requested", None)
-            atomic_write_json(status_file, status, indent=2, ensure_ascii=False)
+            # Clear the flag under the same lock as all status writers.
+            restart_requested = False
+
+            def clear_restart_request(status: dict[str, object]) -> None:
+                nonlocal restart_requested
+                restart_requested = bool(status.pop("restart_requested", None))
+
+            try:
+                update_status(anima_dir, clear_restart_request)
+            except (json.JSONDecodeError, OSError, ValueError):
+                logger.debug("Failed to clear restart_requested for %s", name, exc_info=True)
+                continue
+            if not restart_requested:
+                continue
             logger.info("Reconciliation: restart_requested for %s, restarting", name)
             try:
                 await self.restart_anima(name)

@@ -229,116 +229,109 @@ def create_setup_router() -> APIRouter:
         request: Request,
     ) -> dict[str, Any]:
         """Finalize setup: save config, create anima, mark complete."""
-        from core.config import (
-            AnimaModelConfig,
-            CredentialConfig,
-            invalidate_cache,
-            load_config,
-            save_config,
-        )
+        from core.config import AnimaModelConfig, CredentialConfig, load_config, update_config
         from core.paths import get_animas_dir
 
-        config = load_config()
-
-        # Update locale
-        config.locale = body.locale
-
-        # Update credentials
-        anthropic_subscription = False
-        for cred_name, cred_data in body.credentials.items():
-            cred_type = cred_data.get("type", "api_key")
-            if cred_name == "anthropic" and cred_type == "claude_code_login":
-                anthropic_subscription = True
-                # Store credential with empty api_key (subscription auth)
-                config.credentials[cred_name] = CredentialConfig(
-                    type="claude_code_login",
-                    api_key="",
-                    base_url=cred_data.get("base_url"),
-                )
-            else:
-                config.credentials[cred_name] = CredentialConfig(
-                    type=cred_type,
-                    api_key=cred_data.get("api_key", ""),
-                    base_url=cred_data.get("base_url"),
-                )
-
-        # Set mode_s_auth default when using Anthropic subscription auth
-        if anthropic_subscription:
-            config.anima_defaults.mode_s_auth = "max"
-            logger.info("Set anima_defaults.mode_s_auth=max for Anthropic subscription auth")
-
-        # The wizard's selected provider must also drive the first Anima's
-        # runtime model. Saving credentials alone leaves the Claude default.
+        initial_config = load_config()
         provider = body.provider
         if provider is None:
             # Compatibility with clients that sent only credentials.
             provider = next((p["id"] for p in AVAILABLE_PROVIDERS if p["id"] in body.credentials), None)
-        if provider:
-            credential_name = (
-                "anthropic" if provider == "claude_code" else "openai" if provider == "codex" else provider
+        existing_openai = initial_config.credentials.get("openai", CredentialConfig())
+        wants_codex_model = provider == "codex" or (
+            provider == "openai"
+            and (
+                body.credentials.get("openai", {}).get("type") == "codex_login" or existing_openai.type == "codex_login"
             )
-            credential = config.credentials.get(credential_name)
-            if credential is None:
-                credential = CredentialConfig()
-                config.credentials[credential_name] = credential
-            if provider == "claude_code":
-                credential.type = "claude_code_login"
-                model = AVAILABLE_PROVIDERS[0]["models"][0]
-                config.anima_defaults.mode_s_auth = "max"
-            elif provider == "codex":
-                credential.type = "codex_login"
-                credential.api_key = ""
-                model = await _resolve_codex_setup_model()
-            elif provider == "openai" and credential.type == "codex_login":
-                model = await _resolve_codex_setup_model()
-            else:
-                model = next(p["models"][0] for p in AVAILABLE_PROVIDERS if p["id"] == provider)
-                if provider == "anthropic":
-                    config.anima_defaults.mode_s_auth = "max" if anthropic_subscription else "api"
-                elif provider == "ollama":
-                    from core.config.local_llm import normalize_ollama_base_url
+        )
+        codex_model = await _resolve_codex_setup_model() if wants_codex_model else None
 
-                    credential.base_url = normalize_ollama_base_url(body.ollama_url)
-                    model = config.local_llm.default_model
-            config.anima_defaults.model = model
-            config.anima_defaults.credential = credential_name
-            config.anima_defaults.execution_mode = None
-
-        # Create anima if specified
+        # Create anima if specified before committing config, keeping its status
+        # file and registration behavior consistent with the setup flow.
+        created_anima: tuple[str, str | None] | None = None
         if body.anima:
             from core.anima.factory import create_blank
 
             animas_dir = get_animas_dir()
             anima_name = body.anima.name
-
             try:
                 create_blank(animas_dir, anima_name)
-                # Read supervisor from status.json if present
                 from core.config import read_anima_supervisor
 
                 anima_dir = animas_dir / anima_name
                 supervisor = read_anima_supervisor(anima_dir) if anima_dir.exists() else None
-                config.animas[anima_name] = AnimaModelConfig(
-                    supervisor=supervisor,
-                )
+                created_anima = (anima_name, supervisor)
                 logger.info("Created anima '%s' during setup", anima_name)
             except FileExistsError:
                 logger.warning("Anima '%s' already exists, skipping creation", anima_name)
             except Exception:
                 logger.error("Failed to create anima during setup", exc_info=True)
-                return JSONResponse(
-                    {"error": "Failed to create anima"},
-                    status_code=500,
+                return JSONResponse({"error": "Failed to create anima"}, status_code=500)
+
+        def apply_setup(config):
+            config.locale = body.locale
+            anthropic_subscription = False
+            for cred_name, cred_data in body.credentials.items():
+                cred_type = cred_data.get("type", "api_key")
+                if cred_name == "anthropic" and cred_type == "claude_code_login":
+                    anthropic_subscription = True
+                    config.credentials[cred_name] = CredentialConfig(
+                        type="claude_code_login",
+                        api_key="",
+                        base_url=cred_data.get("base_url"),
+                    )
+                else:
+                    config.credentials[cred_name] = CredentialConfig(
+                        type=cred_type,
+                        api_key=cred_data.get("api_key", ""),
+                        base_url=cred_data.get("base_url"),
+                    )
+
+            if anthropic_subscription:
+                config.anima_defaults.mode_s_auth = "max"
+                logger.info("Set anima_defaults.mode_s_auth=max for Anthropic subscription auth")
+
+            if provider:
+                credential_name = (
+                    "anthropic" if provider == "claude_code" else "openai" if provider == "codex" else provider
                 )
+                credential = config.credentials.get(credential_name)
+                if credential is None:
+                    credential = CredentialConfig()
+                    config.credentials[credential_name] = credential
+                if provider == "claude_code":
+                    credential.type = "claude_code_login"
+                    model = AVAILABLE_PROVIDERS[0]["models"][0]
+                    config.anima_defaults.mode_s_auth = "max"
+                elif provider == "codex":
+                    credential.type = "codex_login"
+                    credential.api_key = ""
+                    model = codex_model or AVAILABLE_PROVIDERS[0]["models"][0]
+                elif provider == "openai" and credential.type == "codex_login":
+                    model = codex_model or AVAILABLE_PROVIDERS[0]["models"][0]
+                else:
+                    model = next(p["models"][0] for p in AVAILABLE_PROVIDERS if p["id"] == provider)
+                    if provider == "anthropic":
+                        config.anima_defaults.mode_s_auth = "max" if anthropic_subscription else "api"
+                    elif provider == "ollama":
+                        from core.config.local_llm import normalize_ollama_base_url
 
-        # Save image style preference
-        if body.image_style in ("anime", "realistic"):
-            config.image_gen.image_style = body.image_style  # type: ignore[assignment]
+                        credential.base_url = normalize_ollama_base_url(body.ollama_url)
+                        model = config.local_llm.default_model
+                config.anima_defaults.model = model
+                config.anima_defaults.credential = credential_name
+                config.anima_defaults.execution_mode = None
 
-        # Mark setup as complete
-        config.setup_complete = True
-        save_config(config)
-        invalidate_cache()
+            if created_anima:
+                anima_name, supervisor = created_anima
+                config.animas[anima_name] = AnimaModelConfig(supervisor=supervisor)
+
+            if body.image_style in ("anime", "realistic"):
+                config.image_gen.image_style = body.image_style  # type: ignore[assignment]
+            config.setup_complete = True
+            return config
+
+        update_config(apply_setup)
 
         # Update app state so the middleware switches behaviour immediately
         request.app.state.setup_complete = True

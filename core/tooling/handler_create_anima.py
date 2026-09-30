@@ -6,13 +6,11 @@ from __future__ import annotations
 
 """CreateAnimaMixin — anima creation from character sheet."""
 
-import json as _json
 import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
@@ -200,17 +198,25 @@ class CreateAnimaMixin:
 
         status_path = anima_dir / "status.json"
         if status_path.exists() and self._anima_name:
-            try:
-                status_data = _json.loads(status_path.read_text(encoding="utf-8"))
+            from core.platform.status_store import update_status
+
+            assigned = False
+
+            def set_fallback_supervisor(status_data: dict[str, Any]) -> None:
+                nonlocal assigned
                 if not status_data.get("supervisor"):
                     status_data["supervisor"] = self._anima_name
-                    atomic_write_json(status_path, status_data, indent=2, ensure_ascii=False)
+                    assigned = True
+
+            try:
+                update_status(anima_dir, set_fallback_supervisor)
+                if assigned:
                     logger.debug(
                         "Set fallback supervisor '%s' for '%s'",
                         self._anima_name,
                         anima_dir.name,
                     )
-            except (OSError, _json.JSONDecodeError):
+            except (OSError, ValueError):
                 logger.warning("Failed to set fallback supervisor", exc_info=True)
 
         try:

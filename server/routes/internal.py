@@ -16,7 +16,6 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from core.platform.atomic_io import atomic_write_json
 from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.internal")
@@ -627,12 +626,15 @@ def create_internal_router() -> APIRouter:
             # Supervisor fallback (same as _handle_create_anima local path)
             status_path = anima_dir / "status.json"
             if status_path.exists() and body.calling_anima:
-                try:
-                    status_data = json.loads(status_path.read_text(encoding="utf-8"))
+                from core.platform.status_store import update_status
+
+                def set_fallback_supervisor(status_data: dict[str, Any]) -> None:
                     if not status_data.get("supervisor"):
                         status_data["supervisor"] = body.calling_anima
-                        atomic_write_json(status_path, status_data, indent=2, ensure_ascii=False)
-                except (OSError, json.JSONDecodeError):
+
+                try:
+                    update_status(anima_dir, set_fallback_supervisor)
+                except (OSError, ValueError, json.JSONDecodeError):
                     logger.warning(
                         "Failed to set fallback supervisor for '%s'",
                         anima_dir.name,

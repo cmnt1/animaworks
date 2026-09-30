@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core.migrations.registry import MigrationStep, StepResult
+from core.platform.status_store import update_status
 
 logger = logging.getLogger(__name__)
 
@@ -344,18 +345,24 @@ def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool)
             status_path = anima_dir / "status.json"
             if not status_path.is_file():
                 continue
-            status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
-            if not isinstance(status, dict):
-                continue
-            removed = _remove_keys(status)
+            removed: list[str] = []
+            if dry_run:
+                status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+                if not isinstance(status, dict):
+                    continue
+                removed = _remove_keys(status)
+            else:
+
+                def remove_retired_keys(status: dict[str, Any], output: list[str] = removed) -> None:
+                    output.extend(_remove_keys(status))
+
+                update_status(anima_dir, remove_retired_keys)
             if not removed:
                 continue
             changed_files += 1
             relative_path = status_path.relative_to(data_dir)
             action = "Would remove" if dry_run else "Removed"
             details.append(f"{action} retired settings from {relative_path}: {', '.join(removed)}")
-            if not dry_run:
-                status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
         if not changed_files:
             details.append("No retired model keys found")
@@ -429,7 +436,6 @@ def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose:
 def step_remove_process_model_fields(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove retired process topology fields from each anima's status.json."""
     del verbose
-    from core.memory._io import atomic_write_text
 
     details: list[str] = []
     errors: list[str] = []
@@ -452,25 +458,35 @@ def step_remove_process_model_fields(data_dir: Path, dry_run: bool, verbose: boo
             details.append(f"{anima_dir.name}: skipped status.json because it is not an object")
             continue
 
-        removed_fields = [key for key in ("process_model", "task_process_isolation") if key in status]
-        if not removed_fields:
-            skipped += 1
-            continue
-
-        old_process_model = status.get("process_model")
-        for key in removed_fields:
-            del status[key]
         relative_path = status_path.relative_to(data_dir)
-        action = "Would remove" if dry_run else "Removed"
-        details.append(f"{action} {', '.join(removed_fields)} from {relative_path}")
-        if old_process_model in ("legacy", "phase2"):
-            details.append(f"{anima_dir.name}: process_model={old_process_model} removed (now phase3)")
-
         if dry_run:
+            removed_fields = [key for key in ("process_model", "task_process_isolation") if key in status]
+            if not removed_fields:
+                skipped += 1
+                continue
+            old_process_model = status.get("process_model")
+            details.append(f"Would remove {', '.join(removed_fields)} from {relative_path}")
+            if old_process_model in ("legacy", "phase2"):
+                details.append(f"{anima_dir.name}: process_model={old_process_model} removed (now phase3)")
             changed += 1
             continue
+
+        removed_fields: list[str] = []
+        old_process_model = None
+
+        def remove_process_model_fields(
+            current: dict[str, Any],
+            output: list[str] = removed_fields,
+        ) -> None:
+            nonlocal old_process_model
+            old_process_model = current.get("process_model")
+            for key in ("process_model", "task_process_isolation"):
+                if key in current:
+                    output.append(key)
+                    del current[key]
+
         try:
-            atomic_write_text(status_path, json.dumps(status, ensure_ascii=False, indent=2) + "\n")
+            update_status(anima_dir, remove_process_model_fields)
         except Exception as exc:
             skipped += 1
             error = f"{anima_dir.name}: failed to update status.json: {exc}"
@@ -478,6 +494,12 @@ def step_remove_process_model_fields(data_dir: Path, dry_run: bool, verbose: boo
             details.append(error)
             logger.exception("step_remove_process_model_fields failed for %s", status_path)
             continue
+        if not removed_fields:
+            skipped += 1
+            continue
+        details.append(f"Removed {', '.join(removed_fields)} from {relative_path}")
+        if old_process_model in ("legacy", "phase2"):
+            details.append(f"{anima_dir.name}: process_model={old_process_model} removed (now phase3)")
         changed += 1
 
     return StepResult(
@@ -626,17 +648,23 @@ def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> Step
             status_path = anima_dir / "status.json"
             if not status_path.is_file():
                 continue
-            status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
-            if not isinstance(status, dict) or not _map_record(status):
-                continue
+            relative_path = status_path.relative_to(data_dir)
             if dry_run:
-                details.append(f"Would map retired Mode B values to A in {status_path.relative_to(data_dir)}")
+                status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+                if not isinstance(status, dict) or not _map_record(status):
+                    continue
+                details.append(f"Would map retired Mode B values to A in {relative_path}")
             else:
-                status_path.write_text(
-                    json.dumps(status, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-                details.append(f"Mapped retired Mode B values to A in {status_path.relative_to(data_dir)}")
+                status_changed = False
+
+                def map_status_record(status: dict[str, Any]) -> None:
+                    nonlocal status_changed
+                    status_changed = _map_record(status)
+
+                update_status(anima_dir, map_status_record)
+                if not status_changed:
+                    continue
+                details.append(f"Mapped retired Mode B values to A in {relative_path}")
             changed_files += 1
 
         if not details:
@@ -821,40 +849,48 @@ def step_neo4j_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> S
         if not status_path.is_file():
             continue
         try:
-            status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
-            if not isinstance(status, dict):
-                skipped += 1
-                details.append(f"{anima_dir.name}: status.json root is not an object")
-                continue
-
-            legacy_backend = status.get("memory_backend")
+            status_messages: list[str] = []
             status_changed = False
-            old_edge_types = status.get("neo4j_edge_types")
-            if old_edge_types and "fact_edge_types" not in status:
-                status["fact_edge_types"] = old_edge_types
-                status_changed = True
-                action = "would move" if dry_run else "moved"
-                details.append(f"{anima_dir.name}: {action} neo4j_edge_types to fact_edge_types")
-            if "memory_backend" in status:
-                del status["memory_backend"]
-                status_changed = True
-                action = "would remove" if dry_run else "removed"
-                details.append(f"{anima_dir.name}: {action} memory_backend")
-            if "neo4j_edge_types" in status:
-                del status["neo4j_edge_types"]
-                status_changed = True
-                action = "would remove" if dry_run else "removed"
-                details.append(f"{anima_dir.name}: {action} neo4j_edge_types")
-            if legacy_backend == "neo4j":
-                details.append(f"{anima_dir.name}: Neo4j data is no longer used (legacy RAG continues)")
 
+            def cleanup_status(
+                status: dict[str, Any],
+                messages: list[str] = status_messages,
+                anima_name: str = anima_dir.name,
+            ) -> None:
+                nonlocal status_changed
+                legacy_backend = status.get("memory_backend")
+                old_edge_types = status.get("neo4j_edge_types")
+                if old_edge_types and "fact_edge_types" not in status:
+                    status["fact_edge_types"] = old_edge_types
+                    status_changed = True
+                    action = "would move" if dry_run else "moved"
+                    messages.append(f"{anima_name}: {action} neo4j_edge_types to fact_edge_types")
+                if "memory_backend" in status:
+                    del status["memory_backend"]
+                    status_changed = True
+                    action = "would remove" if dry_run else "removed"
+                    messages.append(f"{anima_name}: {action} memory_backend")
+                if "neo4j_edge_types" in status:
+                    del status["neo4j_edge_types"]
+                    status_changed = True
+                    action = "would remove" if dry_run else "removed"
+                    messages.append(f"{anima_name}: {action} neo4j_edge_types")
+                if legacy_backend == "neo4j":
+                    messages.append(f"{anima_name}: Neo4j data is no longer used (legacy RAG continues)")
+
+            if dry_run:
+                status = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+                if not isinstance(status, dict):
+                    skipped += 1
+                    details.append(f"{anima_dir.name}: status.json root is not an object")
+                    continue
+                cleanup_status(status)
+            else:
+                update_status(anima_dir, cleanup_status)
+
+            details.extend(status_messages)
             if status_changed:
                 changed += 1
-                if not dry_run:
-                    atomic_write_text(
-                        status_path,
-                        json.dumps(status, ensure_ascii=False, indent=2) + "\n",
-                    )
             else:
                 skipped += 1
         except Exception as exc:

@@ -10,7 +10,6 @@ rate limiting to prevent cascade loops between Animas.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from pathlib import Path
@@ -59,16 +58,9 @@ def _read_anima_enabled(anima_dir: Path) -> bool:
     Local helper mirroring ``ProcessSupervisor.read_anima_enabled`` to avoid
     importing the heavy manager module from the runner path.
     """
-    status_file = anima_dir / "status.json"
-    if not status_file.exists():
-        return True
-    try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return True
-        return bool(data.get("enabled", True))
-    except (json.JSONDecodeError, OSError):
-        return True
+    from core.platform.status_store import read_status
+
+    return bool(read_status(anima_dir).get("enabled", True))
 
 
 class InboxRateLimiter:

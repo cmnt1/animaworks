@@ -19,8 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
-from core.platform.atomic_io import atomic_write_json
+from typing import Any
 
 # Model names (must match KNOWN_MODELS in core/config/model_mode.py)
 CLAUDE_MODEL_MAIN = "claude-sonnet-4-6"
@@ -123,32 +122,36 @@ def _deep_merge(base: dict, patch: dict) -> None:
 
 def _apply_overlay(data_dir: Path, overlay_path: Path) -> None:
     """Deep-merge config_overlay.json into config.json (entrypoint step 3)."""
+    from core.platform.atomic_io import update_json
+
     cfg_path = data_dir / "config.json"
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     ovl = json.loads(overlay_path.read_text(encoding="utf-8"))
-    _deep_merge(cfg, ovl)
-    atomic_write_json(cfg_path, cfg, indent=2, ensure_ascii=False, trailing_newline=False)
+
+    def apply_overlay(config: dict) -> dict:
+        _deep_merge(config, ovl)
+        return config
+
+    update_json(cfg_path, apply_overlay)
 
 
 def _inject_credentials(auth: dict) -> None:
     """Write detected credentials + mode_s_auth into config.json (entrypoint step 11)."""
-    from core.config import CredentialConfig, invalidate_cache, load_config, save_config
+    from core.config import CredentialConfig, update_config
 
-    config = load_config()
-    config.credentials = {}
-    for name, data in auth["credentials"].items():
-        config.credentials[name] = CredentialConfig(
-            type=data["type"],
-            api_key=data.get("api_key", ""),
-        )
-    if auth.get("mode_s_auth"):
-        config.anima_defaults.mode_s_auth = auth["mode_s_auth"]
-    if auth.get("family") == "codex":
-        # Overlay defaults target claude; align defaults for codex family.
-        config.anima_defaults.model = CODEX_MODEL_MAIN
-        config.anima_defaults.background_model = CODEX_MODEL_BACKGROUND
-    save_config(config)
-    invalidate_cache()
+    def inject_credentials(config):
+        config.credentials = {
+            name: CredentialConfig(type=data["type"], api_key=data.get("api_key", ""))
+            for name, data in auth["credentials"].items()
+        }
+        if auth.get("mode_s_auth"):
+            config.anima_defaults.mode_s_auth = auth["mode_s_auth"]
+        if auth.get("family") == "codex":
+            # Overlay defaults target claude; align defaults for codex family.
+            config.anima_defaults.model = CODEX_MODEL_MAIN
+            config.anima_defaults.background_model = CODEX_MODEL_BACKGROUND
+        return config
+
+    update_config(inject_credentials)
 
 
 # ── Initialization (entrypoint steps 1-10) ───────────────────
@@ -160,17 +163,16 @@ def _override_models(data_dir: Path, family: str) -> None:
         main_model, bg_model = CODEX_MODEL_MAIN, CODEX_MODEL_BACKGROUND
     else:
         main_model, bg_model = CLAUDE_MODEL_MAIN, CLAUDE_MODEL_BACKGROUND
+    from core.platform.status_store import update_status
+
     for status_path in (data_dir / "animas").glob("*/status.json"):
-        with open(status_path, encoding="utf-8") as fh:
-            status = json.load(fh)
-        role = status.get("role", "general")
-        if role in _MAIN_ROLES:
-            status["model"] = main_model
+
+        def apply_demo_models(status: dict[str, Any]) -> None:
+            role = status.get("role", "general")
+            status["model"] = main_model if role in _MAIN_ROLES else bg_model
             status["background_model"] = bg_model
-        else:
-            status["model"] = bg_model
-            status["background_model"] = bg_model
-        atomic_write_json(status_path, status, indent=2, ensure_ascii=False, trailing_newline=False)
+
+        update_status(status_path.parent, apply_demo_models)
     print("  Demo model override applied.")
 
 

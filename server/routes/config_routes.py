@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from core.config.model_catalog import validate_chat_model  # noqa: F401
 from core.config.model_discovery import discover_models
-from core.config.models import CredentialConfig, load_config, save_config
+from core.config.models import CredentialConfig, load_config, update_config
 from core.i18n import t
 from core.platform.claude_code import is_claude_code_available
 from core.platform.codex import is_codex_cli_available, is_codex_login_available
@@ -183,32 +183,34 @@ def create_config_router() -> APIRouter:
         if auth_mode not in ("api_key", "claude_code_login"):
             raise HTTPException(status_code=400, detail="Invalid auth mode. Must be 'api_key' or 'claude_code_login'.")
 
-        config = load_config()
-        current = config.credentials.get("anthropic", CredentialConfig())
+        if auth_mode == "claude_code_login" and not is_claude_code_available():
+            raise HTTPException(status_code=400, detail="Claude Code CLI is not installed.")
+        api_key = body.api_key.strip()
+        if auth_mode == "api_key" and not api_key:
+            raise HTTPException(status_code=400, detail="API key is required for api_key mode.")
 
+        def apply_anthropic_auth(config):
+            current = config.credentials.get("anthropic", CredentialConfig())
+            if auth_mode == "claude_code_login":
+                config.credentials["anthropic"] = CredentialConfig(
+                    type="claude_code_login",
+                    api_key="",
+                    base_url=current.base_url,
+                    keys=dict(current.keys),
+                )
+                config.anima_defaults.mode_s_auth = "max"
+            else:
+                config.credentials["anthropic"] = CredentialConfig(
+                    type="api_key",
+                    api_key=api_key,
+                    base_url=current.base_url,
+                    keys=dict(current.keys),
+                )
+            return config
+
+        update_config(apply_anthropic_auth)
         if auth_mode == "claude_code_login":
-            if not is_claude_code_available():
-                raise HTTPException(status_code=400, detail="Claude Code CLI is not installed.")
-            config.credentials["anthropic"] = CredentialConfig(
-                type="claude_code_login",
-                api_key="",
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
-            config.anima_defaults.mode_s_auth = "max"
             logger.info("Anthropic auth set to subscription (claude_code_login), mode_s_auth=max")
-        else:
-            api_key = body.api_key.strip()
-            if not api_key:
-                raise HTTPException(status_code=400, detail="API key is required for api_key mode.")
-            config.credentials["anthropic"] = CredentialConfig(
-                type="api_key",
-                api_key=api_key,
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
-
-        save_config(config)
         return _serialize_anthropic_auth()
 
     @router.put("/settings/openai-auth")
@@ -218,32 +220,26 @@ def create_config_router() -> APIRouter:
         if auth_mode not in ("api_key", "codex_login"):
             raise HTTPException(status_code=400, detail=t("config.openai_auth_invalid_mode"))
 
-        config = load_config()
-        current = config.credentials.get("openai", CredentialConfig())
-
         if auth_mode == "codex_login":
             if not is_codex_cli_available():
                 raise HTTPException(status_code=400, detail=t("config.codex_cli_not_installed"))
             if not is_codex_login_available():
                 raise HTTPException(status_code=400, detail=t("config.codex_login_not_available"))
-            config.credentials["openai"] = CredentialConfig(
-                type="codex_login",
-                api_key="",
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
-        else:
-            api_key = body.api_key.strip()
-            if not api_key:
-                raise HTTPException(status_code=400, detail=t("config.openai_api_key_required"))
-            config.credentials["openai"] = CredentialConfig(
-                type="api_key",
-                api_key=api_key,
-                base_url=current.base_url,
-                keys=dict(current.keys),
-            )
+        api_key = body.api_key.strip()
+        if auth_mode == "api_key" and not api_key:
+            raise HTTPException(status_code=400, detail=t("config.openai_api_key_required"))
 
-        save_config(config)
+        def apply_openai_auth(config):
+            current = config.credentials.get("openai", CredentialConfig())
+            config.credentials["openai"] = CredentialConfig(
+                type="codex_login" if auth_mode == "codex_login" else "api_key",
+                api_key="" if auth_mode == "codex_login" else api_key,
+                base_url=current.base_url,
+                keys=dict(current.keys),
+            )
+            return config
+
+        update_config(apply_openai_auth)
         return _serialize_openai_auth()
 
     # ── Discord channel membership ────────────────────────────
@@ -264,18 +260,20 @@ def create_config_router() -> APIRouter:
         if not all(isinstance(m, str) and m.strip() for m in members):
             raise HTTPException(status_code=400, detail="each member must be a non-empty string")
 
-        config = load_config()
-        known_animas = set(config.animas.keys())
-        unknown = [m for m in members if m not in known_animas]
-        if unknown:
-            raise HTTPException(status_code=400, detail=f"unknown anima(s): {', '.join(unknown)}")
-
         members = [m.strip() for m in members]
-        if members:
-            config.external_messaging.discord.channel_members[channel_id] = members
-        else:
-            config.external_messaging.discord.channel_members.pop(channel_id, None)
-        save_config(config)
+
+        def update_channel_members(config):
+            unknown = [member for member in members if member not in config.animas]
+            if unknown:
+                raise HTTPException(status_code=400, detail=f"unknown anima(s): {', '.join(unknown)}")
+            channel_members = config.external_messaging.discord.channel_members
+            if members:
+                channel_members[channel_id] = members
+            else:
+                channel_members.pop(channel_id, None)
+            return config
+
+        update_config(update_channel_members)
 
         # Reload gateway routing if available
         gw = getattr(request.app.state, "discord_gateway_manager", None)

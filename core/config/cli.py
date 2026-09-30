@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from typing import Any
 
@@ -20,10 +19,9 @@ from core.config.models import (
     CredentialConfig,
     get_config_path,
     load_config,
-    save_config,
+    update_config,
 )
 from core.paths import get_animas_dir
-from core.platform.atomic_io import atomic_write_json
 
 # ---------------------------------------------------------------------------
 # Helper utilities
@@ -145,9 +143,6 @@ def cmd_config_set(args: argparse.Namespace) -> None:
 
     ensure_runtime_dir()
 
-    config = load_config()
-    data = config.model_dump()
-
     key: str = args.key
     raw_value: str = args.value
     coerced = _coerce_value(raw_value)
@@ -178,34 +173,30 @@ def cmd_config_set(args: argparse.Namespace) -> None:
         )
         # Redirect to status.json (SSoT)
         anima_dir = get_animas_dir() / anima_name
-        status_path = anima_dir / "status.json"
-        status_data: dict[str, object] = {}
-        if status_path.is_file():
-            try:
-                status_data = json.loads(status_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
-        status_data[field] = coerced
-        atomic_write_json(status_path, status_data)
+        from core.platform.status_store import update_status
+
+        update_status(anima_dir, lambda status: status.__setitem__(field, coerced))
         print(f"Set {anima_name}/status.json {field} = {_mask_secret(key, coerced)}")
         return
 
-    # Auto-create scaffold for new anima entries (e.g. "animas.newperson.model")
-    if len(parts) >= 3 and parts[0] == "animas":
-        anima_name = parts[1]
-        if anima_name not in data.get("animas", {}):
-            data.setdefault("animas", {})[anima_name] = AnimaModelConfig().model_dump()
+    def set_config_value(config: AnimaWorksConfig) -> AnimaWorksConfig:
+        data = config.model_dump()
+        # Auto-create scaffold for new anima entries (e.g. "animas.newperson.model")
+        if len(parts) >= 3 and parts[0] == "animas":
+            anima_name = parts[1]
+            if anima_name not in data.get("animas", {}):
+                data.setdefault("animas", {})[anima_name] = AnimaModelConfig().model_dump()
 
-    # Auto-create scaffold for new credential entries
-    if len(parts) >= 3 and parts[0] == "credentials":
-        cred_name = parts[1]
-        if cred_name not in data.get("credentials", {}):
-            data.setdefault("credentials", {})[cred_name] = CredentialConfig().model_dump()
+        # Auto-create scaffold for new credential entries
+        if len(parts) >= 3 and parts[0] == "credentials":
+            cred_name = parts[1]
+            if cred_name not in data.get("credentials", {}):
+                data.setdefault("credentials", {})[cred_name] = CredentialConfig().model_dump()
 
-    _set_nested(data, parts, coerced)
+        _set_nested(data, parts, coerced)
+        return AnimaWorksConfig.model_validate(data)
 
-    new_config = AnimaWorksConfig.model_validate(data)
-    save_config(new_config)
+    update_config(set_config_value)
 
     display_value = _mask_secret(key, coerced)
     print(f"Set {key} = {display_value}")
@@ -245,11 +236,8 @@ def _interactive_setup() -> None:
     ensure_runtime_dir()
 
     config_path = get_config_path()
-    if config_path.is_file():
-        config = load_config(config_path)
-    else:
-        config = AnimaWorksConfig()
-
+    config = load_config(config_path) if config_path.is_file() else AnimaWorksConfig()
+    original_credentials = dict(config.credentials)
     credentials: dict[str, CredentialConfig] = dict(config.credentials)
 
     # Step 1: Set up the default (anthropic) credential
@@ -292,7 +280,11 @@ def _interactive_setup() -> None:
             base_url=cred_base_url if cred_base_url else None,
         )
 
-    config.credentials = credentials
+    credential_updates = {
+        name: credential
+        for name, credential in credentials.items()
+        if name not in original_credentials or credential != original_credentials[name]
+    }
 
     # Step 3: Anima configuration
     print()
@@ -306,40 +298,40 @@ def _interactive_setup() -> None:
 
     cred_names = list(credentials.keys())
 
+    status_updates: dict[str, dict[str, str]] = {}
+    from core.platform.status_store import read_status, update_status
+
     for anima_name in detected_animas:
         print(f"\n  Anima: {anima_name}")
         anima_dir = animas_dir / anima_name
-        status_path = anima_dir / "status.json"
-        current_model = ""
-        current_cred = ""
-        status_data: dict[str, object] = {}
-        if status_path.is_file():
-            try:
-                status_data = json.loads(status_path.read_text(encoding="utf-8"))
-                current_model = status_data.get("model", "") or ""
-                current_cred = status_data.get("credential", "") or ""
-            except (json.JSONDecodeError, OSError):
-                pass
+        status_data = read_status(anima_dir)
+        current_model = status_data.get("model", "") or ""
+        current_cred = status_data.get("credential", "") or ""
 
         model = input(f"    Model [{current_model or '(use default)'}]: ").strip()
-        if model:
-            status_data["model"] = model
-
         if cred_names:
             print(f"    Available credentials: {', '.join(cred_names)}")
         cred = input(f"    Credential [{current_cred or '(use default)'}]: ").strip()
+
+        updates = {}
+        if model:
+            updates["model"] = model
         if cred:
-            status_data["credential"] = cred
-
-        if model or cred:
-            atomic_write_json(status_path, status_data)
-
-        if anima_name not in config.animas:
-            config.animas[anima_name] = AnimaModelConfig()
+            updates["credential"] = cred
+        if updates:
+            status_updates[anima_name] = updates
 
     # Step 4: Save
     print()
-    save_config(config)
+
+    def save_wizard_changes(current: AnimaWorksConfig) -> None:
+        current.credentials.update(credential_updates)
+        for anima_name in detected_animas:
+            current.animas.setdefault(anima_name, AnimaModelConfig())
+
+    update_config(save_wizard_changes)
+    for anima_name, updates in status_updates.items():
+        update_status(animas_dir / anima_name, lambda status, values=updates: status.update(values))
     print(f"Configuration saved to {get_config_path()}")
 
 

@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import OrgHelpersMixin, resolve_anima_name
 
@@ -46,22 +45,22 @@ class SubordinateControlMixin(OrgHelpersMixin):
         from core.paths import get_animas_dir
 
         target_dir = get_animas_dir() / target_name
-        status_file = target_dir / "status.json"
+        from core.platform.status_store import update_status
 
-        existing: dict[str, Any] = {}
-        if status_file.exists():
-            try:
-                existing = _json.loads(status_file.read_text(encoding="utf-8"))
-                if not isinstance(existing, dict):
-                    raise ValueError("status.json must contain an object")
-            except (ValueError, OSError):
-                return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
+        changed = False
 
-        if not existing.get("enabled", True):
+        def disable(status: dict[str, Any]) -> None:
+            nonlocal changed
+            if status.get("enabled", True):
+                status["enabled"] = False
+                changed = True
+
+        try:
+            update_status(target_dir, disable)
+        except (ValueError, OSError):
+            return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
+        if not changed:
             return t("handler.already_disabled", target_name=target_name)
-
-        existing["enabled"] = False
-        atomic_write_json(status_file, existing)
         log_summary = t("handler.disable_log_summary", target_name=target_name)
         if reason:
             log_summary += t("handler.disable_reason", reason=reason)
@@ -98,22 +97,22 @@ class SubordinateControlMixin(OrgHelpersMixin):
         from core.paths import get_animas_dir
 
         target_dir = get_animas_dir() / target_name
-        status_file = target_dir / "status.json"
+        from core.platform.status_store import update_status
 
-        existing: dict[str, Any] = {}
-        if status_file.exists():
-            try:
-                existing = _json.loads(status_file.read_text(encoding="utf-8"))
-                if not isinstance(existing, dict):
-                    raise ValueError("status.json must contain an object")
-            except (ValueError, OSError):
-                return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
+        changed = False
 
-        if existing.get("enabled", True):
+        def enable(status: dict[str, Any]) -> None:
+            nonlocal changed
+            if not status.get("enabled", True):
+                status["enabled"] = True
+                changed = True
+
+        try:
+            update_status(target_dir, enable)
+        except (ValueError, OSError):
+            return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
+        if not changed:
             return t("handler.already_enabled", target_name=target_name)
-
-        existing["enabled"] = True
-        atomic_write_json(status_file, existing)
 
         self._activity.log(
             "tool_use",
@@ -252,19 +251,15 @@ class SubordinateControlMixin(OrgHelpersMixin):
             return err
 
         target_dir = get_animas_dir() / target_name
-        status_file = target_dir / "status.json"
+        from core.platform.status_store import update_status
 
-        existing: dict[str, Any] = {}
-        if status_file.exists():
-            try:
-                existing = _json.loads(status_file.read_text(encoding="utf-8"))
-                if not isinstance(existing, dict):
-                    raise ValueError("status.json must contain an object")
-            except (ValueError, OSError):
-                return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
+        def request_restart(status: dict[str, Any]) -> None:
+            status["restart_requested"] = True
 
-        existing["restart_requested"] = True
-        atomic_write_json(status_file, existing)
+        try:
+            update_status(target_dir, request_restart)
+        except (ValueError, OSError):
+            return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
 
         log_summary = t("handler.restart_log", target_name=target_name)
         if reason:

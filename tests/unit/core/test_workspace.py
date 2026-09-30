@@ -220,12 +220,14 @@ class TestRegisterWorkspace:
         cfg.workspaces = {}
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.save_config") as mock_save,
+            patch(
+                "core.config.io.update_config", side_effect=lambda fn, *args, **kwargs: fn(cfg) or cfg
+            ) as mock_update,
         ):
             result = register_workspace("proj", str(tmp_path))
         assert result == qualified_alias("proj", str(tmp_path))
         assert cfg.workspaces["proj"] == str(tmp_path.resolve())
-        mock_save.assert_called_once()
+        mock_update.assert_called_once()
 
     def test_nonexistent_dir_raises_value_error(self) -> None:
         """Registering non-existent directory raises ValueError."""
@@ -273,12 +275,14 @@ class TestRemoveWorkspace:
         cfg.workspaces = {"proj": str(tmp_path)}
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.config.models.save_config") as mock_save,
+            patch(
+                "core.config.io.update_config", side_effect=lambda fn, *args, **kwargs: fn(cfg) or cfg
+            ) as mock_update,
         ):
             result = remove_workspace("proj")
         assert result is True
         assert "proj" not in cfg.workspaces
-        mock_save.assert_called_once()
+        mock_update.assert_called_once()
 
     def test_missing_alias_returns_false(self) -> None:
         """remove_workspace for unknown alias returns False."""

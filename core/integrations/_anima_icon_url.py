@@ -276,30 +276,32 @@ def persist_anima_icon_path_template() -> None:
     if os.environ.get(_ICON_URL_TEMPLATE_ENV_KEY, "").strip():
         return
 
-    from core.config import load_config, save_config
+    from core.config import update_config
 
-    cfg = load_config()
-    if cfg.icon_url_template:
-        return
-    if not cfg.human_notification or not cfg.human_notification.channels:
-        return
-    style = cfg.image_gen.image_style or "anime"
-    want = (
-        DEFAULT_INTERNAL_ICON_PATH_TEMPLATE_REALISTIC if style == "realistic" else DEFAULT_INTERNAL_ICON_PATH_TEMPLATE
-    )
     changed = False
-    for ch in cfg.human_notification.channels:
-        if ch.type != "slack" or not ch.enabled:
-            continue
-        cur = _icon_path_template_from_mapping(ch.config)
-        if template_is_external_icon_url(cur):
-            continue
-        if cur != want:
-            ch.config[ICON_PATH_TEMPLATE_CONFIG_KEY] = want
-            ch.config.pop(ICON_URL_TEMPLATE_CONFIG_KEY, None)
-            changed = True
-    if changed:
-        save_config(cfg)
+
+    def persist_template(cfg) -> None:
+        nonlocal changed
+        if cfg.icon_url_template or not cfg.human_notification or not cfg.human_notification.channels:
+            return
+        style = cfg.image_gen.image_style or "anime"
+        want = (
+            DEFAULT_INTERNAL_ICON_PATH_TEMPLATE_REALISTIC
+            if style == "realistic"
+            else DEFAULT_INTERNAL_ICON_PATH_TEMPLATE
+        )
+        for ch in cfg.human_notification.channels:
+            if ch.type != "slack" or not ch.enabled:
+                continue
+            cur = _icon_path_template_from_mapping(ch.config)
+            if template_is_external_icon_url(cur):
+                continue
+            if cur != want:
+                ch.config[ICON_PATH_TEMPLATE_CONFIG_KEY] = want
+                ch.config.pop(ICON_URL_TEMPLATE_CONFIG_KEY, None)
+                changed = True
+
+    update_config(persist_template)
 
 
 # Backward-compatible name (older call sites / patches).

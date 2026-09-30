@@ -566,9 +566,11 @@ def repair_bootstrap_fresh(animas_dir: Path, name: str, *, archive_root: Path) -
     shutil.rmtree(anima_dir)
     new_dir = create_blank(animas_dir, name)
 
-    status_path = new_dir / "status.json"
-    new_status = _read_json(status_path)
-    new_status.update(preserved)
-    atomic_write_json(status_path, new_status, indent=2, ensure_ascii=False)
+    from core.platform.status_store import update_status
+
+    def restore_preserved_status(status: dict[str, Any]) -> None:
+        status.update(preserved)
+
+    update_status(new_dir, restore_preserved_status)
     initialize_bootstrap_state(new_dir)
     return new_dir, archive_path
