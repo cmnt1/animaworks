@@ -182,8 +182,6 @@ class TestCLIReloadCommand:
     """Test cmd_anima_reload() HTTP calls."""
 
     def test_single_reload(self, tmp_path):
-        import requests as _req_mod
-
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
@@ -201,18 +199,19 @@ class TestCLIReloadCommand:
 
         with (
             patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(_req_mod, "post", return_value=mock_response) as mock_post,
+            patch("cli.commands.anima_mgmt.gateway_request", return_value=mock_response) as mock_gateway,
         ):
             cmd_anima_reload(args)
 
-        mock_post.assert_called_once_with(
-            "http://localhost:18500/api/animas/kotoha/reload",
+        mock_gateway.assert_called_once_with(
+            args,
+            "POST",
+            "/api/animas/kotoha/reload",
             timeout=10.0,
+            raw_response=True,
         )
 
     def test_reload_all(self, tmp_path):
-        import requests as _req_mod
-
         from cli.commands.anima_mgmt import cmd_anima_reload
 
         pid_file = tmp_path / "server.pid"
@@ -233,11 +232,14 @@ class TestCLIReloadCommand:
 
         with (
             patch("core.paths.get_data_dir", return_value=tmp_path),
-            patch.object(_req_mod, "post", return_value=mock_response) as mock_post,
+            patch("cli.commands.anima_mgmt.gateway_request", return_value=mock_response) as mock_gateway,
         ):
             cmd_anima_reload(args)
 
-        mock_post.assert_called_once_with(
-            "http://localhost:18500/api/animas/reload-all",
+        mock_gateway.assert_called_once_with(
+            args,
+            "POST",
+            "/api/animas/reload-all",
             timeout=30.0,
+            raw_response=True,
         )

@@ -641,3 +641,28 @@ class TestFanoutBoardMentions:
             )
 
         mock_messenger.send.assert_called_once()
+
+
+def test_board_post_server_notification_uses_gateway_request():
+    from cli.commands.board import _notify_server_board_posted
+
+    response = MagicMock(status_code=200)
+    with (
+        patch("core.platform.pid.read_server_pid", return_value=123),
+        patch("core.platform.process.is_process_alive", return_value=True),
+        patch("core.internal_api.internal_api_headers", return_value={"X-AnimaWorks-Internal-Auth": "token"}),
+        patch("cli.commands.board.gateway_request", return_value=response) as mock_gateway,
+    ):
+        _notify_server_board_posted("alice", "general", "hello")
+
+    args, kwargs = mock_gateway.call_args
+    assert args[0].gateway_url is None
+    assert args[1:3] == ("POST", "/api/internal/message-sent")
+    assert kwargs["headers"] == {"X-AnimaWorks-Internal-Auth": "token"}
+    assert kwargs["json"] == {
+        "from_person": "alice",
+        "to_person": "#channel:general",
+        "content": "hello",
+    }
+    assert kwargs["timeout"] == 5.0
+    assert kwargs["raw_response"] is True

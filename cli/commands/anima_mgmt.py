@@ -14,6 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from cli._gateway import gateway_request
 from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,6 @@ logger = logging.getLogger(__name__)
 
 def cmd_anima_restart(args: argparse.Namespace) -> None:
     """Restart a specific anima process."""
-    import requests
-
     from core.paths import get_data_dir
 
     # Check if server is running
@@ -32,24 +31,25 @@ def cmd_anima_restart(args: argparse.Namespace) -> None:
         print("Error: Server is not running")
         sys.exit(1)
 
-    # Use gateway URL if provided, otherwise default to localhost
-    gateway_url = args.gateway_url or "http://localhost:18500"
-
     try:
-        response = requests.post(f"{gateway_url}/api/animas/{args.anima}/restart", timeout=30.0)
+        response = gateway_request(
+            args,
+            "POST",
+            f"/api/animas/{args.anima}/restart",
+            timeout=30.0,
+            raw_response=True,
+        )
         response.raise_for_status()
         result = response.json()
         print(f"Anima '{args.anima}' restarted successfully")
         print(f"PID: {result.get('pid', 'N/A')}")
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"Error: Failed to restart anima: {e}")
         sys.exit(1)
 
 
 def cmd_anima_reload(args: argparse.Namespace) -> None:
     """Hot-reload anima config from status.json without process restart."""
-    import requests
-
     from core.paths import get_data_dir
 
     pid_file = get_data_dir() / "server.pid"
@@ -57,13 +57,14 @@ def cmd_anima_reload(args: argparse.Namespace) -> None:
         print("Error: Server is not running")
         sys.exit(1)
 
-    gateway_url = args.gateway_url or "http://localhost:18500"
-
     if args.all:
         try:
-            response = requests.post(
-                f"{gateway_url}/api/animas/reload-all",
+            response = gateway_request(
+                args,
+                "POST",
+                "/api/animas/reload-all",
                 timeout=30.0,
+                raw_response=True,
             )
             response.raise_for_status()
             result = response.json()
@@ -75,7 +76,7 @@ def cmd_anima_reload(args: argparse.Namespace) -> None:
                 else:
                     print(f"  {name}: {r.get('error', status)}")
             print("All animas reloaded.")
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"Error: Failed to reload all animas: {e}")
             sys.exit(1)
         return
@@ -85,24 +86,25 @@ def cmd_anima_reload(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        response = requests.post(
-            f"{gateway_url}/api/animas/{args.anima}/reload",
+        response = gateway_request(
+            args,
+            "POST",
+            f"/api/animas/{args.anima}/reload",
             timeout=10.0,
+            raw_response=True,
         )
         response.raise_for_status()
         result = response.json()
         changes = result.get("changes", [])
         model = result.get("model", "?")
         print(f"Anima '{args.anima}' config reloaded (model={model}, changes={changes})")
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"Error: Failed to reload anima config: {e}")
         sys.exit(1)
 
 
 def cmd_anima_status(args: argparse.Namespace) -> None:
     """Show status of anima processes."""
-    import requests
-
     from core.paths import get_data_dir
 
     # Check if server is running
@@ -119,20 +121,23 @@ def cmd_anima_status(args: argparse.Namespace) -> None:
     except Exception:
         print("Server PID file corrupted")
 
-    # Use gateway URL if provided
-    gateway_url = args.gateway_url or "http://localhost:18500"
-
     try:
         # Get status from API
         if args.anima:
             # Specific anima
-            response = requests.get(f"{gateway_url}/api/animas/{args.anima}", timeout=10.0)
+            response = gateway_request(
+                args,
+                "GET",
+                f"/api/animas/{args.anima}",
+                timeout=10.0,
+                raw_response=True,
+            )
             response.raise_for_status()
             data = response.json()
             _print_anima_status(args.anima, data.get("status", {}))
         else:
             # All animas
-            response = requests.get(f"{gateway_url}/api/animas", timeout=10.0)
+            response = gateway_request(args, "GET", "/api/animas", timeout=10.0, raw_response=True)
             response.raise_for_status()
             animas = response.json()
 
@@ -143,7 +148,13 @@ def cmd_anima_status(args: argparse.Namespace) -> None:
                 name = anima.get("name", "unknown")
                 # Get individual status
                 try:
-                    status_resp = requests.get(f"{gateway_url}/api/animas/{name}", timeout=5.0)
+                    status_resp = gateway_request(
+                        args,
+                        "GET",
+                        f"/api/animas/{name}",
+                        timeout=5.0,
+                        raw_response=True,
+                    )
                     status_resp.raise_for_status()
                     data = status_resp.json()
                     _print_anima_status(name, data.get("status", {}))
@@ -152,7 +163,7 @@ def cmd_anima_status(args: argparse.Namespace) -> None:
                     print(f"  Status: ERROR ({e})")
                 print()
 
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"Error: Failed to get status: {e}")
         sys.exit(1)
 
@@ -318,8 +329,6 @@ def cmd_anima_permissions(args: argparse.Namespace) -> None:
 
 def cmd_anima_delete(args: argparse.Namespace) -> None:
     """Delete an anima with optional archive."""
-    import requests
-
     from core.config.models import unregister_anima_from_config
     from core.paths import get_animas_dir, get_data_dir
     from core.time_utils import now_jst
@@ -344,14 +353,10 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
     # Try to disable via server if running
     pid_file = data_dir / "server.pid"
     server_running = pid_file.exists()
-    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
 
     if server_running:
         try:
-            requests.post(
-                f"{gateway_url}/api/animas/{name}/disable",
-                timeout=10,
-            )
+            gateway_request(args, "POST", f"/api/animas/{name}/disable", timeout=10, raw_response=True)
         except Exception as e:
             logger.warning("Failed to disable anima via API: %s", e)
 
@@ -386,7 +391,7 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
     # Reload server config if running
     if server_running:
         try:
-            requests.post(f"{gateway_url}/api/system/reload", timeout=10)
+            gateway_request(args, "POST", "/api/system/reload", timeout=10, raw_response=True)
         except Exception:
             logger.debug("Best-effort operation failed", exc_info=True)
 
@@ -395,8 +400,6 @@ def cmd_anima_delete(args: argparse.Namespace) -> None:
 
 def cmd_anima_disable(args: argparse.Namespace) -> None:
     """Disable an anima."""
-    import requests
-
     from core.paths import get_animas_dir, get_data_dir
 
     name = args.anima
@@ -412,14 +415,16 @@ def cmd_anima_disable(args: argparse.Namespace) -> None:
     # Check if server is running
     pid_file = data_dir / "server.pid"
     server_running = pid_file.exists()
-    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
 
     api_success = False
     if server_running:
         try:
-            response = requests.post(
-                f"{gateway_url}/api/animas/{name}/disable",
+            response = gateway_request(
+                args,
+                "POST",
+                f"/api/animas/{name}/disable",
                 timeout=10,
+                raw_response=True,
             )
             response.raise_for_status()
             result = response.json()
@@ -444,8 +449,6 @@ def cmd_anima_disable(args: argparse.Namespace) -> None:
 
 def cmd_anima_enable(args: argparse.Namespace) -> None:
     """Enable an anima."""
-    import requests
-
     from core.paths import get_animas_dir, get_data_dir
 
     name = args.anima
@@ -461,14 +464,16 @@ def cmd_anima_enable(args: argparse.Namespace) -> None:
     # Check if server is running
     pid_file = data_dir / "server.pid"
     server_running = pid_file.exists()
-    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
 
     api_success = False
     if server_running:
         try:
-            response = requests.post(
-                f"{gateway_url}/api/animas/{name}/enable",
+            response = gateway_request(
+                args,
+                "POST",
+                f"/api/animas/{name}/enable",
                 timeout=10,
+                raw_response=True,
             )
             response.raise_for_status()
             result = response.json()
@@ -493,8 +498,6 @@ def cmd_anima_enable(args: argparse.Namespace) -> None:
 
 def cmd_anima_set_role(args: argparse.Namespace) -> None:
     """Change an anima's role."""
-    import requests
-
     from core.anima.factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
     from core.config.local_llm import apply_local_llm_role_to_status
     from core.config.models import load_config
@@ -505,7 +508,6 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
     data_dir = get_data_dir()
     animas_dir = get_animas_dir()
     anima_dir = animas_dir / name
-    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
 
     if new_role not in VALID_ROLES:
         print(f"Error: Invalid role '{new_role}'. Valid roles: {', '.join(sorted(VALID_ROLES))}")
@@ -554,9 +556,12 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
     server_running = (data_dir / "server.pid").exists()
     if server_running and not args.no_restart:
         try:
-            response = requests.post(
-                f"{gateway_url}/api/animas/{name}/restart",
+            response = gateway_request(
+                args,
+                "POST",
+                f"/api/animas/{name}/restart",
                 timeout=30.0,
+                raw_response=True,
             )
             response.raise_for_status()
             print(f"  Restarted '{name}' to apply new role.")
@@ -903,8 +908,6 @@ def cmd_anima_audit(args: argparse.Namespace) -> None:
 
 def cmd_anima_rename(args: argparse.Namespace) -> None:
     """Rename an anima (directory, config, references)."""
-    import requests
-
     from core.anima.factory import validate_anima_name
     from core.config.models import rename_anima_in_config
     from core.paths import get_animas_dir, get_data_dir
@@ -916,7 +919,6 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
     old_dir = animas_dir / old_name
     new_dir = animas_dir / new_name
     shared_dir = data_dir / "shared"
-    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
 
     # ── Validation ──
     if old_name == new_name:
@@ -950,9 +952,12 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
     server_running = pid_file.exists()
     if server_running:
         try:
-            requests.post(
-                f"{gateway_url}/api/animas/{old_name}/disable",
+            gateway_request(
+                args,
+                "POST",
+                f"/api/animas/{old_name}/disable",
                 timeout=10,
+                raw_response=True,
             )
             print(f"  Stopped anima process '{old_name}'")
         except Exception as e:
@@ -1027,17 +1032,23 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
         # ── Server: reload + restart ──
         if server_running:
             try:
-                requests.post(f"{gateway_url}/api/system/reload", timeout=10)
+                gateway_request(args, "POST", "/api/system/reload", timeout=10, raw_response=True)
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
             try:
-                requests.post(
-                    f"{gateway_url}/api/animas/{new_name}/enable",
+                gateway_request(
+                    args,
+                    "POST",
+                    f"/api/animas/{new_name}/enable",
                     timeout=10,
+                    raw_response=True,
                 )
-                requests.post(
-                    f"{gateway_url}/api/animas/{new_name}/restart",
+                gateway_request(
+                    args,
+                    "POST",
+                    f"/api/animas/{new_name}/restart",
                     timeout=30,
+                    raw_response=True,
                 )
                 print(f"  Restarted anima '{new_name}'")
             except Exception as e:
@@ -1127,23 +1138,17 @@ def _cleanup_rag_collections(anima_dir: Path, old_name: str) -> bool:
 
 def cmd_anima_list(args: argparse.Namespace) -> None:
     """List all animas."""
-    import requests
-
     from core.paths import get_animas_dir, get_data_dir
 
     data_dir = get_data_dir()
     animas_dir = get_animas_dir()
-    gateway_url = getattr(args, "gateway_url", None) or "http://localhost:18500"
 
     # Try API first (unless --local)
     if not args.local:
         pid_file = data_dir / "server.pid"
         if pid_file.exists():
             try:
-                response = requests.get(
-                    f"{gateway_url}/api/animas",
-                    timeout=10,
-                )
+                response = gateway_request(args, "GET", "/api/animas", timeout=10, raw_response=True)
                 response.raise_for_status()
                 animas = response.json()
 

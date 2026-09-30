@@ -39,8 +39,10 @@ def gateway_request(
     path: str,
     *,
     json: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
     timeout: float = 120.0,
-) -> dict[str, Any] | list[Any] | None:
+    raw_response: bool = False,
+) -> Any:
     """Make an HTTP request to the gateway, handling connection errors.
 
     Args:
@@ -48,13 +50,19 @@ def gateway_request(
         method: HTTP method (``GET``, ``POST``, etc.).
         path: URL path appended to the gateway base (e.g. ``/api/animas``).
         json: Optional JSON body for the request.
+        headers: Optional request headers, for authenticated internal endpoints.
         timeout: Request timeout in seconds.
+        raw_response: Return the ``httpx.Response`` and propagate request errors so
+            the caller can preserve command-specific status handling and fallbacks.
 
     Returns:
-        Parsed JSON response body, or ``None`` on empty response.
+        Parsed JSON response body, or the raw response when ``raw_response`` is
+        true.
 
     Raises:
-        SystemExit: On connection error, timeout, or HTTP error.
+        SystemExit: On connection error, timeout, or HTTP error in JSON mode.
+        httpx.HTTPError: In raw response mode, request errors are propagated to
+            the caller.
     """
     import httpx
 
@@ -63,14 +71,23 @@ def gateway_request(
     logger.debug("Gateway %s %s (timeout=%.1fs)", method, url, timeout)
 
     try:
-        resp = httpx.request(method, url, json=json, timeout=timeout)
-        return resp.json()
+        request_kwargs: dict[str, Any] = {"json": json, "timeout": timeout}
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        resp = httpx.request(method, url, **request_kwargs)
+        return resp if raw_response else resp.json()
     except httpx.ConnectError:
+        if raw_response:
+            raise
         print(f"Cannot connect to gateway at {gateway}. Use --local for direct mode.")
         sys.exit(1)
     except httpx.TimeoutException:
+        if raw_response:
+            raise
         print(f"Request timed out after {timeout}s.")
         sys.exit(1)
     except httpx.HTTPError as exc:
+        if raw_response:
+            raise
         print(f"HTTP error: {exc}")
         sys.exit(1)
