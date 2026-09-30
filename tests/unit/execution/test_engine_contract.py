@@ -21,6 +21,13 @@ provides where applicable:
 Activity (what the executor writes to the anima's ``activity_log``) is
 captured per path so E5 can detect double-logging or missed logging.
 
+P0C additionally captures Mode A's blocking, token-level streaming, and
+Ollama iteration-level streaming paths for text-only, one-tool, tool-error,
+and runaway-limit scenarios. Mode S blocking has the corresponding text,
+tool, tool-error, and interruption scenarios. The files record current
+behavior—including path-specific event ordering and result differences—rather
+than imposing parity.
+
 Each engine also has one abnormal scenario:
 
 * CLI engines (D, G, X): the CLI exits non-zero / the process emits an error.
@@ -46,9 +53,11 @@ excluded from the comparison because it is inherently volatile.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -69,6 +78,10 @@ _SCENARIOS: list[tuple[str, str, str]] = [
     ("agent_sdk", "execute", "happy"),
     ("agent_sdk", "stream", "happy"),
     ("agent_sdk", "execute", "error"),
+    ("agent_sdk", "execute", "text"),
+    ("agent_sdk", "execute", "tool"),
+    ("agent_sdk", "execute", "tool-error"),
+    ("agent_sdk", "execute", "limit"),
     ("codex", "execute", "happy"),
     ("codex", "stream", "happy"),
     ("codex", "execute", "error"),
@@ -84,6 +97,18 @@ _SCENARIOS: list[tuple[str, str, str]] = [
     ("litellm", "execute", "happy"),
     ("litellm", "stream", "happy"),
     ("litellm", "execute", "error"),
+    ("litellm", "execute", "text"),
+    ("litellm", "execute", "tool"),
+    ("litellm", "execute", "tool-error"),
+    ("litellm", "execute", "limit"),
+    ("litellm", "stream", "text"),
+    ("litellm", "stream", "tool"),
+    ("litellm", "stream", "tool-error"),
+    ("litellm", "stream", "limit"),
+    ("litellm", "iteration", "text"),
+    ("litellm", "iteration", "tool"),
+    ("litellm", "iteration", "tool-error"),
+    ("litellm", "iteration", "limit"),
 ]
 
 
@@ -620,13 +645,20 @@ async def _drive_agent_sdk(anima_dir: Path, golden_id: str, path: str) -> dict:
 
     saved = _install_sdk_module(_Client)
     mc = ModelConfig(model="claude-sonnet-4-6", api_key="sk-test", context_threshold=0.5)
-    executor = AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
+    interrupt_event = asyncio.Event() if head.get("scenario") == "interrupt" else None
+    if interrupt_event is not None:
+        interrupt_event.set()
+    executor = AgentSDKExecutor(model_config=mc, anima_dir=anima_dir, interrupt_event=interrupt_event)
     tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.5)
     try:
         if path == "stream":
             events = [e async for e in executor.execute_streaming(system_prompt="sys", prompt="test", tracker=tracker)]
             return {"events": _norm(events), "result": None, "activity": _read_activity(anima_dir)}
-        result = await executor.execute(system_prompt="sys", prompt="test", tracker=tracker)
+        if interrupt_event is not None:
+            with patch("core.execution.engines.claude.agent_sdk._graceful_interrupt_blocking", AsyncMock()):
+                result = await executor.execute(system_prompt="sys", prompt="test", tracker=tracker)
+        else:
+            result = await executor.execute(system_prompt="sys", prompt="test", tracker=tracker)
         return {"events": None, "result": _serialise_result(result), "activity": _read_activity(anima_dir)}
     finally:
         for key, val in saved.items():
@@ -776,15 +808,18 @@ def _litellm_responses_from_input(lines: list[dict]):
             "prompt_tokens_details": None,
         }
         resp.usage.get = lambda key, default=0, _u=_u: _u.get(key, default)
+        resp.usage.cache_read_input_tokens = 0
+        resp.usage.cache_creation_input_tokens = 0
+        resp.usage.prompt_tokens_details = None
         responses.append(resp)
     return responses
 
 
-def _litellm_executor(anima_dir: Path):
+def _litellm_executor(anima_dir: Path, model: str = "openai/gpt-4o"):
     from core.tooling.handler import ToolHandler
 
     mc = ModelConfig(
-        model="openai/gpt-4o",
+        model=model,
         api_key="sk-test",
         max_tokens=1024,
         context_threshold=0.50,
@@ -808,7 +843,15 @@ def _litellm_executor(anima_dir: Path):
 async def _drive_litellm(anima_dir: Path, golden_id: str, path: str) -> dict:
     lines = _load_input(golden_id)
     head = lines[0] if lines else {}
-    executor = _litellm_executor(anima_dir)
+    _, scenario = golden_id.split("__", 1)
+    _, scenario = scenario.split("-", 1)
+    model = "ollama/qwen3:8b" if path == "iteration" else "openai/gpt-4o"
+    executor = _litellm_executor(anima_dir, model=model)
+    tool_error_patch = (
+        patch.object(executor, "_execute_tool_call", side_effect=RuntimeError("simulated tool failure"))
+        if scenario == "tool-error"
+        else nullcontext()
+    )
 
     sys_mod = sys.modules.get("litellm")
     if sys_mod is None or not isinstance(sys_mod, MagicMock):
@@ -841,39 +884,34 @@ async def _drive_litellm(anima_dir: Path, golden_id: str, path: str) -> dict:
                     "activity": _read_activity(anima_dir),
                 }
 
-    if path == "stream":
-        chunks = _build_stream_chunks(lines)
+    if path in {"stream", "iteration"}:
+        chunks = _build_stream_chunks(lines) if path == "stream" else None
         call_count = {"n": 0}
 
         async def mock_acompletion(**kwargs):
             i = call_count["n"]
             call_count["n"] += 1
+            if path == "iteration":
+                return responses[min(i, len(responses) - 1)]
             return _fake_async_stream(chunks[min(i, len(chunks) - 1)])
 
-        async def mock_process_tool_calls(parsed_calls, messages, tools, **kwargs):
-            for tc in parsed_calls:
-                yield {
-                    "type": "tool_end",
-                    "tool_id": tc["id"],
-                    "tool_name": tc["name"],
-                }
-
+        responses = _litellm_responses_from_input(lines) if path == "iteration" else []
         with (
             patch("litellm.acompletion", side_effect=mock_acompletion),
             patch.object(executor, "_preflight_clamp_with_compaction", AsyncMock(return_value={})),
-            patch.object(executor, "_process_streaming_tool_calls", mock_process_tool_calls),
+            tool_error_patch,
         ):
             events = [
                 e
                 async for e in executor.execute_streaming(
-                    "sys", "test prompt", ContextTracker(model="openai/gpt-4o", threshold=0.5)
+                    "sys", "test prompt", ContextTracker(model=model, threshold=0.5)
                 )
             ]
         return {"events": _norm(events), "result": None, "activity": _read_activity(anima_dir)}
 
     responses = _litellm_responses_from_input(lines)
     mock_fn = AsyncMock(side_effect=responses)
-    with patch("litellm.acompletion", mock_fn):
+    with patch("litellm.acompletion", mock_fn), tool_error_patch:
         result = await executor.execute("test prompt", system_prompt="sys")
     return {"events": None, "result": _serialise_result(result), "activity": _read_activity(anima_dir)}
 
@@ -960,7 +998,7 @@ _ENGINE_PATHS = {
     "cursor": {"execute": _drive_cursor_execute, "stream": _drive_cursor_stream},
     "gemini": {"execute": _drive_gemini_execute, "stream": _drive_gemini_stream},
     "grok": {"execute": _drive_grok, "stream": _drive_grok},
-    "litellm": {"execute": _drive_litellm, "stream": _drive_litellm},
+    "litellm": {"execute": _drive_litellm, "stream": _drive_litellm, "iteration": _drive_litellm},
 }
 
 _SUPPORTS_STREAMING = {

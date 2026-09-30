@@ -1,0 +1,45 @@
+{
+  "engine": "agent_sdk",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "tool-error",
+  "events": null,
+  "result": {
+    "text": "Recovered after tool error",
+    "tool_call_records": [
+      {
+        "tool_name": "Read",
+        "tool_id": "tu_error_1",
+        "input_summary": "{'path': '/tmp/missing-golden.txt'}",
+        "result_summary": "simulated read failure",
+        "is_error": true
+      }
+    ],
+    "usage": {
+      "input_tokens": 26,
+      "output_tokens": 10,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": "ses-tool-error",
+    "num_turns": 2
+  },
+  "raised": null,
+  "activity": [
+    {
+      "type": "tool_result",
+      "content": "simulated read failure",
+      "tool": "Read",
+      "meta": {
+        "tool_use_id": "tu_error_1",
+        "is_error": true
+      }
+    }
+  ]
+}

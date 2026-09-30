@@ -1,0 +1,36 @@
+{
+  "engine": "litellm",
+  "supports_streaming": true,
+  "path": "stream",
+  "scenario": "text",
+  "events": [
+    {
+      "type": "text_delta",
+      "text": "Plain answer"
+    },
+    {
+      "type": "context_update",
+      "context_usage_ratio": 8.59375e-05,
+      "input_tokens": 11,
+      "context_window": 128000,
+      "threshold": 0.6728
+    },
+    {
+      "type": "done",
+      "full_text": "Plain answer",
+      "result_message": null,
+      "tool_call_records": [],
+      "usage": {
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "stop_kind": "normal",
+      "truncated": false
+    }
+  ],
+  "result": null,
+  "raised": null,
+  "activity": []
+}
