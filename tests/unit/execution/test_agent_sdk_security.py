@@ -129,6 +129,60 @@ class TestCheckA1FileAccess:
         result = _check_a1_file_access(path, anima_dir, write=True)
         assert result is None
 
+    def test_write_respects_file_roots_and_readonly_roots(
+        self,
+        anima_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        data_dir = tmp_path / "isolated-data"
+        data_dir.mkdir()
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+        system_tmp = tmp_path / "system-tmp"
+        system_tmp.mkdir()
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(system_tmp))
+
+        roots_parent = tmp_path.parent
+        allowed_root = roots_parent / f"{tmp_path.name}-allowed"
+        readonly_root = roots_parent / f"{tmp_path.name}-readonly"
+        outside_root = roots_parent / f"{tmp_path.name}-outside"
+        (anima_dir / "permissions.json").write_text(
+            json.dumps(
+                {
+                    "file_roots": [str(allowed_root)],
+                    "file_roots_readonly": [str(readonly_root)],
+                    "file_roots_denied": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert _check_a1_file_access(str(allowed_root / "new.md"), anima_dir, write=True) is None
+        assert _check_a1_file_access(str(anima_dir / "knowledge" / "new.md"), anima_dir, write=True) is None
+        readonly_denial = _check_a1_file_access(str(readonly_root / "new.md"), anima_dir, write=True)
+        outside_denial = _check_a1_file_access(str(outside_root / "new.md"), anima_dir, write=True)
+        assert readonly_denial is not None and "read-only" in readonly_denial
+        assert outside_denial is not None and "outside configured file roots" in outside_denial
+
+        workspace = roots_parent / f"{tmp_path.name}-workspace"
+        assert _check_a1_file_access(str(workspace / "a.py"), anima_dir, write=True) is not None
+        assert _check_a1_file_access(str(workspace / "a.py"), anima_dir, write=True, task_cwd=workspace) is None
+        assert _check_a1_file_access(str(system_tmp / "scratch.txt"), anima_dir, write=True) is None
+
+    def test_write_to_internal_cache_blocked_when_file_deny_is_configured(
+        self,
+        anima_dir: Path,
+    ):
+        (anima_dir / "permissions.json").write_text(
+            json.dumps({"file_roots": ["/"], "file_roots_denied": ["/sensitive"]}),
+            encoding="utf-8",
+        )
+
+        result = _check_a1_file_access(str(anima_dir / ".codex_home" / "config"), anima_dir, write=True)
+
+        assert result is not None
+        assert "internal runtime cache" in result
+
     def test_read_other_anima_blocked(
         self,
         anima_dir: Path,

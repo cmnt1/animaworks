@@ -16,6 +16,7 @@ Helpers have no executor state; this remains a leaf module in the dependency gra
 import json
 import logging
 import re
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -74,6 +75,7 @@ def _check_a1_file_access(
     descendant_read_dirs: list[Path] | None = None,
     peer_activity_dirs: list[Path] | None = None,
     superuser: bool = False,
+    task_cwd: Path | None = None,
 ) -> str | None:
     """Check if a file path is allowed for Mode S tools.
 
@@ -87,9 +89,19 @@ def _check_a1_file_access(
     resolved = Path(file_path).resolve()
     from core.config.file_access_policy import find_denied_root, load_denied_roots
 
-    denied_root = find_denied_root(resolved, load_denied_roots(anima_dir))
+    try:
+        denied_roots = load_denied_roots(anima_dir)
+    except Exception:
+        logger.exception("Failed to load file permission policy for anima_dir=%s", anima_dir)
+        return "File permission check failed"
+    denied_root = find_denied_root(resolved, denied_roots)
     if denied_root is not None:
         return f"Access to denied directory is not allowed: {file_path}"
+    if write and denied_roots:
+        from core.config.file_access_policy import find_internal_cache_root
+
+        if find_internal_cache_root(resolved, anima_dir) is not None:
+            return f"Direct access to internal runtime cache is not allowed: '{file_path}'"
 
     if write:
         data_dir = get_data_dir().resolve()
@@ -146,6 +158,33 @@ def _check_a1_file_access(
             # Block writes to activity_log directory
             if "activity_log" in rel:
                 return "'activity_log/' is a protected directory and cannot be modified"
+        return None
+
+    if write:
+        try:
+            from core.config.file_access_policy import check_file_write_roots, effective_write_roots
+            from core.config.schemas import load_permissions
+
+            permissions = load_permissions(anima_dir)
+            # Same charter roots as the Codex/Grok sandboxes: file_roots, the
+            # task workspace, and the system temp dir (workspace-write parity).
+            write_roots = (
+                *effective_write_roots(anima_dir, permissions.file_roots, task_cwd),
+                Path(tempfile.gettempdir()).resolve(),
+            )
+            write_denial = check_file_write_roots(
+                resolved,
+                file_roots=permissions.file_roots,
+                file_roots_readonly=permissions.file_roots_readonly,
+                write_roots=write_roots,
+            )
+        except Exception:
+            logger.exception("Failed to evaluate file write permission for anima_dir=%s", anima_dir)
+            return "File permission check failed"
+        if write_denial == "readonly_dir":
+            return f"Write access to read-only directory is not allowed: {file_path}"
+        if write_denial:
+            return f"Write access outside configured file roots is not allowed: {file_path}"
 
     return None
 

@@ -330,6 +330,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "'{target_name}' を休止にしました。Reconciliation が30秒以内にプロセスを停止します。",
         "en": ("'{target_name}' has been disabled. Reconciliation will stop the process within 30 seconds."),
     },
+    "handler.status_json_invalid": {
+        "ja": "'{target_name}' の status.json が壊れているか読み取れないため、変更しませんでした。",
+        "en": "'{target_name}' status.json is invalid or unreadable; no changes were made.",
+    },
     "handler.dm_already_sent": {
         "ja": "Error: このrunで既に {to} にメッセージを送信済みです。追加の連絡はBoardを使用してください。",
         "en": ("Error: Message already sent to {to} in this run. Use Board for additional communication."),

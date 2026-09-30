@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from core.config.models import load_config, resolve_anima_config
+from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.routes.animas")
 
@@ -439,10 +441,12 @@ def create_animas_router() -> APIRouter:
         if status_file.exists():
             try:
                 existing = json.loads(status_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
+                if not isinstance(existing, dict):
+                    raise ValueError("status.json must contain an object")
+            except (ValueError, OSError) as exc:
+                raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
         existing["enabled"] = True
-        status_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(status_file, existing)
 
         # Start immediately (don't wait for reconciliation)
         supervisor = request.app.state.supervisor
@@ -466,10 +470,12 @@ def create_animas_router() -> APIRouter:
         if status_file.exists():
             try:
                 existing = json.loads(status_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
+                if not isinstance(existing, dict):
+                    raise ValueError("status.json must contain an object")
+            except (ValueError, OSError) as exc:
+                raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
         existing["enabled"] = False
-        status_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(status_file, existing)
 
         # Always call stop_anima (no-op if not running). Under lifecycle lock
         # this waits for an in-flight start, then stops the new process.
