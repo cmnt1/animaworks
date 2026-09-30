@@ -168,6 +168,9 @@ class TestCheckA1FileAccess:
         assert _check_a1_file_access(str(workspace / "a.py"), anima_dir, write=True) is not None
         assert _check_a1_file_access(str(workspace / "a.py"), anima_dir, write=True, task_cwd=workspace) is None
         assert _check_a1_file_access(str(system_tmp / "scratch.txt"), anima_dir, write=True) is None
+        common_knowledge = data_dir / "common_knowledge"
+        monkeypatch.setattr("core.paths.get_common_knowledge_dir", lambda: common_knowledge)
+        assert _check_a1_file_access(str(common_knowledge / "operations" / "holds.md"), anima_dir, write=True) is None
 
     def test_write_to_internal_cache_blocked_when_file_deny_is_configured(
         self,

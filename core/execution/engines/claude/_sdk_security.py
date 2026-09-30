@@ -164,13 +164,18 @@ def _check_a1_file_access(
         try:
             from core.config.file_access_policy import check_file_write_roots, effective_write_roots
             from core.config.schemas import load_permissions
+            from core.paths import get_common_knowledge_dir, get_common_skills_dir
 
             permissions = load_permissions(anima_dir)
             # Same charter roots as the Codex/Grok sandboxes: file_roots, the
             # task workspace, and the system temp dir (workspace-write parity).
+            # common_knowledge/common_skills stay writable as write_memory_file
+            # allows (e.g. the shared holds ledger).
             write_roots = (
                 *effective_write_roots(anima_dir, permissions.file_roots, task_cwd),
                 Path(tempfile.gettempdir()).resolve(),
+                get_common_knowledge_dir().resolve(),
+                get_common_skills_dir().resolve(),
             )
             write_denial = check_file_write_roots(
                 resolved,
