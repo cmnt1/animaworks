@@ -258,7 +258,7 @@ Markdown の「ツール作成」セクション（`個人ツール` / `共有�
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` で `state/background_tasks/pending/` に JSON が書かれ、`PendingTaskExecutor` が拾う（`core/integrations/__init__.py` の `_handle_submit`）。プロファイル参照は **import 可能なコアモジュール**に対してのみ実施（ファイルツールは submit 時の警告対象外になりやすい）。
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` は `task_type="command"` の入力を TaskStore に登録し、`PendingTaskExecutor` が試行を取得して実行する（`core/integrations/__init__.py` の `_handle_submit`）。実行結果は `state/background_tasks/{task_id}.json` にも保存される。プロファイル参照は **import 可能なコアモジュール**に対してのみ実施（ファイルツールは submit 時の警告対象外になりやすい）。
 - **`gated: True`**: コアツールの該当アクションに対し、permissions で `tool_action` の明示許可が必要。
 
 ```python

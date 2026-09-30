@@ -86,10 +86,6 @@ def _populate_cleanup_case(root: Path, *, now: datetime) -> list[Path]:
     _write_file(root, "animas/alice/state/task_results/recent.md", b"recent")
     assert task_results.is_dir()
 
-    failed = "animas/alice/state/background_tasks/pending/failed"
-    _write_file(root, f"{failed}/old.json", b"{}", age_days=20)
-    _write_file(root, f"{failed}/recent.json", b"{}")
-
     # Shortterm has independent archive retention and stale-thread collection.
     _write_file(root, "animas/alice/shortterm/chat/old.json", b"old", age_days=14)
     _write_file(root, "animas/alice/shortterm/chat/recent.json", b"recent")
@@ -324,7 +320,6 @@ async def test_housekeeping_matches_pre_refactor_file_and_rotation_results(
         facts_lock_stale_hours=24,
         curator_report_retention_days=30,
         task_results_retention_days=7,
-        pending_failed_retention_days=14,
         corrupt_vectordb_keep_generations=2,
         tmp_retention_days=14,
         backup_retention_days=90,
@@ -344,6 +339,7 @@ async def test_housekeeping_matches_pre_refactor_file_and_rotation_results(
     inbox_config = InboxConfig()
 
     before_results = await before_module.run_housekeeping(before_root, housekeeping=config, inbox=inbox_config)
+    before_results.pop("pending_failed", None)  # Retired legacy command-descriptor cleanup.
     after_results = await current_housekeeping.run_housekeeping(after_root, housekeeping=config, inbox=inbox_config)
 
     assert before_results == after_results

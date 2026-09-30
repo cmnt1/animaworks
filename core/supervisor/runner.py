@@ -245,10 +245,6 @@ class AnimaRunner:
 
             logger.info("Initializing Anima: %s", self.anima_name)
 
-            from core.tasks.board.readiness import require_task_store_ready
-
-            require_task_store_ready(self._anima_dir)
-
             # Initialize DigitalAnima (heavy: RAG indexer, model loading)
             self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)
             self.anima._session_compactor.start(self.anima)

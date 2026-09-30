@@ -184,7 +184,7 @@ Permissions and denials are referenced from the external tool configuration in *
 animaworks-tool <ツール名> <サブコマンド> [引数…]
 ```
 
-- **`animaworks-tool submit <ツール名> [引数…]`** — Submits long-running processes to the background. The descriptor is saved to **`state/background_tasks/pending/`** and executed by the watcher (`core/integrations/__init__.py`'s `_handle_submit`). If the target subcommand is `EXECUTION_PROFILE` and not `background_eligible`, only a warning is issued (the submission still occurs).
+- **`animaworks-tool submit <tool> [args…]`** — Registers long-running work in TaskStore as `task_type="command"`; PendingTaskExecutor claims an attempt and runs it. Results remain available through `state/background_tasks/{task_id}.json` and the completion notification. If the target subcommand is not `background_eligible` in `EXECUTION_PROFILE`, only a warning is issued (the submission still occurs).
 - Available names are the union of **core modules of `core/integrations`** + **`~/.animaworks/common_tools/`** + **`tools/` under `ANIMAWORKS_ANIMA_DIR`**. They are listed with `--help`.
 - When `ANIMAWORKS_ANIMA_DIR` is configured, subcommands may be rejected with **`load_permissions` + `is_action_gated`** (e.g., Discord's `channel_post`).
 - An undefined first argument may fall back to main CLI subcommands (`anima`, `vault`, etc.).

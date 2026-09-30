@@ -1114,7 +1114,11 @@ class TaskStore:
                             raise RuntimeError(f"Drain active legacy task before migration: {path.name}")
                     try:
                         payload = json.loads(path.read_text(encoding="utf-8"))
-                        if isinstance(payload, dict) and payload.get("task_type") == "llm" and payload.get("task_id"):
+                        if (
+                            isinstance(payload, dict)
+                            and payload.get("task_type") in {"llm", "command"}
+                            and payload.get("task_id")
+                        ):
                             payload = dict(payload)
                             payload["_legacy_ready"] = path.parent == pending
                             task_id = str(payload["task_id"])
@@ -1154,7 +1158,7 @@ class TaskStore:
                         original_instruction=payload.get("description", ""),
                         summary=payload.get("title", ""),
                         status="pending",
-                        meta={"executor": "taskexec"},
+                        meta={"executor": "command" if payload.get("task_type") == "command" else "taskexec"},
                     )
                 try:
                     assert raw is not None

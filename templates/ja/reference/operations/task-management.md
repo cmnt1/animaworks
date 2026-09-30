@@ -66,4 +66,4 @@ TaskExec の結果要約は `state/task_results/{task_id}/{attempt_token}.md` �
 
 ## 長時間コマンドツールは別経路
 
-画像生成や run_command など対応する長時間外部ツールには `animaworks-tool submit TOOL ...` を使う。これは `submit_tasks` とは別で、コマンド記述子は引き続き `state/background_tasks/pending/` に保存される。BackgroundTaskManager は `state/background_tasks/{task_id}.json` に `running` / `completed` / `failed` を記録する。`list_background_tasks` / `check_background_task` で確認する。このファイル経路と通知を維持する。詳細は `operations/background-tasks.md`。
+画像生成や run_command など対応する長時間外部ツールには `animaworks-tool submit TOOL ...` を使う。`submit_tasks` の LLM タスクと同じ TaskStore に `task_type="command"` として登録され、BackgroundTaskManager が実行する。実行試行は TaskStore に記録し、互換性のため `state/background_tasks/{task_id}.json` と完了通知も維持する。`list_background_tasks` / `check_background_task` で結果を確認する。詳細は `operations/background-tasks.md`。

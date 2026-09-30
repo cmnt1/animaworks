@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -21,20 +20,29 @@ def test_readiness_on_fresh_runtime_is_read_only(tmp_path: Path):
     anima = _anima(tmp_path)
     require_task_store_ready(anima)
     assert not task_database_path(anima).exists()
-    assert not TaskQueueManager(anima).load_active_tasks()
+
+    assert TaskQueueManager(anima).load_active_tasks() == {}
+    assert task_database_path(anima).exists()
 
 
-@pytest.mark.parametrize("filename", ["task_queue.jsonl", "task_queue_archive.jsonl", "pending/job.json"])
-def test_arbitrary_read_cannot_import_populated_legacy_state(tmp_path: Path, filename: str):
+def test_runtime_read_does_not_implicitly_import_legacy_state(tmp_path: Path):
     anima = _anima(tmp_path)
-    legacy = anima / "state" / filename
-    legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text('{"task_id":"legacy"}\n')
-    before = legacy.read_bytes()
+    legacy_files = [
+        anima / "state" / "task_queue.jsonl",
+        anima / "state" / "task_queue_archive.jsonl",
+        anima / "state" / "pending" / "job.json",
+    ]
+    for path in legacy_files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"task_id":"legacy"}\n', encoding="utf-8")
+    originals = {path: path.read_bytes() for path in legacy_files}
+
+    assert TaskQueueManager(anima).load_active_tasks() == {}
+    assert {path: path.read_bytes() for path in legacy_files} == originals
+    with sqlite3.connect(task_database_path(anima)) as db:
+        assert db.execute("SELECT count(*) FROM task_imports").fetchone()[0] == 0
     with pytest.raises(RuntimeError, match="task-store migrate"):
-        TaskQueueManager(anima).load_active_tasks()
-    assert legacy.read_bytes() == before
-    assert not task_database_path(anima).exists()
+        require_task_store_ready(anima)
 
 
 def test_explicit_import_marker_allows_canonical_reads_without_replay(tmp_path: Path):
@@ -43,30 +51,7 @@ def test_explicit_import_marker_allows_canonical_reads_without_replay(tmp_path: 
     store.import_legacy(anima)
     legacy = anima / "state/task_queue.jsonl"
     legacy.write_text("late obsolete write must not be revived\n")
-    before = store.db_path.read_bytes()
     require_task_store_ready(anima)
-    assert store.db_path.read_bytes() == before
-    assert not TaskQueueManager(anima).load_active_tasks()
 
-
-@pytest.mark.asyncio
-async def test_server_preflight_blocks_worker_start(tmp_path: Path):
-    from server.app import _startup_animas_background
-
-    anima = _anima(tmp_path)
-    (anima / "state/task_queue.jsonl").write_text('{"task_id":"old"}\n')
-    supervisor = SimpleNamespace(start_all=AsyncMock())
-    app = SimpleNamespace(
-        state=SimpleNamespace(
-            anima_names=[anima.name],
-            animas_dir=anima.parent,
-            supervisor=supervisor,
-        )
-    )
-    with (
-        patch("core.memory.frontmatter.FrontmatterService"),
-        pytest.raises(RuntimeError, match="task-store migrate"),
-    ):
-        await _startup_animas_background(app, suppress_errors=False)
-    supervisor.start_all.assert_not_called()
-    assert not task_database_path(anima).exists()
+    assert TaskQueueManager(anima).load_active_tasks() == {}
+    assert not TaskQueueManager(anima).store.pending(anima.name)

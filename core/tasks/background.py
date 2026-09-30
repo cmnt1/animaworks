@@ -188,6 +188,8 @@ class BackgroundTaskManager:
         tool_name: str,
         tool_args: dict[str, Any],
         execute_fn: Callable[[str, dict[str, Any]], str | None],
+        *,
+        task_id: str | None = None,
     ) -> str:
         """Submit a tool call for background execution.
 
@@ -195,12 +197,13 @@ class BackgroundTaskManager:
             tool_name: Name of the tool to execute.
             tool_args: Arguments to pass to the tool.
             execute_fn: Synchronous callable ``(name, args) -> result_str``.
+            task_id: Optional stable ID shared with an owning TaskStore task.
 
         Returns:
-            The generated task_id.
+            The supplied task_id, or a generated ID when omitted.
         """
         self.evict_completed_tasks()
-        task_id = uuid.uuid4().hex[:12]
+        task_id = task_id or uuid.uuid4().hex[:12]
         task = BackgroundTask(
             task_id=task_id,
             anima_name=self._anima_name,
@@ -237,7 +240,7 @@ class BackgroundTaskManager:
         """Submit an async tool call for background execution.
 
         Same as :meth:`submit` but *execute_fn* is an async callable.
-        A pending command may supply its existing ID for result retrieval.
+        Callers may supply a stable task ID for result retrieval.
         """
         self.evict_completed_tasks()
         task_id = task_id or uuid.uuid4().hex[:12]

@@ -13,10 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory.conversation.streaming_journal import StreamingJournal
-from core.platform.processing_lease import (
-    read_processing_lease,
-    write_processing_lease,
-)
 from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
 from core.supervisor.task_runner_supervisor import (
     TaskRunnerError,
@@ -144,14 +140,9 @@ async def test_journal_recovery_keeps_registration_locked_until_disk_work_finish
 
 @pytest.mark.asyncio
 async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
+    executor, anima, _anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_isolated is True
     assert executor._task_runner_supervisor is not None
-
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    processing_path = processing / "t-iso.json"
-    processing_path.write_text('{"task_id":"t-iso"}', encoding="utf-8")
 
     executor._task_runner_supervisor.run_task = AsyncMock(
         return_value={"task_type": "llm", "result": "child-done", "success": True}
@@ -170,7 +161,7 @@ async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path)
         patch.object(executor, "_run_llm_task", new=AsyncMock()) as run_llm,
         patch.object(executor, "_sync_task_queue") as sync,
     ):
-        await executor._execute_llm_task(task_desc, processing_path=processing_path)
+        await executor._execute_llm_task(task_desc)
 
     run_llm.assert_not_awaited()
     executor._task_runner_supervisor.run_task.assert_awaited_once()
@@ -289,81 +280,6 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
     assert store.claim("sakura", task_desc["task_id"], process_identity()) is None
     assert len(store.wakeups("sakura")) == 1
     executor._task_runner_supervisor.run_task.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_same_attempt_not_reclaimed_while_lease_live(tmp_path: Path) -> None:
-    executor, _, anima_dir = _executor(tmp_path, with_supervisor=True)
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    path = processing / "t-attempt.json"
-    path.write_text('{"task_id":"t-attempt"}', encoding="utf-8")
-
-    attempt = executor._next_attempt("t-attempt")
-    write_processing_lease(
-        path,
-        anima="sakura",
-        task_id="t-attempt",
-        pid=os.getpid(),
-        job_id="job-1",
-        task_pid=os.getpid(),
-        pgid=os.getpid(),
-        root_epoch="epoch",
-        attempt=attempt,
-        process_start_time=1.0,
-    )
-    with patch(
-        "core.tasks.pending_executor.is_processing_lease_live",
-        return_value=True,
-    ):
-        # Force attempt tracker to same attempt as lease.
-        executor._attempt_by_task_id["t-attempt"] = attempt
-        claimed = executor._claim_processing_task(path, {"task_id": "t-attempt"})
-    assert claimed is None
-
-
-@pytest.mark.asyncio
-async def test_lease_v2_written_on_spawn_callback(tmp_path: Path) -> None:
-    executor, anima, anima_dir = _executor(tmp_path, with_supervisor=True)
-    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    processing_path = processing / "t-lease.json"
-    processing_path.write_text('{"task_id":"t-lease"}', encoding="utf-8")
-
-    async def _fake_run_task(task_desc, *, attempt=1, display_lane="background", on_spawned=None):
-        identity = IPCV2Identity(
-            job_id="job-lease",
-            root_epoch="epoch-lease",
-            attempt=attempt,
-            lane="task",
-            display_lane=display_lane,
-        )
-        job = SimpleNamespace(
-            identity=identity,
-            pid=4242,
-            pgid=4242,
-            process_start_time=123.45,
-        )
-        if on_spawned is not None:
-            await on_spawned(job)
-        return {"task_type": "llm", "result": "ok", "success": True}
-
-    executor._task_runner_supervisor.run_task = AsyncMock(side_effect=_fake_run_task)
-    with (
-        patch.object(executor, "_sync_task_queue"),
-    ):
-        await executor._execute_llm_task(
-            {"task_id": "t-lease", "title": "x", "description": "y", "task_type": "llm"},
-            processing_path=processing_path,
-        )
-
-    payload = read_processing_lease(processing_path)
-    assert payload is not None
-    assert payload.get("schema_version") == 2
-    assert payload.get("task_pid") == 4242
-    assert payload.get("job_id") == "job-lease"
-    assert payload.get("attempt") == 1
 
 
 @pytest.mark.asyncio

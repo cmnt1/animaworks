@@ -1,12 +1,11 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Pending task watcher and executor.
+"""Execute claimed TaskStore work in background lanes.
 
-Monitors state/background_tasks/pending/ for tasks submitted via
-``animaworks-tool submit`` and dispatches them through
-BackgroundTaskManager.  Supports DAG-based parallel execution
-for batched tasks submitted via ``submit_tasks`` tool.
+Command tasks submitted via ``animaworks-tool submit`` and LLM tasks are both
+claimed from TaskStore; command results remain available through the existing
+BackgroundTaskManager result files and notifications.
 """
 
 from __future__ import annotations
@@ -18,19 +17,12 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ToolExecutionError
 from core.i18n import t
-from core.platform.processing_lease import (
-    is_processing_lease_live,
-    processing_lease_path,
-    read_processing_lease,
-    write_processing_lease,
-)
 from core.platform.tasks import spawn
 from core.time_utils import now_iso
 
@@ -58,7 +50,6 @@ _PENDING_WATCHER_POLL_INTERVAL = 3.0
 _PENDING_TASK_SUBPROCESS_TIMEOUT = 1800
 _TASK_RESULT_MAX_CHARS = 2000
 _TASK_COMPLETE_NOTIFY_MAX_CHARS = 10_000
-_PROCESSING_TOUCH_INTERVAL_SECONDS = 600
 
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_BUDGET_SKIPPED = "(budget_skipped)"
@@ -74,23 +65,9 @@ _DEPENDENCY_UNFINISHED = "a task this one depends on did not complete"
 
 _CANCEL_POLL_SECONDS = 5.0
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled"}
-_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "delegated"}
 # Statuses a runner-side sync must never walk back: the anima declared them, or
 # a subordinate now owns the work.
 _QUEUE_STICKY_STATUSES = _QUEUE_TERMINAL_STATUSES | {"delegated"}
-
-
-def _remove_processing_lease(descriptor_path: Path) -> None:
-    lease_path = processing_lease_path(descriptor_path)
-    try:
-        lease_path.unlink(missing_ok=True)
-    except OSError:
-        logger.warning("Failed to remove processing lease: %s", lease_path, exc_info=True)
-
-
-def _unlink_processing_descriptor(descriptor_path: Path) -> None:
-    descriptor_path.unlink(missing_ok=True)
-    _remove_processing_lease(descriptor_path)
 
 
 def _task_activity_identity(task_desc: dict[str, Any]) -> tuple[str, str, str]:
@@ -186,7 +163,7 @@ def _topological_sort(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class PendingTaskExecutor:
-    """Watch pending/ directory and execute submitted tasks."""
+    """Claim TaskStore inputs and execute command or LLM tasks."""
 
     def __init__(
         self,
@@ -208,8 +185,9 @@ class PendingTaskExecutor:
         self._task_runner_supervisor = task_runner_supervisor
         self._task_isolated = task_runner_supervisor is not None
         self._background_isolated = task_runner_supervisor is not None
-        # attempt tracking: task_id -> last attempt written to a lease (same attempt re-claim ban)
+        # Fallback attempt numbering for direct calls without a TaskStore claim.
         self._attempt_by_task_id: dict[str, int] = {}
+        self._task_queue_manager: Any | None = None
 
     def _worker_pool_size(self) -> int:
         """Return a validated pool size while tolerating legacy test doubles."""
@@ -251,216 +229,32 @@ class PendingTaskExecutor:
 
         task.add_done_callback(_done)
 
+    def _get_task_queue_manager(self) -> Any:
+        """Reuse one queue/store wrapper for the lifetime of this watcher."""
+        manager = getattr(self, "_task_queue_manager", None)
+        if manager is None:
+            from core.tasks.queue import TaskQueueManager
+
+            manager = TaskQueueManager(self._anima_dir)
+            self._task_queue_manager = manager
+        return manager
+
     def _next_attempt(self, task_id: str) -> int:
-        """Allocate a new attempt number; never reuses a previously claimed one."""
+        """Allocate a fallback attempt number for direct, non-claimed calls."""
         with self._active_task_ids_lock:
-            previous = self._attempt_by_task_id.get(task_id, 0)
-            # Also inspect any leftover lease so restarts do not reuse attempt.
-            attempt = previous + 1
+            attempt = self._attempt_by_task_id.get(task_id, 0) + 1
             self._attempt_by_task_id[task_id] = attempt
             return attempt
-
-    def _should_defer_claim(
-        self,
-        pending_path: Path,
-        task_desc: dict[str, Any],
-        processing_dir: Path,
-    ) -> bool:
-        """True when a prior attempt of the same task is still finishing.
-
-        Claiming while the previous attempt is still cleaning up (descriptor
-        unlink + _active_task_ids discard) either drops the descriptor as a
-        duplicate or lets the old attempt delete it, stranding the task
-        in_progress forever.  Leave it in pending/ and retry on the next poll.
-        """
-        task_id = str(task_desc.get("task_id") or pending_path.stem).strip()
-        if pending_path.stem != task_id:
-            # Non-canonical filename with a duplicated task_id is a genuine
-            # duplicate descriptor; let the claim path drop it.
-            return False
-        if self._is_task_active(task_id):
-            return True
-        return (processing_dir / pending_path.name).exists()
-
-    def _order_pending_claims(self, paths: list[Path]) -> list[Path]:
-        """Order pending descriptors by arrival time, oldest first.
-
-        There is no priority, exclusion or preemption: descriptors are handed to
-        the worker pool in the order they landed.  Unreadable stat calls sort
-        first so the existing error handling in each scan loop processes them.
-        """
-
-        def _arrived_at(path: Path) -> float:
-            try:
-                return path.stat().st_mtime
-            except OSError:
-                return 0.0
-
-        return sorted(paths, key=_arrived_at)
-
-    def _claim_processing_task(
-        self,
-        processing_path: Path,
-        task_desc: dict[str, Any],
-    ) -> str | None:
-        """Create a lease and register a task id, dropping duplicates."""
-        task_id = str(task_desc.get("task_id") or processing_path.stem).strip()
-
-        # C-03: refuse re-claim of the same attempt recorded on an existing lease.
-        existing = read_processing_lease(processing_path)
-        if existing is not None:
-            existing_attempt = existing.get("attempt")
-            with self._active_task_ids_lock:
-                previous_attempt = self._attempt_by_task_id.get(task_id)
-            if (
-                isinstance(existing_attempt, int)
-                and not isinstance(existing_attempt, bool)
-                and existing_attempt >= 1
-                and previous_attempt == existing_attempt
-                and is_processing_lease_live(processing_path, expected_anima=self._anima_name)
-            ):
-                logger.warning(
-                    "Rejecting re-claim of live attempt=%s for task_id=%s",
-                    existing_attempt,
-                    task_id,
-                )
-                return None
-
-        try:
-            write_processing_lease(
-                processing_path,
-                anima=self._anima_name,
-                task_id=task_id,
-            )
-        except OSError:
-            logger.exception("Failed to create processing lease: %s", processing_path.name)
-            try:
-                _unlink_processing_descriptor(processing_path)
-            except OSError:
-                logger.exception("Failed to drop unleased task: %s", processing_path.name)
-            return None
-
-        with self._active_task_ids_lock:
-            duplicate = task_id in self._active_task_ids
-            if not duplicate:
-                self._active_task_ids.add(task_id)
-        if duplicate:
-            logger.warning("Duplicate task_id claim rejected: %s", task_id)
-            try:
-                _unlink_processing_descriptor(processing_path)
-            except OSError:
-                logger.exception("Failed to drop duplicate task: %s", processing_path.name)
-            return None
-
-        return task_id
-
-    def _claim_pending_task_file(
-        self,
-        path: Path,
-        task_desc: dict[str, Any],
-        processing_dir: Path,
-    ) -> tuple[str, Path] | None:
-        """Move one descriptor and create its lease without blocking the event loop."""
-        if self._should_defer_claim(path, task_desc, processing_dir):
-            return None
-
-        processing_path = processing_dir / path.name
-        try:
-            path.rename(processing_path)
-        except OSError:
-            logger.exception("Failed to move task to processing: %s", path.name)
-            return None
-
-        claimed_task_id = self._claim_processing_task(processing_path, task_desc)
-        if claimed_task_id is None:
-            return None
-        return claimed_task_id, processing_path
-
-    def _restore_pending_claim(self, path: Path, processing_path: Path, task_id: str) -> None:
-        """Undo a file claim if the watcher is cancelled before dispatching it."""
-        try:
-            if path.exists():
-                _unlink_processing_descriptor(processing_path)
-            else:
-                processing_path.rename(path)
-                _remove_processing_lease(processing_path)
-        except OSError:
-            logger.exception("Failed to restore pending task after watcher cancellation: %s", path.name)
-            _remove_processing_lease(processing_path)
-        finally:
-            self._forget_task_active(task_id)
 
     def _display_lane_for_task(self, task_id: str, slot_id: int | None) -> str:
         if slot_id is not None and self._worker_pool_size() > 1:
             return f"background-worker:{slot_id}:{task_id}"
         return "background"
 
-    async def _write_lease_v2_for_job(
-        self,
-        processing_path: Path,
-        *,
-        task_id: str,
-        job: Any,
-        attempt: int,
-    ) -> None:
-        """Upgrade the claim lease to schema v2 with the task-runner identity."""
-        try:
-            write_processing_lease(
-                processing_path,
-                anima=self._anima_name,
-                task_id=task_id,
-                pid=os.getpid(),
-                job_id=job.identity.job_id,
-                task_pid=job.pid,
-                pgid=job.pgid if job.pgid is not None else job.pid,
-                root_epoch=job.identity.root_epoch,
-                attempt=attempt,
-                process_start_time=job.process_start_time,
-            )
-        except OSError:
-            logger.exception("Failed to write lease v2 for task %s", task_id)
-
-    async def _touch_processing_descriptor(self, processing_path: Path) -> None:
-        """Keep a long-running processing descriptor younger than housekeeping."""
-        while True:
-            await asyncio.sleep(_PROCESSING_TOUCH_INTERVAL_SECONDS)
-            try:
-                await asyncio.to_thread(os.utime, processing_path, None)
-            except FileNotFoundError:
-                return
-            except OSError:
-                logger.warning("Failed to touch processing task: %s", processing_path, exc_info=True)
-
-    def _track_command_claim(
-        self,
-        background_task: asyncio.Task[None],
-        *,
-        task_id: str,
-        processing_path: Path,
-    ) -> None:
-        """Keep a command claim active until BackgroundTaskManager finishes it."""
-        touch_task = spawn(
-            self._touch_processing_descriptor(processing_path),
-            name=f"task-touch-{self._anima_name}-{task_id}",
-        )
-
-        def _done(done: asyncio.Task[None]) -> None:
-            touch_task.cancel()
-            try:
-                _unlink_processing_descriptor(processing_path)
-            except OSError:
-                logger.warning("Failed to finalize command task file: %s", processing_path, exc_info=True)
-            finally:
-                _remove_processing_lease(processing_path)
-                self._forget_task_active(task_id)
-                self.wake()
-
-        background_task.add_done_callback(_done)
-
     # ── Result save / dependency context ─────────────────────
 
     def _save_task_result(self, task_id: str, summary: str) -> None:
-        """Save task result summary to state/task_results/{task_id}.md."""
+        """Save under the attempt token, falling back to a flat legacy path."""
         from core.memory._io import atomic_write_text
         from core.tasks.board.tasks import current_attempt_identity
 
@@ -493,12 +287,10 @@ class PendingTaskExecutor:
         if not task_id:
             return
         try:
-            from core.tasks.queue import TaskQueueManager
-
             patch: dict[str, Any] = {"last_run_ended_at": now_iso(), "last_run_stop_kind": stop_kind}
             if note:
                 patch["last_run_note"] = note[:300]
-            TaskQueueManager(self._anima_dir).update_meta(task_id, patch)
+            self._get_task_queue_manager().update_meta(task_id, patch)
         except Exception:
             logger.warning(
                 "[%s] Failed to record run end for task %s",
@@ -510,9 +302,7 @@ class PendingTaskExecutor:
     def _mark_declared_pending(self, task_id: str) -> None:
         """Record that the anima itself handed this run's task back to pending."""
         try:
-            from core.tasks.queue import TaskQueueManager
-
-            TaskQueueManager(self._anima_dir).update_meta(task_id, {"last_run_declared_pending": True})
+            self._get_task_queue_manager().update_meta(task_id, {"last_run_declared_pending": True})
         except Exception:
             logger.warning(
                 "[%s] Failed to record declared pending for task %s",
@@ -526,7 +316,7 @@ class PendingTaskExecutor:
 
         There is no failed state and no automatic retry: the task becomes
         visible again in its owner's pending list, the requester is told once,
-        and nothing re-enqueues a descriptor.
+        and no runnable input is re-enqueued.
         """
         from core.execution._sanitize import ORIGIN_ANIMA
 
@@ -592,10 +382,9 @@ class PendingTaskExecutor:
         *,
         summary: str | None = None,
     ) -> None:
-        """Update the canonical task status after an execution outcome.
+        """Update the canonical TaskStore status after an execution outcome.
 
-        Silently skips if the task is not registered in task_queue
-        (e.g., legacy tasks created before this sync was implemented).
+        Silently skips if the task is not registered in TaskStore.
 
         A ``pending`` sync (undeclared end, budget skip) keeps the task's
         summary -- its title -- untouched and files the reason under
@@ -603,9 +392,7 @@ class PendingTaskExecutor:
         readable.
         """
         try:
-            from core.tasks.queue import TaskQueueManager
-
-            manager = TaskQueueManager(self._anima_dir)
+            manager = self._get_task_queue_manager()
             entry = manager.get_task_by_id(task_id)
             if entry and entry.status == "cancelled":
                 # The owner supplied the cancellation reason. A child ending
@@ -624,7 +411,7 @@ class PendingTaskExecutor:
             manager.update_status(task_id, status, summary=summary)
         except Exception:
             logger.warning(
-                "[%s] Failed to sync task %s status=%s to task_queue",
+                "[%s] Failed to sync TaskStore task %s status=%s",
                 self._anima_name,
                 task_id,
                 status,
@@ -635,12 +422,10 @@ class PendingTaskExecutor:
         if not task_id:
             return None
         try:
-            from core.tasks.queue import TaskQueueManager
-
-            return TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+            return self._get_task_queue_manager().get_task_by_id(task_id)
         except Exception:
             logger.debug(
-                "Could not check task_queue for task: %s",
+                "Could not check TaskStore for task: %s",
                 task_id,
                 exc_info=True,
             )
@@ -659,9 +444,7 @@ class PendingTaskExecutor:
         Returns an empty string when there are no siblings.
         """
         try:
-            from core.tasks.queue import TaskQueueManager
-
-            entries = TaskQueueManager(self._anima_dir).list_tasks(status="in_progress")
+            entries = self._get_task_queue_manager().list_tasks(status="in_progress")
         except Exception:
             logger.debug(
                 "Could not list sibling tasks for: %s",
@@ -685,100 +468,12 @@ class PendingTaskExecutor:
 
     # ── Watcher loop ─────────────────────────────────────────
 
-    @staticmethod
-    def _recover_processing(
-        processing_dir: Path,
-        anima_dir: Path | None = None,
-        return_to_pending: Callable[[dict[str, Any], str], None] | None = None,
-    ) -> None:
-        """Return orphaned processing descriptors to their owners on startup.
-
-        A descriptor left in processing/ means the run died without declaring an
-        outcome.  Drop the descriptor and put the ledger entry back to pending
-        with a crash stamp; nothing is re-enqueued or retried automatically.
-        """
-        if not processing_dir.exists():
-            return
-        for orphan in processing_dir.glob("*.json"):
-            expected_anima = anima_dir.name if anima_dir is not None else None
-            if is_processing_lease_live(orphan, expected_anima=expected_anima):
-                logger.warning(
-                    "live lease detected, skipping recovery: %s",
-                    orphan.name,
-                )
-                continue
-            task_id = ""
-            task_desc: dict[str, Any] = {}
-            if anima_dir is not None:
-                try:
-                    loaded = json.loads(orphan.read_text(encoding="utf-8"))
-                    task_desc = loaded if isinstance(loaded, dict) else {}
-                    task_id = str(task_desc.get("task_id") or "").strip()
-                except (json.JSONDecodeError, OSError):
-                    task_id = ""
-                if not task_id:
-                    task_id = orphan.stem
-
-            try:
-                _unlink_processing_descriptor(orphan)
-                logger.warning("Dropped orphaned processing descriptor: %s", orphan.name)
-            except OSError:
-                logger.exception("Failed to drop orphaned task: %s", orphan.name)
-                continue
-
-            if anima_dir is None or not task_id:
-                continue
-            reason = (
-                "INTERRUPTED: the run was interrupted and may have PARTIALLY "
-                "EXECUTED (commits/messages may already exist). Verify the "
-                "actual state before running this task again."
-            )
-            if return_to_pending is not None:
-                return_to_pending({**task_desc, "task_id": task_id}, reason)
-                continue
-            try:
-                from core.tasks.queue import TaskQueueManager
-
-                manager = TaskQueueManager(anima_dir)
-                entry = manager.get_task_by_id(task_id)
-                if entry is not None and entry.status in _QUEUE_ACTIVE_STATUSES:
-                    manager.update_meta(
-                        task_id,
-                        {"last_run_ended_at": now_iso(), "last_run_stop_kind": "crash"},
-                    )
-                    manager.update_status(task_id, "pending", summary=reason)
-            except Exception:
-                logger.exception(
-                    "Failed to return recovered task to pending: %s",
-                    task_id,
-                )
-
-    def _read_pending_task_files(self, pending_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
-        """Read one pending-file snapshot without blocking the event loop."""
-        pending_tasks: list[tuple[Path, dict[str, Any]]] = []
-        for path in self._order_pending_claims(list(pending_dir.glob("*.json"))):
-            try:
-                task_desc = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                logger.warning("Invalid JSON in pending task file: %s", path.name)
-                path.unlink(missing_ok=True)
-                continue
-            except OSError:
-                logger.warning("Could not read pending task file: %s", path.name, exc_info=True)
-                continue
-            if not isinstance(task_desc, dict):
-                logger.warning("Ignoring non-object pending task file: %s", path.name)
-                continue
-            pending_tasks.append((path, task_desc))
-        return pending_tasks
-
     def _claim_canonical_pending_tasks(self) -> list[dict[str, Any]]:
-        """Recover and claim canonical task inputs with blocking store I/O off-loop."""
+        """Recover and claim TaskStore inputs with blocking store I/O off-loop."""
         try:
             from core.tasks.board.tasks import process_identity
-            from core.tasks.queue import TaskQueueManager
 
-            store = TaskQueueManager(self._anima_dir).store
+            store = self._get_task_queue_manager().store
             self._recover_task_attempts(store)
             self._deliver_task_wakeups(store)
             claims = []
@@ -807,84 +502,12 @@ class PendingTaskExecutor:
             self._track_dispatch_task(dispatch)
 
     async def watcher_loop(self) -> None:
-        """Watch state/background_tasks/pending/ for submitted tasks.
-
-        Tasks submitted via ``animaworks-tool submit`` are picked up here
-        and executed through BackgroundTaskManager, outside the Anima lock.
-        Batch tasks (with ``batch_id``) are grouped and dispatched via the
-        DAG scheduler for parallel execution.
-
-        File lifecycle: pending/ → processing/ → success: delete | fail: failed/
-        """
-        pending_dir = self._anima_dir / "state" / "background_tasks" / "pending"
-        await asyncio.to_thread(pending_dir.mkdir, parents=True, exist_ok=True)
-        cmd_processing_dir = pending_dir / "processing"
-        await asyncio.to_thread(cmd_processing_dir.mkdir, exist_ok=True)
-
-        def _recovered(task_desc: dict[str, Any], reason: str) -> None:
-            self._return_task_to_pending(task_desc, reason, stop_kind="crash")
-
-        await asyncio.to_thread(self._recover_processing, cmd_processing_dir, self._anima_dir, _recovered)
-
-        logger.info("Pending task watcher started for %s", self._anima_name)
+        """Poll TaskStore, recover expired attempts, and dispatch claimed tasks."""
+        logger.info("TaskStore watcher started for %s", self._anima_name)
 
         while not self._shutdown_event.is_set():
             try:
-                pending_tasks = await asyncio.to_thread(self._read_pending_task_files, pending_dir)
-                for path, task_desc in pending_tasks:
-                    claim_work = asyncio.create_task(
-                        asyncio.to_thread(self._claim_pending_task_file, path, task_desc, cmd_processing_dir)
-                    )
-                    try:
-                        claim = await asyncio.shield(claim_work)
-                    except asyncio.CancelledError:
-                        claim = await claim_work
-                        if claim is not None:
-                            claimed_task_id, processing_path = claim
-                            await asyncio.to_thread(
-                                self._restore_pending_claim,
-                                path,
-                                processing_path,
-                                claimed_task_id,
-                            )
-                        raise
-                    if claim is None:
-                        continue
-                    claimed_task_id, processing_path = claim
-                    claim_transferred = False
-                    try:
-                        logger.info(
-                            "Picked up pending task: id=%s tool=%s subcmd=%s anima=%s",
-                            task_desc.get("task_id", "?"),
-                            task_desc.get("tool_name", "?"),
-                            task_desc.get("subcommand", ""),
-                            self._anima_name,
-                        )
-                        cmd_kwargs: dict[str, Any] = {}
-                        if self._background_isolated and self._task_runner_supervisor is not None:
-                            cmd_kwargs["processing_path"] = processing_path
-                        background_task = await self.execute_pending_task(task_desc, **cmd_kwargs)
-                        if isinstance(background_task, asyncio.Task):
-                            self._track_command_claim(
-                                background_task,
-                                task_id=claimed_task_id,
-                                processing_path=processing_path,
-                            )
-                            claim_transferred = True
-                        else:
-                            await asyncio.to_thread(_unlink_processing_descriptor, processing_path)
-                    except Exception:
-                        logger.exception(
-                            "Error processing pending task file: %s",
-                            path.name,
-                        )
-                        await asyncio.to_thread(processing_path.unlink, missing_ok=True)
-                    finally:
-                        if not claim_transferred:
-                            self._forget_task_active(claimed_task_id)
-                            await asyncio.to_thread(_remove_processing_lease, processing_path)
-
-                # One canonical claim transaction owns task, input, and attempt.
+                # One claim transaction owns each task input and its attempt.
                 canonical_poll = asyncio.create_task(asyncio.to_thread(self._claim_canonical_pending_tasks))
                 try:
                     canonical_claims = await asyncio.shield(canonical_poll)
@@ -905,7 +528,7 @@ class PendingTaskExecutor:
                 break
             except Exception:
                 logger.exception(
-                    "Error in pending task watcher for %s",
+                    "Error in TaskStore watcher for %s",
                     self._anima_name,
                 )
                 await asyncio.sleep(_PENDING_WATCHER_POLL_INTERVAL)
@@ -1005,11 +628,10 @@ class PendingTaskExecutor:
 
     async def _execute_canonical_task(self, task_desc: dict[str, Any]) -> None:
         from core.tasks.board.tasks import attempt_scope
-        from core.tasks.queue import TaskQueueManager
 
         task_id = str(task_desc["task_id"])
         token = str(task_desc["_attempt_token"])
-        store = TaskQueueManager(self._anima_dir).store
+        store = self._get_task_queue_manager().store
         identity = {"anima": self._anima_name, "task_id": task_id, "token": token}
         stop_kind = "normal"
         cancel_watch: asyncio.Task[None] | None = None
@@ -1066,12 +688,13 @@ class PendingTaskExecutor:
                     and stop_kind == "normal"
                     and bool(entry and entry.meta.get("last_run_declared_pending"))
                 )
+                background_notified = bool(task_desc.get("_background_notification_handled"))
                 store.finish(
                     token,
                     status=status,
                     stop_kind=stop_kind,
                     result_ref=result_ref if (self._anima_dir / result_ref).is_file() else "",
-                    wakeup=not declared_pending,
+                    wakeup=not declared_pending and not background_notified,
                 )
             self._forget_task_active(task_id)
             self.wake()
@@ -1091,7 +714,6 @@ class PendingTaskExecutor:
         completed_results: dict[str, str] | None = None,
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
-        processing_path: Path | None = None,
     ) -> str:
         """Run one LLM task under a worker lease."""
         task_id = task_desc.get("task_id", "unknown")
@@ -1110,7 +732,6 @@ class PendingTaskExecutor:
                 return await self._run_llm_task_isolated(
                     task_desc,
                     worker_slot=slot,
-                    processing_path=processing_path,
                 )
             return await self._run_llm_task(
                 task_desc,
@@ -1287,11 +908,9 @@ class PendingTaskExecutor:
         submitted_by = task_desc.get("submitted_by", "unknown")
         submitted_at = task_desc.get("submitted_at", "")
 
-        # Skip if task was cancelled in task_queue (batch path; single path checks in watcher)
+        # Skip if the task was cancelled in TaskStore (batch path; single path checks in watcher)
         try:
-            from core.tasks.queue import TaskQueueManager
-
-            entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+            entry = self._get_task_queue_manager().get_task_by_id(task_id)
             if entry and entry.status == "cancelled":
                 logger.info(
                     "[%s] Skipping cancelled LLM task: id=%s",
@@ -1301,7 +920,7 @@ class PendingTaskExecutor:
                 return _SENTINEL_CANCELLED
         except Exception:
             logger.debug(
-                "Could not check task_queue for cancellation: %s",
+                "Could not check TaskStore for cancellation: %s",
                 task_id,
                 exc_info=True,
             )
@@ -1402,7 +1021,7 @@ class PendingTaskExecutor:
                         thread_id=task_id,
                         model_config_override=model_config_override,
                     ):
-                        # A cancel written to task_queue by another process
+                        # A cancel written to TaskStore by another process
                         # (supervisor, TaskBoard, server) only reaches the
                         # running stream through the interrupt event.
                         if interrupt_event is not None and time.monotonic() >= next_cancel_poll:
@@ -1410,7 +1029,7 @@ class PendingTaskExecutor:
                             _q = self._get_task_queue_entry(task_id)
                             if _q is not None and _q.status == "cancelled":
                                 logger.info(
-                                    "[%s] Task %s cancelled in task_queue; interrupting", self._anima_name, task_id
+                                    "[%s] Task %s cancelled in TaskStore; interrupting", self._anima_name, task_id
                                 )
                                 interrupt_event.set()
                         chunk_type = chunk.get("type")
@@ -1457,9 +1076,7 @@ class PendingTaskExecutor:
         error_suppressed = False
         if had_error or task_failed_reason:
             try:
-                from core.tasks.queue import TaskQueueManager
-
-                _entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+                _entry = self._get_task_queue_manager().get_task_by_id(task_id)
                 if (
                     _entry
                     and _entry.status == "done"
@@ -1500,7 +1117,7 @@ class PendingTaskExecutor:
 
         # The ledger is the only record of how a run ended.  A session that did
         # not declare done or cancelled hands the task back to its owner as
-        # pending: no continuation, no probe, no descriptor regeneration.
+        # pending: no continuation, no probe, and no legacy descriptor regeneration.
         entry = self._get_task_queue_entry(task_id)
         if entry is not None:
             # Business completion and execution termination are separate: a
@@ -1612,140 +1229,143 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
-        processing_path: Path | None = None,
-    ) -> asyncio.Task[None] | None:
-        """Execute a pending task via BackgroundTaskManager or LLM.
-
-        Routes by task_type: 'llm' → _execute_llm_task, else command subprocess.
-        """
+    ) -> None:
+        """Execute a claimed TaskStore item as LLM work or a command task."""
         task_type = task_desc.get("task_type", "command")
-
         if task_type == "llm":
-            await self._execute_llm_task(
-                task_desc,
-                worker_slot=worker_slot,
-                processing_path=processing_path,
-            )
+            await self._execute_llm_task(task_desc, worker_slot=worker_slot)
             return None
-
+        if task_type != "command":
+            raise ValueError(f"Unsupported task type: {task_type!r}")
         if not self._anima:
-            logger.warning("Cannot execute pending task: anima not initialized")
-            return None
-
-        # Isolated background command path: run tool inside a task-runner child.
-        if self._background_isolated and self._task_runner_supervisor is not None:
-            lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
-            agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
-            bg_mgr = agent.background_manager
-            if bg_mgr is None:
-                raise RuntimeError("BackgroundTaskManager not available for isolated command")
-
-            async def dispatch_isolated(_name: str, _args: dict[str, Any]) -> str:
-                result = await self._execute_command_task_isolated(task_desc, processing_path=processing_path)
-                return str(result.get("result", ""))
-
-            tool_name = task_desc.get("tool_name", "")
-            subcommand = task_desc.get("subcommand", "")
-            composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
-            task_id = await bg_mgr.submit_async(
-                composite_name,
-                task_desc,
-                dispatch_isolated,
-                task_id=task_desc.get("task_id") or None,
-            )
-            # Keep the processing lease until the child has finished and its
-            # result and completion notification have been persisted.
-            await bg_mgr._async_tasks[task_id]
-            return None
+            raise RuntimeError("Cannot execute command task: anima not initialized")
 
         lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
         agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
         bg_mgr = agent.background_manager
-        if not bg_mgr:
-            logger.warning(
-                "Cannot execute pending task: BackgroundTaskManager not available",
-            )
-            return None
+        if bg_mgr is None:
+            raise RuntimeError("BackgroundTaskManager not available for command task")
 
-        tool_name = task_desc.get("tool_name", "")
-        subcommand = task_desc.get("subcommand", "")
-        raw_args = task_desc.get("raw_args", [])
-        anima_dir = task_desc.get("anima_dir", str(self._anima_dir))
-
-        # Build tool args dict for ExternalToolDispatcher
+        tool_name = str(task_desc.get("tool_name", ""))
+        subcommand = str(task_desc.get("subcommand", ""))
+        task_id = str(task_desc.get("task_id", ""))
         tool_args = {
             "subcommand": subcommand,
-            "raw_args": raw_args,
-            "anima_dir": anima_dir,
+            "raw_args": list(task_desc.get("raw_args") or []),
+            "anima_dir": task_desc.get("anima_dir", str(self._anima_dir)),
         }
-
-        task_id = task_desc.get("task_id", "")
-
+        composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
         logger.info(
-            "Submitting pending task to BackgroundTaskManager: id=%s tool=%s subcmd=%s",
+            "Submitting command task to BackgroundTaskManager: id=%s tool=%s subcmd=%s",
             task_id,
             tool_name,
             subcommand,
         )
 
-        def _dispatch_fn(name: str, args: dict[str, Any]) -> str:
-            """Execute the tool via CLI subprocess (same as direct execution)."""
-            import subprocess
+        if self._background_isolated and self._task_runner_supervisor is not None:
 
-            # name may be composite (e.g. "transcribe:audio"); extract module name
-            module_name = name.split(":")[0] if ":" in name else name
-            cmd = ["animaworks-tool", module_name]
-            subcmd = args.get("subcommand", "")
-            if subcmd:
-                cmd.append(subcmd)
-            cmd.extend(args.get("raw_args", []))
-            # Remove subcommand from raw_args if it's already the first element
-            if subcmd and args.get("raw_args") and args["raw_args"][0] == subcmd:
-                cmd = ["animaworks-tool", module_name, *args["raw_args"]]
-            cmd.append("-j")
+            async def dispatch_isolated(_name: str, _args: dict[str, Any]) -> str:
+                result = await self._execute_command_task_isolated(task_desc)
+                return str(result.get("result", ""))
 
-            env = {
-                **os.environ,
-                "ANIMAWORKS_ANIMA_DIR": args.get("anima_dir", ""),
-            }
-            # ANIMAWORKS_EMBED_URL and ANIMAWORKS_VECTOR_URL are inherited from runner env
-            # (set by ProcessHandle.child_env_urls) and passed through via **os.environ
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
-                env=env,
-                check=False,
+            background_task_id = await bg_mgr.submit_async(
+                composite_name,
+                tool_args,
+                dispatch_isolated,
+                task_id=task_id or None,
             )
-            if result.returncode != 0:
-                error_msg = result.stderr.strip() or f"Exit code {result.returncode}"
-                raise ToolExecutionError(f"Tool {name} failed: {error_msg}")
-            return result.stdout.strip()
+        else:
 
-        # Submit to BackgroundTaskManager
-        composite_name = f"{tool_name}:{subcommand}" if subcommand else tool_name
-        background_task_id = bg_mgr.submit(composite_name, tool_args, _dispatch_fn)
+            def _dispatch_fn(name: str, args: dict[str, Any]) -> str:
+                """Execute the tool via CLI subprocess (same as direct execution)."""
+                import subprocess
+
+                module_name = name.split(":")[0] if ":" in name else name
+                cmd = ["animaworks-tool", module_name]
+                subcmd = args.get("subcommand", "")
+                if subcmd:
+                    cmd.append(subcmd)
+                cmd.extend(args.get("raw_args", []))
+                if subcmd and args.get("raw_args") and args["raw_args"][0] == subcmd:
+                    cmd = ["animaworks-tool", module_name, *args["raw_args"]]
+                cmd.append("-j")
+
+                env = {
+                    **os.environ,
+                    "ANIMAWORKS_ANIMA_DIR": args.get("anima_dir", ""),
+                }
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
+                    env=env,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() or f"Exit code {result.returncode}"
+                    raise ToolExecutionError(f"Tool {name} failed: {error_msg}")
+                return result.stdout.strip()
+
+            background_task_id = bg_mgr.submit(
+                composite_name,
+                tool_args,
+                _dispatch_fn,
+                task_id=task_id or None,
+            )
+
         active_tasks = getattr(bg_mgr, "_async_tasks", None)
-        if isinstance(active_tasks, dict):
-            background_task = active_tasks.get(background_task_id)
-            if isinstance(background_task, asyncio.Task):
-                return background_task
+        background_task = active_tasks.get(background_task_id) if isinstance(active_tasks, dict) else None
+        if not isinstance(background_task, asyncio.Task):
+            if task_desc.get("_attempt_token"):
+                raise RuntimeError(f"Background task did not start: {background_task_id}")
+            return None
+        await background_task
+        if task_desc.get("_attempt_token"):
+            completed_task = bg_mgr.get_task(background_task_id)
+            if completed_task is None:
+                raise RuntimeError(f"Background task result is missing: {background_task_id}")
+            self._record_command_task_outcome(task_desc, completed_task)
         return None
 
-    async def _execute_command_task_isolated(
-        self,
-        task_desc: dict[str, Any],
-        *,
-        processing_path: Path | None = None,
-    ) -> dict[str, Any]:
-        """Run a command-type pending task inside a background-lane child."""
+    def _record_command_task_outcome(self, task_desc: dict[str, Any], background_task: Any) -> None:
+        """Persist command output in its TaskStore attempt and legacy result view."""
+        task_id = str(task_desc["task_id"])
+        task_status = getattr(background_task.status, "value", background_task.status)
+        if task_status not in {"completed", "failed"}:
+            raise RuntimeError(f"Command task ended in unexpected state: {task_status}")
+
+        result = background_task.result if task_status == "completed" else background_task.error
+        summary = str(background_task.summary())
+        self._save_task_result(task_id, str(result or summary))
+
+        manager = self._get_task_queue_manager()
+        entry = manager.get_task_by_id(task_id)
+        if entry is None:
+            raise RuntimeError(f"Command task is missing from TaskStore: {task_id}")
+        succeeded = task_status == "completed"
+        metadata: dict[str, Any] = {
+            "result_note": summary[:_TASK_RESULT_MAX_CHARS],
+            "command_status": task_status,
+            "last_run_ended_at": now_iso(),
+            "last_run_stop_kind": "command_completed" if succeeded else "command_failed",
+        }
+        if not succeeded:
+            metadata["last_run_note"] = str(result or summary)[:300]
+        manager.update_meta(task_id, metadata)
+        if entry.status not in _QUEUE_STICKY_STATUSES:
+            manager.update_status(task_id, "done" if succeeded else "pending")
+        # BackgroundTaskManager's existing callback delivers the completion or
+        # failure notification; do not enqueue a duplicate TaskStore wakeup.
+        task_desc["_background_notification_handled"] = True
+
+    async def _execute_command_task_isolated(self, task_desc: dict[str, Any]) -> dict[str, Any]:
+        """Run a command-type task inside a background-lane child."""
         from core.supervisor.task_runner_supervisor import TaskRunnerError
 
         assert self._task_runner_supervisor is not None
         task_id = str(task_desc.get("task_id") or "unknown")
-        attempt = self._next_attempt(task_id)
+        attempt = int(task_desc.get("_attempt_number") or self._next_attempt(task_id))
         payload = {
             "tool_name": task_desc.get("tool_name", ""),
             "subcommand": task_desc.get("subcommand", ""),
@@ -1755,9 +1375,7 @@ class PendingTaskExecutor:
 
         async def _on_spawned(job: Any) -> None:
             if token := task_desc.get("_attempt_token"):
-                from core.tasks.queue import TaskQueueManager
-
-                TaskQueueManager(self._anima_dir).store.set_identity(
+                self._get_task_queue_manager().store.set_identity(
                     str(token),
                     {
                         "pid": os.getpid(),
@@ -1767,13 +1385,6 @@ class PendingTaskExecutor:
                         "root_epoch": job.identity.root_epoch,
                         "process_start_time": job.process_start_time,
                     },
-                )
-            if processing_path is not None:
-                await self._write_lease_v2_for_job(
-                    processing_path,
-                    task_id=task_id,
-                    job=job,
-                    attempt=attempt,
                 )
 
         try:
@@ -1800,7 +1411,6 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
-        processing_path: Path | None = None,
     ) -> None:
         """Execute an LLM task in an isolated background worker.
 
@@ -1833,7 +1443,6 @@ class PendingTaskExecutor:
                     task_desc,
                     task_desc.get("_completed_results"),
                     worker_slot=worker_slot,
-                    processing_path=processing_path,
                 )
             else:
                 result = await self._run_llm_task(task_desc, task_desc.get("_completed_results"))
@@ -1872,7 +1481,6 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
-        processing_path: Path | None = None,
     ) -> str:
         """Run TaskExec LLM work in a disposable task-runner child process.
 
@@ -1888,9 +1496,7 @@ class PendingTaskExecutor:
 
         async def _on_spawned(job: Any) -> None:
             if token := task_desc.get("_attempt_token"):
-                from core.tasks.queue import TaskQueueManager
-
-                TaskQueueManager(self._anima_dir).store.set_identity(
+                self._get_task_queue_manager().store.set_identity(
                     str(token),
                     {
                         "pid": os.getpid(),
@@ -1900,13 +1506,6 @@ class PendingTaskExecutor:
                         "root_epoch": job.identity.root_epoch,
                         "process_start_time": job.process_start_time,
                     },
-                )
-            if processing_path is not None:
-                await self._write_lease_v2_for_job(
-                    processing_path,
-                    task_id=task_id,
-                    job=job,
-                    attempt=attempt,
                 )
 
         try:

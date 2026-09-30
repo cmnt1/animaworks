@@ -98,6 +98,37 @@ def test_export_uses_current_state_never_old_completed_descriptor(maintenance, t
     assert [p["task_id"] for p in recovered.pending("alice")] == ["ready"]
 
 
+def test_export_import_roundtrip_preserves_command_task_type(maintenance, tmp_path):
+    _, anima_dir, _store = maintenance
+    payload = {
+        "task_type": "command",
+        "task_id": "command-restore",
+        "title": "image_gen:3d",
+        "description": "animaworks-tool image_gen 3d model.png",
+        "tool_name": "image_gen",
+        "subcommand": "3d",
+        "raw_args": ["3d", "model.png"],
+        "anima_name": "alice",
+        "anima_dir": str(anima_dir.resolve()),
+        "submitted_at": 123.0,
+    }
+    from core.tasks.queue import TaskQueueManager
+
+    TaskQueueManager(anima_dir).submit(payload, meta={"executor": "command"})
+    destination = tmp_path / "command-snapshot"
+    run_maintenance(
+        argparse.Namespace(anima="alice", task_store_action="export", destination=destination)
+    )
+
+    snapshot_anima = destination / "animas" / "alice"
+    recovered = TaskStore(tmp_path / "command-recovered.sqlite3")
+    recovered.import_legacy(snapshot_anima)
+
+    assert recovered.get_input("alice", "command-restore")["task_type"] == "command"
+    assert recovered.read("alice")["command-restore"].meta["executor"] == "command"
+    assert [item["task_id"] for item in recovered.pending("alice")] == ["command-restore"]
+
+
 def test_export_rejects_active_attempt_and_leaves_claims_paused(maintenance, tmp_path):
     _, _, store = maintenance
     seed(store, "active")
@@ -108,6 +139,71 @@ def test_export_rejects_active_attempt_and_leaves_claims_paused(maintenance, tmp
         )
     assert store.maintenance_status("alice")["quiesced"]
     assert not (tmp_path / "snapshot").exists()
+
+
+def test_migration_imports_only_unprocessed_command_descriptors_and_preserves_sources(maintenance, tmp_path):
+    _, anima_dir, store = maintenance
+    pending = anima_dir / "state" / "background_tasks" / "pending"
+    descriptor = pending / "submit-001.json"
+    descriptor.parent.mkdir(parents=True)
+    payload = {
+        "task_id": "submit-001",
+        "tool_name": "image_gen",
+        "subcommand": "3d",
+        "raw_args": ["3d", "assets/model.png"],
+        "anima_name": "alice",
+        "anima_dir": str(anima_dir.resolve()),
+        "submitted_at": 123.0,
+        "status": "pending",
+    }
+    descriptor.write_text(json.dumps(payload), encoding="utf-8")
+    original = descriptor.read_bytes()
+
+    processing = pending / "processing"
+    processing.mkdir()
+    processing_file = processing / "in-flight.json"
+    processing_file.write_text('{"task_id":"in-flight"}', encoding="utf-8")
+    failed = pending / "failed"
+    failed.mkdir()
+    failed_file = failed / "old-failure.json"
+    failed_file.write_text('{"task_id":"old-failure"}', encoding="utf-8")
+    invalid = pending / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    completed_descriptor = pending / "already-done.json"
+    completed_descriptor.write_text(
+        json.dumps({**payload, "task_id": "already-done"}),
+        encoding="utf-8",
+    )
+    completed_result = pending.parent / "already-done.json"
+    completed_result.write_text(json.dumps({"task_id": "already-done", "status": "completed"}), encoding="utf-8")
+
+    result = run_maintenance(
+        argparse.Namespace(anima="alice", task_store_action="migrate", backup=tmp_path / "before.db")
+    )
+
+    migration = result["command_migration"]
+    assert migration["imported"] == 1
+    assert migration["unimportable"] == 2
+    assert migration["processing_files_preserved"] == 1
+    assert migration["failed_files_preserved"] == 1
+    assert any("processing/" in warning for warning in migration["warnings"])
+    assert descriptor.read_bytes() == original
+    assert processing_file.exists() and failed_file.exists() and invalid.exists() and completed_descriptor.exists()
+    assert completed_result.exists()
+    assert store.get_input("alice", "already-done") is None
+    stored = store.get_input("alice", "submit-001")
+    assert stored is not None
+    assert stored["task_type"] == "command"
+    assert stored["tool_name"] == "image_gen"
+    assert stored["raw_args"] == ["3d", "assets/model.png"]
+    assert store.read("alice")["submit-001"].meta["migration_source"] == "legacy_background_pending"
+    assert [item["task_id"] for item in store.pending("alice")] == ["submit-001"]
+
+    repeated = run_maintenance(
+        argparse.Namespace(anima="alice", task_store_action="migrate", backup=tmp_path / "after.db")
+    )
+    assert repeated["command_migration"]["imported"] == 0
+    assert repeated["command_migration"]["already_imported"] == 1
 
 
 def test_migration_rejects_conflicting_legacy_inputs(maintenance, tmp_path):

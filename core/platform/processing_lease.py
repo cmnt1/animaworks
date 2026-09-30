@@ -4,7 +4,11 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Lease sidecars for claimed pending-task descriptors.
+"""Lease sidecars for pre-TaskStore pending descriptors.
+
+Runtime task claims and attempt liveness are owned by TaskStore. This module
+remains for offline migration checks of legacy ``state/pending/processing``
+descriptors.
 
 Schema:
   * v1 — ``pid/anima/leased_at/task_id`` (legacy runner in-process claims)

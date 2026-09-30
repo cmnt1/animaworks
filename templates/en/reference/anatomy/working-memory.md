@@ -97,7 +97,7 @@ The host stores the original instruction and tasks in bulk, retrieves executable
 
 Accepted result summaries are saved to `state/task_results/{task_id}/{attempt_token}.md` (up to 2000 characters). Subsequent steps receive the accepted result chosen by the host. Do not judge completion based solely on the existence of old files. Preserve the original record, write the result, and do not pretend an attempt succeeded.
 
-Long-running command tools remain on a separate path. `animaworks-tool submit` is submitted to `state/background_tasks/pending/`, and BackgroundTaskManager manages command status and notifications. See `operations/background-tasks.md` and `operations/task-management.md` for details.
+Long-running command tools are also registered in TaskStore as `task_type="command"`. PendingTaskExecutor claims an attempt and BackgroundTaskManager runs it. The attempt is recorded in TaskStore, while `state/background_tasks/{task_id}.json` and the completion notification remain available for compatibility. See `operations/background-tasks.md` and `operations/task-management.md` for details.
 
 ## read_subordinate_state
 

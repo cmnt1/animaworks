@@ -84,7 +84,6 @@ _HOUSEKEEPING_RULES = (
     _rule("facts_locks", "*/facts/*.lock", "facts_locks", "facts_lock_stale_hours"),
     _rule("curator_reports", "*/state/skill_curator/report-*.json", "delete_old_files", "curator_report_retention_days", age_mode="filename", filename_prefix="report-", error_label="curator report", success_log="Curator report cleanup: deleted %d files"),
     _rule("task_results", "*/state/task_results/*.md", "delete_old_files", "task_results_retention_days", error_label="task result", success_log="Task results cleanup: deleted %d files"),
-    _rule("pending_failed", "*/state/background_tasks/pending/failed/*.json", "delete_old_files", "pending_failed_retention_days", error_label="failed task", success_log="Pending failed cleanup: deleted %d files"),
     _rule("corrupt_vectordb_archives", "*/archive/{vectordb-corrupt,corrupt-vectordb}-*", "corrupt_vectordb_archives", "corrupt_vectordb_keep_generations"),
     _rule("runtime_tmp", "*", "runtime_tmp", "tmp_retention_days", root="data", path="tmp"),
     _rule("backup_dirs", "*/*_backup_*", "backup_dirs", "backup_retention_days"),
@@ -1032,17 +1031,6 @@ def _prune_archive_versions(animas_dir: Path, keep_per_file: int) -> dict[str, A
     if deleted_files:
         logger.info("Archive/versions cleanup: deleted %d files, kept %d", deleted_files, kept_files)
     return {"deleted_files": deleted_files, "kept_files": kept_files}
-
-
-def _cleanup_pending_failed(animas_dir: Path, retention_days: int) -> dict[str, Any]:
-    """Delete expired background-task failures (not legacy LLM pending files)."""
-    return _delete_old_files(
-        animas_dir,
-        "*/state/background_tasks/pending/failed/*.json",
-        retention_days,
-        error_label="failed task",
-        success_log="Pending failed cleanup: deleted %d files",
-    )
 
 
 _CORRUPT_VECTORDB_RE = re.compile(r"^(?:vectordb-corrupt|corrupt-vectordb)[-_](?P<stamp>\d{8}[-_]?\d{6}|\d{14})")

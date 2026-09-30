@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -221,67 +220,20 @@ class TestExecutePendingTask:
         assert call_args[0][0] == "web_search:search"
 
     @pytest.mark.asyncio
-    async def test_skips_when_no_anima(self, tmp_path):
-        """Should skip when anima is None."""
+    async def test_fails_when_anima_is_missing(self, tmp_path):
         executor = _make_executor(tmp_path)
         executor._anima = None
 
-        # Should not raise
-        await executor.execute_pending_task({"tool_name": "test"})
+        with pytest.raises(RuntimeError, match="anima not initialized"):
+            await executor.execute_pending_task({"task_type": "command", "task_id": "test"})
 
     @pytest.mark.asyncio
-    async def test_skips_when_no_background_manager(self, tmp_path):
-        """Should skip when background_manager is None."""
+    async def test_fails_when_background_manager_is_missing(self, tmp_path):
         executor = _make_executor(tmp_path)
         executor._anima.agent.background_manager = None
 
-        # Should not raise
-        await executor.execute_pending_task({"tool_name": "test"})
-
-
-class TestWatcherLoop:
-    """Test pending task watcher loop."""
-
-    @pytest.mark.asyncio
-    async def test_picks_up_pending_files(self, tmp_path):
-        """Watcher should pick up and process .json files in pending dir."""
-        executor = _make_executor(tmp_path)
-        pending_dir = executor._anima_dir / "state" / "background_tasks" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
-
-        task = {"task_id": "test-1", "tool_name": "test_tool", "subcommand": "", "raw_args": []}
-        (pending_dir / "task1.json").write_text(json.dumps(task))
-
-        async def stop_after_first(coro, *, timeout):
-            coro.close()
-            executor._shutdown_event.set()
-            raise TimeoutError
-
-        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=stop_after_first):
-            await executor.watcher_loop()
-
-        assert not (pending_dir / "task1.json").exists()
-        executor._anima.agent.background_manager.submit.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_handles_invalid_json(self, tmp_path):
-        """Watcher should handle invalid JSON files gracefully."""
-        executor = _make_executor(tmp_path)
-        pending_dir = executor._anima_dir / "state" / "background_tasks" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
-
-        (pending_dir / "bad.json").write_text("not json")
-
-        async def stop_after_first(coro, *, timeout):
-            coro.close()
-            executor._shutdown_event.set()
-            raise TimeoutError
-
-        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=stop_after_first):
-            await executor.watcher_loop()
-
-        assert not (pending_dir / "bad.json").exists()
-
+        with pytest.raises(RuntimeError, match="BackgroundTaskManager not available"):
+            await executor.execute_pending_task({"task_type": "command", "task_id": "test"})
 
 class TestStreamErrorSuppression:
     """Test that stream errors are suppressed only after an agent declaration."""

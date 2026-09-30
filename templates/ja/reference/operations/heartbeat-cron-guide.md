@@ -38,7 +38,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 `submit_tasks` は検証後、タスクと完全な実行入力を一つの正本 TaskStore に一括保存する。
 実行権の取得と試行履歴はホストが管理する。`in_progress` は閲覧用で、エージェントは `update_task` で `done` / `pending` / `cancelled` を宣言する。中断した pending タスクは同じ ID に `resume: true` を指定して明示的に再開し、別タスクで置き換えない。
 
-**長時間 CLI ツール**（`animaworks-tool submit …`）は別経路で `state/background_tasks/pending/` に書かれ、`BackgroundTaskManager`（`core/tasks/background.py`）がバックグラウンド実行する。詳細は `operations/background-tasks.md` を参照。
+**長時間 CLI ツール**（`animaworks-tool submit …`）は `task_type="command"` として TaskStore に登録され、PendingTaskExecutor が試行を取得してバックグラウンド実行する。完了結果は `state/background_tasks/{task_id}.json` と通知から確認する。詳細は `operations/background-tasks.md` を参照。
 
 **注意**: 保存先を直接編集しない。旧 `state/task_queue.jsonl` と `state/pending/` は移行・エクスポート用の証跡として保存し、稼働中の投入先にしない。
 

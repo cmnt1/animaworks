@@ -1,28 +1,17 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for pending task watcher in core/tasks/pending_executor.py.
-
-Validates ``watcher_loop()`` and ``execute_pending_task()``:
-- Watcher picks up pending JSON files and deletes them
-- ``execute_pending_task`` calls BackgroundTaskManager.submit()
-- Graceful handling when anima is not initialized
-- Graceful handling when BackgroundTaskManager is not available
-- Corrupt JSON files are removed with a warning
-"""
+"""Tests for TaskStore watching and command execution in PendingTaskExecutor."""
 
 from __future__ import annotations
 
 import asyncio
-import json
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.exceptions import ToolExecutionError
-from core.memory.activity.logger import ActivityLogger
 from core.tasks.pending_executor import PendingTaskExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -61,44 +50,21 @@ def _make_executor_with_anima(tmp_path: Path) -> PendingTaskExecutor:
     )
 
 
-def _write_pending_task(
-    anima_dir: Path,
-    task_id: str = "abc123def456",
-    tool_name: str = "image_gen",
-    subcommand: str = "3d",
-    raw_args: list[str] | None = None,
-) -> Path:
-    """Write a pending task JSON file and return its path."""
-    pending_dir = anima_dir / "state" / "background_tasks" / "pending"
-    pending_dir.mkdir(parents=True, exist_ok=True)
-
-    task_desc = {
-        "task_id": task_id,
-        "tool_name": tool_name,
-        "subcommand": subcommand,
-        "raw_args": raw_args or [subcommand, "assets/avatar.png"],
-        "anima_name": "test-anima",
-        "anima_dir": str(anima_dir),
-        "submitted_at": 1739800000.0,
-        "status": "pending",
-    }
-    path = pending_dir / f"{task_id}.json"
-    path.write_text(
-        json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
 # ── TestPendingTaskWatcherLoop ───────────────────────────────
 
 
 class TestPendingTaskWatcherLoop:
-    """Tests for watcher_loop()."""
+    """Tests for TaskStore claim and dispatch."""
+
+    def test_reuses_task_queue_manager(self, tmp_path: Path) -> None:
+        executor = _make_executor_with_anima(tmp_path)
+        with patch("core.tasks.queue.TaskQueueManager") as manager_type:
+            first = executor._get_task_queue_manager()
+            second = executor._get_task_queue_manager()
+        assert first is second
+        manager_type.assert_called_once_with(executor._anima_dir)
 
     def _stop_after_first(self, executor):
-        """Return a mock for asyncio.wait_for that stops the loop after one iteration."""
-
         async def _mock(coro, *, timeout):
             coro.close()
             executor._shutdown_event.set()
@@ -106,106 +72,43 @@ class TestPendingTaskWatcherLoop:
 
         return _mock
 
-    async def test_picks_up_pending_and_deletes_file(self, tmp_path: Path) -> None:
-        """Watcher finds a pending JSON, processes it, and deletes the file."""
+    async def test_claims_and_dispatches_command_from_task_store(self, tmp_path: Path) -> None:
+        from core.tasks.queue import TaskQueueManager
+
         executor = _make_executor_with_anima(tmp_path)
-        task_path = _write_pending_task(executor._anima_dir)
-        assert task_path.exists()
-
-        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
-            await executor.watcher_loop()
-
-        assert not task_path.exists()
-
-    async def test_calls_execute_pending_task(self, tmp_path: Path) -> None:
-        """Watcher calls execute_pending_task with the parsed task descriptor."""
-        executor = _make_executor_with_anima(tmp_path)
-        _write_pending_task(executor._anima_dir, tool_name="local_llm", subcommand="generate")
-
-        executed_tasks: list[dict] = []
-
-        async def capture_execute(task_desc: dict) -> None:
-            executed_tasks.append(task_desc)
-
-        executor.execute_pending_task = capture_execute  # type: ignore[assignment]
-
-        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
-            await executor.watcher_loop()
-
-        assert len(executed_tasks) == 1
-        assert executed_tasks[0]["tool_name"] == "local_llm"
-
-    async def test_slow_pending_io_and_activity_log_do_not_block_event_loop(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        executor = _make_executor_with_anima(tmp_path)
-        task_path = _write_pending_task(executor._anima_dir, task_id="slow-poll")
-        activity = ActivityLogger(executor._anima_dir)
-        original_read_text = Path.read_text
-
-        def slow_read_text(path: Path, *args, **kwargs):
-            if path == task_path:
-                time.sleep(0.2)
-            return original_read_text(path, *args, **kwargs)
-
-        def slow_log(*_args, **_kwargs):
-            time.sleep(0.2)
-
-        monkeypatch.setattr(Path, "read_text", slow_read_text)
-        monkeypatch.setattr(activity, "log", slow_log)
+        queue = TaskQueueManager(executor._anima_dir)
+        queue.submit(
+            {
+                "task_type": "command",
+                "task_id": "command-1",
+                "title": "image_gen:3d",
+                "description": "Generate a model",
+                "tool_name": "image_gen",
+                "subcommand": "3d",
+                "raw_args": ["3d", "assets/model.png"],
+                "anima_dir": str(executor._anima_dir),
+            },
+            meta={"executor": "command"},
+        )
+        executed: list[dict] = []
 
         async def execute(task_desc: dict) -> None:
-            assert task_desc["task_id"] == "slow-poll"
-            await activity.alog("task_exec_start")
-            executor._shutdown_event.set()
-            executor.wake()
+            executed.append(task_desc)
+            queue.update_status(task_desc["task_id"], "done")
 
         executor.execute_pending_task = execute  # type: ignore[assignment]
-
-        loop = asyncio.get_running_loop()
-        previous_debug = loop.get_debug()
-        previous_slow_callback_duration = loop.slow_callback_duration
-        loop.set_debug(True)
-        loop.slow_callback_duration = 0.05
-        ticker_running = True
-        ticks = 0
-
-        async def ticker() -> None:
-            nonlocal ticks
-            while ticker_running:
-                ticks += 1
-                await asyncio.sleep(0.01)
-
-        ticker_task = asyncio.create_task(ticker())
-        try:
-            await asyncio.sleep(0)
-            await executor.watcher_loop()
-        finally:
-            ticker_running = False
-            await ticker_task
-            loop.slow_callback_duration = previous_slow_callback_duration
-            loop.set_debug(previous_debug)
-
-        assert ticks >= 10
-        assert not task_path.exists()
-
-    async def test_handles_corrupt_json_gracefully(self, tmp_path: Path) -> None:
-        """Corrupt JSON files are deleted with a warning."""
-        executor = _make_executor_with_anima(tmp_path)
-        pending_dir = executor._anima_dir / "state" / "background_tasks" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
-        corrupt_path = pending_dir / "corrupt.json"
-        corrupt_path.write_text("{invalid json content", encoding="utf-8")
-
         with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
-        assert not corrupt_path.exists()
+        assert len(executed) == 1
+        assert executed[0]["task_type"] == "command"
+        assert executed[0]["_attempt_token"]
+        assert queue.get_task_by_id("command-1").status == "done"
+        assert queue.store.active_attempts(executor._anima_name) == []
+        assert queue.store.get_input(executor._anima_name, "command-1")["raw_args"] == ["3d", "assets/model.png"]
+        assert not (executor._anima_dir / "state" / "background_tasks" / "pending").exists()
 
-    async def test_preserves_non_object_legacy_llm_evidence_after_explicit_import(self, tmp_path: Path) -> None:
-        """Only command descriptors are swept; imported legacy LLM evidence remains untouched."""
+    async def test_preserves_legacy_llm_evidence_without_watching_files(self, tmp_path: Path) -> None:
         from core.tasks.board.tasks import TaskStore, task_database_path
 
         executor = _make_executor_with_anima(tmp_path)
@@ -220,42 +123,7 @@ class TestPendingTaskWatcherLoop:
 
         assert junk.read_text(encoding="utf-8") == "[]"
 
-    async def test_processes_multiple_pending_files(self, tmp_path: Path) -> None:
-        """Watcher processes all pending files in a single scan iteration."""
-        executor = _make_executor_with_anima(tmp_path)
-        paths = [
-            _write_pending_task(executor._anima_dir, task_id="task_aaa001", tool_name="image_gen"),
-            _write_pending_task(executor._anima_dir, task_id="task_bbb002", tool_name="local_llm"),
-            _write_pending_task(executor._anima_dir, task_id="task_ccc003", tool_name="transcribe"),
-        ]
-
-        executed_tasks: list[dict] = []
-
-        async def capture_execute(task_desc: dict) -> None:
-            executed_tasks.append(task_desc)
-
-        executor.execute_pending_task = capture_execute  # type: ignore[assignment]
-
-        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
-            await executor.watcher_loop()
-
-        for p in paths:
-            assert not p.exists()
-        assert len(executed_tasks) == 3
-
-    async def test_creates_pending_dir_if_missing(self, tmp_path: Path) -> None:
-        """Watcher creates the pending directory if it does not exist."""
-        executor = _make_executor_with_anima(tmp_path)
-        pending_dir = executor._anima_dir / "state" / "background_tasks" / "pending"
-        assert not pending_dir.exists()
-
-        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
-            await executor.watcher_loop()
-
-        assert pending_dir.is_dir()
-
     async def test_stops_on_cancellation(self, tmp_path: Path) -> None:
-        """Watcher exits cleanly on asyncio.CancelledError."""
         executor = _make_executor_with_anima(tmp_path)
 
         async def cancel_wait(coro, *, timeout):
@@ -319,39 +187,16 @@ class TestExecutePendingTask:
         composite_name = bg_mgr.submit.call_args[0][0]
         assert composite_name == "transcribe"
 
-    async def test_handles_missing_anima_gracefully(self, tmp_path: Path) -> None:
-        """When anima is None, execute_pending_task logs warning and returns."""
+    async def test_missing_anima_is_reported_as_execution_failure(self, tmp_path: Path) -> None:
         executor = _make_executor(tmp_path)
-        assert executor._anima is None
+        with pytest.raises(RuntimeError, match="anima not initialized"):
+            await executor.execute_pending_task({"task_type": "command", "task_id": "cmd-1"})
 
-        task_desc = {
-            "task_id": "abc123def456",
-            "tool_name": "image_gen",
-            "subcommand": "3d",
-            "raw_args": ["3d", "test.png"],
-        }
-
-        # Should not raise
-        await executor.execute_pending_task(task_desc)
-
-    async def test_handles_missing_background_manager_gracefully(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """When BackgroundTaskManager is None, logs warning and returns."""
+    async def test_missing_background_manager_is_reported_as_execution_failure(self, tmp_path: Path) -> None:
         executor = _make_executor_with_anima(tmp_path)
         executor._anima.agent.background_manager = None
-
-        task_desc = {
-            "task_id": "abc123def456",
-            "tool_name": "image_gen",
-            "subcommand": "3d",
-            "raw_args": ["3d", "test.png"],
-        }
-
-        # Should not raise
-        await executor.execute_pending_task(task_desc)
-
+        with pytest.raises(RuntimeError, match="BackgroundTaskManager not available"):
+            await executor.execute_pending_task({"task_type": "command", "task_id": "cmd-1"})
     async def test_passes_anima_dir_to_tool_args(self, tmp_path: Path) -> None:
         """anima_dir from the task descriptor is passed through to tool_args."""
         executor = _make_executor_with_anima(tmp_path)

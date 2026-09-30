@@ -17,18 +17,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-import psutil
 import pytest
 
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 from core.memory.retrieval.rag_search import RAGMemorySearch
-from core.platform.processing_lease import write_processing_lease
 from core.schemas import CronTask
 from core.supervisor.memory_service import MemoryService
 from core.supervisor.process_handle import ProcessHandle
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
-from core.tasks.queue import TaskQueueManager
 
 pytestmark = [
     pytest.mark.timeout(90),
@@ -316,7 +313,7 @@ async def test_corruption_isolated_and_reads_continue_during_repair(
 
 
 @pytest.mark.asyncio
-async def test_root_sigkill_respawn_preserves_db_and_recovers_lease(
+async def test_root_sigkill_respawn_preserves_db(
     data_dir: Path,
     phase3_animas: dict[str, Path],
     fake_embed_url: tuple[str, _EmbeddingServer],
@@ -329,48 +326,12 @@ async def test_root_sigkill_respawn_preserves_db_and_recovers_lease(
         await _seed(root, "sigkill durable sentinel")
         before = _db_snapshot(anima_dir)
         assert before[0] == {"kill-root_knowledge"} and before[1] == 1
-        killed_pid = root.process.pid
-        killed_create_time = psutil.Process(killed_pid).create_time()
         await root.kill()
-
-        queue = TaskQueueManager(anima_dir)
-        entry = queue.add_task(
-            source="anima",
-            original_instruction="recover after root SIGKILL",
-            assignee="kill-root",
-            summary="interrupted phase3 task",
-            status="in_progress",
-        )
-        processing = anima_dir / "state" / "background_tasks" / "pending" / "processing"
-        failed = processing.parent / "failed"
-        processing.mkdir(parents=True, exist_ok=True)
-        descriptor = processing / f"{entry.task_id}.json"
-        descriptor.write_text(json.dumps({"task_id": entry.task_id}), encoding="utf-8")
-        write_processing_lease(
-            descriptor,
-            anima="kill-root",
-            task_id=entry.task_id,
-            pid=killed_pid,
-            job_id="killed-job",
-            task_pid=killed_pid,
-            pgid=killed_pid,
-            root_epoch="killed-root-epoch",
-            attempt=1,
-            process_start_time=killed_create_time,
-        )
-
         await root.start()
-        await _wait_for(lambda: not descriptor.exists())
-        assert not (failed / descriptor.name).exists()
         assert _db_snapshot(anima_dir) == before
         query = await _query_ready(root)
         assert query.error is None
         assert query.result["results"][0]["document"]["content"] == "sigkill durable sentinel"
-        recovered = queue.get_task_by_id(entry.task_id)
-        assert recovered.status == "pending"
-        assert recovered.summary == "interrupted phase3 task"
-        assert "INTERRUPTED" in recovered.meta["last_run_note"]
-        assert recovered.meta["last_run_stop_kind"] == "crash"
     finally:
         await root.stop(drain_streams=False)
 
