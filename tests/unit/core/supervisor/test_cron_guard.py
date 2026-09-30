@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.commands.cron_guard import cmd_cron_guard_enable, cmd_cron_guard_list
+from cli.commands.cron_guard import cmd_cron_guard_enable, cmd_cron_guard_list, register_cron_guard_command
 from core.config.schemas import AnimaWorksConfig, CronGuardConfig
 from core.schemas import CronTask
 from core.supervisor.scheduler_manager import SchedulerManager
@@ -179,3 +179,25 @@ def test_disable_skip_cli_enable_and_reregister(
     restored_manager._anima.memory.read_cron_config.return_value = cron_config
     restored_manager._setup_cron_tasks()
     restored_manager.scheduler.add_job.assert_called_once()
+
+
+def test_parser_registers_list_and_enable() -> None:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    register_cron_guard_command(subparsers)
+
+    listed = parser.parse_args(["cron-guard", "list", "alice"])
+    enabled = parser.parse_args(["cron-guard", "enable", "alice", "daily report"])
+
+    assert listed.anima == "alice"
+    assert enabled.task == "daily report"
+
+
+def test_enable_missing_task_keeps_sidecar_unchanged(tmp_path: Path, capsys) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    anima_dir.mkdir(parents=True)
+    with patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"):
+        cmd_cron_guard_enable(argparse.Namespace(anima="alice", task="missing"))
+
+    assert "is not disabled" in capsys.readouterr().out
+    assert not (anima_dir / "state" / "cron_disabled.json").exists()
