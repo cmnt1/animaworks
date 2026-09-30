@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.auth.manager import load_auth
 from core.paths import get_shared_dir
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.routes.chat_ui_state")
 
@@ -90,10 +91,7 @@ def create_chat_ui_state_router() -> APIRouter:
         merged["version"] = _STATE_VERSION
 
         try:
-            state_path.write_text(
-                json.dumps(merged, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            atomic_write_json(state_path, merged, indent=2, ensure_ascii=False, trailing_newline=False)
         except OSError as err:
             logger.error("Failed to save chat ui state for %s: %s", username, err)
             return {"status": "error"}

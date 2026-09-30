@@ -142,10 +142,7 @@ def migrate_to_config_json(data_dir: Path) -> None:
                 except (json.JSONDecodeError, OSError):
                     pass
             existing.update(status_data)
-            status_path.write_text(
-                json.dumps(existing, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
+            atomic_write_json(status_path, existing, indent=2, ensure_ascii=False)
 
         # config.json animas: organization structure only (supervisor, speciality)
         config.animas[anima_dir.name] = AnimaModelConfig()
@@ -723,10 +720,7 @@ def migrate_model_config_to_status(data_dir: Path, *, dry_run: bool = False) -> 
         if migrated:
             results[anima_name] = migrated
             if not dry_run:
-                status_path.write_text(
-                    json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-                    encoding="utf-8",
-                )
+                atomic_write_json(status_path, status_data, indent=2, ensure_ascii=False)
                 logger.info("Migrated %s: %s", anima_name, ", ".join(migrated))
 
         if conflicts:

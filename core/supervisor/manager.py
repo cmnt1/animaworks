@@ -27,6 +27,7 @@ from core.exceptions import (  # noqa: F401
     IPCConnectionError,
     ProcessError,
 )
+from core.platform.atomic_io import atomic_write_json
 from core.platform.process import kill_tree, snapshot_descendants
 from core.platform.tasks import spawn
 from core.supervisor._mgr_health import HealthMixin
@@ -200,7 +201,13 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
     def _save_bootstrap_retries(self) -> None:
         """Persist bootstrap retry counts to disk."""
         try:
-            self._bootstrap_retries_file.write_text(json.dumps(self._bootstrap_retry_counts, indent=2))
+            atomic_write_json(
+                self._bootstrap_retries_file,
+                self._bootstrap_retry_counts,
+                indent=2,
+                ensure_ascii=True,
+                trailing_newline=False,
+            )
         except Exception:
             logger.warning("Failed to save bootstrap retries file", exc_info=True)
 

@@ -24,6 +24,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
+
 MAX_SESSIONS = 50
 
 _TUI_ENV = "ANIMAWORKS_TUI_DIR"
@@ -139,7 +141,7 @@ def save_session(session: SessionInfo, *, base_dir: Path | None = None) -> Path:
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
     session.updated_at = _now_iso()
     path = d / f"{session.session_id}.json"
-    path.write_text(json.dumps(asdict(session), ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(path, asdict(session), indent=2, ensure_ascii=False, trailing_newline=False)
     _rotate(d)
     return path
 

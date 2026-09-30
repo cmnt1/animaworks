@@ -15,7 +15,6 @@ and parses NDJSON output. Integrates with AnimaWorks MCP server for tool access.
 """
 
 import asyncio
-import json
 import logging
 import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -32,6 +31,7 @@ from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
+from core.platform.atomic_io import atomic_write_json
 from core.platform.cursor import (
     find_cursor_agent_binary as _find_cursor_agent_binary,
 )
@@ -173,7 +173,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 }
             }
         }
-        mcp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        atomic_write_json(mcp_path, config, indent=2, ensure_ascii=True, trailing_newline=False)
 
     def _write_cursor_rules(self) -> None:
         """Write static identity/rules to .cursor/rules/ for compaction resilience.

@@ -35,6 +35,7 @@ from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 from core.platform.gemini import find_gemini_binary as _find_gemini_binary
 from core.platform.gemini import is_gemini_cli_available
 from core.prompt.context import ContextTracker
@@ -159,7 +160,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             }
         }
 
-        settings_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        atomic_write_json(settings_path, existing, indent=2, ensure_ascii=True, trailing_newline=False)
 
     def _write_system_prompt(self, system_prompt: str) -> Path:
         """Write system prompt to a temporary file and return the path."""

@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +421,7 @@ class RoomManager:
             return
         path = self._data_dir / f"{room_id}.json"
         data = room.to_dict()
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, indent=2, ensure_ascii=False, trailing_newline=False)
 
     def load_room(self, room_id: str) -> MeetingRoom | None:
         """Load room from disk."""

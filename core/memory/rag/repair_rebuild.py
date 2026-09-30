@@ -7,11 +7,12 @@ from __future__ import annotations
 """Staging rebuild helpers for supervised RAG repair."""
 
 import argparse
-import json
 import logging
 import shutil
 import tempfile
 from pathlib import Path
+
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.rag.repair")
 
@@ -239,9 +240,11 @@ def _main() -> int:
         anima_dir=args.anima_dir,
         staging=args.staging,
     )
-    args.result.write_text(
-        json.dumps({"chunks": chunks, "shared_hashes": shared_hashes}),
-        encoding="utf-8",
+    atomic_write_json(
+        args.result,
+        {"chunks": chunks, "shared_hashes": shared_hashes},
+        indent=None,
+        trailing_newline=False,
     )
     return 0
 

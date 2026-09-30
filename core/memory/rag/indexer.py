@@ -30,6 +30,7 @@ from core.memory.rag.episode_time import apply_episode_heading_event_time
 from core.memory.rag.exclusion import is_archive_path, is_rag_excluded
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
 from core.memory.rag.store import CollectionExistence
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import ensure_aware, now_iso
 
 logger = logging.getLogger("animaworks.rag.indexer")
@@ -330,8 +331,7 @@ class MemoryIndexer:
     def _save_index_meta(self) -> None:
         """Save index metadata."""
         try:
-            with open(self.meta_path, "w", encoding="utf-8") as f:
-                json.dump(self.index_meta, f, ensure_ascii=False, indent=2)
+            atomic_write_json(self.meta_path, self.index_meta, indent=2, ensure_ascii=False, trailing_newline=False)
         except Exception as e:
             logger.warning("Failed to save index metadata: %s", e)
 
@@ -372,10 +372,7 @@ class MemoryIndexer:
             self.anima_dir / "state" / UPSERT_FAILURE_STATE_FILE,
         )
         try:
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = state_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-            temporary.replace(state_path)
+            atomic_write_json(state_path, state, indent=2, ensure_ascii=False, trailing_newline=False)
         except OSError:
             logger.warning("Failed to save RAG upsert failure state", exc_info=True)
 

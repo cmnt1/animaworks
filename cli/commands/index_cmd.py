@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import get_data_dir
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.cli.index")
 
@@ -134,10 +135,7 @@ def _save_global_index_meta(base_dir: Path, model_name: str) -> None:
             pass
     meta["embedding_model"] = model_name
     meta["embedding_e5_prefix"] = get_embedding_e5_prefix_enabled()
-    meta_path.write_text(
-        json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(meta_path, meta, indent=2, ensure_ascii=False)
 
 
 def _is_anima_enabled(anima_dir: Path) -> bool:

@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import now_local
 
 logger = logging.getLogger(__name__)
@@ -91,10 +92,7 @@ class MigrationTracker:
             "steps_applied": state.steps_applied,
             "last_migrated_at": state.last_migrated_at,
         }
-        self._path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(self._path, payload, indent=2, ensure_ascii=False)
 
     def is_step_applied(self, step_id: str) -> bool:
         return step_id in self.load().steps_applied

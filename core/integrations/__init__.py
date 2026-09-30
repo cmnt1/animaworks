@@ -13,6 +13,8 @@ import logging
 import sys
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
+
 logger = logging.getLogger("animaworks.tools")
 
 
@@ -305,10 +307,7 @@ def _handle_submit(argv: list[str]) -> None:
     }
 
     task_path = pending_dir / f"{task_id}.json"
-    task_path.write_text(
-        json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(task_path, task_desc, indent=2, ensure_ascii=False)
 
     # Output result
     result = {

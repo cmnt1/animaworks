@@ -25,6 +25,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from core.platform.atomic_io import atomic_write_json
 from core.platform.claude_code import get_claude_executable
 from core.platform.codex import get_codex_device_login, is_codex_login_available
 
@@ -70,10 +71,7 @@ def _save_usage_snapshot(payload: dict[str, Any]) -> None:
     path = _usage_snapshot_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(path, payload, indent=2, ensure_ascii=False)
     except Exception:
         logger.warning("Failed to save usage snapshot to %s", path, exc_info=True)
 
@@ -233,7 +231,7 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
         oauth["accessToken"] = new_access
         oauth["refreshToken"] = new_refresh
         oauth["expiresAt"] = int(time.time() * 1000) + expires_in * 1000
-        cred_path.write_text(json.dumps(cred_data, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(cred_path, cred_data, indent=None, trailing_newline=False)
         logger.info("Refreshed Claude OAuth token, persisted to %s", cred_path)
         return new_access
     except Exception as e:
@@ -569,10 +567,7 @@ def _extract_codex_account_id(tokens: dict[str, Any]) -> str | None:
 
 
 def _persist_codex_auth_data(path: Path, auth_data: dict[str, Any]) -> None:
-    path.write_text(
-        json.dumps(auth_data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, auth_data, indent=2, ensure_ascii=False)
 
 
 def _refresh_codex_token(auth_path: Path, auth_data: dict[str, Any]) -> tuple[str | None, str | None]:

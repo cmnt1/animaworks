@@ -28,6 +28,7 @@ import networkx as nx
 from networkx.readwrite import json_graph
 
 from core.memory.rag.entity_graph import add_entity_aware_layers, fact_node_id, graph_diagnostics
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.rag.graph")
 
@@ -366,8 +367,7 @@ class KnowledgeGraph:
         data = json_graph.node_link_data(self.graph)
 
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(cache_path, data, indent=2, ensure_ascii=False, trailing_newline=False)
 
         logger.info(
             "Graph saved: %d nodes, %d edges -> %s",

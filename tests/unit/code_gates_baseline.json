@@ -1,26 +1,5 @@
 {
-  "write_text_json_dumps": {
-    "cli/demo.py": 1,
-    "cli/tui/session.py": 1,
-    "core/anima/heartbeat.py": 1,
-    "core/anima/inbox.py": 1,
-    "core/execution/engines/cursor/cursor_agent.py": 1,
-    "core/execution/engines/gemini/gemini_cli.py": 1,
-    "core/memory/activity/logger.py": 1,
-    "core/memory/conversation/shortterm.py": 2,
-    "core/memory/maintenance/housekeeping.py": 1,
-    "core/memory/rag/indexer.py": 1,
-    "core/memory/rag/repair_rebuild.py": 1,
-    "core/messaging/messenger.py": 1,
-    "core/migrations/steps.py": 4,
-    "core/platform/processing_lease.py": 1,
-    "core/skills/curator.py": 1,
-    "core/supervisor/manager.py": 1,
-    "core/supervisor/transport.py": 1,
-    "server/room_manager.py": 1,
-    "server/routes/chat_ui_state.py": 1,
-    "server/routes/usage_routes.py": 1
-  },
+  "write_text_json_dumps": {},
   "status_json_literal_files": [
     "cli/commands/anima_mgmt.py",
     "cli/commands/index_cmd.py",

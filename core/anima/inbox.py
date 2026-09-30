@@ -32,6 +32,7 @@ from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.messaging.messenger import InboxItem
 from core.paths import load_prompt
+from core.platform.atomic_io import atomic_write_json
 from core.schemas import CycleResult
 from core.time_utils import now_local
 
@@ -859,10 +860,7 @@ class InboxMixin:
 
         if track_retries:
             try:
-                _read_counts_path.write_text(
-                    json.dumps(_read_counts, ensure_ascii=False),
-                    encoding="utf-8",
-                )
+                atomic_write_json(_read_counts_path, _read_counts, indent=None, trailing_newline=False)
             except Exception:
                 logger.debug("[%s] Failed to write inbox_read_counts", self.name, exc_info=True)
 

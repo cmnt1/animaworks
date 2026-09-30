@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
 from core.skills.models import (
     SkillCuratorEvent,
     SkillCuratorEventType,
@@ -539,7 +540,7 @@ class SkillCurator:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
             for key in (f"skills/{skill_name}/SKILL.md", f"skills/quarantine/{skill_name}/SKILL.md"):
                 data.pop(key, None)
-            meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_json(meta_path, data, indent=2, ensure_ascii=False, trailing_newline=False)
         except Exception:
             logger.debug("Failed to invalidate skill index metadata for %s", skill_name, exc_info=True)
 

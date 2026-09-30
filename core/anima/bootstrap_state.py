@@ -454,7 +454,7 @@ def repair_bootstrap_retry(anima_dir: Path, *, retry_counts_file: Path | None = 
     if retry_counts_file and retry_counts_file.exists():
         data = _read_json(retry_counts_file)
         data.pop(anima_dir.name, None)
-        retry_counts_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(retry_counts_file, data, indent=2, ensure_ascii=False)
 
     payload = _base_state(
         STATE_PENDING_USER_INPUT,
@@ -519,7 +519,7 @@ def repair_bootstrap_complete(anima_dir: Path, *, retry_counts_file: Path | None
     if retry_counts_file and retry_counts_file.exists():
         data = _read_json(retry_counts_file)
         data.pop(anima_dir.name, None)
-        retry_counts_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(retry_counts_file, data, indent=2, ensure_ascii=False)
 
     payload = _base_state(
         STATE_COMPLETED,
@@ -570,6 +570,6 @@ def repair_bootstrap_fresh(animas_dir: Path, name: str, *, archive_root: Path) -
     status_path = new_dir / "status.json"
     new_status = _read_json(status_path)
     new_status.update(preserved)
-    status_path.write_text(json.dumps(new_status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(status_path, new_status, indent=2, ensure_ascii=False)
     initialize_bootstrap_state(new_dir)
     return new_dir, archive_path

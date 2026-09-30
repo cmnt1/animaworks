@@ -17,6 +17,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
+
 logger = logging.getLogger(__name__)
 
 _TCP_LOOPBACK_HOST = "127.0.0.1"
@@ -135,7 +137,7 @@ def _write_tcp_metadata(socket_path: Path, endpoint: IPCTransportEndpoint) -> No
         "host": endpoint.host,
         "port": endpoint.port,
     }
-    socket_path.write_text(json.dumps(payload), encoding="utf-8")
+    atomic_write_json(socket_path, payload, indent=None, ensure_ascii=True, trailing_newline=False)
 
 
 async def start_ipc_server(

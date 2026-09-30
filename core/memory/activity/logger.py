@@ -55,6 +55,7 @@ from core.memory.activity.replay import (  # noqa: F401
 from core.memory.activity.rotation import RotationMixin
 from core.memory.activity.timeline import TimelineMixin
 from core.paths import get_data_dir
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import ensure_aware, now_iso, now_local  # noqa: F401
 
 logger = logging.getLogger("animaworks.activity")
@@ -364,10 +365,7 @@ class ActivityLogger(
             event_dir = get_data_dir() / "run" / "events" / self._anima_name
             event_dir.mkdir(parents=True, exist_ok=True)
             event_file = event_dir / f"ta_{uuid4().hex[:8]}.json"
-            event_file.write_text(
-                json.dumps(payload, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            atomic_write_json(event_file, payload, indent=None, trailing_newline=False)
         except Exception:
             logger.debug("Failed to emit live event", exc_info=True)
 

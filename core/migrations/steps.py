@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core.migrations.registry import MigrationStep, StepResult
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -242,10 +243,7 @@ def step_enable_skill_catalog_router(data_dir: Path, dry_run: bool, verbose: boo
         for key, value in defaults.items():
             prompt.setdefault(key, value)
         raw["prompt"] = prompt
-        config_path.write_text(
-            json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(config_path, raw, indent=2, ensure_ascii=False)
         try:
             from core.config import invalidate_cache
 
@@ -556,10 +554,7 @@ def step_split_board_by_company(data_dir: Path, dry_run: bool, verbose: bool) ->
                 changed += 1
                 details.append(f"{'Would update' if dry_run else 'Updated'} #{channel} metadata")
                 if not dry_run:
-                    meta_path.write_text(
-                        json.dumps(meta, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                    atomic_write_json(meta_path, meta, indent=2, ensure_ascii=False, trailing_newline=False)
 
         closed_legacy_meta = dict(legacy_meta)
         closed_legacy_meta["members"] = []
@@ -568,9 +563,12 @@ def step_split_board_by_company(data_dir: Path, dry_run: bool, verbose: bool) ->
             changed += 1
             details.append(f"{'Would close' if dry_run else 'Closed'} legacy #board")
             if not dry_run:
-                legacy_meta_path.write_text(
-                    json.dumps(closed_legacy_meta, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
+                atomic_write_json(
+                    legacy_meta_path,
+                    closed_legacy_meta,
+                    indent=2,
+                    ensure_ascii=False,
+                    trailing_newline=False,
                 )
 
         if unassigned_members:
@@ -668,10 +666,7 @@ def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) 
                 else:
                     details.append(f"{'Would update' if dry_run else 'Updated'} #{channel} meta (company unset)")
                 if not dry_run:
-                    meta_path.write_text(
-                        json.dumps(new_meta, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                    atomic_write_json(meta_path, new_meta, indent=2, ensure_ascii=False, trailing_newline=False)
             else:
                 # meta-less open channel (legacy): create meta (company from defaults or empty).
                 new_meta = {
@@ -690,10 +685,7 @@ def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) 
                 else:
                     details.append(f"{'Would create' if dry_run else 'Created'} #{channel} meta (company unset)")
                 if not dry_run:
-                    meta_path.write_text(
-                        json.dumps(new_meta, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                    atomic_write_json(meta_path, new_meta, indent=2, ensure_ascii=False, trailing_newline=False)
 
         if changed == 0 and not details:
             details.append("No open channels needed company defaults")
@@ -1034,7 +1026,7 @@ def step_models_json_add_cursor_gemini(data_dir: Path, dry_run: bool, verbose: b
         if not dry_run:
             for key in added:
                 raw[key] = new_entries[key]
-            models_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            atomic_write_json(models_path, raw, indent=2, ensure_ascii=False)
         action = "Would add" if dry_run else "Added"
         return StepResult(changed=len(added), skipped=0, details=[f"{action} models.json entries: {', '.join(added)}"])
     except (json.JSONDecodeError, OSError) as exc:
@@ -1064,7 +1056,7 @@ def step_models_json_mode_b_to_a(data_dir: Path, dry_run: bool, verbose: bool) -
         else:
             for pattern in patched:
                 models[pattern]["mode"] = "A"
-            models_path.write_text(json.dumps(models, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            atomic_write_json(models_path, models, indent=2, ensure_ascii=False)
             details = [f"Mapped Mode B to A in models.json: {', '.join(patched)}"]
         return StepResult(changed=len(patched), skipped=0, details=details)
     except (OSError, ValueError, AttributeError) as exc:
@@ -1139,10 +1131,7 @@ def step_grok_models_json(data_dir: Path, dry_run: bool, verbose: bool) -> StepR
         if not dry_run:
             for key in added:
                 raw[key] = new_entries[key]
-            models_path.write_text(
-                json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
+            atomic_write_json(models_path, raw, indent=2, ensure_ascii=False)
 
         action = "Would add" if dry_run else "Added"
         return StepResult(
@@ -1221,7 +1210,7 @@ def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: b
         if dry_run:
             return StepResult(changed=1, skipped=0, details=[f"Would {detail.lower()}" for detail in details])
 
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
         return StepResult(changed=1, skipped=0, details=details)
     except Exception as exc:
         logger.exception("step_engine_timeout_config_cleanup failed")
@@ -1269,10 +1258,7 @@ def step_rag_vector_worker_config_cleanup(data_dir: Path, dry_run: bool, verbose
                         if not dry_run:
                             for key in removed:
                                 del rag[key]
-                            config_path.write_text(
-                                json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-                                encoding="utf-8",
-                            )
+                            atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
                     else:
                         details.append("No retired RAG vector-worker settings found")
         except Exception as exc:
@@ -1332,7 +1318,7 @@ def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool)
             if config_changed:
                 changed_files += 1
                 if not dry_run:
-                    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
         else:
             details.append("config.json not found; skip")
 
@@ -1351,7 +1337,7 @@ def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool)
             action = "Would remove" if dry_run else "Removed"
             details.append(f"{action} retired settings from {relative_path}: {', '.join(removed)}")
             if not dry_run:
-                status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                atomic_write_json(status_path, status, indent=2, ensure_ascii=False)
 
         if not changed_files:
             details.append("No retired model keys found")
@@ -1386,7 +1372,7 @@ def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: boo
         if dry_run:
             return StepResult(changed=1, skipped=0, details=[f"Would {detail.lower()}"])
 
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
         return StepResult(changed=1, skipped=0, details=[detail])
     except Exception as exc:
         logger.exception("step_memory_maintenance_config_cleanup_20260927 failed")
@@ -1415,7 +1401,7 @@ def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose:
             return StepResult(changed=1, skipped=0, details=["Would drop rag.max_graph_hops"])
 
         del rag["max_graph_hops"]
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
         return StepResult(changed=1, skipped=0, details=["Dropped rag.max_graph_hops"])
     except Exception as exc:
         logger.exception("step_priming_config_cleanup_20260927 failed")
@@ -1526,9 +1512,7 @@ def step_phase_b_removal_20260927(data_dir: Path, dry_run: bool, verbose: bool) 
                         if dry_run:
                             details.append(f"Would remove {len(removed_settings)} retired consolidation setting(s)")
                         else:
-                            config_path.write_text(
-                                json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-                            )
+                            atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
                             details.append(f"Removed {len(removed_settings)} retired consolidation setting(s)")
                     else:
                         skipped += 1
@@ -1611,10 +1595,7 @@ def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> Step
                     if dry_run:
                         details.append("Would map retired Mode B values to A in config.json")
                     else:
-                        config_path.write_text(
-                            json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-                            encoding="utf-8",
-                        )
+                        atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
                         details.append("Mapped retired Mode B values to A in config.json")
                     changed_files += 1
 
@@ -1628,10 +1609,7 @@ def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> Step
             if dry_run:
                 details.append(f"Would map retired Mode B values to A in {status_path.relative_to(data_dir)}")
             else:
-                status_path.write_text(
-                    json.dumps(status, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
+                atomic_write_json(status_path, status, indent=2, ensure_ascii=False)
                 details.append(f"Mapped retired Mode B values to A in {status_path.relative_to(data_dir)}")
             changed_files += 1
 
@@ -1741,9 +1719,7 @@ def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool)
                                 del hk[key]
                                 removed = True
                     if removed:
-                        config_path.write_text(
-                            json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-                        )
+                        atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
                         details.append("removed retired housekeeping settings")
                 except Exception:
                     logger.warning("Failed to clean retired housekeeping settings", exc_info=True)
@@ -1952,7 +1928,7 @@ def step_usage_governor_cleanup(data_dir: Path, dry_run: bool, verbose: bool) ->
                 shutil.move(str(source), str(archive_dir / source.name))
                 changed += 1
         if config_changed and config is not None:
-            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
             changed += 1
         return StepResult(changed=changed, skipped=skipped, details=details)
     except Exception as exc:
@@ -2020,7 +1996,7 @@ def step_retired_config_keys_cleanup(data_dir: Path, dry_run: bool, verbose: boo
         action = "Would remove" if dry_run else "Removed"
         details = [f"{action} retired config keys: {', '.join(removed)}"]
         if not dry_run:
-            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
         return StepResult(changed=1, skipped=0, details=details)
     except Exception as exc:
         logger.exception("step_retired_config_keys_cleanup failed")
@@ -2058,7 +2034,7 @@ def step_memory_config_dead_keys_20260927(data_dir: Path, dry_run: bool, verbose
         for section_name, key in found:
             del config[section_name][key]
         details = [f"Removed {section}.{key}" for section, key in found]
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(config_path, config, indent=2, ensure_ascii=False)
         return StepResult(changed=len(found), skipped=0, details=details)
     except Exception as exc:
         logger.exception("step_memory_config_dead_keys_20260927 failed")

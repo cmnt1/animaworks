@@ -39,7 +39,7 @@ def test_manager_read_returns_empty_on_oserror(tmp_path: Path) -> None:
 
 
 def test_shortterm_save_raises_memory_write_error_on_oserror(tmp_path: Path) -> None:
-    """Mock the JSON write_text to raise OSError. Verify MemoryWriteError is raised."""
+    """Mock the atomic JSON writer to raise OSError and verify it is wrapped."""
     anima_dir = tmp_path / "anima"
     anima_dir.mkdir()
     (anima_dir / "shortterm" / "chat").mkdir(parents=True)
@@ -53,7 +53,7 @@ def test_shortterm_save_raises_memory_write_error_on_oserror(tmp_path: Path) -> 
         accumulated_response="",
     )
 
-    with patch.object(Path, "write_text", side_effect=OSError("disk full")):
+    with patch("core.memory.conversation.shortterm.atomic_write_json", side_effect=OSError("disk full")):
         with pytest.raises(MemoryWriteError, match="Short-term memory save failed"):
             st.save(state)
 

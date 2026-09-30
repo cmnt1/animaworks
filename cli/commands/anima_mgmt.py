@@ -560,10 +560,7 @@ def cmd_anima_disable(args: argparse.Namespace) -> None:
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
         status_data["enabled"] = False
-        status_file.write_text(
-            json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(status_file, status_data, indent=2, ensure_ascii=False)
         print(f"Disabled anima '{name}' (offline mode)")
 
 
@@ -612,10 +609,7 @@ def cmd_anima_enable(args: argparse.Namespace) -> None:
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
         status_data["enabled"] = True
-        status_file.write_text(
-            json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(status_file, status_data, indent=2, ensure_ascii=False)
         print(f"Enabled anima '{name}' (offline mode)")
 
 
@@ -668,10 +662,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
                 logger.warning("Failed to load role defaults for '%s'", new_role)
         apply_local_llm_role_to_status(status_data, load_config(), new_role)
 
-    status_file.write_text(
-        json.dumps(status_data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(status_file, status_data, indent=2, ensure_ascii=False)
 
     if not args.status_only:
         # Re-apply role template files (specialty_prompt.md, permissions.json)
