@@ -25,7 +25,6 @@ This lists the Python files tracked in `git ls-files core cli server`. Private m
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
-| `cli.commands.anima_merge` | 72 | — |
 | `cli.commands.anima_mgmt` | 1451 | CLI commands for anima process management. |
 | `cli.commands.board` | 191 | — |
 | `cli.commands.company_cmd` | 226 | — |
@@ -396,25 +395,8 @@ The lifecycle of Anima: startup, shutdown, and initialization.
 | Module | Lines | First docstring line |
 |---|---:|---|
 | `core.lifecycle` | 18 | — |
-| `core.lifecycle.anima_merge.content_refs` | 386 | — |
-| `core.lifecycle.anima_merge.credential_refs` | 65 | — |
-| `core.lifecycle.anima_merge.external_refs` | 435 | — |
-| `core.lifecycle.anima_merge.finalize` | 440 | — |
-| `core.lifecycle.anima_merge.journal` | 188 | — |
-| `core.lifecycle.anima_merge.service` | 1695 | — |
-| `core.lifecycle.anima_merge.task_refs` | 402 | — |
-| `core.lifecycle.anima_merge.taskboard_refs` | 162 | — |
-| `core.lifecycle.anima_merge.verification` | 268 | — |
 | `core.lifecycle.knowledge_correction` | 127 | — |
 | `core.lifecycle.system_consolidation` | 279 | — |
-
-## `core.lifecycle.anima_merge`
-
-—
-
-| Module | Lines | First line of docstring |
-|---|---:|---|
-| `core.lifecycle.anima_merge` | 22 | — |
 
 ## `core.mcp`
 

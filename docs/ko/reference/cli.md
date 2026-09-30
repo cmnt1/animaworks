@@ -17,7 +17,7 @@
 anima 프로세스 관리
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,merge,merge-finalize,audit}
+                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
                         ...`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
@@ -120,38 +120,6 @@ anima의 상세 설정 표시
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --local | flag | false | — | 파일시스템 직접 스캔 |
-
-## `anima merge`
-
-한 anima를 다른 anima에 병합
-
-`usage: animaworks anima merge [-h] [--dry-run | --execute] [--resume]
-                              [--force]
-                              source target`
-
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
-|---|---|---|---|---|
-| source | positional | — | — | 병합할 원본 anima |
-| target | positional | — | — | 병합 대상 anima |
-| --dry-run | flag | false | — | 두 anima를 변경하지 않고 병합 매니페스트 생성 (기본값) |
-| --execute | flag | false | — | source 툼스톤을 통해 병합 실행 |
-| --resume | flag | false | — | 중단된 --execute 작업 재개 |
-| --force | flag | false | — | 복구 가능한 진행 중 상태에 대한 사전 점검 경고에도 계속 진행 |
-
-## `anima merge-finalize`
-
-완료된 병합 툼스톤 아카이브 및 등록 해제
-
-`usage: animaworks anima merge-finalize [-h] [--dry-run | --execute] [--resume]
-                                       source target`
-
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
-|---|---|---|---|---|
-| source | positional | — | — | 툼스톤 처리된 원본 anima |
-| target | positional | — | — | 병합된 대상 anima |
-| --dry-run | flag | false | — | 데이터 변경 없이 최종화 계획 검증 및 표시 (기본값) |
-| --execute | flag | false | — | source 아카이브 및 등록 제거 |
-| --resume | flag | false | — | 중단된 --execute 작업 재개 |
 
 ## `anima permissions`
 

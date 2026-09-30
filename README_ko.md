@@ -457,7 +457,9 @@ CLI는 파워 유저와 자동화를 위한 것입니다. 일상적인 조작은
 | `animaworks anima list / info / status / restart / disable / enable` | 확인·제어 |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima 단위 설정 |
 | `animaworks anima reload [--all]` | status.json에서 핫 리로드 |
-| `animaworks anima delete / rename / merge / merge-finalize` | 라이프사이클 조작 |
+| `animaworks anima delete / rename` | 라이프사이클 조작 |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | 독립 anima 병합 스크립트 (핵심 CLI 유지보수 대상 아님) |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 완료된 병합 최종 처리 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 진단 |
 
 ### 커뮤니케이션

@@ -457,7 +457,9 @@ CLI 面向高级用户和自动化场景。日常操作使用 Web UI 即可。
 | `animaworks anima list / info / status / restart / disable / enable` | 确认与控制 |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | 按 Anima 配置 |
 | `animaworks anima reload [--all]` | 从 status.json 热重载 |
-| `animaworks anima delete / rename / merge / merge-finalize` | 生命周期操作 |
+| `animaworks anima delete / rename` | 生命周期操作 |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | 独立的 anima 合并脚本（不属于核心 CLI） |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 完成合并后的最终处理 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 诊断 |
 
 ### 沟通

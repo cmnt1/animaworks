@@ -25,7 +25,6 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
-| `cli.commands.anima_merge` | 72 | — |
 | `cli.commands.anima_mgmt` | 1451 | anima 프로세스 관리를 위한 CLI 명령어. |
 | `cli.commands.board` | 191 | — |
 | `cli.commands.company_cmd` | 226 | — |
@@ -396,25 +395,8 @@ anima의 시작, 종료, 초기화 라이프사이클.
 | 모듈 | 줄 수 | docstring 첫 줄 |
 |---|---:|---|
 | `core.lifecycle` | 18 | — |
-| `core.lifecycle.anima_merge.content_refs` | 386 | — |
-| `core.lifecycle.anima_merge.credential_refs` | 65 | — |
-| `core.lifecycle.anima_merge.external_refs` | 435 | — |
-| `core.lifecycle.anima_merge.finalize` | 440 | — |
-| `core.lifecycle.anima_merge.journal` | 188 | — |
-| `core.lifecycle.anima_merge.service` | 1695 | — |
-| `core.lifecycle.anima_merge.task_refs` | 402 | — |
-| `core.lifecycle.anima_merge.taskboard_refs` | 162 | — |
-| `core.lifecycle.anima_merge.verification` | 268 | — |
 | `core.lifecycle.knowledge_correction` | 127 | — |
 | `core.lifecycle.system_consolidation` | 279 | — |
-
-## `core.lifecycle.anima_merge`
-
-—
-
-| 모듈 | 줄 수 | docstring 첫 줄 |
-|---|---:|---|
-| `core.lifecycle.anima_merge` | 22 | — |
 
 ## `core.mcp`
 

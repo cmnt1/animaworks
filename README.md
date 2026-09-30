@@ -457,7 +457,9 @@ The CLI is for power users and automation. For daily operations, the Web UI is s
 | `animaworks anima list / info / status / restart / disable / enable` | Inspect and control |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Per-Anima configuration |
 | `animaworks anima reload [--all]` | Hot reload from status.json |
-| `animaworks anima delete / rename / merge / merge-finalize` | Lifecycle operations |
+| `animaworks anima delete / rename` | Lifecycle operations |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | Standalone anima merge script |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | Finalize a completed merge |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | Diagnostics |
 
 ### Communication
