@@ -31,7 +31,7 @@ export OPENAI_API_KEY="sk-..."
 ## 実行
 
 ```bash
-# 全モード（vector / vector_graph / scope_all）、F1のみ
+# 全モード（vector / scope_all）、F1のみ
 python -m benchmarks.locomo.runner
 
 # 1会話のみテスト
@@ -52,7 +52,7 @@ python -m benchmarks.locomo.runner --answer-model gpt-4o
 | フラグ | デフォルト | 説明 |
 |--------|----------|------|
 | `--data PATH` | `benchmarks/locomo/data/locomo10.json` | データセットパス |
-| `--mode MODE` | `all` | `vector` / `vector_graph` / `scope_all` / `all` |
+| `--mode MODE` | `all` | `vector` / `scope_all` / `all` |
 | `--conversations N` | `10` | 処理する会話数 |
 | `--top-k K` | `10` | 検索結果数 |
 | `--exclude-cat5` | off | adversarial（category 5）を評価集計から除外 |
@@ -98,8 +98,7 @@ error率0.0%、主指標 `cat5_excluded.overall_judge` 60.5%、副指標 `overal
 | モード | 内容 |
 |-------|------|
 | `vector` | ChromaDB ベクトル検索のみ（ベースライン） |
-| `vector_graph` | ベクトル + NetworkX グラフ拡散活性化 |
-| `scope_all` | ベクトル + グラフ + BM25 キーワード検索 + RRF 融合 |
+| `scope_all` | ベクトル + BM25 キーワード検索 + RRF 融合 |
 
 ## 評価メトリクス
 
@@ -123,7 +122,6 @@ error率0.0%、主指標 `cat5_excluded.overall_judge` 60.5%、副指標 `overal
 ```
 results/
 ├── 2026-04-22T10-30-00_vector.json
-├── 2026-04-22T10-30-00_vector_graph.json
 └── 2026-04-22T10-30-00_scope_all.json
 ```
 

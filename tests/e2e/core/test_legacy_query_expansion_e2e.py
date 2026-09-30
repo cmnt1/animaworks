@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 
-from core.memory.retrieval.access_boost import AccessBoostConfig
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
 
 
@@ -23,22 +22,7 @@ class StaticRAGSearch:
             "abstain_on_low_confidence": False,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
-            "access_boost_enabled": True,
-            "access_boost_weight": 0.05,
-            "access_boost_cap": 0.25,
-            "access_boost_half_life_days": 30.0,
         }
-
-    def _build_entity_boost_config(self, query: str, settings: dict[str, object] | None = None) -> None:
-        return None
-
-    def _build_access_boost_config(self, settings: dict[str, object]) -> AccessBoostConfig:
-        return AccessBoostConfig(
-            enabled=True,
-            weight=float(settings["access_boost_weight"]),
-            cap=float(settings["access_boost_cap"]),
-            half_life_days=float(settings["access_boost_half_life_days"]),
-        )
 
     def _get_indexer(self) -> object:
         return object()
@@ -66,7 +50,6 @@ class StaticRAGSearch:
                 "content": "Caroline visited the library.",
                 "score": 0.7,
                 "event_time_iso": "2023-05-07T10:00:00+00:00",
-                "access_count": 0,
             },
             {
                 "doc_id": "inside-high",
@@ -76,19 +59,15 @@ class StaticRAGSearch:
                 "content": "Caroline visited the bookstore.",
                 "score": 0.7,
                 "event_time_iso": "2023-05-07T12:00:00+00:00",
-                "access_count": 20,
             },
         ]
-
-    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path) -> list[dict[str, Any]]:
-        return []
 
     def _keyword_search_fallback(self, query: str, scope: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         return []
 
 
 @pytest.mark.e2e
-def test_unified_legacy_retrieval_expands_temporal_query_filters_and_access_boosts(tmp_path: Path) -> None:
+def test_unified_legacy_retrieval_expands_temporal_query_filters_without_score_boosts(tmp_path: Path) -> None:
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir(parents=True)
     rag = StaticRAGSearch(anima_dir)
@@ -107,6 +86,6 @@ def test_unified_legacy_retrieval_expands_temporal_query_filters_and_access_boos
     assert "2023-05-07" in query_expansion["search_text"]
     assert query_expansion["time_hint_start"] == "2023-05-07"
     assert query_expansion["time_hint_end"] == "2023-05-07"
-    assert [item["doc_id"] for item in results] == ["inside-high", "inside-low"]
+    assert [item["doc_id"] for item in results] == ["inside-low", "inside-high"]
     assert all(item["doc_id"] != "outside" for item in results)
-    assert results[0]["access_boost"] > 0.0
+    assert all("access_boost" not in item for item in results)

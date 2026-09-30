@@ -228,27 +228,6 @@ class RAGConfig(BaseModel):
         ),
     )
     use_gpu: bool = False
-    enable_spreading_activation: bool = True
-    graph_cache_enabled: bool = True
-    implicit_link_threshold: float = 0.75
-    spreading_memory_types: list[str] = ["knowledge", "episodes"]
-    entity_aware_graph_enabled: bool = Field(
-        default=False,
-        description="Enable Legacy NetworkX graph nodes/edges for facts and entities.",
-    )
-    graph_entity_edge_cap: int = Field(
-        default=8,
-        ge=1,
-        description="Maximum co-mentioned memory/fact carriers connected per entity.",
-    )
-    graph_inverse_fan_enabled: bool = Field(
-        default=True,
-        description="Reduce graph edge weights for high-fanout entity nodes.",
-    )
-    graph_recency_weight_enabled: bool = Field(
-        default=True,
-        description="Apply a conservative recency multiplier to graph edge weights.",
-    )
     min_retrieval_score: float = 0.3
     skill_match_min_score: float = 0.75
     repair_enabled: bool = True
@@ -292,17 +271,6 @@ class RAGConfig(BaseModel):
         description="Maximum similar active facts considered during legacy fact reconciliation.",
     )
     entity_registry_enabled: bool = True
-    entity_boost_enabled: bool = True
-    entity_boost: float = 0.20
-    entity_boost_cap: float = 0.80
-    temporal_boost_enabled: bool = True
-    temporal_boost: float = 0.05
-    temporal_boost_max: float = 0.10
-    temporal_half_life_days: float = 7.0
-    access_boost_enabled: bool = True
-    access_boost_weight: float = 0.05
-    access_boost_cap: float = 0.25
-    access_boost_half_life_days: float = 30.0
 
 
 class GPUConfig(BaseModel):

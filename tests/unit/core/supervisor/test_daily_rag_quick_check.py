@@ -48,7 +48,6 @@ async def test_daily_indexing_uses_configured_vector_store(data_dir: Path, monke
         "core.memory.retrieval.bm25.rebuild_longterm_bm25_index", lambda _path: SimpleNamespace(documents=0)
     )
     monkeypatch.setattr("core.memory.facts.entity_index.rebuild_entity_collection", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr("core.memory.rag.graph.rebuild_graph_cache", lambda *_args, **_kwargs: False)
     monkeypatch.setattr("core.memory.rag.vector_registry.get_vector_store", get_store)
 
     harness = _DailyIndexingHarness(data_dir)

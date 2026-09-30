@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 73fb0303b4f6b9ed37ee08c869892c27d41cdd86709f3c89f54245f987561353 -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 36be726724b5da3eb2ebe4fb414801620390a2483a0320d2ec367132648ce570 -->
 
 # 設定リファレンス
 
@@ -107,14 +107,6 @@
 | `rag.embedding_document_prefix` | `str` | `"passage: "` | — |
 | `rag.embedding_max_seq_length` | `int` | `2048` | Cap on the embedding model's max sequence length (tokens). Long-context models like ruri-v3 default to 8192, which blows up GPU activation memory during bulk encode. 0 = use model default. |
 | `rag.use_gpu` | `bool` | `false` | — |
-| `rag.enable_spreading_activation` | `bool` | `true` | — |
-| `rag.graph_cache_enabled` | `bool` | `true` | — |
-| `rag.implicit_link_threshold` | `float` | `0.75` | — |
-| `rag.spreading_memory_types` | `list[str]` | `["knowledge","episodes"]` | — |
-| `rag.entity_aware_graph_enabled` | `bool` | `false` | Enable Legacy NetworkX graph nodes/edges for facts and entities. |
-| `rag.graph_entity_edge_cap` | `int` | `8` | Maximum co-mentioned memory/fact carriers connected per entity. |
-| `rag.graph_inverse_fan_enabled` | `bool` | `true` | Reduce graph edge weights for high-fanout entity nodes. |
-| `rag.graph_recency_weight_enabled` | `bool` | `true` | Apply a conservative recency multiplier to graph edge weights. |
 | `rag.min_retrieval_score` | `float` | `0.3` | — |
 | `rag.skill_match_min_score` | `float` | `0.75` | — |
 | `rag.repair_enabled` | `bool` | `true` | — |
@@ -141,17 +133,6 @@
 | `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | Minimum facts vector similarity before strict LLM duplicate/contradiction/complement labeling. |
 | `rag.facts_reconcile_top_k` | `int` | `5` | Maximum similar active facts considered during legacy fact reconciliation. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
-| `rag.entity_boost_enabled` | `bool` | `true` | — |
-| `rag.entity_boost` | `float` | `0.2` | — |
-| `rag.entity_boost_cap` | `float` | `0.8` | — |
-| `rag.temporal_boost_enabled` | `bool` | `true` | — |
-| `rag.temporal_boost` | `float` | `0.05` | — |
-| `rag.temporal_boost_max` | `float` | `0.1` | — |
-| `rag.temporal_half_life_days` | `float` | `7.0` | — |
-| `rag.access_boost_enabled` | `bool` | `true` | — |
-| `rag.access_boost_weight` | `float` | `0.05` | — |
-| `rag.access_boost_cap` | `float` | `0.25` | — |
-| `rag.access_boost_half_life_days` | `float` | `30.0` | — |
 | `gpu` | `GPUConfig` | `{GPUConfig}` | GPU 利用とデバイス選択の設定。 |
 | `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |

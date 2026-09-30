@@ -216,7 +216,7 @@ class TestPrintSummary:
                 "multi_hop": {"f1": 0.6, "judge": 0.9, "count": 10},
             },
         }
-        _print_summary("vector_graph", summary, total_count=10)
+        _print_summary("scope_all", summary, total_count=10)
         out = capsys.readouterr().out
         assert "90.0%" in out
 

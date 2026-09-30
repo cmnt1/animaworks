@@ -3,7 +3,6 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-import json
 import logging
 import re
 from calendar import monthrange
@@ -13,7 +12,6 @@ from typing import Any
 
 import networkx as nx
 from fastapi import APIRouter, HTTPException, Query, Request
-from networkx.readwrite import json_graph
 
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.frontmatter import parse_frontmatter
@@ -23,20 +21,18 @@ from core.time_utils import get_app_timezone
 logger = logging.getLogger("animaworks.routes.memory")
 
 _WIKILINK_PATTERN = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
-_GRAPH_CACHE_FILE = "knowledge_graph.json"
-_SIMILARITY_EDGE_LIMIT = 500
 _GRAPH_VISIBLE_MEMORY_TYPES = frozenset({"knowledge", "procedures"})
 
 
 def _make_memory_node_id(rel_key: str, memory_type: str) -> str:
-    """Return the node ID format used by ``KnowledgeGraph``."""
+    """Build a stable node ID for the memory graph API."""
     if memory_type == "knowledge":
         return rel_key
     return f"{memory_type}:{rel_key}"
 
 
 def _resolve_link_target(graph: nx.DiGraph, target: str) -> str | None:
-    """Resolve a wikilink using the same rules as ``KnowledgeGraph``."""
+    """Resolve an explicit wikilink to a node in the UI memory graph."""
     target_stem = target.replace(".md", "")
     if target_stem in graph:
         return target_stem
@@ -87,15 +83,8 @@ def _build_explicit_graph(memory: MemoryManager) -> nx.DiGraph:
     return graph
 
 
-def _load_cached_graph(cache_path: Path) -> nx.DiGraph:
-    """Load the existing NetworkX node-link graph cache."""
-    with cache_path.open(encoding="utf-8") as cache_file:
-        data = json.load(cache_file)
-    return json_graph.node_link_graph(data, directed=True)
-
-
 def _node_file_path(anima_dir: Path, node_id: str, attrs: dict[str, Any]) -> Path | None:
-    """Find a cached node's file while keeping reads inside the anima."""
+    """Resolve a graph node's memory file without leaving its Anima directory."""
     memory_type = str(attrs.get("memory_type", "knowledge"))
     rel_key = attrs.get("rel_key")
     if not isinstance(rel_key, str) or not rel_key:
@@ -147,7 +136,7 @@ def _frontmatter_fields(path: Path) -> dict[str, Any]:
 
 
 def _graph_response(anima_dir: Path, graph: nx.DiGraph, *, partial: bool) -> dict[str, Any]:
-    """Convert a cached or fallback graph into the public API shape."""
+    """Convert an explicit-link graph into the public API shape."""
     nodes: list[dict[str, Any]] = []
     included_node_ids: set[str] = set()
     for raw_node_id, attrs in graph.nodes(data=True):
@@ -171,36 +160,24 @@ def _graph_response(anima_dir: Path, graph: nx.DiGraph, *, partial: bool) -> dic
         included_node_ids.add(node_id)
 
     explicit_edges: list[dict[str, Any]] = []
-    similarity_edges: list[dict[str, Any]] = []
-    for raw_source, raw_target, attrs in graph.edges(data=True):
+    for raw_source, raw_target, _attrs in graph.edges(data=True):
         source = str(raw_source)
         target = str(raw_target)
         if source not in included_node_ids or target not in included_node_ids:
             continue
-        link_type = str(attrs.get("link_type", "implicit"))
-        default_similarity = 1.0 if link_type == "explicit" else 0.0
-        try:
-            similarity = float(attrs.get("similarity", default_similarity))
-        except (TypeError, ValueError):
-            similarity = default_similarity
-        edge = {
-            "source": source,
-            "target": target,
-            "link_type": link_type,
-            "similarity": similarity,
-        }
-        if link_type == "explicit":
-            explicit_edges.append(edge)
-        else:
-            similarity_edges.append(edge)
-
-    similarity_edges.sort(key=lambda edge: edge["similarity"], reverse=True)
-    edges_capped = len(similarity_edges) > _SIMILARITY_EDGE_LIMIT
+        explicit_edges.append(
+            {
+                "source": source,
+                "target": target,
+                "link_type": "explicit",
+                "similarity": 1.0,
+            }
+        )
     return {
         "nodes": nodes,
-        "edges": explicit_edges + similarity_edges[:_SIMILARITY_EDGE_LIMIT],
+        "edges": explicit_edges,
         "partial": partial,
-        "edges_capped": edges_capped,
+        "edges_capped": False,
     }
 
 
@@ -410,25 +387,15 @@ def create_memory_router() -> APIRouter:
 
     @router.get("/animas/{name}/memory/graph")
     async def memory_graph(name: str, request: Request):
-        """Return the cached memory graph or an explicit-link-only fallback."""
+        """Return the explicit-link memory graph for UI display."""
         animas_dir = request.app.state.animas_dir
         anima_dir = animas_dir / name
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         memory = MemoryManager(anima_dir)
-        cache_path = anima_dir / "vectordb" / _GRAPH_CACHE_FILE
-        partial = not cache_path.is_file()
-        if partial:
-            graph = _build_explicit_graph(memory)
-        else:
-            try:
-                graph = _load_cached_graph(cache_path)
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError, nx.NetworkXError, KeyError, TypeError) as exc:
-                logger.warning("Failed to load graph cache %s: %s", cache_path, exc)
-                graph = _build_explicit_graph(memory)
-                partial = True
-        return _graph_response(anima_dir, graph, partial=partial)
+        graph = _build_explicit_graph(memory)
+        return _graph_response(anima_dir, graph, partial=True)
 
     @router.get("/animas/{name}/memory/stats")
     async def memory_stats(name: str, request: Request):

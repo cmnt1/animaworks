@@ -296,29 +296,52 @@ class TestRAGConfig:
         rag = RAGConfig(min_retrieval_score=0.5)
         assert rag.min_retrieval_score == 0.5
 
-    def test_entity_boost_defaults_enabled(self) -> None:
-        """Production entity boost is config-controlled and enabled by default (P2-A)."""
-        rag = RAGConfig()
-        assert rag.entity_registry_enabled is True
-        assert rag.entity_boost_enabled is True
-        assert rag.entity_boost == 0.20
-        assert rag.entity_boost_cap == 0.80
+    def test_entity_registry_remains_enabled_for_fact_features(self) -> None:
+        assert RAGConfig().entity_registry_enabled is True
 
-    def test_temporal_boost_defaults(self) -> None:
-        """Time-aware retrieval uses conservative production defaults."""
-        rag = RAGConfig()
-        assert rag.temporal_boost_enabled is True
-        assert rag.temporal_boost == 0.05
-        assert rag.temporal_boost_max == 0.10
-        assert rag.temporal_half_life_days == 7.0
+    def test_removed_graph_retrieval_settings_are_ignored(self, tmp_path: Path) -> None:
+        retired_settings = {
+            "enable_spreading_activation": True,
+            "graph_cache_enabled": True,
+            "implicit_link_threshold": 0.75,
+            "spreading_memory_types": ["knowledge", "episodes"],
+            "entity_aware_graph_enabled": True,
+            "graph_entity_edge_cap": 8,
+            "graph_inverse_fan_enabled": True,
+            "graph_recency_weight_enabled": True,
+            "max_graph_hops": 2,
+        }
+        config_path = get_config_path(tmp_path)
+        config_path.write_text(json.dumps({"rag": retired_settings}), encoding="utf-8")
+        invalidate_cache()
 
-    def test_access_boost_defaults(self) -> None:
-        """Access-count LTP boost has conservative production defaults."""
-        rag = RAGConfig()
-        assert rag.access_boost_enabled is True
-        assert rag.access_boost_weight == 0.05
-        assert rag.access_boost_cap == 0.25
-        assert rag.access_boost_half_life_days == 30.0
+        try:
+            config = load_config(config_path)
+        finally:
+            invalidate_cache()
+
+        assert not retired_settings.keys() & config.rag.model_dump().keys()
+
+    def test_legacy_boost_config_keys_are_ignored(self) -> None:
+        rag = RAGConfig.model_validate(
+            {
+                "entity_boost_enabled": False,
+                "entity_boost": 0.9,
+                "entity_boost_cap": 1.0,
+                "temporal_boost_enabled": False,
+                "temporal_boost": 0.9,
+                "temporal_boost_max": 1.0,
+                "temporal_half_life_days": 1.0,
+                "access_boost_enabled": False,
+                "access_boost_weight": 0.9,
+                "access_boost_cap": 1.0,
+                "access_boost_half_life_days": 1.0,
+            }
+        )
+
+        assert "entity_boost_enabled" not in rag.model_dump()
+        assert "temporal_boost_enabled" not in rag.model_dump()
+        assert "access_boost_enabled" not in rag.model_dump()
 
     def test_fact_reconcile_defaults(self) -> None:
         """Fact reconciliation defaults to high-threshold, bounded top-k behavior."""

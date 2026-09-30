@@ -9,12 +9,8 @@ from __future__ import annotations
 Provides dense vector search capabilities with:
 - Vector similarity search (semantic)
 - Temporal decay scoring
-- Knowledge graph spreading activation
-
-Based on: docs/design/implemented/priming-layer-design.md Phase 2-3
 """
 
-from core.memory.rag.graph import KnowledgeGraph, create_knowledge_graph
 from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
 from core.memory.rag.retriever import MemoryRetriever
 from core.memory.rag.store import ChromaVectorStore, VectorStore
@@ -25,6 +21,4 @@ __all__ = [
     "MemoryIndexer",
     "IndexDirectoryResult",
     "MemoryRetriever",
-    "KnowledgeGraph",
-    "create_knowledge_graph",
 ]

@@ -4,12 +4,11 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dense vector retrieval system with temporal decay and spreading activation.
+"""Dense vector retrieval system with temporal decay.
 
 Implements:
 - Dense vector similarity search (semantic)
 - Temporal decay scoring (newer documents ranked higher)
-- Spreading activation via knowledge graph (optional)
 """
 
 import logging
@@ -23,7 +22,6 @@ from pathlib import Path
 from time import perf_counter
 
 from core.memory.rag.store import SearchResult
-from core.memory.retrieval.access_boost import PER_ANIMA_ACCESS_PREFIX, access_count_for
 from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.rag.retriever")
@@ -36,6 +34,7 @@ WEIGHT_RECENCY = 0.2
 RECENCY_HALF_LIFE_DAYS = 30.0
 
 WEIGHT_FREQUENCY = 0.1
+PER_ANIMA_ACCESS_PREFIX = "ac_"
 
 
 @lru_cache(maxsize=2048)
@@ -86,29 +85,7 @@ class AccessBatch:
         self._lock = threading.Lock()
         self._patches: dict[tuple[str, str], dict[str, str | int | float]] = {}
         self._increments: dict[tuple[str, str], dict[str, str | int | float]] = {}
-        self._episode_graph_results: dict[tuple[str, int], tuple[list[RetrievalResult], bool]] = {}
         self._records: list[tuple[list[RetrievalResult], str, str]] = []
-
-    def remember_episode_graph_results(
-        self,
-        query: str,
-        top_k: int,
-        results: list[RetrievalResult],
-        *,
-        expanded: bool,
-    ) -> None:
-        """Keep episode results for the graph ranker in this retrieval request."""
-        with self._lock:
-            self._episode_graph_results[(query, top_k)] = (results, expanded)
-
-    def take_episode_graph_results(
-        self,
-        query: str,
-        top_k: int,
-    ) -> tuple[list[RetrievalResult], bool] | None:
-        """Return and discard episode results saved for the graph ranker."""
-        with self._lock:
-            return self._episode_graph_results.pop((query, top_k), None)
 
     def overlay(self, collection: str, doc_id: str, metadata: dict) -> dict:
         with self._lock:
@@ -194,14 +171,22 @@ def _metadata_number(metadata: dict[str, object], field: str, *, default: float 
         return max(0.0, default)
 
 
+def _access_count_for(metadata: dict[str, object], anima_name: str | None) -> float:
+    """Read the per-Anima count for shared memories, otherwise the global count."""
+    field = (
+        f"{PER_ANIMA_ACCESS_PREFIX}{anima_name}" if metadata.get("anima") == "shared" and anima_name else "access_count"
+    )
+    return _metadata_number(metadata, field)
+
+
 # ── MemoryRetriever ────────────────────────────────────────────────
 
 
 class MemoryRetriever:
-    """Dense vector search with temporal decay and spreading activation.
+    """Dense vector search with temporal decay.
 
     Pipeline:
-      Query → Dense Vector Search → Temporal Decay → Sort → Spreading Activation → Results
+      Query → Dense Vector Search → Temporal Decay → Sort → Results
     """
 
     def __init__(
@@ -215,19 +200,11 @@ class MemoryRetriever:
         Args:
             vector_store: VectorStore instance
             indexer: MemoryIndexer instance (for embedding generation)
-            knowledge_dir: Path to knowledge directory (for spreading activation)
+            knowledge_dir: Path to the Anima's knowledge directory.
         """
         self.vector_store = vector_store
         self.indexer = indexer
         self.knowledge_dir = knowledge_dir
-        self._knowledge_graph = None  # Lazy initialization
-        self._knowledge_graph_signature: tuple[str, bool, int, bool, bool] | None = None
-        self._graph_lock = threading.Lock()
-
-    def clear_search_cache(self) -> None:
-        """Drop data that is valid only for one retrieval request."""
-        if self._knowledge_graph is not None:
-            self._knowledge_graph.clear_search_cache()
 
     # ── Main search API ─────────────────────────────────────────────
 
@@ -237,7 +214,6 @@ class MemoryRetriever:
         anima_name: str,
         memory_type: str = "knowledge",
         top_k: int = 3,
-        enable_spreading_activation: bool | None = None,
         *,
         include_shared: bool = False,
         include_superseded: bool = False,
@@ -252,9 +228,6 @@ class MemoryRetriever:
             anima_name: Anima name (for collection selection)
             memory_type: Memory type (knowledge, episodes, etc.)
             top_k: Number of results to return
-            enable_spreading_activation: Enable graph-based spreading activation.
-                ``None`` reads from ``config.rag.enable_spreading_activation``
-                (C方式); explicit ``True``/``False`` overrides.
             include_shared: Also search ``shared_common_knowledge`` collection
                 and merge results by score.
             include_superseded: If False (default), exclude knowledge that has
@@ -262,34 +235,17 @@ class MemoryRetriever:
                 to include all knowledge regardless of validity.
             min_score: If set, filter out results whose raw vector similarity
                 score (before temporal decay / frequency boost) is below this
-                threshold.  ``None`` (default) disables filtering.  Spreading
-                activation results (no ``"vector"`` key) are never filtered.
+                threshold.  ``None`` (default) disables filtering.
 
         Returns:
             List of retrieval results sorted by combined score
         """
-        if enable_spreading_activation is None:
-            try:
-                _cfg = self._load_config()
-                enable_spreading_activation = getattr(
-                    _cfg.rag,
-                    "enable_spreading_activation",
-                    False,
-                )
-                spreading_types = tuple(getattr(_cfg.rag, "spreading_memory_types", ("knowledge", "episodes")))
-            except Exception:
-                enable_spreading_activation = False
-                spreading_types = ("knowledge", "episodes")
-        else:
-            spreading_types = self._get_spreading_memory_types()
-
         logger.debug(
-            "Vector search: query='%s', anima=%s, type=%s, top_k=%d, spreading=%s, shared=%s",
+            "Vector search: query='%s', anima=%s, type=%s, top_k=%d, shared=%s",
             query,
             anima_name,
             memory_type,
             top_k,
-            enable_spreading_activation,
             include_shared,
         )
 
@@ -375,52 +331,7 @@ class MemoryRetriever:
             len(initial_results),
             perf_counter() - vector_started,
         )
-        # 5. Apply spreading activation if enabled
-        if enable_spreading_activation and memory_type in spreading_types:
-            spreading_started = perf_counter()
-            try:
-                expanded = self._apply_spreading_activation(initial_results, anima_name)
-                logger.info(
-                    "Memory retrieval graph phase: anima=%s type=%s seeds=%d results=%d elapsed=%.3fs",
-                    anima_name,
-                    memory_type,
-                    len(initial_results),
-                    len(expanded),
-                    perf_counter() - spreading_started,
-                )
-                if memory_type == "episodes" and access_batch is not None:
-                    access_batch.remember_episode_graph_results(query, top_k, expanded, expanded=True)
-                return expanded
-            except Exception as e:
-                logger.warning("Spreading activation failed, returning initial results: %s", e)
-                if memory_type == "episodes" and access_batch is not None:
-                    access_batch.remember_episode_graph_results(query, top_k, initial_results, expanded=False)
-                return initial_results
-
-        if memory_type == "episodes" and access_batch is not None:
-            access_batch.remember_episode_graph_results(query, top_k, initial_results, expanded=False)
         return initial_results
-
-    def expand_search_results(
-        self,
-        initial_results: list[RetrievalResult],
-        anima_name: str,
-    ) -> list[RetrievalResult]:
-        """Apply graph spreading to already-fetched vector seeds."""
-        spreading_started = perf_counter()
-        try:
-            expanded = self._apply_spreading_activation(initial_results, anima_name)
-        except Exception as e:
-            logger.warning("Spreading activation failed, returning initial results: %s", e)
-            return initial_results
-        logger.info(
-            "Memory retrieval graph phase: anima=%s type=episodes seeds=%d results=%d elapsed=%.3fs reused_seeds=true",
-            anima_name,
-            len(initial_results),
-            len(expanded),
-            perf_counter() - spreading_started,
-        )
-        return expanded
 
     def get_important_chunks(
         self,
@@ -754,7 +665,7 @@ class MemoryRetriever:
             result.source_scores["recency"] = recency_score
 
             # --- Frequency boost (Hebbian LTP analog) ---
-            access_count = access_count_for(result.metadata, anima_name)
+            access_count = _access_count_for(result.metadata, anima_name)
             frequency_boost = min(WEIGHT_FREQUENCY * math.log1p(access_count), cap)
             result.score += frequency_boost
             result.source_scores["frequency"] = frequency_boost
@@ -947,134 +858,3 @@ class MemoryRetriever:
                 logger.warning("Failed to reset %s: %s", collection_name, e)
 
         return result
-
-    # ── Config helpers ──────────────────────────────────────────────
-
-    @staticmethod
-    def _load_config():
-        """Load AnimaWorks config (cached internally by load_config)."""
-        from core.config.models import load_config
-
-        return load_config()
-
-    def _get_spreading_memory_types(self) -> tuple[str, ...]:
-        """Return spreading memory types from config with fallback."""
-        try:
-            _cfg = self._load_config()
-            return tuple(getattr(_cfg.rag, "spreading_memory_types", ("knowledge", "episodes")))
-        except Exception:
-            return ("knowledge", "episodes")
-
-    def _entity_aware_graph_settings(self, config) -> dict[str, bool | int]:
-        """Resolve optional entity-aware graph settings from config."""
-        rag = getattr(config, "rag", None)
-        enabled = bool(getattr(rag, "entity_aware_graph_enabled", False))
-        return {
-            "enabled": enabled,
-            "edge_cap": int(getattr(rag, "graph_entity_edge_cap", 8) or 8),
-            "inverse_fan": bool(getattr(rag, "graph_inverse_fan_enabled", True)),
-            "recency_weight": bool(getattr(rag, "graph_recency_weight_enabled", True)),
-        }
-
-    # ── Spreading activation ────────────────────────────────────────
-
-    def _apply_spreading_activation(
-        self,
-        initial_results: list[RetrievalResult],
-        anima_name: str,
-    ) -> list[RetrievalResult]:
-        """Apply spreading activation to expand search results.
-
-        Uses an already-built, schema-compatible graph cache. A cache miss
-        retains the retrieved seeds: full graph construction embeds and queries
-        every source file and belongs to explicit/background maintenance, never
-        a latency-bounded search (whose cancelled worker thread would keep
-        building the graph after its caller has timed out).
-
-        Args:
-            initial_results: Initial search results
-            anima_name: Anima name
-
-        Returns:
-            Expanded results with activated neighbors
-        """
-        _cfg = self._safe_load_config()
-        graph_settings = self._entity_aware_graph_settings(_cfg)
-        graph_signature = (
-            anima_name,
-            bool(graph_settings["enabled"]),
-            int(graph_settings["edge_cap"]),
-            bool(graph_settings["inverse_fan"]),
-            bool(graph_settings["recency_weight"]),
-        )
-
-        with self._graph_lock:
-            if self._knowledge_graph_signature != graph_signature:
-                self._knowledge_graph = None
-
-            if self._knowledge_graph is None:
-                try:
-                    from core.memory.rag.graph import GRAPH_SCHEMA_VERSION, KnowledgeGraph
-
-                    graph = KnowledgeGraph(
-                        self.vector_store,
-                        self.indexer,
-                    )
-
-                    cache_dir = self.knowledge_dir.parent / "vectordb"
-                    cache_enabled = bool(getattr(_cfg.rag, "graph_cache_enabled", True)) if _cfg else True
-                    loaded = False
-                    if cache_enabled:
-                        loaded = graph.load_graph(
-                            cache_dir,
-                            expected_schema_version=GRAPH_SCHEMA_VERSION,
-                            entity_aware_graph_enabled=bool(graph_settings["enabled"]),
-                        )
-                    if not loaded:
-                        logger.info(
-                            "Graph expansion skipped: no usable prebuilt cache for %s; retaining retrieval seeds",
-                            anima_name,
-                        )
-                        return initial_results
-                    self._knowledge_graph = graph
-                    self._knowledge_graph_signature = graph_signature
-
-                except Exception as e:
-                    logger.warning("Failed to initialize knowledge graph: %s", e)
-                    self._knowledge_graph = None
-                    self._knowledge_graph_signature = None
-                    return initial_results
-
-        return self._knowledge_graph.expand_search_results(initial_results)
-
-    def _safe_load_config(self):
-        """Try loading config; return config or None on failure."""
-        try:
-            return self._load_config()
-        except Exception:
-            return None
-
-    def _collect_spreading_dirs(self) -> dict[str, Path]:
-        """Collect additional memory directories for spreading activation.
-
-        Reads ``rag.spreading_memory_types`` from config and maps each
-        type (excluding ``knowledge`` which is the primary directory)
-        to its filesystem path.
-        """
-        anima_dir = self.knowledge_dir.parent
-        extra: dict[str, Path] = {}
-
-        try:
-            config = self._load_config()
-            memory_types = config.rag.spreading_memory_types
-        except Exception:
-            memory_types = ["knowledge", "episodes"]
-
-        for mt in memory_types:
-            if mt == "knowledge":
-                continue
-            candidate = anima_dir / mt
-            if candidate.is_dir():
-                extra[mt] = candidate
-
-        return extra

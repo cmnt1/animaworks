@@ -148,7 +148,7 @@ create_skill(skill_name="deploy-procedure", description="本番デプロイ手�
 
 ## Automatic Memory Processes
 
-The default `compact` recalls sender information, incomplete tasks, explicitly stated resident pointers, recent send history, and human-facing unread notifications. It searches relevant knowledge for conversation and task requests or questions, but does not search during normal heartbeat, cron, or report events. Broad activity history, episodes, and graph expansion are available via optional `full` or explicit search. `priming.max_tokens` defaults to 2,000, with notifications and mandatory resident rules held separately. Per-Anima `status.json: priming_profile` can override without changing model routing.
+The default `compact` recalls sender information, incomplete tasks, explicitly stated resident pointers, recent send history, and human-facing unread notifications. It searches relevant knowledge for conversation and task requests or questions, but does not search during normal heartbeat, cron, or report events. Broad activity history and episodes are available via optional `full` or explicit search. `priming.max_tokens` defaults to 2,000, with notifications and mandatory resident rules held separately. Per-Anima `status.json: priming_profile` can override without changing model routing.
 
 Search when past instructions, customer information, or ongoing work is needed. There is no need to search ritualistically for every response or report success after each use. Skill and procedure bodies are read when needed. Only explicitly stated memories are auto-resident; `[IMPORTANT]` alone does not designate residency.
 
@@ -192,8 +192,8 @@ RAG (Retrieval-Augmented Generation) is used for memory search:
 3. **`.ragignore`**: Writing glob-style patterns in `.ragignore` directly under the data directory (`~/.animaworks/`) excludes matching paths from indexing (comment lines `#` allowed).
 4. **Embedding model**: `rag.embedding_model` in `config.json` (default when unset: `intfloat/multilingual-e5-small`). The vector DB (ChromaDB) is owned by each Anima's root process; other processes deliver to root via the server's internal API (`/api/internal/vector`). Embedding and reranking are computed in one place on the server.
 5. **Search**: The query is vectorized and ranked by combining similarity with **time decay** and reference frequency. The lower bound for results can be set via `rag.min_retrieval_score` in `config.json`. The same lower bound is applied for Priming and tool-based searches.
-6. **Graph diffusion**: `rag.enable_spreading_activation` (default true) and `rag.spreading_memory_types` in `config.json` control **spreading activation** via the knowledge graph.
-7. **Incremental updates and rebuilds**: In addition to re-indexing on file changes, **index rebuilds** run after daily, weekly, and monthly lifecycles to maintain consistency. If RAG inconsistency is detected, repair can isolate `vectordb` and rebuild.
+
+6. **Incremental updates and rebuilds**: In addition to re-indexing on file changes, **index rebuilds** run after daily, weekly, and monthly lifecycles to maintain consistency. If RAG inconsistency is detected, repair can isolate `vectordb` and rebuild.
 
 RAG is used automatically when `search_memory` is called. You do not need to be aware of the mechanism, but
 **tips for improving search accuracy**:

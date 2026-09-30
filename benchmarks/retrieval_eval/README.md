@@ -38,10 +38,7 @@ The evaluation runner supports:
 
 - `baseline`: configured production retrieval settings
 - `no_rerank`
-- `no_entity_boost`
-- `no_temporal_boost`
-- `no_access_boost`
-- `minimal`: rerank, all listed boosts, and spreading activation disabled
+- `minimal`: rerank, spreading activation, entity registry, entity-aware graph, and graph cache/weight options disabled
 
 Other runner options are `--dataset`, `--variants` (comma-separated), `--limit`, `--anima`, `--out`, and `--timeout` (per-query seconds; default 60). Ranking metrics are calculated for successful queries; failed/timed-out queries are counted separately. Latency percentiles include all attempts. Results contain aggregate metrics and anima names, but not query or memory text.
 

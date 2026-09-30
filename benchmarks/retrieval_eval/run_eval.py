@@ -19,20 +19,9 @@ from benchmarks.retrieval_eval.build_dataset import _default_data_dir
 VARIANT_OVERRIDES: dict[str, dict[str, bool]] = {
     "baseline": {},
     "no_rerank": {"rerank_enabled": False},
-    "no_entity_boost": {"entity_boost_enabled": False},
-    "no_temporal_boost": {"temporal_boost_enabled": False},
-    "no_access_boost": {"access_boost_enabled": False},
     "minimal": {
         "rerank_enabled": False,
-        "entity_boost_enabled": False,
-        "temporal_boost_enabled": False,
-        "access_boost_enabled": False,
-        "enable_spreading_activation": False,
         "entity_registry_enabled": False,
-        "entity_aware_graph_enabled": False,
-        "graph_cache_enabled": False,
-        "graph_inverse_fan_enabled": False,
-        "graph_recency_weight_enabled": False,
     },
 }
 # minimal pipeline with the cross-encoder rerank kept on

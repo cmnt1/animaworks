@@ -192,8 +192,8 @@ Curator の昇格・退役は既定で提案だけです。安全上のブロッ
 3. **`.ragignore`**: データディレクトリ（`~/.animaworks/`）直下の `.ragignore` に glob 風パターンを書くと、該当パスはインデックス対象から除外される（コメント行 `#` 可）。
 4. **Embedding モデル**: `config.json` の `rag.embedding_model`（未設定時は `intfloat/multilingual-e5-small`）。ベクトル DB（ChromaDB）は各 Anima の root プロセスが所有し、他のプロセスはサーバーの内部 API（`/api/internal/vector`）経由で root に届ける。埋め込みと rerank はサーバー1か所で計算する。
 5. **検索**: クエリをベクトル化し、類似度と**時間減衰**・参照頻度などを組み合わせてランキングする。`config.json` の `rag.min_retrieval_score` で結果の下限を切れる。Priming やツール経由の検索でも同じ下限が解決される。
-6. **グラフ拡散**: `config.json` の `rag.enable_spreading_activation`（既定 true）と `rag.spreading_memory_types` で、知識グラフによる **spreading activation** を制御できる。
-7. **増分更新と再構築**: ファイル変更に応じた再インデックスに加え、日次・週次・月次のライフサイクル後に **インデックス再構築** が走り整合を取る。RAG不整合が検出された場合は、repair が `vectordb` を隔離して再構築できる。
+
+6. **増分更新と再構築**: ファイル変更に応じた再インデックスに加え、日次・週次・月次のライフサイクル後に **インデックス再構築** が走り整合を取る。RAG不整合が検出された場合は、repair が `vectordb` を隔離して再構築できる。
 
 RAG は `search_memory` を呼ぶと自動的に使われる。仕組みを意識する必要はないが、
 **検索精度を上げるコツ**:

@@ -101,10 +101,10 @@ def test_variant_settings_do_not_mutate_schema_config() -> None:
     settings = variant_settings(config, "minimal")
 
     assert settings["rerank_enabled"] is False
-    assert settings["enable_spreading_activation"] is False
+    assert settings["entity_registry_enabled"] is False
+    assert not any("graph" in key or "spreading" in key for key in settings)
     assert config.rerank_enabled is True
-    assert config.entity_boost_enabled is True
-    assert config.enable_spreading_activation is True
+    assert not hasattr(config, "enable_spreading_activation")
 
 
 def test_read_only_search_does_not_flush_access_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,7 +147,7 @@ def test_read_only_search_does_not_flush_access_metadata(tmp_path: Path, monkeyp
         knowledge_dir=tmp_path / "knowledge",
         procedures_dir=tmp_path / "procedures",
         common_knowledge_dir=tmp_path / "common_knowledge",
-        pipeline_settings=variant_settings({"enable_spreading_activation": True}, "minimal"),
+        pipeline_settings=variant_settings({}, "minimal"),
         read_only=True,
     )
 
