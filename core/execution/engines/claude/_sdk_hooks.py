@@ -32,6 +32,7 @@ from core.execution.engines.claude._sdk_security import (
 )
 from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
 from core.execution.engines.claude._sdk_stream import _log_tool_use
+from core.infra.tasks import spawn
 from core.prompt.context import CHARS_PER_TOKEN
 from core.tooling.schemas import submit_tasks_enabled_for_trigger
 
@@ -643,7 +644,10 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
         # tool action the agent just took (updating frontmatter for a knowledge
         # file it wrote this cycle). It runs near-immediately and its logs belong
         # to this cycle, so we let it inherit the cycle_id rather than detach.
-        asyncio.create_task(_update_knowledge_frontmatter(Path(file_path)))
+        spawn(
+            _update_knowledge_frontmatter(Path(file_path)),
+            name=f"update-knowledge-frontmatter-{Path(file_path).name}",
+        )
         return {"async_": True}
 
     return _post_tool_hook
@@ -659,7 +663,7 @@ async def _update_knowledge_frontmatter(path: Path) -> None:
         from core.memory.frontmatter import parse_frontmatter
         from core.time_utils import now_iso
 
-        text = path.read_text(encoding="utf-8")
+        text = await asyncio.to_thread(path.read_text, encoding="utf-8")
         if not text.startswith("---"):
             return
 

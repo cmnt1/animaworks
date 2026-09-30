@@ -97,7 +97,7 @@ class CLIStreamExecutor(BaseExecutor):
     async def _kill_process(
         self,
         proc: asyncio.subprocess.Process,
-        timeout: float = GRACEFUL_KILL_WAIT_SECONDS,
+        timeout: float = GRACEFUL_KILL_WAIT_SECONDS,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     ) -> None:
         """Terminate a CLI process and its descendants."""
         await ProcessRunner.terminate_process(proc, timeout=timeout)

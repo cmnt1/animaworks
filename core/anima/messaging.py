@@ -41,6 +41,7 @@ from core.execution.fallback_activity import (
 )
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
+from core.infra.tasks import spawn
 from core.memory.conversation.memory import ConversationMemory, ToolRecord
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.paths import load_prompt
@@ -1047,8 +1048,6 @@ class MessagingMixin:
                     _sched_thread_b = thread_id
 
                     def _fire_compaction_b(_anima=self, _tid=_sched_thread_b):
-                        import asyncio as _aio
-
                         from core.agent.session_compactor import (
                             run_idle_compaction,
                         )
@@ -1057,9 +1056,10 @@ class MessagingMixin:
                         # cycle ends (same class as SessionCompactor's timer), so
                         # detach from any bound cycle context to avoid tagging its
                         # logs with a stale, unrelated cycle_id.
-                        _aio.create_task(
+                        contextvars.Context().run(
+                            spawn,
                             run_idle_compaction(_anima, _tid),
-                            context=contextvars.Context(),
+                            name=f"idle-compaction-{_anima.name}-{_tid}",
                         )
 
                     self._session_compactor.schedule(
@@ -1407,13 +1407,14 @@ class MessagingMixin:
                             _sched_thread = thread_id
 
                             def _fire_compaction(_anima=self, _tid=_sched_thread):
-                                import asyncio as _aio
-
                                 from core.agent.session_compactor import (
                                     run_idle_compaction,
                                 )
 
-                                _aio.create_task(run_idle_compaction(_anima, _tid))
+                                spawn(
+                                    run_idle_compaction(_anima, _tid),
+                                    name=f"idle-compaction-{_anima.name}-{_tid}",
+                                )
 
                             self._session_compactor.schedule(
                                 self.name,

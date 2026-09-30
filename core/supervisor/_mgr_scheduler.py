@@ -17,6 +17,7 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from core.infra.tasks import spawn
 from core.memory.rag.store import CollectionExistence
 from core.supervisor.process_handle import ProcessState
 from core.time_utils import get_app_timezone, now_local
@@ -58,7 +59,7 @@ class SchedulerMixin:
             self.scheduler.start()
             self._scheduler_running = True
             logger.info("System scheduler started")
-            asyncio.ensure_future(self._catchup_missed_jobs())
+            spawn(self._catchup_missed_jobs(), name="scheduler-catchup-missed-jobs")
         except Exception:
             logger.exception("Failed to start system scheduler")
             self.scheduler = None

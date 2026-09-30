@@ -250,7 +250,7 @@ async def reconcile_anima_assets(
     # Skip if an active remake-preview session exists (backup dir present).
     # Generating during a remake session causes duplicate work and step-count
     # confusion because the user's slider settings are not used here.
-    active_backups = list(anima_dir.glob("assets_backup_*"))
+    active_backups = await asyncio.to_thread(lambda: list(anima_dir.glob("assets_backup_*")))
     if active_backups:
         logger.debug(
             "Skipping reconciliation for %s — active remake session detected (%s)",

@@ -12,6 +12,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from core.infra.tasks import spawn
 from core.memory.rag import repair_state
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,10 @@ class RAGRepairMixin:
             if state.get("status") == "requested":
                 in_progress.add(anima_name)
                 self._rag_repairs_in_progress = in_progress
-                asyncio.create_task(self._run_supervised_rag_repair(anima_name, state))
+                spawn(
+                    self._run_supervised_rag_repair(anima_name, state),
+                    name=f"rag-repair-{anima_name}",
+                )
 
     async def _run_supervised_rag_repair(self, anima_name: str, state: dict[str, object]) -> None:
         """Repair one anima's RAG DB through its root memory owner.

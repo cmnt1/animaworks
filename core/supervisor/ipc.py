@@ -276,7 +276,7 @@ class IPCClient:
             logger.debug("Config load failed for ipc_stream_timeout", exc_info=True)
             return 60.0
 
-    async def connect(self, timeout: float = 5.0) -> None:
+    async def connect(self, timeout: float = 5.0) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Test connectivity to the active IPC endpoint.
 
         Opens a temporary connection to verify the endpoint is reachable, then
@@ -293,7 +293,7 @@ class IPCClient:
             endpoint = resolve_client_endpoint(self.socket_path)
             logger.debug("IPC client connectivity verified: %s", endpoint.describe())
 
-    async def send_request(self, request: IPCRequest, timeout: float = 60.0) -> IPCResponse:
+    async def send_request(self, request: IPCRequest, timeout: float = 60.0) -> IPCResponse:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Send a request over a dedicated connection and wait for response.
 
         Opens a fresh dedicated connection for each request so that
@@ -352,7 +352,7 @@ class IPCClient:
     async def send_request_stream(
         self,
         request: IPCRequest,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     ) -> AsyncIterator[IPCResponse]:
         """
         Send a request and yield streaming responses over a dedicated connection.

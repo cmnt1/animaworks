@@ -24,6 +24,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from core.config.models import ActivityScheduleEntry, load_config, save_config
 from core.i18n import t
+from core.infra.tasks import spawn
 from core.platform.atomic_io import atomic_write_json
 from core.schemas import CronTask
 from core.supervisor.memory_service import MemoryService
@@ -987,7 +988,7 @@ class SchedulerManager:
         # Run in separate task to avoid blocking other scheduled jobs
         self._cron_running.add(task.name)
         try:
-            asyncio.create_task(
+            spawn(
                 self._run_cron_task(task),
                 name=f"cron-{self._anima_name}-{task.name}",
             )

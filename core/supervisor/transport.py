@@ -214,10 +214,11 @@ async def open_ipc_connection(
             key = str(socket_path)
             if key not in _tcp_missing_warned:
                 _tcp_missing_warned.add(key)
+                file_exists = await asyncio.to_thread(socket_path.exists)
                 logger.warning(
                     "TCP metadata missing on Windows for %s (file exists=%s)",
                     socket_path,
-                    socket_path.exists(),
+                    file_exists,
                 )
 
     if endpoint.transport == "tcp":

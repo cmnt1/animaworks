@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ToolExecutionError
 from core.i18n import t
+from core.infra.tasks import spawn
 from core.platform.processing_lease import (
     is_processing_lease_live,
     processing_lease_path,
@@ -382,7 +383,7 @@ class PendingTaskExecutor:
         processing_path: Path,
     ) -> None:
         """Keep a command claim active until BackgroundTaskManager finishes it."""
-        touch_task = asyncio.create_task(
+        touch_task = spawn(
             self._touch_processing_descriptor(processing_path),
             name=f"task-touch-{self._anima_name}-{task_id}",
         )
@@ -799,7 +800,7 @@ class PendingTaskExecutor:
                         continue
                     task_id = task_desc["task_id"]
                     self._active_task_ids.add(task_id)
-                    dispatch = asyncio.create_task(
+                    dispatch = spawn(
                         self._execute_canonical_task(task_desc),
                         name=f"taskexec-{self._anima_name}-{task_id}",
                     )

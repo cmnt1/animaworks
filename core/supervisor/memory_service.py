@@ -212,9 +212,10 @@ class MemoryService:
         from core.config import load_config
 
         timeout = int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
+        cwd = await asyncio.to_thread(lambda: Path(__file__).resolve().parents[2])
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=Path(__file__).resolve().parents[2],
+            cwd=cwd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )

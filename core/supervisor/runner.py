@@ -31,6 +31,7 @@ import psutil
 from core.anima.digital_anima import DigitalAnima
 from core.exceptions import AnimaNotRunningError, ProcessError  # noqa: F401
 from core.i18n import t
+from core.infra.tasks import spawn
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids
@@ -319,7 +320,7 @@ class AnimaRunner:
             # don't block the next chat with a synchronous compress.
             # Runs as a background task so a slow/hanging LLM call cannot
             # block readiness and cause repeated startup timeouts.
-            asyncio.create_task(
+            spawn(
                 self._startup_idle_compress(),
                 name=f"startup-idle-compress-{self.anima_name}",
             )
@@ -434,7 +435,7 @@ class AnimaRunner:
             self._scheduler_mgr._task_runner_supervisor is not None
             and self._scheduler_mgr._task_runner_supervisor._memory_service is not None
         ):
-            asyncio.create_task(
+            spawn(
                 self._scheduler_mgr._task_runner_supervisor.start(),
                 name=f"root-memory-start-{self.anima_name}",
             )

@@ -163,7 +163,7 @@ class ResponseStream:
 
     async def wait_new_event(
         self,
-        timeout: float = 30.0,
+        timeout: float = 30.0,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         after_seq: int = -1,
     ) -> bool:
         """Wait for a new event. Returns False on timeout.
@@ -409,7 +409,7 @@ class StreamRegistry:
                 cancelled,
             )
 
-    async def await_all_producers(self, timeout: float = 5.0) -> None:
+    async def await_all_producers(self, timeout: float = 5.0) -> None:  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
         """Wait for all running producer tasks to finish (for graceful shutdown)."""
         tasks = [s.producer_task for s in self._streams.values() if s.producer_task and not s.producer_task.done()]
         if tasks:

@@ -32,6 +32,7 @@ from core.auth.manager import find_user, load_auth, validate_session
 from core.config import load_config
 from core.i18n import t
 from core.infra import startup_progress
+from core.infra.tasks import spawn
 from core.supervisor import ProcessSupervisor
 from server.localhost import _is_safe_localhost_request
 from server.routes import create_router
@@ -487,7 +488,10 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
             logger.exception("Org structure sync failed at startup")
 
         # Reconcile missing anima assets (fallback for failed bootstrap)
-        asyncio.create_task(_reconcile_assets_at_startup(app.state.animas_dir))
+        spawn(
+            _reconcile_assets_at_startup(app.state.animas_dir),
+            name="startup-asset-reconciliation",
+        )
 
         # ── Slack: ensure .env slots + warn about missing tokens ──
         try:
@@ -508,7 +512,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         try:
             _slack_enabled = load_config().external_messaging.slack.enabled
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         try:
             from server.gateways.slack_socket import SlackSocketModeManager
@@ -786,7 +790,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
                 enable_3d = _cfg.image_gen.enable_3d
                 image_style = _cfg.image_gen.image_style or "realistic"
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
             await reconcile_all_assets(
                 app.state.animas_dir,
                 enable_3d=enable_3d,
@@ -901,7 +905,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
             replace_existing=True,
         )
         # Immediate non-blocking run on startup
-        asyncio.create_task(_external_tasks_collection())
+        spawn(_external_tasks_collection(), name="external-tasks-collection")
 
     msg_log_scheduler.start()
     app.state.msg_log_scheduler = msg_log_scheduler
@@ -1008,7 +1012,7 @@ def create_app(
         health_cfg.health_check_warmup_seconds = float(config.server.health_check_warmup_seconds)
         health_cfg.runner_warmup_seconds = float(config.server.runner_warmup_seconds)
     except Exception:
-        pass
+        logger.debug("Best-effort operation failed", exc_info=True)
 
     supervisor = ProcessSupervisor(
         animas_dir=animas_dir,

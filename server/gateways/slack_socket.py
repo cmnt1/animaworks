@@ -331,7 +331,7 @@ def _fetch_thread_context(token: str, channel_id: str, thread_ts: str, *, limit:
             try:
                 cache_user_name(parent_user, client.resolve_user_name(parent_user))
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
         parent_display = get_cached_user_name(parent_user) or parent_user
         snapshot = user_name_snapshot()
         parent_text = clean_slack_markup(parent_text, cache=snapshot)
@@ -607,7 +607,7 @@ class SlackSocketModeManager:
                 if key.startswith(prefix):
                     found.add(key[len(prefix) :])
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         try:
             cred_file = get_data_dir() / "shared" / "credentials.json"
@@ -617,7 +617,7 @@ class SlackSocketModeManager:
                     if key.startswith(prefix):
                         found.add(key[len(prefix) :])
         except Exception:
-            pass
+            logger.debug("Best-effort operation failed", exc_info=True)
 
         # Also scan environment variables (populated from .env via dotenv).
         # On Windows os.environ uppercases keys, so normalise to lowercase.
@@ -737,7 +737,7 @@ class SlackSocketModeManager:
                     cfg = load_config()
                     is_default = anima_name == cfg.external_messaging.slack.default_anima
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
             should_deliver = is_dm or bool(mention_intent) or is_default
 

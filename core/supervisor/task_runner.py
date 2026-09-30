@@ -16,6 +16,7 @@ from typing import Any
 
 from core.anima.digital_anima import DigitalAnima
 from core.i18n import t
+from core.infra.tasks import spawn
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
 from core.platform.process import snapshot_descendants, terminate_tree
 from core.schemas import CronTask
@@ -476,7 +477,7 @@ async def _receive_after_reconnect(link: _RootLink, broken: IPCV2Connection) -> 
 
 async def _parent_monitor(expected_parent_pid: int) -> None:
     """Return when the spawning anima root is no longer our parent."""
-    while os.getppid() == expected_parent_pid:
+    while os.getppid() == expected_parent_pid:  # noqa: ASYNC110 — polls the OS parent PID, which has no asyncio.Event
         await asyncio.sleep(1.0)
 
 
@@ -686,7 +687,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
             except Exception:
                 logger.debug("tasks_submitted wake event failed", exc_info=True)
 
-        asyncio.ensure_future(_send())
+        spawn(_send(), name="tasks-submitted-wakeup")
 
     from core.tasks.wake import register_wake
 

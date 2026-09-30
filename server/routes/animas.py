@@ -710,7 +710,7 @@ def create_animas_router() -> APIRouter:
                     (anima_dir / "identity.md").unlink(missing_ok=True)
                     (anima_dir / "status.json").unlink(missing_ok=True)
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
                 logger.warning("Partial delete for '%s': %s", name, exc)
                 return {"status": "partial", "name": name, "detail": str(exc)}
 
@@ -808,7 +808,7 @@ def create_animas_router() -> APIRouter:
                 anima_supervisor = resolved.supervisor
                 anima_speciality = resolved.speciality
             except Exception:
-                pass
+                logger.debug("Best-effort operation failed", exc_info=True)
 
             # Read department/title from status.json
             status_path = anima_dir / "status.json"
@@ -819,7 +819,7 @@ def create_animas_router() -> APIRouter:
                     title = sdata.get("title", "")
                     company = sdata.get("company", "")
                 except Exception:
-                    pass
+                    logger.debug("Best-effort operation failed", exc_info=True)
 
             status = proc_status.get("status", "unknown")
             if not enabled:

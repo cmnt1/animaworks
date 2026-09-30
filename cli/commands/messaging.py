@@ -53,14 +53,14 @@ def _resolve_sender_source(name: str) -> str:
 
         known = set(load_config().animas.keys())
     except Exception:
-        pass
+        logger.debug("Could not load configured anima names", exc_info=True)
     if name in known:
         return "anima"
     try:
         if (get_animas_dir() / name / "identity.md").exists():
             return "anima"
     except Exception:
-        pass
+        logger.debug("Could not inspect identity file for %s", name, exc_info=True)
     return "human"
 
 

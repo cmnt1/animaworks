@@ -28,7 +28,7 @@ def _get_package_version() -> str:
 
         return version("animaworks")
     except Exception:
-        pass
+        logger.debug("Best-effort operation failed", exc_info=True)
     try:
         from core.paths import PROJECT_DIR
 
@@ -38,7 +38,7 @@ def _get_package_version() -> str:
                 if line.strip().startswith("version"):
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
     except Exception:
-        pass
+        logger.debug("Best-effort operation failed", exc_info=True)
     return "0.0.0"
 
 
