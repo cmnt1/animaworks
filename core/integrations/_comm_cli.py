@@ -24,11 +24,6 @@ def print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
-def print_error(msg: str) -> None:
-    """Print error message to stderr."""
-    print(f"Error: {msg}", file=sys.stderr)
-
-
 def run_cli_safely(
     func: Any,
     *,
@@ -55,17 +50,3 @@ def run_cli_safely(
         else:
             print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
-
-def format_message_line(
-    user: str,
-    text: str,
-    timestamp: str = "",
-    *,
-    max_text_len: int = 200,
-) -> str:
-    """Format a single message for terminal display."""
-    text_clean = text.replace("\n", " ")[:max_text_len]
-    if timestamp:
-        return f"  [{timestamp}] {user}: {text_clean}"
-    return f"  {user}: {text_clean}"

@@ -13,7 +13,6 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import logging
 from unittest.mock import MagicMock, patch
 
@@ -277,43 +276,6 @@ class TestAutoCleanupOrphanConfig:
         orphans = detect_orphan_animas(data_dir / "animas", data_dir / "shared", age_threshold_s=0)
         assert len(orphans) == 1
         assert orphans[0]["action"] == "auto_removed"
-
-
-class TestFindOrphanSupervisor:
-    """Tests for _find_orphan_supervisor resolution logic."""
-
-    def test_from_status_json(self, data_dir):
-        """Supervisor resolved from status.json in the orphan directory."""
-        orphan_dir = data_dir / "animas" / "rie"
-        orphan_dir.mkdir(parents=True)
-        (orphan_dir / "status.json").write_text(json.dumps({"supervisor": "rin"}), encoding="utf-8")
-
-        from core.org.org_sync import _find_orphan_supervisor
-
-        result = _find_orphan_supervisor(orphan_dir, data_dir / "animas")
-        assert result == "rin"
-
-    def test_fallback_to_top_level(self, data_dir, make_anima):
-        """Falls back to top-level anima when no status.json or config entry."""
-        make_anima("sakura")
-
-        orphan_dir = data_dir / "animas" / "rie"
-        orphan_dir.mkdir(parents=True)
-
-        from core.org.org_sync import _find_orphan_supervisor
-
-        result = _find_orphan_supervisor(orphan_dir, data_dir / "animas")
-        assert result == "sakura"
-
-    def test_returns_none_when_no_candidates(self, data_dir):
-        """Returns None when no supervisor candidates exist."""
-        orphan_dir = data_dir / "animas" / "rie"
-        orphan_dir.mkdir(parents=True)
-
-        from core.org.org_sync import _find_orphan_supervisor
-
-        result = _find_orphan_supervisor(orphan_dir, data_dir / "animas")
-        assert result is None or isinstance(result, str)
 
 
 class TestCreateBlankRollback:

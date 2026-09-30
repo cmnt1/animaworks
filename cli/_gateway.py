@@ -74,39 +74,3 @@ def gateway_request(
     except httpx.HTTPError as exc:
         print(f"HTTP error: {exc}")
         sys.exit(1)
-
-
-def gateway_request_or_none(
-    args: argparse.Namespace,
-    method: str,
-    path: str,
-    *,
-    json: dict[str, Any] | None = None,
-    timeout: float = 120.0,
-) -> dict[str, Any] | list[Any] | None:
-    """Make a gateway request, returning ``None`` on connection failure.
-
-    Unlike :func:`gateway_request`, this variant does **not** call
-    ``sys.exit`` on ``ConnectError`` -- it returns ``None`` so the caller
-    can implement its own fallback logic.
-
-    Other errors (timeout, general HTTP) still cause ``sys.exit(1)``.
-    """
-    import httpx
-
-    gateway = resolve_gateway_url(args)
-    url = f"{gateway}{path}"
-    logger.debug("Gateway %s %s (timeout=%.1fs, soft-fail)", method, url, timeout)
-
-    try:
-        resp = httpx.request(method, url, json=json, timeout=timeout)
-        return resp.json()
-    except httpx.ConnectError:
-        logger.debug("Gateway unreachable at %s", gateway)
-        return None
-    except httpx.TimeoutException:
-        print(f"Request timed out after {timeout}s.")
-        sys.exit(1)
-    except httpx.HTTPError as exc:
-        print(f"HTTP error: {exc}")
-        sys.exit(1)

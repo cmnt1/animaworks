@@ -352,28 +352,6 @@ class TestArchiveAll:
 # ── archive_from ──────────────────────────────────────────
 
 
-class TestArchiveFrom:
-    def test_archives_only_from_sender(self, shared_dir, messenger):
-        bob = Messenger(shared_dir, "bob")
-        charlie = Messenger(shared_dir, "charlie")
-        bob.send("alice", "from bob")
-        charlie.send("alice", "from charlie")
-
-        count = messenger.archive_from("bob")
-        assert count == 1
-        # charlie's message remains
-        remaining = messenger.receive()
-        assert len(remaining) == 1
-        assert remaining[0].from_person == "charlie"
-
-    def test_archive_from_nonexistent_sender(self, shared_dir, messenger):
-        bob = Messenger(shared_dir, "bob")
-        bob.send("alice", "from bob")
-        count = messenger.archive_from("unknown")
-        assert count == 0
-        assert messenger.unread_count() == 1
-
-
 # ── sweep_expired ────────────────────────────────────────
 
 
@@ -529,30 +507,6 @@ class TestUnread:
 # ── send_async ────────────────────────────────────────────
 
 
-class TestSendAsync:
-    async def test_falls_back_to_filesystem(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "async hello")
-        assert msg.from_person == "alice"
-        assert msg.to_person == "bob"
-        # Should be in bob's inbox
-        bob_inbox = shared_dir / "inbox" / "bob"
-        assert len(list(bob_inbox.glob("*.json"))) == 1
-
-    async def test_auto_thread_id(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "test")
-        assert msg.thread_id == msg.id
-
-    async def test_delegates_to_sync_send(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "async test")
-        assert msg.from_person == "alice"
-        bob_inbox = shared_dir / "inbox" / "bob"
-        assert len(list(bob_inbox.glob("*.json"))) == 1
-
-    async def test_send_async_with_intent(self, shared_dir, messenger):
-        msg = await messenger.send_async("bob", "async report", intent="report")
-        assert msg.intent == "report"
-
-
 # ── send() no longer writes DM log ────────────────────
 
 
@@ -575,14 +529,6 @@ class TestSendNoDmLog:
             thread_id="thread-abc",
         )
         messenger.reply(original, "Got it!")
-        dm_log_dir = shared_dir / "dm_logs"
-        if dm_log_dir.exists():
-            files = list(dm_log_dir.glob("*.jsonl"))
-            for f in files:
-                assert f.read_text(encoding="utf-8").strip() == ""
-
-    async def test_send_async_does_not_create_dm_log(self, shared_dir, messenger):
-        await messenger.send_async("bob", "async msg")
         dm_log_dir = shared_dir / "dm_logs"
         if dm_log_dir.exists():
             files = list(dm_log_dir.glob("*.jsonl"))

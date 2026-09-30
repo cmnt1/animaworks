@@ -763,18 +763,6 @@ class MemoryRetriever:
             except Exception as e:
                 logger.warning("Failed to record access for %s: %s", collection, e)
 
-    def _read_metadata_field(
-        self,
-        collection: str,
-        ids: list[str],
-        field: str = "access_count",
-    ) -> dict[str, float]:
-        """Read a numeric metadata field from the vector store."""
-        return {
-            doc_id: _metadata_number(meta, field)
-            for doc_id, meta in self._read_metadata_fields(collection, ids).items()
-        }
-
     def _read_metadata_fields(
         self,
         collection: str,
@@ -819,42 +807,3 @@ class MemoryRetriever:
             patch["used_count"] = used_count + 1
             patch["last_used_at"] = now_iso_str
         return patch
-
-    def reset_shared_access_counts(self) -> dict[str, int]:
-        """Reset access_count and per-anima ac_* fields in shared collections.
-
-        Returns:
-            Dict mapping collection name to number of chunks reset.
-        """
-        _SHARED_COLLECTIONS = ("shared_common_knowledge", "shared_common_skills")
-        result: dict[str, int] = {}
-
-        for collection_name in _SHARED_COLLECTIONS:
-            try:
-                all_results = self.vector_store.get_by_metadata(collection_name, {}, limit=100000)
-                if not all_results:
-                    continue
-
-                all_ids = [r.document.id for r in all_results]
-                reset_metas: list[dict[str, str | int | float]] = []
-                for r in all_results:
-                    patch: dict[str, str | int | float] = {
-                        "access_count": 0,
-                        "retrieved_count": 0,
-                        "used_count": 0,
-                        "last_accessed_at": "",
-                        "last_retrieved_at": "",
-                        "last_used_at": "",
-                    }
-                    for key in r.document.metadata:
-                        if key.startswith(PER_ANIMA_ACCESS_PREFIX):
-                            patch[key] = 0
-                    reset_metas.append(patch)
-
-                self.vector_store.update_metadata(collection_name, all_ids, reset_metas)
-                result[collection_name] = len(all_ids)
-                logger.info("Reset access counts for %d chunks in %s", len(all_ids), collection_name)
-            except Exception as e:
-                logger.warning("Failed to reset %s: %s", collection_name, e)
-
-        return result

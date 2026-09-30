@@ -13,7 +13,6 @@ from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from core.integrations._async_compat import run_sync
 from core.integrations._base import logger
 from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
@@ -89,10 +88,6 @@ class ChatworkClient:
             get_retry_after=retry_after_from_attr,
             retry_on=(_RateLimitError,),
         )
-
-    async def _arequest(self, method: str, path: str, **kwargs) -> dict | list | None:
-        """Async wrapper around :meth:`_request` using a thread-pool executor."""
-        return await run_sync(self._request, method, path, **kwargs)
 
     def get(self, path: str, params: dict | None = None) -> Any:
         return self._request("GET", path, params=params)

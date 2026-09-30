@@ -194,36 +194,6 @@ def build_queries(
     return queries
 
 
-def search_and_merge(
-    retriever: MemoryRetriever,
-    queries: list[str],
-    anima_name: str,
-    *,
-    memory_type: str,
-    top_k: int,
-    include_shared: bool = False,
-    min_score: float | None = None,
-) -> list:
-    """Execute multiple queries and merge by max-score deduplication."""
-    best: dict[str, object] = {}
-
-    for query in queries:
-        results = retriever.search(
-            query=query,
-            anima_name=anima_name,
-            memory_type=memory_type,
-            top_k=top_k,
-            include_shared=include_shared,
-            min_score=min_score,
-        )
-        for r in results:
-            existing = best.get(r.doc_id)
-            if existing is None or r.score > existing.score:  # type: ignore[union-attr]
-                best[r.doc_id] = r
-
-    return sorted(best.values(), key=lambda r: r.score, reverse=True)[:top_k]  # type: ignore[union-attr]
-
-
 # ── Keyword extraction ───────────────────────────────────────────
 
 

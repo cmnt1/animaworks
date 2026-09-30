@@ -4,10 +4,9 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for query merge and language-agnostic keyword extraction.
+"""Tests for language-agnostic keyword extraction.
 
 Covers:
-  - _search_and_merge(): max-score deduplication across multiple queries
   - _extract_keywords(): language-agnostic keyword extraction (CJK, Latin, Korean)
   - _meets_min_length(): character-category-based minimum length filter
   - Semantic dilution regression: multi-topic messages must surface minority keywords
@@ -21,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.memory.priming.utils import meets_min_length, search_and_merge
+from core.memory.priming.utils import meets_min_length
 
 
 @pytest.fixture
@@ -46,65 +45,6 @@ def anima_dir_with_knowledge(anima_dir):
         encoding="utf-8",
     )
     return anima_dir
-
-
-# ── _search_and_merge ─────────────────────────────────────
-
-
-class TestSearchAndMerge:
-    def test_merge_deduplicates_by_doc_id(self) -> None:
-        r1 = MagicMock(doc_id="doc1", score=0.8, content="result 1")
-        r2 = MagicMock(doc_id="doc2", score=0.6, content="result 2")
-        r3 = MagicMock(doc_id="doc1", score=0.9, content="result 1 better")
-
-        mock_retriever = MagicMock()
-        mock_retriever.search.side_effect = [[r1, r2], [r3]]
-
-        results = search_and_merge(
-            mock_retriever,
-            ["query1", "query2"],
-            "test",
-            memory_type="knowledge",
-            top_k=5,
-        )
-
-        assert len(results) == 2
-        assert results[0].doc_id == "doc1"
-        assert results[0].score == 0.9
-        assert results[1].doc_id == "doc2"
-
-    def test_merge_respects_top_k(self) -> None:
-        results_a = [MagicMock(doc_id=f"a{i}", score=0.9 - i * 0.1) for i in range(5)]
-        results_b = [MagicMock(doc_id=f"b{i}", score=0.85 - i * 0.1) for i in range(5)]
-
-        mock_retriever = MagicMock()
-        mock_retriever.search.side_effect = [results_a, results_b]
-
-        results = search_and_merge(
-            mock_retriever,
-            ["q1", "q2"],
-            "test",
-            memory_type="knowledge",
-            top_k=3,
-        )
-
-        assert len(results) == 3
-
-    def test_single_query_works(self) -> None:
-        r1 = MagicMock(doc_id="doc1", score=0.7)
-        mock_retriever = MagicMock()
-        mock_retriever.search.return_value = [r1]
-
-        results = search_and_merge(
-            mock_retriever,
-            ["single"],
-            "test",
-            memory_type="episodes",
-            top_k=3,
-        )
-
-        assert len(results) == 1
-        mock_retriever.search.assert_called_once()
 
 
 # ── _meets_min_length ─────────────────────────────────────

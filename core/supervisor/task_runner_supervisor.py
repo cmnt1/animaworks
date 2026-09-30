@@ -131,11 +131,6 @@ class TaskRunnerSupervisor:
         """Return the live registry for health diagnostics and tests."""
         return self._jobs
 
-    @property
-    def active_child_count(self) -> int:
-        """Number of currently registered task-runner jobs."""
-        return len(self._jobs)
-
     async def start(self) -> None:
         """Start the root IPC endpoint and its optional memory service."""
         await self._ensure_started()

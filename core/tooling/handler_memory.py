@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.i18n import t
 from core.memory._io import archive_episode_before_write
 from core.memory.retrieval.search_metadata import format_result_metadata_line
@@ -260,10 +260,6 @@ class MemoryToolsMixin:
 
     def _current_anima_name(self) -> str:
         return str(getattr(self, "_anima_name", "") or self._anima_dir.name)
-
-    def _memory_source_path(self, source: str) -> Path | None:
-        """Resolve a RAG ``source_file`` value to the file it represents."""
-        return resolve_memory_source_path(self._anima_dir, source)
 
     def _memory_source_is_denied(self, source: str, denied_roots: tuple[Path, ...]) -> bool:
         """Return whether a persisted search hit originated below an explicit deny root."""

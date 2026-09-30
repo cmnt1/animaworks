@@ -154,11 +154,6 @@ class DiscordClient:
         except _DiscordRateLimitError as exc:
             raise exc.api_error from None
 
-    def get_bot_user(self) -> dict:
-        """GET /users/@me — current bot user."""
-        result = self._request("GET", "/users/@me")
-        return result if isinstance(result, dict) else {}
-
     def guilds(self) -> list[dict]:
         """GET /users/@me/guilds — guilds the bot is in."""
         result = self._request("GET", "/users/@me/guilds")

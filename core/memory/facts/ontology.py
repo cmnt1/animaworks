@@ -54,16 +54,6 @@ def normalize_edge_type_name(name: str) -> str:
     return str(name).strip().upper()
 
 
-def is_valid_edge_type_name(name: str) -> bool:
-    """Return True when *name* is a valid semantic edge type identifier."""
-    return bool(_EDGE_TYPE_NAME_RE.fullmatch(normalize_edge_type_name(name)))
-
-
-def default_edge_type_descriptions() -> dict[str, str]:
-    """Return a mutable copy of the built-in semantic edge ontology."""
-    return dict(EDGE_TYPE_DESCRIPTIONS)
-
-
 def _coerce_edge_type_entry(entry: object) -> tuple[str, str] | None:
     name_obj: object | None
     description_obj: object | None

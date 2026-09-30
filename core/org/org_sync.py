@@ -14,7 +14,6 @@ Scans anima directories, extracts supervisor relationships from status.json
 status.json is the single source of truth; config.json is kept in sync.
 """
 
-import json
 import logging
 import shutil
 import time
@@ -220,58 +219,6 @@ def sync_org_structure(
 
 
 # ── Orphan anima detection ───────────────────────────────────────
-
-
-def _find_orphan_supervisor(
-    orphan_dir: Path,
-    animas_dir: Path,
-) -> str | None:
-    """Determine which supervisor should be notified about an orphan anima.
-
-    Resolution order:
-        1. ``status.json`` in *orphan_dir* — ``supervisor`` field.
-        2. ``config.json`` (global) — ``animas.<name>.supervisor``.
-        3. Fallback: first anima in *animas_dir* whose ``config.json``
-           entry has ``supervisor=None`` and whose ``identity.md`` exists
-           (i.e. a top-level anima).
-
-    Args:
-        orphan_dir: Directory of the orphan anima.
-        animas_dir: Root animas directory.
-
-    Returns:
-        Supervisor anima name, or ``None`` if no candidate found.
-    """
-    name = orphan_dir.name
-
-    # 1) status.json in the orphan directory itself
-    status_path = orphan_dir / "status.json"
-    if status_path.exists():
-        try:
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-            sup = data.get("supervisor")
-            if sup:
-                return str(sup)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # 2) config.json global entry / 3) fallback to top-level anima
-    try:
-        config_path = animas_dir.parent / "config.json"
-        config = load_config(config_path)
-        anima_cfg = config.animas.get(name)
-        if anima_cfg and anima_cfg.supervisor:
-            return anima_cfg.supervisor
-        # Fallback: first top-level anima (supervisor=None, identity.md exists)
-        for pname, pcfg in config.animas.items():
-            if pcfg.supervisor is None:
-                candidate_dir = animas_dir / pname
-                if candidate_dir.is_dir() and (candidate_dir / "identity.md").exists():
-                    return pname
-    except Exception:
-        logger.debug("Failed to resolve orphan supervisor for '%s'", name, exc_info=True)
-
-    return None
 
 
 _TRIVIAL_ENTRIES = frozenset(

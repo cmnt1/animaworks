@@ -13,7 +13,6 @@ import re
 from datetime import timedelta, timezone
 from typing import Any
 
-from core.integrations._async_compat import run_sync
 from core.integrations._base import ToolConfigError, get_credential
 from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
@@ -90,10 +89,6 @@ class SlackClient:
             )
         except _SlackRateLimitError as exc:
             raise exc.original from None
-
-    async def _acall(self, method_name: str, **kwargs):
-        """Async wrapper around :meth:`_call` using a thread-pool executor."""
-        return await run_sync(self._call, method_name, **kwargs)
 
     def _paginate(self, method_name: str, response_key: str, **kwargs) -> list:
         """Cursor-based pagination. Returns all items."""
@@ -220,15 +215,6 @@ class SlackClient:
             name=emoji,
             timestamp=ts,
         )
-
-    def users_list(self) -> list[dict]:
-        """Get all workspace users."""
-        all_users = self._paginate("users_list", "members", limit=200)
-        # Cache display names
-        for u in all_users:
-            display = u.get("profile", {}).get("display_name", "") or u.get("real_name", "") or u.get("name", "")
-            self._user_cache[u["id"]] = display
-        return all_users
 
     def resolve_channel(self, name_or_id: str) -> str:
         """Resolve a channel name or ID to a channel_id.

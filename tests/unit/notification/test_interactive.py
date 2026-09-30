@@ -208,19 +208,6 @@ class TestInteractionRouter:
         assert found is not None
         assert found.message_ts.get("slack") == "1234.5678"
 
-    @pytest.mark.asyncio
-    async def test_prune_removes_old_entries(self, _patch_dirs):
-        from core.notification.interactive import get_interaction_router
-
-        router = get_interaction_router()
-        req = await router.create("test_anima", "approval", ["approve"])
-
-        count = await router.prune(max_age_days=0)
-        assert count >= 1
-
-        found = await router.lookup(req.callback_id)
-        assert found is None
-
 
 class TestListResolvedForAnima:
     """Tests for list_resolved_for_anima and resilient wrapper."""
