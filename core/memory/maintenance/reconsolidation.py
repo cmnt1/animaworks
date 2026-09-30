@@ -21,6 +21,7 @@ Pipeline:
   4. Activity log event recording
 """
 
+import asyncio
 import logging
 import shutil
 from datetime import UTC, datetime
@@ -276,7 +277,7 @@ class ReconsolidationEngine:
                 continue
 
             # RAG duplicate check
-            existing = distiller._check_rag_duplicate(resolution_text)
+            existing = await asyncio.to_thread(distiller._check_rag_duplicate, resolution_text)
             if existing:
                 logger.debug(
                     "Skipping resolved event (similar to %s): %.80s",
@@ -318,7 +319,7 @@ class ReconsolidationEngine:
                         "tags": item.get("tags", []),
                         "content": item["content"],
                     }
-                    path = distiller.save_procedure(proc_item)
+                    path = await asyncio.to_thread(distiller.save_procedure, proc_item)
                     if path is not None:
                         results["created"] += 1
                         logger.info(

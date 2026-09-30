@@ -84,10 +84,11 @@ class ForgettingCandidate:
 class ForgettingEngine:
     """Active forgetting based on synaptic homeostasis."""
 
-    def __init__(self, anima_dir: Path, anima_name: str) -> None:
+    def __init__(self, anima_dir: Path, anima_name: str, *, vector_store: Any | None = None) -> None:
         self.anima_dir = anima_dir
         self.anima_name = anima_name
         self.archive_dir = anima_dir / "archive" / "forgotten"
+        self._vector_store = vector_store
 
     def _is_protected(self, metadata: dict) -> bool:
         """Check if a chunk is protected from forgetting.
@@ -275,6 +276,10 @@ class ForgettingEngine:
         Returns:
             VectorStore instance, or ``None`` if unavailable.
         """
+        vector_store = getattr(self, "_vector_store", None)
+        if vector_store is not None:
+            return vector_store
+
         from core.memory.rag.vector_registry import get_vector_store
 
         return get_vector_store(self.anima_name)
@@ -306,14 +311,43 @@ class ForgettingEngine:
             logger.warning("Failed to get chunks from %s: %s", collection_name, e)
             return []
 
+    def _complete_forgetting_sources(self, chunks: list[dict], now: datetime) -> set[str]:
+        """Return source files currently eligible for complete forgetting review."""
+        sources: set[str] = set()
+        for chunk in chunks:
+            meta = chunk["metadata"]
+            if self._is_protected(meta) or meta.get("activation_level") != "low":
+                continue
+
+            low_since_str = meta.get("low_activation_since", "")
+            if not low_since_str:
+                continue
+            try:
+                low_since = ensure_aware(datetime.fromisoformat(str(low_since_str)))
+                days_low = int((now - low_since).total_seconds() / 86400.0)
+            except (ValueError, TypeError):
+                continue
+
+            used_count = int(self._used_count(meta))
+            if days_low <= FORGETTING_LOW_ACTIVATION_DAYS or used_count > FORGETTING_MAX_ACCESS_COUNT:
+                continue
+
+            source_file = meta.get("source_file", "")
+            if source_file and source_file != "merged":
+                sources.add(source_file)
+        return sources
+
     # ── Stage 1: Synaptic Downscaling (Daily) ──────────────────────
 
-    def synaptic_downscaling(self) -> dict[str, Any]:
+    def synaptic_downscaling(self, *, dry_run: bool = False) -> dict[str, Any]:
         """Mark low-activation chunks (daily, runs in daily_consolidate).
 
         Criteria: days_since_access > 90 AND access_count < 3
         Action: Set activation_level="low", record low_activation_since
         Skip: Protected memory types, important chunks, already low
+
+        With ``dry_run=True``, only calculate would-be downscaling and current
+        complete-forgetting targets; no vector metadata is updated.
         """
         logger.info("Starting synaptic downscaling for anima=%s", self.anima_name)
         now = now_local()
@@ -321,16 +355,34 @@ class ForgettingEngine:
         total_scanned = 0
         total_marked = 0
         store = self._get_vector_store()
+        collection_stats: dict[str, dict[str, int]] = {}
+        memory_types = ("knowledge", "episodes", "procedures")
 
         if store is None:
             logger.warning(
                 "Skipping synaptic downscaling for anima=%s: RAG/ChromaDB unavailable",
                 self.anima_name,
             )
+            if dry_run:
+                return {
+                    "scanned": 0,
+                    "marked_low": 0,
+                    "complete_forgetting_targets": 0,
+                    "dry_run": True,
+                    "collections": {
+                        f"{self.anima_name}_{memory_type}": {
+                            "scanned": 0,
+                            "marked_low": 0,
+                            "complete_forgetting_targets": 0,
+                        }
+                        for memory_type in memory_types
+                    },
+                    "skipped_reason": "rag_unavailable",
+                }
             return {"scanned": 0, "marked_low": 0, "skipped_reason": "rag_unavailable"}
 
         # Scan all relevant collections (including procedures)
-        for memory_type in ("knowledge", "episodes", "procedures"):
+        for memory_type in memory_types:
             collection_name = f"{self.anima_name}_{memory_type}"
             chunks = self._get_all_chunks(collection_name)
             total_scanned += len(chunks)
@@ -393,8 +445,17 @@ class ForgettingEngine:
                         }
                     )
 
-            # Batch update
-            if ids_to_mark:
+            complete_targets = len(self._complete_forgetting_sources(chunks, now)) if dry_run else 0
+            if dry_run:
+                # In a dry run, marked_low means the number that would be marked.
+                total_marked += len(ids_to_mark)
+                collection_stats[collection_name] = {
+                    "scanned": len(chunks),
+                    "marked_low": len(ids_to_mark),
+                    "complete_forgetting_targets": complete_targets,
+                }
+            # Batch update only during a real run.
+            elif ids_to_mark:
                 try:
                     store.update_metadata(collection_name, ids_to_mark, metas_to_mark)
                     total_marked += len(ids_to_mark)
@@ -414,18 +475,38 @@ class ForgettingEngine:
             "scanned": total_scanned,
             "marked_low": total_marked,
         }
-        logger.info(
-            "Synaptic downscaling complete for anima=%s: scanned=%d, marked=%d",
-            self.anima_name,
-            total_scanned,
-            total_marked,
-        )
-        logger.info(
-            "forgetting_funnel: anima=%s stage=downscaling scanned=%d marked=%d merged=0 forgotten=0",
-            self.anima_name,
-            total_scanned,
-            total_marked,
-        )
+        if dry_run:
+            result["dry_run"] = True
+            result["collections"] = collection_stats
+            result["complete_forgetting_targets"] = sum(
+                stats["complete_forgetting_targets"] for stats in collection_stats.values()
+            )
+        if dry_run:
+            logger.info(
+                "Synaptic downscaling dry run for anima=%s: scanned=%d, would_mark=%d",
+                self.anima_name,
+                total_scanned,
+                total_marked,
+            )
+            logger.info(
+                "forgetting_funnel: anima=%s stage=downscaling_dry_run scanned=%d would_mark=%d",
+                self.anima_name,
+                total_scanned,
+                total_marked,
+            )
+        else:
+            logger.info(
+                "Synaptic downscaling complete for anima=%s: scanned=%d, marked=%d",
+                self.anima_name,
+                total_scanned,
+                total_marked,
+            )
+            logger.info(
+                "forgetting_funnel: anima=%s stage=downscaling scanned=%d marked=%d merged=0 forgotten=0",
+                self.anima_name,
+                total_scanned,
+                total_marked,
+            )
         return result
 
     # ── Stage 2: Forgetting Candidates (weekly, model-driven) ───────

@@ -232,6 +232,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     setup_index_command(sub)
 
+    # ── Memory maintenance ────────────────────────────────
+    from cli.commands.memory_cmd import register_memory_command
+
+    register_memory_command(sub)
+
     # ── MCP stdio server ──────────────────────────────────
     from cli.commands.mcp_cmd import setup_mcp_command
 

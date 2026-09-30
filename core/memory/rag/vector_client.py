@@ -293,7 +293,19 @@ class VectorClient(VectorStore):
                 )
                 return None
         except Exception as exc:
-            logger.warning("Vector request failed: path=%s anima=%s error=%s", path, self._anima_name, exc)
+            # A bridge transport raises this when a synchronous vector call is made
+            # on the root event loop thread; it used to be swallowed as a warning
+            # (returning None -> empty scans). Surface it as an error so the
+            # silent emptiness is visible. The return value (None) is unchanged.
+            if isinstance(exc, RuntimeError) and "synchronous memory operation" in str(exc):
+                logger.error(
+                    "Vector request failed on event loop: path=%s anima=%s error=%s",
+                    path,
+                    self._anima_name,
+                    exc,
+                )
+            else:
+                logger.warning("Vector request failed: path=%s anima=%s error=%s", path, self._anima_name, exc)
             return None
 
     def _http_transport(self, path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
