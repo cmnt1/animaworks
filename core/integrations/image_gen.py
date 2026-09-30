@@ -46,29 +46,17 @@ from core.integrations._image_clients import (
     _CHAT_ICON_PROMPT,
     _CHIBI_PROMPT,
     _DEFAULT_ANIMATIONS,
-    _DOWNLOAD_TIMEOUT,
     _EXPRESSION_GUIDANCE,
     _EXPRESSION_PROMPTS,
     _HTTP_TIMEOUT,
-    _REALISTIC_BUSTUP_PROMPT,
     _REALISTIC_CHAT_ICON_PROMPT,
-    _REALISTIC_EXPRESSION_GUIDANCE,
-    _REALISTIC_EXPRESSION_PROMPTS,
-    _RETRYABLE_CODES,
     EXECUTION_PROFILE,
     FAL_FLUX_PRO_SUBMIT_URL,
-    FAL_KONTEXT_SUBMIT_URL,
-    MESHY_ANIMATION_TASK_TPL,
-    MESHY_ANIMATION_URL,
-    MESHY_IMAGE_TO_3D_URL,
-    MESHY_RIGGING_TASK_TPL,
     MESHY_RIGGING_URL,
-    MESHY_TASK_URL_TPL,
     NOVELAI_API_URL,
     NOVELAI_ENCODE_URL,
     NOVELAI_MODEL,
     CodexFirstClient,
-    CodexImageClient,
     FalTextToImageClient,
     FluxKontextClient,
     LocalDiffusersClient,
@@ -85,7 +73,6 @@ from core.integrations._image_glb import (
     _download_armature_animation,
     _ensure_fbx2gltf,
     _ensure_gltf_transform_modules,
-    _find_fbx2gltf_binary,
     _run_gltf_transform,
     compress_textures,
     optimize_glb,
@@ -97,10 +84,8 @@ from core.integrations._image_glb import (
 from core.integrations._image_pipeline import ImageGenPipeline, PipelineResult
 
 # ── Re-exports: _image_schemas ─────────────────────────────
-from core.integrations._image_schemas import get_cli_guide, get_tool_schemas
+from core.integrations._image_schemas import get_tool_schemas
 from core.integrations.image.atlascloud import AtlasCloudImageClient
-
-# Re-export for `from core.integrations.image_gen import _VALID_EXPRESSION_NAMES`
 from core.schemas import VALID_EMOTIONS as _VALID_EXPRESSION_NAMES
 
 _MUTABLE_GLB_ATTRS = {"_FBX2GLTF_PATH", "_GLTF_MODULES_DIR"}

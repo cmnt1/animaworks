@@ -52,46 +52,6 @@ class TestPidHelpers:
         # Should not raise
         _remove_pid_file()
 
-    @patch("cli.commands.server._get_pid_file")
-    def test_read_pid_valid(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _read_pid
-
-        pid_file = tmp_path / "server.pid"
-        pid_file.write_text("12345", encoding="utf-8")
-        mock_get_pid.return_value = pid_file
-
-        assert _read_pid() == 12345
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_read_pid_missing(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _read_pid
-
-        pid_file = tmp_path / "nonexistent.pid"
-        mock_get_pid.return_value = pid_file
-
-        assert _read_pid() is None
-
-    @patch("cli.commands.server._get_pid_file")
-    def test_read_pid_invalid(self, mock_get_pid, tmp_path):
-        from cli.commands.server import _read_pid
-
-        pid_file = tmp_path / "server.pid"
-        pid_file.write_text("not_a_number", encoding="utf-8")
-        mock_get_pid.return_value = pid_file
-
-        assert _read_pid() is None
-
-    def test_is_process_alive_current(self):
-        from cli.commands.server import _is_process_alive
-
-        # Current process should be alive
-        assert _is_process_alive(os.getpid()) is True
-
-    def test_is_process_alive_nonexistent(self):
-        from cli.commands.server import _is_process_alive
-
-        # Very high PID that likely doesn't exist
-        assert _is_process_alive(999999999) is False
 
 
 class TestFindServerPidByProcess:
@@ -220,8 +180,8 @@ class TestStopServer:
         with (
             patch("cli.commands.server.time.monotonic", side_effect=lambda: clock[0]),
             patch("cli.commands.server.time.sleep", side_effect=sleep),
-            patch("cli.commands.server._read_pid", return_value=12345),
-            patch("cli.commands.server._is_process_alive", side_effect=lambda pid: clock[0] < exit_after),
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", side_effect=lambda pid: clock[0] < exit_after),
             patch("cli.commands.server.terminate_pid") as terminate,
             patch("cli.commands.server._remove_pid_file") as remove,
             patch("cli.commands.server._kill_orphan_runners", return_value=0),
@@ -243,8 +203,8 @@ class TestStopServer:
         with (
             patch("cli.commands.server.time.monotonic", side_effect=lambda: clock[0]),
             patch("cli.commands.server.time.sleep", side_effect=sleep),
-            patch("cli.commands.server._read_pid", return_value=12345),
-            patch("cli.commands.server._is_process_alive", return_value=True),
+            patch("cli.commands.server.read_server_pid", return_value=12345),
+            patch("cli.commands.server.is_pid_alive", return_value=True),
             patch("cli.commands.server.terminate_pid") as terminate,
             patch("cli.commands.server._remove_pid_file") as remove,
             pytest.raises(SystemExit) as stopped,
@@ -258,7 +218,7 @@ class TestStopServer:
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_no_pid_file_no_process(self, mock_pid, mock_find, mock_orphans, capsys):
         from cli.commands.server import _stop_server
 
@@ -269,8 +229,8 @@ class TestStopServer:
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", return_value=False)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_stale_pid(self, mock_pid, mock_alive, mock_remove, mock_orphans, capsys):
         from cli.commands.server import _stop_server
 
@@ -282,8 +242,8 @@ class TestStopServer:
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
     @patch("cli.commands.server.terminate_pid")
-    @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", side_effect=[True, False])
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_successful_stop(
         self,
         mock_pid,
@@ -302,8 +262,8 @@ class TestStopServer:
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server.terminate_pid", side_effect=ProcessLookupError)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_process_already_exited_on_kill(
         self,
         mock_pid,
@@ -320,8 +280,8 @@ class TestStopServer:
         mock_orphans.assert_called_once()
 
     @patch("cli.commands.server.terminate_pid", side_effect=PermissionError)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_permission_error(self, mock_pid, mock_alive, mock_terminate, capsys):
         from cli.commands.server import _stop_server
 
@@ -332,9 +292,9 @@ class TestStopServer:
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._remove_pid_file")
     @patch("cli.commands.server.terminate_pid")
-    @patch("cli.commands.server._is_process_alive", side_effect=[True, False])
+    @patch("cli.commands.server.is_pid_alive", side_effect=[True, False])
     @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_fallback_to_process_scan(
         self,
         mock_pid,
@@ -363,8 +323,8 @@ class TestStopServer:
     @patch("cli.commands.server.terminate_pid")
     @patch("time.sleep")
     @patch("time.monotonic")
-    @patch("cli.commands.server._is_process_alive")
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive")
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_force_sigkill_after_timeout(
         self,
         mock_pid,
@@ -414,7 +374,7 @@ class TestStopServer:
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=3)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_non_force_kills_orphans_when_no_server(
         self,
         mock_pid,
@@ -432,9 +392,9 @@ class TestStopServer:
         assert "not running" in out
         mock_orphans.assert_called_once()
 
-    @patch("cli.commands.server._is_process_alive", return_value=True)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
     @patch("cli.commands.server.terminate_pid")
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_non_force_timeout_returns_false(self, mock_pid, mock_terminate, mock_alive, capsys):
         """Without --force, timeout returns False without SIGKILL."""
         from cli.commands.server import _stop_server
@@ -450,8 +410,8 @@ class TestStopServer:
 
 
 class TestCmdStart:
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=999)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
+    @patch("cli.commands.server.read_server_pid", return_value=999)
     def test_already_running(self, mock_pid, mock_alive):
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
@@ -461,8 +421,8 @@ class TestCmdStart:
         assert exc.value.code == EXIT_ALREADY_RUNNING
 
     @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
-    @patch("cli.commands.server._is_process_alive", side_effect=lambda pid: pid == 777)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.is_pid_alive", side_effect=lambda pid: pid == 777)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_already_running_orphan(self, mock_pid, mock_alive, mock_find):
         """Detect running orphan process (no PID file) and refuse to start."""
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
@@ -474,8 +434,8 @@ class TestCmdStart:
         mock_find.assert_called_once_with(port=18500)
 
     @patch("cli.commands.server._pin_native_threads")
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=999)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
+    @patch("cli.commands.server.read_server_pid", return_value=999)
     def test_foreground_already_running(self, mock_pid, mock_alive, mock_pin):
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
@@ -486,8 +446,8 @@ class TestCmdStart:
 
     @patch("cli.commands.server._pin_native_threads")
     @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
-    @patch("cli.commands.server._is_process_alive", side_effect=lambda pid: pid == 777)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.is_pid_alive", side_effect=lambda pid: pid == 777)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_foreground_already_running_orphan(self, mock_pid, mock_alive, mock_find, mock_pin):
         from cli.commands.server import EXIT_ALREADY_RUNNING, cmd_start
 
@@ -530,8 +490,8 @@ class TestCmdStart:
     @patch("cli.commands.server._write_pid_file")
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=999)
+    @patch("cli.commands.server.is_pid_alive", return_value=False)
+    @patch("cli.commands.server.read_server_pid", return_value=999)
     def test_stale_pid_cleanup_and_start(
         self,
         mock_pid,
@@ -575,7 +535,7 @@ class TestCmdStart:
     @patch("cli.commands.server._write_pid_file")
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_uvicorn_timeout_keep_alive(
         self,
         mock_pid,
@@ -611,7 +571,7 @@ class TestCmdStart:
     @patch("cli.commands.server._write_pid_file")
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_uvicorn_ws_ping_settings(
         self,
         mock_pid,
@@ -690,8 +650,8 @@ class TestCmdRestart:
     @patch("cli.commands.server._clear_pycache", return_value=0)
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_restart_spawns_helper_then_stops(
         self,
         mock_pid,
@@ -718,8 +678,8 @@ class TestCmdRestart:
     @patch("cli.commands.server._clear_pycache", return_value=0)
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
-    @patch("cli.commands.server._is_process_alive", return_value=True)
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", return_value=True)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_restart_with_force(
         self,
         mock_pid,
@@ -743,8 +703,8 @@ class TestCmdRestart:
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._is_process_alive", return_value=False)
-    @patch("cli.commands.server._read_pid", return_value=12345)
+    @patch("cli.commands.server.is_pid_alive", return_value=False)
+    @patch("cli.commands.server.read_server_pid", return_value=12345)
     def test_restart_stale_pid_falls_back_to_scan(
         self,
         mock_pid,
@@ -771,7 +731,7 @@ class TestCmdRestart:
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_restart_no_pid_no_process(
         self, mock_pid, mock_find, mock_helper, mock_stop, mock_clear, mock_port, mock_log
     ):
@@ -790,7 +750,7 @@ class TestCmdRestart:
     @patch("cli.commands.server._stop_server", return_value=True)
     @patch("cli.commands.server._spawn_restart_helper", return_value=99999)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=54321)
-    @patch("cli.commands.server._read_pid", return_value=None)
+    @patch("cli.commands.server.read_server_pid", return_value=None)
     def test_restart_no_pid_file_finds_by_scan(
         self,
         mock_pid,

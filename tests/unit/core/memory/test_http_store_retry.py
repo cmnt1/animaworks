@@ -1,4 +1,4 @@
-"""Unit tests for HttpVectorStore single retry on owner-unavailable.
+"""Unit tests for VectorClient single retry on owner-unavailable.
 
 Reads retry once after the owner's reported ``retry_after_ms`` (capped at
 500ms) when it answers UNAVAILABLE, for both the HTTP and the in-process
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.rag.http_store import HttpVectorStore
+from core.memory.rag.vector_client import VectorClient
 from core.memory.rag.vector_ops import bridge_transport
 from core.supervisor.memory_service import MemoryServiceUnavailable
 
@@ -44,8 +44,8 @@ class _FakeClient:
         return self._responses.pop(0)
 
 
-def _http_store(client: _FakeClient) -> HttpVectorStore:
-    store = HttpVectorStore("sakura", base_url="http://vector.invalid")
+def _http_store(client: _FakeClient) -> VectorClient:
+    store = VectorClient("sakura", base_url="http://vector.invalid")
     store._get_client = lambda: client
     return store
 
@@ -117,7 +117,7 @@ async def test_owner_read_retries_once_then_succeeds(monkeypatch) -> None:
         return _RESULTS
 
     loop = asyncio.get_running_loop()
-    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
+    store = VectorClient("sakura", transport=bridge_transport(handle, loop))
 
     results = await asyncio.to_thread(store.query, "sakura_knowledge", [0.1])
     assert len(results) == 1
@@ -133,7 +133,7 @@ async def test_owner_read_second_failure_returns_empty(monkeypatch) -> None:
         raise MemoryServiceUnavailable("memory store unavailable")
 
     loop = asyncio.get_running_loop()
-    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
+    store = VectorClient("sakura", transport=bridge_transport(handle, loop))
 
     assert await asyncio.to_thread(store.query, "sakura_knowledge", [0.1]) == []
 
@@ -147,7 +147,7 @@ async def test_owner_write_does_not_retry(monkeypatch) -> None:
         raise MemoryServiceUnavailable("memory queue is full")
 
     loop = asyncio.get_running_loop()
-    store = HttpVectorStore("sakura", transport=bridge_transport(handle, loop))
+    store = VectorClient("sakura", transport=bridge_transport(handle, loop))
 
     assert await asyncio.to_thread(store.create_collection, "sakura_knowledge") is False
     sleep.assert_not_called()

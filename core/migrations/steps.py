@@ -47,7 +47,7 @@ _TOOLS_RENAME_GLOBS = (
 def step_rename_core_tools_to_integrations(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Rewrite ``core.tools`` references in runtime tools and skills to ``core.integrations``.
 
-    The ``core.tools`` alias keeps old files working; this keeps the runtime copies on the canonical name.
+    Runtime files are rewritten to the canonical package before they are loaded.
     Originals are copied to ``backups/<timestamp>_tools_rename/`` before rewriting.
     """
     del verbose

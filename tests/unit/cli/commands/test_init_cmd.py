@@ -134,7 +134,7 @@ class TestCmdInit:
         captured = capsys.readouterr()
         assert "no animas" in captured.out
 
-    @patch("cli.commands.init_cmd._register_anima_in_config")
+    @patch("core.config.register_anima_in_config")
     @patch("core.anima.factory.create_from_template")
     @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("core.paths.get_data_dir")
@@ -165,7 +165,7 @@ class TestCmdInit:
         captured = capsys.readouterr()
         assert "alice" in captured.out
 
-    @patch("cli.commands.init_cmd._register_anima_in_config")
+    @patch("core.config.register_anima_in_config")
     @patch("core.anima.factory.validate_anima_name")
     @patch("core.anima.factory.create_blank")
     @patch("core.infra.runtime_init.ensure_runtime_dir")
@@ -229,7 +229,7 @@ class TestRegisterAnimaInConfig:
     def test_register_new_anima(self, tmp_path):
         import json
 
-        from cli.commands.init_cmd import _register_anima_in_config
+        from core.config import register_anima_in_config
 
         config_path = tmp_path / "config.json"
         config_path.write_text(
@@ -245,12 +245,12 @@ class TestRegisterAnimaInConfig:
             mock_config.animas = {}
             mock_load.return_value = mock_config
 
-            _register_anima_in_config(tmp_path, "alice")
+            register_anima_in_config(tmp_path, "alice")
 
             mock_save.assert_called_once()
 
     def test_register_no_config_file(self, tmp_path):
-        from cli.commands.init_cmd import _register_anima_in_config
+        from core.config import register_anima_in_config
 
         # No config.json exists — should return silently
-        _register_anima_in_config(tmp_path, "alice")
+        register_anima_in_config(tmp_path, "alice")

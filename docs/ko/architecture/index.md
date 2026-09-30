@@ -37,7 +37,7 @@ flowchart TD
 | `core.execution` | 엔진 공통 이벤트, 세션, 프로세스, watchdog, tool evidence |
 | `core.i18n` | 로컬라이즈 문자열과 번역 함수 |
 | `core.infra` | 시작 준비, 로그, 런타임 기반 |
-| `core.integrations` | 외부 서비스와의 연결 어댑터 |
+| `core.integrations` | 외부 서비스 연동과 core 도구 디스패처 |
 | `core.lifecycle` | 공통 라이프사이클 처리와 Anima 통합 |
 | `core.mcp` | AnimaWorks의 도구를 MCP를 통해 공개하는 서버 |
 | `core.memory` | 대화 기록, 장기 기억, 검색, 기억의 유지보수 |
@@ -51,7 +51,6 @@ flowchart TD
 | `core.supervisor` | Anima와 task runner의 프로세스 관리, IPC, scheduler |
 | `core.tasks` | 영속 작업, 실행 큐, 위임, 외부 작업 수집 |
 | `core.tooling` | 내부 도구의 정의, 실행 핸들러, 권한 검사 |
-| `core.tools` | `core.integrations`의 호환 별칭(이전 패키지 이름. `animaworks-tool`의 엔트리 포인트로 유지) |
 | `core.usage` | 사용량과 비용의 집계 |
 | `core.voice` | 음성 입출력과 음성 대화 |
 

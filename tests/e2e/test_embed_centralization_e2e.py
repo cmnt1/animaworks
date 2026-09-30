@@ -20,7 +20,7 @@ from httpx import ASGITransport, AsyncClient
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """Reset singletons before/after each test."""
-    from core.memory.rag.singleton import _reset_for_testing
+    from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
     _reset_for_testing()
     yield

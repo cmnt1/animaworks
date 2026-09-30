@@ -16,7 +16,7 @@ def _reset_singletons(monkeypatch):
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
     monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
 
-    from core.memory.rag.singleton import _reset_for_testing
+    from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
     _reset_for_testing()
     yield

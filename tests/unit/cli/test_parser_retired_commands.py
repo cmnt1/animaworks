@@ -29,8 +29,8 @@ def test_replacement_commands_remain_valid() -> None:
 
 
 def test_tool_cli_does_not_forward_retired_commands() -> None:
-    from core.integrations import _MAIN_CLI_COMMANDS
+    from cli.tool_dispatch import MAIN_CLI_COMMANDS
 
     retired = {"create-anima", "list", "migrate-cron"}
-    assert retired.isdisjoint(_MAIN_CLI_COMMANDS)
-    assert "status" in _MAIN_CLI_COMMANDS
+    assert retired.isdisjoint(MAIN_CLI_COMMANDS)
+    assert "status" in MAIN_CLI_COMMANDS

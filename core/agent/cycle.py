@@ -29,7 +29,7 @@ from core.execution.session_context import RuntimeSessionContext, runtime_sessio
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
-from core.prompt.builder import build_system_prompt, inject_shortterm  # noqa: F401
+from core.prompt.builder import build_system_prompt
 from core.prompt.context import ContextTracker
 from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso, now_local

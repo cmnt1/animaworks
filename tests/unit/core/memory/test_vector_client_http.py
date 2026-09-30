@@ -2,7 +2,7 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core/memory/rag/http_store.py — HttpVectorStore."""
+"""HTTP transport tests for the unified RAG VectorClient."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from core.memory.rag.http_store import HttpVectorStore
+from core.memory.rag.vector_client import VectorClient
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
 
 
 def _make_store(
     base_url: str = "http://localhost:18500/api/internal/vector", anima_name: str = "rin"
-) -> HttpVectorStore:
-    return HttpVectorStore(anima_name, base_url=base_url)
+) -> VectorClient:
+    return VectorClient(anima_name, base_url=base_url)
 
 
 # ── test_query_returns_search_results ─────────────────────────────

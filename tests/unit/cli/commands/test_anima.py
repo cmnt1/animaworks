@@ -15,7 +15,7 @@ import pytest
 
 
 class TestCmdCreateAnima:
-    @patch("cli.commands.init_cmd._register_anima_in_config")
+    @patch("core.config.register_anima_in_config")
     @patch("core.anima.factory.create_from_md")
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
@@ -53,7 +53,7 @@ class TestCmdCreateAnima:
         captured = capsys.readouterr()
         assert "alice" in captured.out
 
-    @patch("cli.commands.init_cmd._register_anima_in_config")
+    @patch("core.config.register_anima_in_config")
     @patch("core.anima.factory.create_from_template")
     @patch("core.paths.get_animas_dir")
     @patch("core.paths.get_data_dir")
@@ -88,7 +88,7 @@ class TestCmdCreateAnima:
         captured = capsys.readouterr()
         assert "alice" in captured.out
 
-    @patch("cli.commands.init_cmd._register_anima_in_config")
+    @patch("core.config.register_anima_in_config")
     @patch("core.anima.factory.validate_anima_name", return_value=None)
     @patch("core.anima.factory.create_blank")
     @patch("core.paths.get_animas_dir")

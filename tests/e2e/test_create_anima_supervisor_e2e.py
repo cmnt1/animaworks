@@ -144,7 +144,7 @@ class TestCreateAnimaSupervisorE2E:
             supervisor="boss",
         )
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             from cli.commands.anima import cmd_create_anima
 
             cmd_create_anima(args)
@@ -169,7 +169,7 @@ class TestCreateAnimaSupervisorE2E:
             supervisor="boss",
         )
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             from cli.commands.anima import cmd_create_anima
 
             cmd_create_anima(args)
@@ -192,7 +192,7 @@ class TestCreateAnimaSupervisorE2E:
             supervisor=None,
         )
 
-        with patch("cli.commands.init_cmd._register_anima_in_config"):
+        with patch("core.config.register_anima_in_config"):
             from cli.commands.anima import cmd_create_anima
 
             cmd_create_anima(args)

@@ -98,7 +98,7 @@ templates = ["**/*"]
 
 [project.scripts]
 animaworks = "cli:cli_main"
-animaworks-tool = "core.tools:cli_dispatch"
+animaworks-tool = "cli.tool_dispatch:cli_dispatch"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -143,10 +143,7 @@ ignore = [
 "scripts/**/*.py" = ["RUF006", "ASYNC", "S110"]
 "swe/**/*.py" = ["RUF006", "ASYNC", "S110"]
 "core/integrations/image_gen.py" = ["F401"]
-"core/config/__init__.py" = ["F401"]
 "core/config/models.py" = ["F401"]
-"core/prompt/__init__.py" = ["F401"]
-"core/lifecycle/__init__.py" = ["F401"]
 "core/tooling/schemas/__init__.py" = ["F401"]
 "core/i18n/__init__.py" = ["F401"]
 "core/memory/priming/__init__.py" = ["F401"]

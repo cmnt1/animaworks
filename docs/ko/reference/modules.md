@@ -874,14 +874,6 @@ anima의 감독, 위임, 실행 조정.
 |---|---:|---|
 | `core.tooling.schemas` | 79 | Canonical tool schema definitions and format converters. |
 
-## `core.tools`
-
-내부에서 사용하는 도구 구현.
-
-| 모듈 | 줄 수 | docstring 첫 줄 |
-|---|---:|---|
-| `core.tools` | 58 | — |
-
 ## `core.usage`
 
 LLM 사용량과 비용의 기록·집계.

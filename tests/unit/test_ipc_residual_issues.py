@@ -50,7 +50,7 @@ class TestSettingSourcesDisabled:
 @pytest.fixture(autouse=True)
 def _reset_vector_stores():
     """Reset singleton stores before and after each test."""
-    from core.memory.rag.singleton import _reset_for_testing
+    from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
     _reset_for_testing()
     yield
@@ -83,15 +83,15 @@ class TestPerAnimaVectorStore:
 
     def test_different_animas_get_different_clients(self):
         from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
-        from core.memory.rag.http_store import HttpVectorStore
+        from core.memory.rag.vector_client import VectorClient
         from core.memory.rag.vector_registry import get_vector_store
 
         configure_endpoints(RagEndpoints(vector_url="http://localhost:18500/vector"))
         a = get_vector_store("anima_a")
         b = get_vector_store("anima_b")
 
-        assert isinstance(a, HttpVectorStore)
-        assert isinstance(b, HttpVectorStore)
+        assert isinstance(a, VectorClient)
+        assert isinstance(b, VectorClient)
         assert a is not b
         assert a._anima_name == "anima_a"
         assert b._anima_name == "anima_b"
@@ -126,7 +126,7 @@ class TestPerAnimaVectorStore:
 
     def test_reset_clears_all_clients(self):
         from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
-        from core.memory.rag.singleton import _reset_for_testing
+        from tests.helpers.rag import reset_rag_state as _reset_for_testing
         from core.memory.rag.vector_registry import get_vector_store
 
         configure_endpoints(RagEndpoints(vector_url="http://localhost:18500/vector"))
@@ -140,7 +140,7 @@ class TestPerAnimaVectorStore:
 
     def test_thread_safety_per_anima(self):
         from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
-        from core.memory.rag.http_store import HttpVectorStore
+        from core.memory.rag.vector_client import VectorClient
         from core.memory.rag.vector_registry import get_vector_store
 
         configure_endpoints(RagEndpoints(vector_url="http://localhost:18500/vector"))
@@ -161,7 +161,7 @@ class TestPerAnimaVectorStore:
 
         assert not errors
         assert len(results) == 10
-        assert isinstance(results[0], HttpVectorStore)
+        assert isinstance(results[0], VectorClient)
         assert all(store is results[0] for store in results)
 
 

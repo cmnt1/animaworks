@@ -20,6 +20,5 @@ core.skills: スキルの発見、読み込み、実行支援。
 core.supervisor: anima の監督、委任、実行調整。
 core.tasks: タスクの登録、状態管理、実行制御。
 core.tooling: ツールのスキーマ、権限、実行基盤。
-core.tools: 内部で利用するツール実装。
 core.usage: LLM 利用量とコストの記録・集計。
 core.voice: 音声入出力と音声対話。

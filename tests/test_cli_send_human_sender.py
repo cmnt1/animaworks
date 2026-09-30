@@ -61,7 +61,7 @@ def test_messenger_human_source_skips_cascade_limiter(tmp_path: Path) -> None:
 
 
 def test_resolve_sender_source_known_anima_dir(tmp_path: Path) -> None:
-    from cli.commands.messaging import _resolve_sender_source
+    from core.messaging.sender import resolve_sender_source
 
     anima_dir = tmp_path / "animas" / "alice"
     anima_dir.mkdir(parents=True)
@@ -70,22 +70,22 @@ def test_resolve_sender_source_known_anima_dir(tmp_path: Path) -> None:
         patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         patch("core.config.models.load_config", side_effect=Exception("no config")),
     ):
-        assert _resolve_sender_source("alice") == "anima"
+        assert resolve_sender_source("alice") == "anima"
 
 
 def test_resolve_sender_source_unknown_name_is_human(tmp_path: Path) -> None:
-    from cli.commands.messaging import _resolve_sender_source
+    from core.messaging.sender import resolve_sender_source
 
     (tmp_path / "animas").mkdir(parents=True)
     with (
         patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         patch("core.config.models.load_config", side_effect=Exception("no config")),
     ):
-        assert _resolve_sender_source("someuser") == "human"
+        assert resolve_sender_source("someuser") == "human"
 
 
 def test_resolve_sender_source_config_registered_anima(tmp_path: Path) -> None:
-    from cli.commands.messaging import _resolve_sender_source
+    from core.messaging.sender import resolve_sender_source
 
     class _Cfg:
         animas = {"carol": object()}
@@ -95,4 +95,4 @@ def test_resolve_sender_source_config_registered_anima(tmp_path: Path) -> None:
         patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         patch("core.config.models.load_config", return_value=_Cfg()),
     ):
-        assert _resolve_sender_source("carol") == "anima"
+        assert resolve_sender_source("carol") == "anima"

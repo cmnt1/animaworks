@@ -1,24 +1,23 @@
 from __future__ import annotations
 
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
+"""RAG APIs, loaded only when explicitly requested."""
 
-"""RAG (Retrieval-Augmented Generation) subsystem.
+from importlib import import_module
+from typing import Any
 
-Provides dense vector search capabilities with:
-- Vector similarity search (semantic)
-- Temporal decay scoring
-"""
+_EXPORTS = {
+    "MemoryIndexer": "core.memory.rag.indexer",
+    "MemoryRetriever": "core.memory.rag.retriever",
+}
 
-from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
-from core.memory.rag.retriever import MemoryRetriever
-from core.memory.rag.store import ChromaVectorStore, VectorStore
 
-__all__ = [
-    "VectorStore",
-    "ChromaVectorStore",
-    "MemoryIndexer",
-    "IndexDirectoryResult",
-    "MemoryRetriever",
-]
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = sorted(_EXPORTS)

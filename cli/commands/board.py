@@ -161,10 +161,11 @@ def _notify_server_board_posted(
 
     Fails silently if the server is not running.
     """
-    from cli.commands.server import _is_process_alive, _read_pid
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
-    pid = _read_pid()
-    if pid is None or not _is_process_alive(pid):
+    pid = read_server_pid()
+    if pid is None or not is_process_alive(pid):
         return
 
     server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500")

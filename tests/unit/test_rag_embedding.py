@@ -22,7 +22,7 @@ def _reset_singletons(monkeypatch):
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
     monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
 
-    from core.memory.rag.singleton import _reset_for_testing
+    from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
     _reset_for_testing()
     yield
@@ -257,7 +257,7 @@ class TestResetForTesting:
 
         import core.memory.rag.embedding as singleton_mod
         from core.memory.rag.embedding import get_embedding_model
-        from core.memory.rag.singleton import _reset_for_testing
+        from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
         get_embedding_model("test-model")
         assert singleton_mod._embedding_model_name == "test-model"

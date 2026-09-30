@@ -54,7 +54,7 @@ def _configure_stream(agent, mode: str, execute_streaming) -> None:
 def _common_patches(mode: str):
     return (
         patch("core.agent.cycle.build_system_prompt", return_value=_build_result()),
-        patch("core.agent.cycle.inject_shortterm", side_effect=lambda prompt, _shortterm: prompt),
+        patch("core.prompt.builder.inject_shortterm", side_effect=lambda prompt, _shortterm: prompt),
         patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value=mode),
         patch("core.agent.agent_core.AgentCore._preflight_size_check", return_value=("system prompt", "prompt")),
         patch(

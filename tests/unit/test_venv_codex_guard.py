@@ -62,17 +62,17 @@ class TestExecutionSdkPreflight:
     def test_critical_when_mode_c_present_and_codex_missing(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "ayame", model="codex/gpt-5.6-sol", execution_mode="C")
         _write_status(animas, "nagi", model="openai/gpt-4o")
 
         with (
-            patch("cli.commands.server._package_importable", return_value=False),
+            patch("core.infra.execution_sdk_preflight._package_importable", return_value=False),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert any(
             "Mode C anima" in r.message and "openai-codex" in r.message and r.levelno >= logging.CRITICAL
@@ -81,17 +81,17 @@ class TestExecutionSdkPreflight:
         assert "ayame" in caplog.text
 
     def test_no_critical_when_no_mode_c(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "nagi", model="openai/gpt-4o")
         _write_status(animas, "mio", model="grok/grok-4.5", execution_mode="X")
 
         with (
-            patch("cli.commands.server._package_importable", return_value=False),
+            patch("core.infra.execution_sdk_preflight._package_importable", return_value=False),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert "Mode C anima" not in caplog.text
         assert "Mode S anima" not in caplog.text
@@ -99,7 +99,7 @@ class TestExecutionSdkPreflight:
     def test_critical_when_mode_s_present_and_claude_sdk_missing(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
@@ -108,10 +108,10 @@ class TestExecutionSdkPreflight:
             return False
 
         with (
-            patch("cli.commands.server._package_importable", side_effect=_importable),
+            patch("core.infra.execution_sdk_preflight._package_importable", side_effect=_importable),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert any(
             "Mode S anima" in r.message and "claude_agent_sdk" in r.message and r.levelno >= logging.CRITICAL
@@ -121,16 +121,16 @@ class TestExecutionSdkPreflight:
     def test_mode_c_by_model_prefix_without_execution_mode(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "codex-bot", model="codex/o4-mini")
 
         with (
-            patch("cli.commands.server._package_importable", return_value=False),
+            patch("core.infra.execution_sdk_preflight._package_importable", return_value=False),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert "Mode C anima" in caplog.text
         assert "codex-bot" in caplog.text
@@ -138,18 +138,18 @@ class TestExecutionSdkPreflight:
     def test_critical_when_mode_s_present_but_cli_missing(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
 
         with (
-            patch("cli.commands.server._package_importable", return_value=True),
+            patch("core.infra.execution_sdk_preflight._package_importable", return_value=True),
             patch("core.platform.claude_code.get_claude_executable", return_value=None),
-            patch("cli.commands.server.os.geteuid", return_value=1000),
+            patch("core.infra.execution_sdk_preflight.os.geteuid", return_value=1000),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert any(
             "Mode S anima" in r.message and "Claude Code CLI" in r.message and r.levelno >= logging.CRITICAL
@@ -159,19 +159,19 @@ class TestExecutionSdkPreflight:
     def test_critical_when_root_and_sandbox_unset(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
         monkeypatch.delenv("IS_SANDBOX", raising=False)
 
         with (
-            patch("cli.commands.server._package_importable", return_value=True),
+            patch("core.infra.execution_sdk_preflight._package_importable", return_value=True),
             patch("core.platform.claude_code.get_claude_executable", return_value="/usr/local/bin/claude"),
-            patch("cli.commands.server.os.geteuid", return_value=0),
+            patch("core.infra.execution_sdk_preflight.os.geteuid", return_value=0),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert any(
             "root" in r.message and "IS_SANDBOX" in r.message and r.levelno >= logging.CRITICAL for r in caplog.records
@@ -180,19 +180,19 @@ class TestExecutionSdkPreflight:
     def test_no_root_critical_when_sandbox_set(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cli.commands.server import _run_execution_sdk_preflight
+        from core.infra.execution_sdk_preflight import run_execution_sdk_preflight
 
         animas = tmp_path / "animas"
         _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
         monkeypatch.setenv("IS_SANDBOX", "1")
 
         with (
-            patch("cli.commands.server._package_importable", return_value=True),
+            patch("core.infra.execution_sdk_preflight._package_importable", return_value=True),
             patch("core.platform.claude_code.get_claude_executable", return_value="/usr/local/bin/claude"),
-            patch("cli.commands.server.os.geteuid", return_value=0),
+            patch("core.infra.execution_sdk_preflight.os.geteuid", return_value=0),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
-            _run_execution_sdk_preflight(animas)
+            run_execution_sdk_preflight(animas)
 
         assert not any("root" in r.message and "IS_SANDBOX" in r.message for r in caplog.records)
 

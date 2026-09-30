@@ -23,7 +23,6 @@
   "status_json_literal_files": [
     "cli/commands/anima_mgmt.py",
     "cli/commands/index_cmd.py",
-    "cli/commands/server.py",
     "core/agent/agent_core.py",
     "core/anima/bootstrap_state.py",
     "core/anima/factory.py",
@@ -36,6 +35,7 @@
     "core/execution/engines/claude/_sdk_hooks.py",
     "core/execution/engines/claude/_sdk_security.py",
     "core/execution/engines/claude/_sdk_session.py",
+    "core/infra/execution_sdk_preflight.py",
     "core/integrations/_anima_icon_url.py",
     "core/lifecycle/system_consolidation.py",
     "core/memory/activity/audit.py",

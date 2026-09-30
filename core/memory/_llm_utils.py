@@ -421,12 +421,8 @@ async def _try_agent_sdk(
     try:
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
     except ImportError:
-        try:
-            from claude_code_sdk import ClaudeAgentOptions  # type: ignore[no-redef]
-            from claude_code_sdk import ClaudeCodeSDKClient as ClaudeSDKClient  # type: ignore[no-redef,assignment]
-        except ImportError:
-            logger.debug("Agent SDK not available for one-shot fallback")
-            return None
+        logger.debug("Agent SDK not available for one-shot fallback")
+        return None
 
     sdk_model = _strip_provider_prefix(model)
     env = _build_sdk_env()
