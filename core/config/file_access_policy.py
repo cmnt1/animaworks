@@ -4,13 +4,72 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Shared canonical-path policy helpers for per-Anima file read denies."""
+"""Shared canonical-path policy helpers for per-Anima file access."""
 
 import os
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from core.i18n import t
+
+PROTECTED_FILE_PATHS = frozenset(
+    {
+        "permissions.md",
+        "permissions.json",
+        "identity.md",
+        "bootstrap.md",
+        "status.json",
+        "state/bm25_longterm_index.json",
+        "state/bm25_longterm_index.dirty",
+    }
+)
+
+PROTECTED_DIRECTORY_MARKERS = frozenset({"activity_log"})
+
+
+@dataclass(frozen=True)
+class FileAccessContext:
+    """Resolved inputs for one file-access decision.
+
+    Callers load configuration and filesystem-backed allowlists before creating
+    this value.  ``evaluate_file_access`` only reads this context and resolves
+    paths; it never loads config, checks directory existence, or logs.
+    """
+
+    anima_dir: Path
+    data_dir: Path
+    denied_roots: tuple[Path, ...] = ()
+    file_roots: tuple[str, ...] = ("/",)
+    file_roots_readonly: tuple[str, ...] = ()
+    write_roots: tuple[Path, ...] = ()
+    restrict_reads_to_roots: bool = True
+    additional_read_dirs: tuple[Path, ...] = ()
+    subordinate_activity_dirs: tuple[Path, ...] = ()
+    descendant_activity_dirs: tuple[Path, ...] = ()
+    peer_activity_dirs: tuple[Path, ...] = ()
+    subordinate_management_files: tuple[Path, ...] = ()
+    subordinate_root_dirs: tuple[Path, ...] = ()
+    descendant_read_files: tuple[Path, ...] = ()
+    descendant_read_dirs: tuple[Path, ...] = ()
+    protected_files: frozenset[str] = PROTECTED_FILE_PATHS
+    protected_directory_markers: frozenset[str] = PROTECTED_DIRECTORY_MARKERS
+    superuser: bool = False
+    trusted_internal_cache_write: bool = False
+
+
+@dataclass(frozen=True)
+class FileAccessDecision:
+    """Pure file-access result plus details needed by caller-specific errors."""
+
+    allowed: bool
+    reason: str = "allowed"
+    denied_root: Path | None = None
+    internal_cache_root: Path | None = None
+    protected_path: str | None = None
+    readonly_root: Path | None = None
+    allowed_dirs: tuple[Path, ...] = ()
+
 
 _ANIMA_MEMORY_ROOTS = frozenset(
     {
@@ -226,6 +285,173 @@ def find_internal_cache_root(path: str | Path, anima_dir: Path) -> Path | None:
         if relative.parts[0] == ".codex_home":
             return anima_root / ".codex_home"
     return None
+
+
+def evaluate_protected_write(
+    anima_dir: Path,
+    path: str | Path,
+    *,
+    protected_files: frozenset[str] = PROTECTED_FILE_PATHS,
+    protected_directory_markers: frozenset[str] = PROTECTED_DIRECTORY_MARKERS,
+) -> FileAccessDecision | None:
+    """Return the shared protected-target decision for a write, if any."""
+    resolved = Path(path).resolve()
+    anima_root = Path(anima_dir).resolve()
+    if not resolved.is_relative_to(anima_root):
+        return FileAccessDecision(False, "outside_anima")
+
+    relative_path = resolved.relative_to(anima_root)
+    relative = str(relative_path)
+    if relative in protected_files:
+        return FileAccessDecision(False, "protected_file", protected_path=relative)
+    for marker in sorted(protected_directory_markers):
+        if marker in relative_path.parts:
+            return FileAccessDecision(False, "protected_directory", protected_path=marker)
+    return None
+
+
+def _path_is_under_any(path: Path, roots: tuple[Path, ...]) -> bool:
+    """Check containment against paths already supplied by the context."""
+    return any(path.is_relative_to(Path(root).resolve()) for root in roots)
+
+
+def _path_equals_any(path: Path, candidates: tuple[Path, ...]) -> bool:
+    """Check exact path membership against paths supplied by the context."""
+    return any(path == Path(candidate).resolve() for candidate in candidates)
+
+
+def _absolute_roots(roots: tuple[str, ...]) -> tuple[Path, ...]:
+    """Resolve configured absolute roots, ignoring relative entries for reads."""
+    return tuple(Path(root).resolve() for root in roots if Path(root).is_absolute())
+
+
+def evaluate_file_access(
+    path: str | Path,
+    ctx: FileAccessContext,
+    *,
+    write: bool,
+) -> FileAccessDecision:
+    """Evaluate one file access against the shared per-Anima policy.
+
+    The context builder owns config reads and filesystem-backed allowlist
+    discovery. This function is deterministic for a given context and path,
+    apart from canonical path resolution needed to enforce symlink boundaries.
+    """
+    if ctx.superuser or not str(path):
+        return FileAccessDecision(True)
+
+    resolved = Path(path).resolve()
+    anima_root = Path(ctx.anima_dir).resolve()
+    data_root = Path(ctx.data_dir).resolve()
+
+    # Deny configured credential caches whenever explicit denies are active.
+    # Trusted internal writes are a narrow ToolHandler-only maintenance path;
+    # explicit file_roots_denied still applies below.
+    if ctx.denied_roots and not (write and ctx.trusted_internal_cache_write):
+        # Pass the original path so find_internal_cache_root can inspect both
+        # the lexical path and its symlink-resolved target.
+        internal_cache_root = find_internal_cache_root(path, anima_root)
+        if internal_cache_root is not None:
+            return FileAccessDecision(
+                False,
+                "internal_cache",
+                internal_cache_root=internal_cache_root,
+            )
+
+    denied_root = find_denied_root(resolved, ctx.denied_roots)
+    if denied_root is not None:
+        return FileAccessDecision(False, "denied_root", denied_root=denied_root)
+
+    # Protect the system permissions file and same-named files anywhere under
+    # data_dir (the latter preserves Mode S's stricter historical boundary).
+    if write and resolved.name == "permissions.global.json" and resolved.is_relative_to(data_root):
+        return FileAccessDecision(False, "global_permissions")
+
+    if resolved.is_relative_to(anima_root):
+        if write:
+            protected = evaluate_protected_write(
+                anima_root,
+                resolved,
+                protected_files=ctx.protected_files,
+                protected_directory_markers=ctx.protected_directory_markers,
+            )
+            if protected is not None:
+                return protected
+        return FileAccessDecision(True)
+
+    # Explicit supervisor/peer exceptions are evaluated before the general
+    # inter-Anima boundary. Management files are read/write; all other grants
+    # in this block are read-only.
+    if not write:
+        if _path_is_under_any(resolved, ctx.subordinate_activity_dirs):
+            return FileAccessDecision(True)
+        if _path_is_under_any(resolved, ctx.descendant_activity_dirs):
+            return FileAccessDecision(True)
+        if _path_is_under_any(resolved, ctx.peer_activity_dirs):
+            return FileAccessDecision(True)
+
+    if _path_equals_any(resolved, ctx.subordinate_management_files):
+        return FileAccessDecision(True)
+
+    if not write:
+        if _path_equals_any(resolved, ctx.descendant_read_files):
+            return FileAccessDecision(True)
+        if _path_is_under_any(resolved, ctx.descendant_read_dirs):
+            return FileAccessDecision(True)
+        if _path_equals_any(resolved, ctx.subordinate_root_dirs):
+            return FileAccessDecision(True)
+        if _path_is_under_any(resolved, ctx.additional_read_dirs):
+            return FileAccessDecision(True)
+
+    # Other Anima directories stay private except for the grants above. This
+    # boundary takes precedence over general file_roots grants.
+    animas_root = anima_root.parent
+    if resolved.is_relative_to(animas_root) and not resolved.is_relative_to(anima_root):
+        return FileAccessDecision(False, "other_anima")
+
+    # Mode S historically allows reads outside other Anima directories without
+    # consulting file_roots. ToolHandler applies the configured read roots.
+    if not write and not ctx.restrict_reads_to_roots:
+        return FileAccessDecision(True)
+
+    if write:
+        write_denial = check_file_write_roots(
+            resolved,
+            file_roots=list(ctx.file_roots),
+            file_roots_readonly=list(ctx.file_roots_readonly),
+            write_roots=ctx.write_roots,
+        )
+        readonly_roots = _absolute_roots(ctx.file_roots_readonly)
+        if write_denial == "readonly_dir":
+            readonly_root = next(root for root in readonly_roots if resolved.is_relative_to(root))
+            return FileAccessDecision(
+                False,
+                "readonly_dir",
+                readonly_root=readonly_root,
+            )
+        if write_denial is not None:
+            allowed_dirs = (*ctx.write_roots, *readonly_roots) if ctx.file_roots else ()
+            return FileAccessDecision(
+                False,
+                "outside_allowed_dirs",
+                allowed_dirs=tuple(Path(root).resolve() for root in allowed_dirs),
+            )
+        return FileAccessDecision(True)
+
+    allowed_roots = _absolute_roots(ctx.file_roots)
+    if _path_is_under_any(resolved, allowed_roots):
+        return FileAccessDecision(True)
+    if not ctx.file_roots:
+        return FileAccessDecision(False, "outside_allowed_dirs")
+
+    readonly_roots = _absolute_roots(ctx.file_roots_readonly)
+    if _path_is_under_any(resolved, readonly_roots):
+        return FileAccessDecision(True)
+    return FileAccessDecision(
+        False,
+        "outside_allowed_dirs",
+        allowed_dirs=(*allowed_roots, *readonly_roots),
+    )
 
 
 def foreign_owned_ssh_config_dirs(ssh_config_d: Path = Path("/etc/ssh/ssh_config.d")) -> list[str]:

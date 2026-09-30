@@ -14,6 +14,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from core.config.file_access_policy import (
+    PROTECTED_DIRECTORY_MARKERS,
+    PROTECTED_FILE_PATHS,
+    evaluate_protected_write,
+)
 from core.exceptions import MemoryWriteError, ToolExecutionError  # noqa: F401
 from core.i18n import t
 from core.time_utils import now_iso  # noqa: F401
@@ -73,23 +78,8 @@ def _get_blocked_patterns() -> list[tuple[re.Pattern[str], str]]:
 
 _NEEDS_SHELL_RE = re.compile(r"\||\&\&|\|\||>>?|<<?")
 
-_PROTECTED_FILES = frozenset(
-    {
-        "permissions.md",
-        "permissions.json",
-        "identity.md",
-        "bootstrap.md",
-        "status.json",
-        "state/bm25_longterm_index.json",
-        "state/bm25_longterm_index.dirty",
-    }
-)
-
-_PROTECTED_DIRS = frozenset(
-    {
-        "activity_log",
-    }
-)
+_PROTECTED_FILES = PROTECTED_FILE_PATHS
+_PROTECTED_DIRS = PROTECTED_DIRECTORY_MARKERS
 
 _EPISODE_FILENAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(_.+)?\.md$")
 
@@ -319,49 +309,27 @@ def _extract_first_heading(text: str) -> str:
     return ""
 
 
-def _is_global_permissions_write_blocked(target: Path) -> str | None:
-    """Return an error if *target* is the runtime ``permissions.global.json`` path."""
-    try:
-        from core.paths import get_global_permissions_path
-
-        resolved = target.resolve()
-        gp = get_global_permissions_path().resolve()
-        if resolved == gp:
-            return _error_result(
-                "PermissionDenied",
-                "permissions.global.json is a protected system file and cannot be modified by the anima itself",
-            )
-    except OSError:
-        pass
-    return None
-
-
 def _is_protected_write(anima_dir: Path, target: Path) -> str | None:
     """Check if a write target is a protected file or outside anima_dir.
 
     Returns error message string if blocked, None if allowed.
     """
-    resolved = target.resolve()
-    anima_resolved = anima_dir.resolve()
-
-    if not resolved.is_relative_to(anima_resolved):
+    decision = evaluate_protected_write(anima_dir, target)
+    if decision is None:
+        return None
+    if decision.reason == "outside_anima":
         return _error_result(
             "PermissionDenied",
             "Path resolves outside anima directory",
         )
-
-    rel = str(resolved.relative_to(anima_resolved))
-    if rel in _PROTECTED_FILES:
+    if decision.reason == "protected_file":
         return _error_result(
             "PermissionDenied",
-            f"'{rel}' is a protected file and cannot be modified by the anima itself",
+            f"'{decision.protected_path}' is a protected file and cannot be modified by the anima itself",
         )
-
-    rel_parts = Path(rel).parts
-    if rel_parts and rel_parts[0] in _PROTECTED_DIRS:
+    if decision.reason == "protected_directory":
         return _error_result(
             "PermissionDenied",
-            f"'{rel_parts[0]}/' is a protected directory and cannot be modified by the anima itself",
+            f"'{decision.protected_path}/' is a protected directory and cannot be modified by the anima itself",
         )
-
     return None
