@@ -379,6 +379,52 @@ class TestSynapticDownscaling:
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
 
+    def test_dry_run_counts_candidates_without_updating_metadata(self, forgetting_engine):
+        old_date = (now_jst() - timedelta(days=120)).isoformat()
+        low_since = (now_jst() - timedelta(days=120)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="would_mark_low",
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+            _make_chunk(
+                doc_id="complete_forgetting_candidate",
+                updated_at=old_date,
+                activation_level="low",
+                low_activation_since=low_since,
+                source_file="knowledge/old.md",
+            ),
+            _make_chunk(
+                doc_id="protected",
+                importance="important",
+                updated_at=old_date,
+                activation_level="normal",
+            ),
+        ]
+
+        def get_chunks(collection_name):
+            return chunks if collection_name == "test_anima_knowledge" else []
+
+        mock_store = MagicMock()
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = forgetting_engine.synaptic_downscaling(dry_run=True)
+
+        assert result["dry_run"] is True
+        assert result["scanned"] == 3
+        assert result["marked_low"] == 1
+        assert result["complete_forgetting_targets"] == 1
+        assert result["collections"]["test_anima_knowledge"] == {
+            "scanned": 3,
+            "marked_low": 1,
+            "complete_forgetting_targets": 1,
+        }
+        mock_store.update_metadata.assert_not_called()
+        mock_store.upsert.assert_not_called()
+
     def test_synaptic_downscaling_scans_knowledge_episodes_procedures(self, forgetting_engine):
         """Test that downscaling scans knowledge, episodes, and procedures."""
         chunks_knowledge = [

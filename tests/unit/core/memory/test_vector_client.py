@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 import pytest
@@ -112,10 +114,7 @@ def test_reads_retry_once_for_all_transports(kind: str, monkeypatch: pytest.Monk
 
 @pytest.mark.parametrize("kind", ["http", "bridge"])
 def test_get_all_returns_documents_across_transports(kind: str) -> None:
-    documents = [
-        {"id": f"doc-{index}", "content": f"body-{index}", "metadata": {"index": index}}
-        for index in range(3)
-    ]
+    documents = [{"id": f"doc-{index}", "content": f"body-{index}", "metadata": {"index": index}} for index in range(3)]
     payloads: list[tuple[str, dict[str, Any]]] = []
 
     if kind == "http":
@@ -123,6 +122,7 @@ def test_get_all_returns_documents_across_transports(kind: str) -> None:
         client = _HttpClient([_Response(200, {"results": documents})])
         store._client = client
     else:
+
         def transport(path: str, payload: dict[str, Any]) -> dict[str, Any]:
             payloads.append((path, payload))
             return {"results": documents}
@@ -142,9 +142,24 @@ def test_get_all_returns_documents_across_transports(kind: str) -> None:
             "limit": 100_000,
         }
     else:
-        assert payloads == [
-            ("/get-all", {"anima_name": "sora", "collection": "sora_knowledge", "limit": 100_000})
-        ]
+        assert payloads == [("/get-all", {"anima_name": "sora", "collection": "sora_knowledge", "limit": 100_000})]
+
+
+@pytest.mark.asyncio
+async def test_root_event_loop_bridge_failure_is_logged_as_error(caplog: pytest.LogCaptureFixture) -> None:
+    from core.memory.rag.vector_ops import bridge_transport
+
+    async def handler(_method: str, _params: dict[str, Any]) -> dict[str, Any]:
+        return {"ok": True}
+
+    loop = asyncio.get_running_loop()
+    store = VectorClient("sora", transport=bridge_transport(handler, loop))
+
+    with caplog.at_level(logging.ERROR):
+        assert store.get_all("sora_knowledge") == []
+
+    assert "synchronous memory operation attempted on the root event loop" in caplog.text
+    assert any(record.levelno == logging.ERROR for record in caplog.records)
 
 
 def test_vector_client_requires_exactly_one_destination() -> None:

@@ -10,6 +10,31 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "cli.memory_help": {
+        "ja": "記憶を確認・保守します",
+        "en": "Inspect and maintain memory",
+        "ko": "메모리를 확인하고 유지 관리합니다",
+    },
+    "cli.memory_forgetting_dry_run_help": {
+        "ja": "更新せずに低活性化と完全忘却の対象件数を表示します",
+        "en": "Show synaptic downscaling and complete-forgetting targets without updates",
+        "ko": "변경 없이 시냅스 다운스케일링 및 완전 망각 대상 수를 표시합니다",
+    },
+    "cli.memory_forgetting_dry_run_anima_help": {
+        "ja": "確認するAnima名",
+        "en": "Anima name to inspect",
+        "ko": "확인할 Anima 이름",
+    },
+    "cli.memory_anima_not_found": {
+        "ja": "Animaが見つかりません: {anima}",
+        "en": "Anima not found: {anima}",
+        "ko": "Anima를 찾을 수 없습니다: {anima}",
+    },
+    "cli.memory_vector_store_unavailable": {
+        "ja": "{anima} のベクトルストアにアクセスできません: {error}",
+        "en": "Cannot access vector store for {anima}: {error}",
+        "ko": "{anima}의 벡터 저장소에 접근할 수 없습니다: {error}",
+    },
     "priming.peer_notes_header": {
         "ja": "## この人についてのメモ",
         "en": "## Notes about this person",

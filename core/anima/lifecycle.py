@@ -886,7 +886,7 @@ class LifecycleMixin:
         project = getattr(engine, "project", None)
 
         try:
-            merge_candidates = engine._find_merge_candidates(max_pairs=30)
+            merge_candidates = await asyncio.to_thread(engine._find_merge_candidates, max_pairs=30)
         except Exception:
             logger.debug("[%s] merge candidate detection failed", self.name, exc_info=True)
             merge_candidates = []
@@ -902,7 +902,10 @@ class LifecycleMixin:
         try:
             from core.memory.maintenance.forgetting import ForgettingEngine
 
-            forgetting_candidates = ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates(max_items=20)
+            forgetting_candidates = await asyncio.to_thread(
+                ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates,
+                max_items=20,
+            )
         except Exception:
             logger.debug("[%s] forgetting candidate detection failed", self.name, exc_info=True)
             forgetting_candidates = []

@@ -6,6 +6,7 @@ from __future__ import annotations
 #
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -190,7 +191,11 @@ async def run_daily_consolidation_post_processing(
             from core.memory.maintenance.forgetting import ForgettingEngine
 
             forgetter = ForgettingEngine(anima_dir, anima_name)
-            downscaling_result = forgetter.synaptic_downscaling()
+            # The ForgettingEngine uses synchronous vector operations which must run
+            # on a worker thread: inside the server process the vector store is
+            # bridged to the owner event loop, so calling it directly on the
+            # root loop raises (and silently scans 0 chunks).
+            downscaling_result = await asyncio.to_thread(forgetter.synaptic_downscaling)
             logger.info("Synaptic downscaling for %s: %s", anima_name, downscaling_result)
         except Exception:
             logger.exception("Synaptic downscaling failed for anima=%s", anima_name)

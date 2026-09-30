@@ -14,6 +14,7 @@ Weekly activity-log pattern detection identifies repeated workflows and
 uses an LLM to save procedure files with YAML frontmatter.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -112,8 +113,9 @@ class ProceduralDistiller:
             )
             return {"procedures_created": [], "patterns_detected": 0}
 
-        # 3. Cluster similar activities
-        clusters = self._cluster_activities(relevant, min_cluster_size=3)
+        # 3. Cluster similar activities. Vector embedding generation can use a
+        # synchronous HTTP/local model path, so keep it off the event loop too.
+        clusters = await asyncio.to_thread(self._cluster_activities, relevant, min_cluster_size=3)
         if not clusters:
             logger.info(
                 "No repeated patterns detected for weekly distill, anima=%s",
@@ -142,7 +144,9 @@ class ProceduralDistiller:
 
             saved_paths: list[str] = []
             for item in procedures:
-                path = self.save_procedure(item)
+                # save_procedure performs a synchronous RAG duplicate check; it must
+                # run on a worker thread so the bridged vector store is reachable.
+                path = await asyncio.to_thread(self.save_procedure, item)
                 if path is None:
                     continue
                 saved_paths.append(str(path))
