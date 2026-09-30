@@ -358,12 +358,6 @@ STRINGS: dict[str, dict[str, str]] = {
             "Error: You cannot send a DM to yourself. Use write_memory_file for notes to self, or update_task/the task queue for work tracking."
         ),
     },
-    "handler.dm_max_recipients": {
-        "ja": (
-            "Error: 1回のrunでDMを送れるのは最大{limit}人までです。{limit}人以上への伝達はBoardを使用してください（post_channel ツール）。"
-        ),
-        "en": ("Error: Maximum {limit} DM recipients per run. Use Board (post_channel tool) for {limit}+ recipients."),
-    },
     "handler.dm_send_failed": {
         "ja": "DM送信失敗: {e}",
         "en": "DM send failed: {e}",

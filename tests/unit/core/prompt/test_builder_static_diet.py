@@ -190,7 +190,8 @@ def test_mode_s_tool_guides_are_compact_and_keep_safety_constraints(data_dir: Pa
     assert guide.count("20分") == 1
     assert "state/cmd_output/{id}.txt" in guide
     assert "ACTION-RULE" in guide
-    assert "max" in guide or "最大2宛先" in guide
+    assert "同一宛先" in guide
+    assert "宛先数の上限はない" in guide
     assert "delegate_task" in guide
     assert "animaworks-tool --help" in guide
 

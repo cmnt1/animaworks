@@ -55,11 +55,9 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 | 定期ハートビート | `config.json` の `heartbeat.interval_minutes` に従い、APScheduler が定期的に起動 |
 | メッセージトリガー | Inbox に未読メッセージが到着した際に即座に起動（Inbox パスとして処理） |
 
-メッセージトリガーには以下のセーフガードが組み込まれている:
-- **クールダウン**: 前回のメッセージ起動完了から一定時間以内は再起動しない（`config.json` の `heartbeat.msg_heartbeat_cooldown_s`、デフォルト300秒）
-- **カスケード検出**: 2者間で一定時間内に往復が閾値を超えるとループとみなし抑制する（`heartbeat.cascade_window_s` デフォルト30分、`heartbeat.cascade_threshold` デフォルト3）
-- **意図フィルタ**: `intent` が `heartbeat.actionable_intents`（デフォルト `report`, `question`）に含まれるメッセージがある場合のみ即時ハートビート。それ以外（例: 軽い ack 系）は定期ハートビートまで待つ
-- **往復の深さ制限**: `heartbeat.depth_window_s`（デフォルト600秒）と `heartbeat.max_depth`（デフォルト6）で、同一ペアの短期間の往復過多を抑止
+メッセージトリガーは Inbox の JSON ファイル変更通知で起動する。通知を取りこぼした場合に備え、45 秒ごとに未読を再確認する。
+同時に動く Inbox 処理は 1 本だけで、実行中に届いたメッセージは次の 1 回にまとめて処理する。Provider エラー時は `rate_guard` の回復時間を待ち、未読メッセージを残す。
+受信 intent による起動フィルタやメッセージ起点の cooldown / cascade 抑止はない。了解・感謝だけのメッセージに返信しない行動ルールは Inbox プロンプトで指示する。
 
 ## heartbeat.md の設定
 
@@ -151,7 +149,7 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 - **部下チェック**: 部下を持つ Anima には、ハートビート・Cron のプロンプトに部下の状態確認指示が自動注入される。
 - **セッション時間制限**（`config.json` の `heartbeat`）: `soft_timeout_seconds`（デフォルト300秒）経過でラップアップ用のリマインダを注入、`hard_timeout_seconds`（デフォルト600秒）でセッションを強制終了する。
 - **アイドル時の自動コンパクト**: `heartbeat.idle_compaction_minutes`（デフォルト10分）— ストリーム終了からこの時間経過後にアイドル自動コンパクションが走る（実行エンジン側の設定）。
-- **Board 投稿の間隔**: `heartbeat.channel_post_cooldown_s`（デフォルト300秒、0 で無制限）— 同一 Anima の `post_channel` 連投を抑止。
+- **Board 投稿**: 同一 run では同じチャネルに 1 回まで。run をまたぐ投稿間隔の制限はない。
 
 ### 定期ハートビートのスケジュール方式
 

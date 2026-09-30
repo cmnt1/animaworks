@@ -267,14 +267,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "'{name}' を停止中 (pid={pid})...",
         "en": "Stopping '{name}' (pid={pid})...",
     },
-    "cli.set_outbound_limit_cleared": {
-        "ja": "{name} のアウトバウンド制限をクリアしました（ロールデフォルトにフォールバック）",
-        "en": "Cleared outbound limits for {name} (falling back to role defaults)",
-    },
-    "cli.set_outbound_limit_success": {
-        "ja": "{name} のアウトバウンド制限を更新しました: {details}",
-        "en": "Updated outbound limits for {name}: {details}",
-    },
     "migrate.migration_note": {
         "ja": "<!-- MIGRATION NOTE: could not auto-convert '{schedule}' to cron expression -->",
         "en": "<!-- MIGRATION NOTE: could not auto-convert '{schedule}' to cron expression -->",

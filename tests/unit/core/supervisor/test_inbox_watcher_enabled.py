@@ -1,26 +1,35 @@
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
-"""Unit tests for inbox watcher enabled guard (runner-local path)."""
+"""Unit tests for inbox wakeups, batching, and provider failure backoff."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.messaging.messenger import Messenger
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 
 
-def _make_limiter(anima_dir: Path, *, name: str = "alice") -> InboxRateLimiter:
+def _make_limiter(
+    anima_dir: Path,
+    *,
+    name: str = "alice",
+    messenger: Messenger | MagicMock | None = None,
+) -> InboxRateLimiter:
     anima = MagicMock()
     anima.anima_dir = anima_dir
-    anima.messenger = MagicMock()
-    anima._background_lock = MagicMock()
-    anima._background_lock.locked.return_value = False
+    if messenger is None:
+        shared_dir = anima_dir.parent.parent / "shared" if anima_dir.parent.name == "animas" else anima_dir / "shared"
+        inbox_dir = shared_dir / "inbox" / name
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        messenger = MagicMock()
+        messenger.inbox_dir = inbox_dir
+        messenger.has_unread.return_value = False
+    anima.messenger = messenger
 
     supervisor = MagicMock()
     supervisor.run_inbox = AsyncMock(
@@ -34,33 +43,25 @@ def _make_limiter(anima_dir: Path, *, name: str = "alice") -> InboxRateLimiter:
     scheduler_mgr = MagicMock()
     scheduler_mgr.heartbeat_running = False
     scheduler_mgr._task_runner_supervisor = supervisor
-    shutdown = asyncio.Event()
+    return InboxRateLimiter(
+        anima=anima,
+        anima_name=name,
+        shutdown_event=asyncio.Event(),
+        scheduler_mgr=scheduler_mgr,
+    )
 
-    with patch("core.supervisor.inbox_rate_limiter.load_config") as mock_cfg:
-        cfg = MagicMock()
-        cfg.heartbeat.msg_heartbeat_cooldown_s = 0.0
-        cfg.heartbeat.cascade_window_s = 60.0
-        cfg.heartbeat.cascade_threshold = 5
-        mock_cfg.return_value = cfg
-        limiter = InboxRateLimiter(
-            anima=anima,
-            anima_name=name,
-            shutdown_event=shutdown,
-            scheduler_mgr=scheduler_mgr,
-            cooldown_sec=0.0,
-        )
-    return limiter
+
+async def _stop_watcher(limiter: InboxRateLimiter, task: asyncio.Task) -> None:
+    limiter._shutdown_event.set()
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("raises", [False, True])
-async def test_failed_external_inbox_keeps_unread_and_cannot_bypass_retry_delay(tmp_path, raises):
-    from core.schemas import Message
-
+async def test_failed_inbox_keeps_unread_and_waits_for_retry_guard(tmp_path: Path, raises: bool) -> None:
     limiter = _make_limiter(tmp_path)
-    limiter._anima.messenger.receive.return_value = [
-        Message(from_person="human", to_person="alice", content="request", source="slack", intent="question")
-    ]
     limiter._anima.messenger.has_unread.return_value = True
     run_inbox = limiter._scheduler_mgr._task_runner_supervisor.run_inbox
     if raises:
@@ -71,19 +72,15 @@ async def test_failed_external_inbox_keeps_unread_and_cannot_bypass_retry_delay(
             "result": {"action": "error", "reason": "network", "summary": "API Error: ConnectionRefused"},
             "success": False,
         }
+
     with patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=100.0):
         await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until >= 130.0
         await limiter.message_triggered_inbox()
         assert run_inbox.await_count == 1
         assert limiter._deferred_timer is not None
-        limiter._deferred_timer.cancel()
-        limiter._deferred_timer = None
-        await limiter.try_deferred_trigger()
-        assert run_inbox.await_count == 1
-        limiter._deferred_timer.cancel()
-        limiter._deferred_timer = None
-    limiter._anima.messenger.archive_paths.assert_not_called()
+        limiter.cancel_deferred_timer()
+
     run_inbox.side_effect = None
     run_inbox.return_value = {
         "task_type": "inbox",
@@ -94,12 +91,11 @@ async def test_failed_external_inbox_keeps_unread_and_cannot_bypass_retry_delay(
         await limiter.message_triggered_inbox()
         assert run_inbox.await_count == 2
         assert limiter._failure_retry_until == 0
-        # A healthy external inbox regains immediate handling after recovery.
         await limiter.message_triggered_inbox()
         assert run_inbox.await_count == 3
 
 
-def test_inbox_failure_waits_for_all_provider_guards_to_expire(tmp_path):
+def test_inbox_failure_waits_for_all_provider_guards_to_expire(tmp_path: Path) -> None:
     from core.schemas import ModelConfig
 
     limiter = _make_limiter(tmp_path)
@@ -118,185 +114,136 @@ def test_inbox_failure_waits_for_all_provider_guards_to_expire(tmp_path):
 
 class TestInboxWatcherEnabledGuard:
     @pytest.mark.asyncio
-    async def test_disabled_skips_processing_and_keeps_inbox(
-        self,
-        tmp_path: Path,
-    ) -> None:
+    async def test_disabled_skips_processing_and_keeps_inbox(self, tmp_path: Path) -> None:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": False}),
-            encoding="utf-8",
-        )
-
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": False}), encoding="utf-8")
         limiter = _make_limiter(anima_dir)
         limiter._anima.messenger.has_unread.return_value = True
 
-        async def _run_briefly():
-            task = asyncio.create_task(limiter.inbox_watcher_loop())
-            await asyncio.sleep(0.3)
-            limiter._shutdown_event.set()
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-        await _run_briefly()
-
-        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
-        # has_unread was consulted (unread path) but processing never started
-        assert limiter._pending_trigger is False
+        task = asyncio.create_task(limiter.inbox_watcher_loop())
+        try:
+            await asyncio.sleep(0.1)
+            limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
+            assert limiter._pending_trigger is False
+        finally:
+            await _stop_watcher(limiter, task)
 
     @pytest.mark.asyncio
     async def test_enabled_triggers_processing(self, tmp_path: Path) -> None:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": True}),
-            encoding="utf-8",
-        )
-
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
         limiter = _make_limiter(anima_dir)
         limiter._anima.messenger.has_unread.return_value = True
-
-        # message_triggered_inbox is scheduled as a task; stub it to observe
         triggered = asyncio.Event()
 
-        async def _fake_triggered():
+        async def fake_triggered() -> None:
             triggered.set()
             limiter._pending_trigger = False
 
-        with patch.object(
-            limiter,
-            "message_triggered_inbox",
-            side_effect=_fake_triggered,
-        ):
+        with patch.object(limiter, "message_triggered_inbox", side_effect=fake_triggered):
             task = asyncio.create_task(limiter.inbox_watcher_loop())
-            await asyncio.wait_for(triggered.wait(), timeout=2.0)
-            limiter._shutdown_event.set()
-            task.cancel()
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
+                await asyncio.wait_for(triggered.wait(), timeout=2.0)
+            finally:
+                await _stop_watcher(limiter, task)
 
         assert triggered.is_set()
 
     @pytest.mark.asyncio
-    async def test_disabled_then_enabled_starts_processing(
-        self,
-        tmp_path: Path,
-    ) -> None:
+    async def test_disabled_then_enabled_is_seen_by_safety_rescan(self, tmp_path: Path) -> None:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         status_path = anima_dir / "status.json"
         status_path.write_text(json.dumps({"enabled": False}), encoding="utf-8")
-
         limiter = _make_limiter(anima_dir)
         limiter._anima.messenger.has_unread.return_value = True
-
         triggered = asyncio.Event()
 
-        async def _fake_triggered():
+        async def fake_triggered() -> None:
             triggered.set()
             limiter._pending_trigger = False
 
-        with patch.object(
-            limiter,
-            "message_triggered_inbox",
-            side_effect=_fake_triggered,
+        with (
+            patch("core.supervisor.inbox_rate_limiter._INBOX_RECHECK_INTERVAL_SEC", 0.05),
+            patch.object(limiter, "message_triggered_inbox", side_effect=fake_triggered),
         ):
             task = asyncio.create_task(limiter.inbox_watcher_loop())
-            # While disabled, processing must not fire
-            await asyncio.sleep(0.25)
-            assert not triggered.is_set()
-
-            # Re-enable → next poll should process
-            status_path.write_text(
-                json.dumps({"enabled": True}),
-                encoding="utf-8",
-            )
-            await asyncio.wait_for(triggered.wait(), timeout=3.0)
-            limiter._shutdown_event.set()
-            task.cancel()
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
+                await asyncio.sleep(0.12)
+                assert not triggered.is_set()
+                status_path.write_text(json.dumps({"enabled": True}), encoding="utf-8")
+                await asyncio.wait_for(triggered.wait(), timeout=1.0)
+            finally:
+                await _stop_watcher(limiter, task)
 
         assert triggered.is_set()
 
-
-class TestDeferredTriggerEnabledGuard:
-    """deferred timer → try_deferred_trigger → message_triggered_inbox must respect enabled."""
-
     @pytest.mark.asyncio
-    async def test_deferred_path_skips_when_disabled(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """message_triggered_inbox entry (deferred destination) bails when disabled."""
+    async def test_new_inbox_file_wakes_without_waiting_for_rescan(self, tmp_path: Path) -> None:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": False}),
-            encoding="utf-8",
-        )
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        shared_dir = tmp_path / "shared"
+        receiver = Messenger(shared_dir, "alice")
+        sender = Messenger(shared_dir, "bob")
+        limiter = _make_limiter(anima_dir, messenger=receiver)
+        triggered = asyncio.Event()
 
-        limiter = _make_limiter(anima_dir)
-        limiter._anima.messenger.has_unread.return_value = True
-        msg = MagicMock()
-        msg.source = "human"
-        msg.intent = "request"
-        msg.from_person = "bob"
-        limiter._anima.messenger.receive.return_value = [msg]
-        limiter._pending_trigger = True
+        async def fake_triggered() -> None:
+            receiver.archive_all()
+            limiter._pending_trigger = False
+            triggered.set()
 
-        with patch("core.supervisor.inbox_rate_limiter.load_config") as mock_cfg:
-            cfg = MagicMock()
-            cfg.heartbeat.actionable_intents = ["request"]
-            mock_cfg.return_value = cfg
-            await limiter.message_triggered_inbox()
+        with patch.object(limiter, "message_triggered_inbox", side_effect=fake_triggered):
+            task = asyncio.create_task(limiter.inbox_watcher_loop())
+            try:
+                await asyncio.sleep(0.1)  # Let the filesystem observer start and clear startup wake.
+                sender.send("alice", "wake immediately")
+                await asyncio.wait_for(triggered.wait(), timeout=3.0)
+            finally:
+                await _stop_watcher(limiter, task)
 
-        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
-        assert limiter._pending_trigger is False
+        assert triggered.is_set()
 
     @pytest.mark.asyncio
-    async def test_try_deferred_trigger_disabled_does_not_process(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Full deferred chain: try_deferred_trigger → message_triggered_inbox skips disabled."""
+    async def test_messages_arriving_during_run_are_batched_for_the_next_run(self, tmp_path: Path) -> None:
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps({"enabled": False}),
-            encoding="utf-8",
-        )
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        shared_dir = tmp_path / "shared"
+        receiver = Messenger(shared_dir, "alice")
+        sender = Messenger(shared_dir, "bob")
+        sender.send("alice", "initial")
+        limiter = _make_limiter(anima_dir, messenger=receiver)
+        snapshots: list[list[str]] = []
+        second_batch_processed = asyncio.Event()
 
-        limiter = _make_limiter(anima_dir)
-        limiter._anima.messenger.has_unread.return_value = True
-        msg = MagicMock()
-        msg.source = "human"
-        msg.intent = "request"
-        msg.from_person = "bob"
-        limiter._anima.messenger.receive.return_value = [msg]
+        async def process_batch() -> dict:
+            items = receiver.receive_with_paths()
+            snapshots.append([item.msg.content for item in items])
+            receiver.archive_paths(items)
+            if len(snapshots) == 1:
+                sender.send("alice", "arrived during run 1")
+                sender.send("alice", "arrived during run 1 too")
+            else:
+                second_batch_processed.set()
+            return {
+                "task_type": "inbox",
+                "result": {"action": "responded", "reason": "", "summary": "ok"},
+                "success": True,
+            }
 
-        # Bypass cooldown so try_deferred_trigger proceeds to create the task
-        limiter._last_msg_heartbeat_end = 0.0
-        limiter._cooldown_sec = 0.0
+        limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(side_effect=process_batch)
+        task = asyncio.create_task(limiter.inbox_watcher_loop())
+        try:
+            await asyncio.wait_for(second_batch_processed.wait(), timeout=3.0)
+        finally:
+            await _stop_watcher(limiter, task)
 
-        with patch("core.supervisor.inbox_rate_limiter.load_config") as mock_cfg:
-            cfg = MagicMock()
-            cfg.heartbeat.actionable_intents = ["request"]
-            mock_cfg.return_value = cfg
-            await limiter.try_deferred_trigger()
-            # message_triggered_inbox is scheduled as a task
-            await asyncio.sleep(0.1)
-
-        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_awaited()
-        assert limiter._pending_trigger is False
+        assert snapshots == [["initial"], ["arrived during run 1", "arrived during run 1 too"]]
+        assert limiter._scheduler_mgr._task_runner_supervisor.run_inbox.await_count == 2
 
 
 class TestReadAnimaEnabledMalformed:

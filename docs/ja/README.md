@@ -18,7 +18,7 @@
 | [ライフサイクル](architecture/lifecycle.md) | chat、inbox、heartbeat、cron、task の起動経路とロック。 |
 | [プロンプト構築](architecture/prompt.md) | システムプロンプトと実行時コンテキストの構成。 |
 | [タスク管理](architecture/tasks.md) | Task Board、委任、background task。 |
-| [メッセージング](architecture/messaging.md) | DM、Board、人間への通知、送信制限、外部連携。 |
+| [メッセージング](architecture/messaging.md) | DM、Board、人間への通知、Inbox wake とメッセージ処理、外部連携。 |
 | [記憶システム](memory/index.md) | 記憶の設計、ディレクトリ、frontmatter。 |
 | [自動想起](memory/priming.md) | 実行時に記憶をコンテキストへ取り込む方式。 |
 | [意図的想起と検索](memory/retrieval.md) | `search_memory`、検索処理、RAG、修復。 |

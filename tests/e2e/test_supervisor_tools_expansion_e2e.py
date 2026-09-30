@@ -19,7 +19,6 @@ def _build_config(animas: dict[str, dict]) -> MagicMock:
     config.locale = "ja"
     config.animas = {name: AnimaModelConfig(**fields) for name, fields in animas.items()}
     config.heartbeat = MagicMock()
-    config.heartbeat.channel_post_cooldown_s = 0
     return config
 
 

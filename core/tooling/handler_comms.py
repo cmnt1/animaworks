@@ -139,15 +139,6 @@ class CommsToolsMixin:
                 logger.warning("Activity logging failed for meeting redirect to %s", meeting_target)
             return t("handler.meeting_dm_redirected", to=meeting_target)
 
-        from core.config.models import resolve_outbound_limits
-        from core.paths import get_animas_dir as _get_animas_dir
-
-        _anima_dir = _get_animas_dir() / self._anima_name if _get_animas_dir().exists() else None
-        limits = resolve_outbound_limits(self._anima_name, _anima_dir)
-        max_recipients = limits["max_recipients_per_run"]
-        if len(current_replied) >= max_recipients and effective_to not in current_replied:
-            return t("handler.dm_max_recipients", limit=max_recipients)
-
         # ── Resolve recipient ──
         try:
             from core.config.models import load_config
@@ -419,44 +410,6 @@ class CommsToolsMixin:
                 channel=channel,
                 alt_hint=alt_hint,
             )
-
-        # ── Unified outbound budget check (DM + Board share the same pool) ──
-        from core.messaging.cascade_limiter import get_depth_limiter
-        from core.paths import get_animas_dir as _get_animas_dir
-
-        _limiter = get_depth_limiter()
-        _anima_dir_for_budget = getattr(self, "_anima_dir", None) or (_get_animas_dir() / self._anima_name)
-        outbound_check = _limiter.check_global_outbound(self._anima_name, _anima_dir_for_budget)
-        if outbound_check is not True:
-            return str(outbound_check)
-
-        # ── Cross-run guard: file-based cooldown check ──
-        try:
-            from core.config.models import load_config
-
-            cooldown = load_config().heartbeat.channel_post_cooldown_s
-        except Exception:
-            cooldown = 300
-        if cooldown > 0:
-            last = self._messenger.last_post_by(self._anima_name, channel)
-            if last:
-                from datetime import datetime
-
-                from core.time_utils import ensure_aware, now_local
-
-                try:
-                    ts = ensure_aware(datetime.fromisoformat(last["ts"]))
-                    elapsed = (now_local() - ts).total_seconds()
-                    if elapsed < cooldown:
-                        return t(
-                            "handler.post_cooldown",
-                            channel=channel,
-                            ts=last["ts"][11:16],
-                            elapsed=int(elapsed),
-                            cooldown=cooldown,
-                        )
-                except (ValueError, TypeError):
-                    pass
 
         from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 

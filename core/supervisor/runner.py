@@ -287,7 +287,7 @@ class AnimaRunner:
             )
 
             inbox_limiter = self._inbox_limiter
-            self.anima.set_on_lock_released(lambda: asyncio.ensure_future(inbox_limiter.on_anima_lock_released()))
+            self.anima.set_on_lock_released(inbox_limiter.on_anima_lock_released)
 
             # Wire on_message_sent callback for WebSocket event emission
             def _on_message_sent(from_name: str, to_name: str, content: str) -> None:

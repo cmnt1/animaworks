@@ -6,7 +6,7 @@ Verifies:
 3. messenger.send() no longer writes to dm_logs/
 4. activity.py type_map contains unified labels
 5. DM grouping handles both old and new event types
-6. cascade_limiter uses new event types (via alias)
+6. activity-log aliases preserve legacy message history
 """
 
 from __future__ import annotations
@@ -334,55 +334,6 @@ class TestMessengerSendUnified:
         assert len(entries) == 1
         assert entries[0].meta.get("intent") == "report"
         assert entries[0].meta.get("from_type") == "anima"
-
-
-# ── cascade_limiter event names ──────────────────────────
-
-
-class TestCascadeLimiterEventNames:
-    """Verify cascade_limiter queries new event types."""
-
-    @pytest.fixture
-    def anima_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / "animas" / "alice"
-        (d / "activity_log").mkdir(parents=True)
-        return d
-
-    def test_counts_legacy_dm_entries(self, anima_dir: Path) -> None:
-        activity = ActivityLogger(anima_dir)
-        for _ in range(3):
-            activity.log("dm_sent", content="hi", to_person="bob")
-        for _ in range(3):
-            activity.log("dm_received", content="hi", from_person="bob")
-
-        from core.messaging.cascade_limiter import ConversationDepthLimiter
-
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        assert limiter.check_depth("alice", "bob", anima_dir) is False
-
-    def test_counts_new_message_entries(self, anima_dir: Path) -> None:
-        activity = ActivityLogger(anima_dir)
-        for _ in range(3):
-            activity.log("message_sent", content="hi", to_person="bob", meta={"from_type": "anima"})
-        for _ in range(3):
-            activity.log("message_received", content="hi", from_person="bob", meta={"from_type": "anima"})
-
-        from core.messaging.cascade_limiter import ConversationDepthLimiter
-
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-        assert limiter.check_depth("alice", "bob", anima_dir) is False
-
-    def test_counts_mixed_old_new(self, anima_dir: Path) -> None:
-        activity = ActivityLogger(anima_dir)
-        activity.log("dm_sent", content="old", to_person="bob")
-        activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
-        activity.log("dm_received", content="old", from_person="bob")
-        activity.log("message_received", content="new", from_person="bob", meta={"from_type": "anima"})
-
-        from core.messaging.cascade_limiter import ConversationDepthLimiter
-
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=4)
-        assert limiter.check_depth("alice", "bob", anima_dir) is False
 
 
 # ── format_for_priming unified display ───────────────────

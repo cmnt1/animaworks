@@ -127,9 +127,6 @@ Roles of each section:
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
 | `mode_s_auth` | `str | None` | None |  |
-| `max_outbound_per_hour` | `int | None` | None |  |
-| `max_outbound_per_day` | `int | None` | None |  |
-| `max_recipients_per_run` | `int | None` | None |  |
 | `default_workspace` | `str` | `""` |  |
 | `consolidation_enabled` | `bool` | `True` |  |
 | `heartbeat_enabled` | `bool` | `True` |  |

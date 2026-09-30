@@ -17,7 +17,7 @@
 anima 프로세스 관리
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
+                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,reload,set-role,rename,audit}
                         ...`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
@@ -181,23 +181,6 @@ heartbeat/cron 모델 설정
 | model | positional | — | — | 모델 이름 (예: azure/gpt-4.1-mini) |
 | --credential | option | — | — | 자격 증명 이름 |
 | --all | flag | false | — | 모든 활성 anima에 적용 |
-
-## `anima set-outbound-limit`
-
-Anima별 아웃바운드 메시지 한도 설정
-
-`usage: animaworks anima set-outbound-limit [-h] [--per-hour PER_HOUR]
-                                           [--per-day PER_DAY]
-                                           [--per-run PER_RUN] [--clear]
-                                           name`
-
-| 이름 | 유형 | 기본값 | 선택지 | 설명 |
-|---|---|---|---|---|
-| name | positional | — | — | Anima 이름 |
-| --per-hour | option | — | — | 시간당 최대 아웃바운드 메시지 수 |
-| --per-day | option | — | — | 일일 최대 아웃바운드 메시지 수 |
-| --per-run | option | — | — | 실행당 최대 DM 수신자 수 |
-| --clear | flag | false | — | 재정의 제거 (역할 기본값으로 대체) |
 
 ## `anima set-role`
 

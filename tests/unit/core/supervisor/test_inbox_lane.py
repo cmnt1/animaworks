@@ -145,35 +145,18 @@ class TestRecordProcessingFailure:
 
 
 class TestNotRunConditions:
-    """run_inbox must not be launched for non-actionable / cascading / busy cases."""
+    """run_inbox must wait while a scheduled heartbeat is active."""
 
     @pytest.mark.asyncio
-    async def test_non_actionable_skips(self) -> None:
-        limiter = _make_limiter([_make_message(intent="")])
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
-            await limiter.message_triggered_inbox()
-        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
-        assert limiter._pending_trigger is False
-
-    @pytest.mark.asyncio
-    async def test_cascade_detected_skips(self) -> None:
-        limiter = _make_limiter([_make_message(intent="question")])
-        with (
-            patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()),
-            patch.object(limiter, "check_cascade", return_value=True),
-        ):
-            await limiter.message_triggered_inbox()
-        limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
-        assert limiter._pending_trigger is False
-
-    @pytest.mark.asyncio
-    async def test_heartbeat_running_skips(self) -> None:
+    async def test_heartbeat_running_defers(self) -> None:
         limiter = _make_limiter([_make_message(intent="question")])
         limiter._scheduler_mgr.heartbeat_running = True
         with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False
+        assert limiter._deferred_timer is not None
+        limiter.cancel_deferred_timer()
 
 
 class TestHeartbeatRunningFlag:
@@ -228,33 +211,11 @@ class TestPrepareExecutionInbox:
         mock_contract = AsyncMock(return_value={"task_type": "inbox", "result": {}, "success": True})
         monkeypatch.setattr(task_runner, "execute_inbox_contract", mock_contract)
 
-        execution = await task_runner._prepare_execution(
-            args,
-            identity,
-            {"cascade_suppressed_senders": ["bob"]},
-            control={},
-        )
+        execution = await task_runner._prepare_execution(args, identity, {}, control={})
         result = await execution
 
         mock_contract.assert_awaited_once()
-        assert mock_contract.call_args.kwargs["cascade_suppressed_senders"] == ["bob"]
         assert result["task_type"] == "inbox"
-
-    @pytest.mark.asyncio
-    async def test_invalid_senders_raises_value_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from core.supervisor import task_runner
-
-        identity = self._identity()
-        args = argparse.Namespace(anima="sakura", lane="inbox", job="job-inbox")
-        monkeypatch.setattr(task_runner, "DigitalAnima", lambda **kwargs: object())
-
-        with pytest.raises(ValueError):
-            await task_runner._prepare_execution(
-                args,
-                identity,
-                {"cascade_suppressed_senders": "not-a-list"},
-                control={},
-            )
 
 
 class TestIPCAndRecovery:

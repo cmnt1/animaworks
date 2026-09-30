@@ -81,9 +81,6 @@ class AnimaDefaults(BaseModel):
     thinking: bool | None = None  # Extended thinking (Bedrock: reasoning_effort, Ollama: think)
     thinking_effort: str | None = None  # "low"/"medium"/"high"/"max" (default: "high")
     mode_s_auth: str | None = None  # Mode S auth: "max"|"api"|"bedrock"|"vertex"|None(=max)
-    max_outbound_per_hour: int | None = None
-    max_outbound_per_day: int | None = None
-    max_recipients_per_run: int | None = None
     default_workspace: str = ""
     consolidation_enabled: bool = True
     heartbeat_enabled: bool = True  # 既定true。falseで定期heartbeatのみ無効化。メッセージ起因HB・cronは影響なし
@@ -142,63 +139,6 @@ class LocalLLMConfig(BaseModel):
         if not self.default_model:
             self.default_model = merged_presets["coding"]
         return self
-
-
-# ── Outbound budget defaults per role ─────────────────────────────────────────
-ROLE_OUTBOUND_DEFAULTS: dict[str, dict[str, int]] = {
-    "manager": {"max_outbound_per_hour": 60, "max_outbound_per_day": 300, "max_recipients_per_run": 10},
-    "engineer": {"max_outbound_per_hour": 40, "max_outbound_per_day": 200, "max_recipients_per_run": 5},
-    "writer": {"max_outbound_per_hour": 30, "max_outbound_per_day": 150, "max_recipients_per_run": 3},
-    "researcher": {"max_outbound_per_hour": 30, "max_outbound_per_day": 150, "max_recipients_per_run": 3},
-    "ops": {"max_outbound_per_hour": 20, "max_outbound_per_day": 80, "max_recipients_per_run": 2},
-    "general": {"max_outbound_per_hour": 15, "max_outbound_per_day": 50, "max_recipients_per_run": 2},
-}
-
-
-def resolve_outbound_limits(
-    anima_name: str,
-    anima_dir: Path | None = None,
-) -> dict[str, int]:
-    """Resolve outbound limits for an Anima.
-
-    Resolution order:
-      1. status.json (per-Anima override)
-      2. Role defaults from ROLE_OUTBOUND_DEFAULTS (based on status.json "role")
-      3. "general" role as final fallback
-    """
-    _FIELDS = ("max_outbound_per_hour", "max_outbound_per_day", "max_recipients_per_run")
-    fallback = ROLE_OUTBOUND_DEFAULTS["general"]
-
-    if anima_dir is None:
-        return dict(fallback)
-
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return dict(fallback)
-
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return dict(fallback)
-
-    role = data.get("role", "general")
-    role_defaults = ROLE_OUTBOUND_DEFAULTS.get(role, fallback)
-    if role not in ROLE_OUTBOUND_DEFAULTS:
-        logger.warning(
-            "Unknown role %r for anima %s; falling back to general outbound limits",
-            role,
-            anima_name,
-        )
-
-    result: dict[str, int] = {}
-    for field in _FIELDS:
-        val = data.get(field)
-        if isinstance(val, int) and val > 0:
-            result[field] = val
-        else:
-            result[field] = role_defaults.get(field, fallback[field])
-
-    return result
 
 
 class RAGConfig(BaseModel):
@@ -838,7 +778,7 @@ class InboxConfig(BaseModel):
 
 
 class HeartbeatConfig(BaseModel):
-    """Heartbeat scheduling and cascade prevention settings."""
+    """Heartbeat scheduling settings."""
 
     interval_minutes: int = Field(
         default=30, ge=1, le=1440
@@ -892,16 +832,9 @@ class HeartbeatConfig(BaseModel):
         return self
 
     default_model: str | None = None  # global background model for heartbeat/cron (None = use main model)
-    msg_heartbeat_cooldown_s: int = 300  # message-triggered heartbeat cooldown
-    cascade_window_s: int = 1800  # sliding window for cascade detection
-    cascade_threshold: int = 3  # max round-trips per pair within window
-    depth_window_s: int = 600  # bilateral depth limiter window
-    max_depth: int = 6  # max bilateral exchange depth
-    actionable_intents: list[str] = ["report", "question"]
     enable_read_ack: bool = (
         False  # Send read-receipt ACK to message senders (disabled by default to prevent gratitude loops)
     )
-    channel_post_cooldown_s: int = 300  # Min seconds between board posts per Anima (0 = no limit)
     delegation_dm_enabled: bool = Field(
         default=True,
         description=(
@@ -909,8 +842,6 @@ class HeartbeatConfig(BaseModel):
             "the DM only wakes an extra inbox run. Set false to skip it."
         ),
     )
-    outbound_limit_enabled: bool = True  # False disables the global hourly/daily outbound message caps
-
     idle_compaction_minutes: float = Field(
         default=10.0,
         ge=1.0,
@@ -1388,7 +1319,6 @@ __all__ = [
     "PrimingConfig",
     "PromptConfig",
     "RAGConfig",
-    "ROLE_OUTBOUND_DEFAULTS",
     "ServerConfig",
     "SkillPromotionConfig",
     "SkillsConfig",
@@ -1398,5 +1328,4 @@ __all__ = [
     "UserAliasConfig",
     "VoiceConfig",
     "VoicevoxConfig",
-    "resolve_outbound_limits",
 ]

@@ -234,14 +234,13 @@ class TestBoardSlackSyncRouting:
                 )
             )
         )
-        cfg.heartbeat.channel_post_cooldown_s = 0
         sakura_dir = make_anima("sakura")
         handler = make_handler(sakura_dir)
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
             patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.messaging.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.messaging.outbound_auto.SlackHTTPClient") as mock_client,
         ):
             result = handler.handle(
                 "post_channel",

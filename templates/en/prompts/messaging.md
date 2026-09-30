@@ -6,7 +6,7 @@ DM:
 ```json
 {{"name": "send_message", "arguments": {{"to": "recipient_name", "content": "message", "intent": "report"}}}}
 ```
-- intent: `report` | `question`. With intent → immediate, without → 30min check
+- intent: `report` | `question`. A new Inbox message wakes processing via a file-change notification; intent does not filter wakeups
 
 Board:
 ```json

@@ -30,13 +30,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "{返信内容}",
         "en": "{reply_content}",
     },
-    "messenger.depth_exceeded": {
-        "ja": "ConversationDepthExceeded: {to}との会話が{window_min}分間に{max_depth}ターンに達しました。次のハートビートサイクルまでお待ちください",
-        "en": (
-            "ConversationDepthExceeded: Conversation with {to} reached {max_depth} turns in {window_min} minutes. "
-            "Please wait until the next heartbeat cycle."
-        ),
-    },
     "messenger.more_count": {
         "ja": "(+{count}件)",
         "en": "(+{count} more)",

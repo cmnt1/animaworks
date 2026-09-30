@@ -46,9 +46,6 @@
 | `anima_defaults.thinking` | `bool \| None` | `null` | 확장 사고 (Bedrock: reasoning_effort, Ollama: think) |
 | `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (기본값: "high") |
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S 인증: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
-| `anima_defaults.max_outbound_per_hour` | `int \| None` | `null` | — |
-| `anima_defaults.max_outbound_per_day` | `int \| None` | `null` | — |
-| `anima_defaults.max_recipients_per_run` | `int \| None` | `null` | — |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
 | `anima_defaults.heartbeat_enabled` | `bool` | `true` | 기본 true. false로 정기 heartbeat만 비활성화. 메시지 기인 HB·cron은 영향 없음 |
@@ -354,16 +351,8 @@
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | HB 세션에 마무리 시스템 알림을 주입하기 전 대기 시간(초) |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | HB 세션을 강제 종료하기 전 대기 시간(초); 0 = 비활성화 |
 | `heartbeat.default_model` | `str \| None` | `null` | heartbeat/cron용 전역 백그라운드 모델 (None = 메인 모델 사용) |
-| `heartbeat.msg_heartbeat_cooldown_s` | `int` | `300` | 메시지 트리거 heartbeat 쿨다운 |
-| `heartbeat.cascade_window_s` | `int` | `1800` | 캐스케이드 감지용 슬라이딩 윈도우 |
-| `heartbeat.cascade_threshold` | `int` | `3` | 윈도우 내 쌍당 최대 왕복 수 |
-| `heartbeat.depth_window_s` | `int` | `600` | 양방향 깊이 제한 윈도우 |
-| `heartbeat.max_depth` | `int` | `6` | 최대 양방향 교환 깊이 |
-| `heartbeat.actionable_intents` | `list[str]` | `["report","question"]` | — |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
-| `heartbeat.channel_post_cooldown_s` | `int` | `300` | Anima당 보드 게시 사이 최소 시간(초) (0 = 제한 없음) |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task는 이미 대상의 대기 설명자를 작성합니다; DM은 추가 받은 편지함 실행만 깨웁니다. 건너뛰려면 false로 설정. |
-| `heartbeat.outbound_limit_enabled` | `bool` | `true` | False는 전역 hourly/daily 아웃바운드 메시지 상한을 비활성화 |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | 마지막 스트림 종료 후 유휴 자동 압축을 트리거할 때까지의 분 |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | 해결된 승인 알림을 시스템 프롬프트에 주입할 시간; 0 = 알림 섹션 비활성화 |
 | `voice` | `VoiceConfig` | `{VoiceConfig}` | 음성 입출력과 음성 제공자. |
@@ -467,9 +456,6 @@
 | `fallback_model` | `str \| None` | `null` | 기본 모델 실패 시 사용할 대체 모델. |
 | `fallback_models` | `list[str]` | `[]` | — |
 | `heartbeat_enabled` | `bool` | `true` | 정기 heartbeat 활성화 여부. |
-| `max_outbound_per_day` | `—` | `—` | — |
-| `max_outbound_per_hour` | `—` | `—` | — |
-| `max_recipients_per_run` | `—` | `—` | — |
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | 모델의 최대 출력 토큰 수. |
 | `mode_s_auth` | `str \| None` | `null` | — |

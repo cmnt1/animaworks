@@ -32,7 +32,7 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | Board(공유 채널) 사용법을 모르겠다 | `communication/board-guide.md` |
 | 지침 전달 방법・보고 방법을 모르겠다 | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
 | 위임・완료 보고・에스컬레이션의 필수 항목을 확인하고 싶다 | `communication/message-quality-protocol.md` |
-| 메시지 전송이 제한되었다 | `communication/sending-limits.md` |
+| Inbox 시작이나 메시지 전송 동작을 확인하고 싶다 | `communication/sending-limits.md` |
 | 인간에게 알림하는 방법을 모르겠다 | `communication/call-human-guide.md` |
 | Slack 봇 토큰 설정을 모르겠다 | `reference/communication/slack-bot-token-guide.md` ※기술 참조 |
 
@@ -121,12 +121,12 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 
 | 파일 | 개요 |
 |---------|------|
-| `messaging-guide.md` | 메시지 송수신 완전 가이드(send_message의 파라미터, 스레드 관리, 1라운드 규칙) |
+| `messaging-guide.md` | 메시지 송수신 가이드(send_message 파라미터, 스레드 관리, 답장 방침) |
 | `board-guide.md` | Board(공유 채널) 가이드(post_channel / read_channel의 구분 사용, 게시 규칙) |
 | `instruction-patterns.md` | 지침 전달 방법 패턴 모음(명확한 지침 작성법, 위임 패턴, 진행 상황 확인) |
 | `reporting-guide.md` | 보고・에스컬레이션 방법(보고 시점, 형식, 긴급 vs 정기) |
 | `message-quality-protocol.md` | 메시지 품질 프로토콜(위임 4항목・완료 보고 3항목・에스컬레이션 4항목의 필수 확인) |
-| `sending-limits.md` | 전송 제한 상세(3계층 속도 제한, 30/h・100/day 상한, 캐스케이드 감지, 대처법) |
+| `sending-limits.md` | Inbox 파일 wake, 메시지 묶음 처리, run 내 중복 방지, 대화 루프 방지 |
 | `call-human-guide.md` | 인간에게 알림 가이드(call_human 사용법, 답변 수신, 알림 채널 설정) |
 | `slack-bot-token-guide.md` | → `reference/communication/slack-bot-token-guide.md`로 이동. Slack 봇 토큰 설정 가이드 |
 
@@ -186,7 +186,7 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | 지침, 위임, 작업 요청, 위임 | `reference/communication/instruction-patterns.md` |
 | 보고, 일보, 요약, 완료 보고, 에스컬레이션 | `reference/communication/reporting-guide.md` |
 | 품질 프로토콜, 필수 항목, 검증 근거, 완료 조건, 위임 체크 | `communication/message-quality-protocol.md` |
-| 요율 제한, 전송 제한, 30통, 100통, 1라운드 규칙 | `communication/sending-limits.md` |
+| Inbox wake, 메시지 묶음 처리, 중복 발신 방지, 확인 답장, 대화 루프 | `communication/sending-limits.md` |
 | call_human, 인간 알림, 인간에게 연락, 알림 채널 | `communication/call-human-guide.md` |
 | Slack, 봇 토큰, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | 조직, supervisor, 상급자, 부하, 동료 | `reference/organization/structure.md` |

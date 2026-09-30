@@ -155,10 +155,7 @@ def _heartbeat_contract(identity: IPCV2Identity) -> IPCV2Envelope:
         body={
             "request_id": "run-hb-1",
             "method": "run",
-            "params": {
-                "environment": {"urls": {"ANIMAWORKS_EMBED_URL": "http://embed.test"}},
-                "cascade_suppressed_senders": None,
-            },
+            "params": {"environment": {"urls": {"ANIMAWORKS_EMBED_URL": "http://embed.test"}}},
         },
     )
 

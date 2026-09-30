@@ -97,41 +97,6 @@ class TestLegacyLogCompatibility:
         assert received[0].content == "legacy in"
 
 
-class TestCascadeLimiterMixedLogs:
-    """E2E: cascade limiter correctly counts mixed old+new entries."""
-
-    def test_depth_limit_blocks_at_threshold(self, data_dir: Path) -> None:
-        anima_dir = data_dir / "animas" / "alice"
-        activity = ActivityLogger(anima_dir)
-
-        # Write 3 legacy + 3 new = 6 exchanges (at the limit)
-        for _ in range(3):
-            activity.log("dm_sent", content="old", to_person="bob")
-        for _ in range(3):
-            activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
-
-        from core.messaging.cascade_limiter import ConversationDepthLimiter
-
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-
-        allowed = limiter.check_depth("alice", "bob", anima_dir)
-        assert allowed is False
-
-    def test_under_limit_allows(self, data_dir: Path) -> None:
-        anima_dir = data_dir / "animas" / "alice"
-        activity = ActivityLogger(anima_dir)
-
-        activity.log("dm_sent", content="old", to_person="bob")
-        activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
-
-        from core.messaging.cascade_limiter import ConversationDepthLimiter
-
-        limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
-
-        allowed = limiter.check_depth("alice", "bob", anima_dir)
-        assert allowed is True
-
-
 class TestFormatForPrimingIntegration:
     """E2E: format_for_priming renders unified labels for mixed logs."""
 

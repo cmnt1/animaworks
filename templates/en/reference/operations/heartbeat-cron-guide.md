@@ -55,11 +55,9 @@ There are two types of Heartbeat triggers:
 | Periodic Heartbeat | APScheduler starts periodically according to `heartbeat.interval_minutes` in `config.json` |
 | Message Trigger | Starts immediately when an unread message arrives in the Inbox (processed as the Inbox path) |
 
-The message trigger includes the following safeguards:
-- **Cooldown**: Does not restart within a certain time after the previous message-triggered run completes (`heartbeat.msg_heartbeat_cooldown_s` in `config.json`, default 300 seconds)
-- **Cascade detection**: If the number of round-trips between two parties within a certain time exceeds a threshold, it is considered a loop and suppressed (`heartbeat.cascade_window_s` default 30 minutes, `heartbeat.cascade_threshold` default 3)
-- **Intent filter**: Immediate Heartbeat only when `intent` contains a message included in `heartbeat.actionable_intents` (default `report`, `question`). Otherwise (e.g., light acknowledgments), wait until the periodic Heartbeat
-- **Round-trip depth limit**: `heartbeat.depth_window_s` (default 600 seconds) and `heartbeat.max_depth` (default 6) suppress excessive short-term round-trips between the same pair
+The message trigger wakes on Inbox JSON file-change notifications. A 45-second safety rescan catches missed notifications.
+Only one Inbox job runs at a time; messages arriving during a run are combined into the next run. Provider failures wait for `rate_guard` recovery while leaving messages unread.
+There is no intent-based wake filter or message-triggered cooldown / cascade suppression. The Inbox prompt instructs the Anima not to reply to acknowledgements or thanks alone.
 
 ## heartbeat.md Configuration
 
@@ -151,7 +149,7 @@ See the "Background Model" section of `reference/operations/model-guide.md` for 
 - **Subordinate check**: For Anima with subordinates, subordinate status check instructions are automatically injected into the Heartbeat and Cron prompts.
 - **Session time limit** (`heartbeat` in `config.json`): A wrap-up reminder is injected after `soft_timeout_seconds` (default 300 seconds), and the session is forcibly terminated at `hard_timeout_seconds` (default 600 seconds).
 - **Idle auto-compact**: `heartbeat.idle_compaction_minutes` (default 10 minutes) — idle auto-compaction runs this time after the stream ends (execution engine side setting).
-- **Board post interval**: `heartbeat.channel_post_cooldown_s` (default 300 seconds, 0 for unlimited) — suppresses consecutive `post_channel` posts from the same Anima.
+- **Board posts**: A run can post once to a given channel. There is no cross-run posting interval limit.
 
 ### Periodic Heartbeat Scheduling Method
 

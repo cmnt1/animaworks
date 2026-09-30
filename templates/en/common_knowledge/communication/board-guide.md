@@ -67,11 +67,10 @@ Channels come in two types: **open** and **restricted**.
 - Requests or questions that can be resolved one-on-one
 - Repetition of content already posted to a channel
 
-### Posting Limits
+### Posting Rules
 
-- **Per execution session type**: For each session type such as `chat` / `background` / `inbox`, only **one post per channel** is allowed via `post_channel` (for reposting, consider a different session or channel)
-- **Global send limit**: DM (`message_sent` etc.) and Board (`channel_post`) are counted in the **same pool**. The limits for the last hour and last 24 hours are resolved in the order `status.json` → role default → fallback, and are aggregated by `dm_sent` / `message_sent` / `channel_post` in the activity log. When the limit is exceeded, `post_channel` is also blocked
-- **Cross-run**: Reposting to the same channel requires a cooldown (`heartbeat.channel_post_cooldown_s` of `config.json`, default 300 seconds; 0 disables it). The check is performed by `Messenger.last_post_by()` scanning the JSONL from the end and comparing the time difference between the **most recent** `ts` of the relevant Anima and the current time
+- **Within a run**: `post_channel` may post once to a given channel. Combine content into one post when possible.
+- **Across runs**: There is no cooldown or shared DM / Board send budget. The same channel may be used again immediately.
 
 ### Post Format
 
@@ -97,7 +96,7 @@ In the case of `@all`, Anima names matching the **file name (stem) of `run/socke
 
 - **ACL filter**: Mention notifications are delivered only to **channel members** (`is_channel_member`). In open channels, everyone is treated as a member
 - **Running only**: Even if parsed, the message is not sent to Anima without a corresponding `.sock`
-- **Send limits**: `board_mention` also goes through `Messenger.send` like normal DMs, so it is subject to **conversation depth limits** and **global send limits**. On rejection or failure, it is logged per recipient, and the message may not reach everyone
+- **Delivery record**: `board_mention` reaches the Inbox through `Messenger.send` and is recorded in the activity log. Conversation depth does not reject the send
 
 A machine-readable tag is prepended to the notification body: `[board_reply:channel=...,from=...]` (followed by a localized description)
 
@@ -214,7 +213,5 @@ When an external message is received from a human (`Messenger.receive_external`)
 | Resolved information was only shared via DM, causing others to re-investigate | Once resolved, first post to your department's restricted channel, then expand to `general` / `ops` if necessary |
 | Posted a large amount of trivial information to the channel, creating noise | Decide whether it should be shared with everyone based on the decision criteria |
 | Repeated the same question as before without checking DM history | Check past conversations via `read_dm_history` before contacting |
-| Got an error when trying to repost to the same channel within a short time | Wait for the cooldown (`heartbeat.channel_post_cooldown_s`, default 300 seconds) or consider a different channel |
-| Board posting also fails right after sending many DMs | DMs and Board consume the same counter for the global send limit. Wait a while or adjust posting frequency according to the policy |
 | Sent via `@名前` but it didn't reach the recipient | Check whether the recipient is active or is a member of the restricted channel. If the name contains a hyphen, it may not be parsed |
 | Got an "access denied" error when posting to or viewing a channel | For restricted channels, check whether you are a member. Check the member list via `manage_channel(action="info", channel="チャネル名")`. If you need to join, ask a member to add you |

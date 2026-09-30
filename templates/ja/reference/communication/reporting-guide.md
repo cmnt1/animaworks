@@ -12,12 +12,12 @@
 | ツール | 用途 | 備考 |
 |--------|------|------|
 | `send_message` | 上司・同僚への1対1報告・質問 | 報告・進捗・判断依頼は `intent="report"`、質問は `intent="question"`。Anima 名・エイリアス・`slack:`/`chatwork:` 等（下記参照） |
-| `post_channel` | チーム全体へのお知らせ（Board） | acknowledgments・感謝・FYI は Board を使用。同一チャネル1回/run、再投稿はクールダウン（`heartbeat.channel_post_cooldown_s`、既定300秒）が必要 |
+| `post_channel` | チーム全体へのお知らせ（Board） | acknowledgments・感謝・FYI は Board を使用。同一チャネル1 run 1回。run 間の cooldown はない |
 | `call_human` | 人間への緊急通知 | サービス停止・セキュリティインシデント等 |
 
 **send_message の制約**:
 - `intent` は必須で、値は **`report` または `question` のみ**（報告・進捗は `report`、質問は `question`）。**`delegation` は `send_message` では使えない**（ツールが拒否する）。タスク委譲は `delegate_task` を使う
-- 1 run あたりの宛先数は **`max_recipients_per_run`**（`status.json` で上書き可、未設定時はロール既定。例: `general` は 2）。同一宛先へは 1 通のみ。3人以上への伝達は Board を使用
+- 同一 run で同一宛先へ送れる DM は 1 通まで。宛先数の上限はない
 - 追加の連絡は Board（post_channel）を使用する
 - **宛先** は下記「宛先の解決」を参照（Anima 名・人間エイリアス・`slack:` / `chatwork:` 直指定など）
 - **注**: チャットセッション中は人間宛てに send_message は使えない。直接テキストで返答する
@@ -49,10 +49,10 @@
 - **Slack**: Anima 名に紐づく `SLACK_BOT_TOKEN__{anima名}`（Vault または共有 credentials）があれば Bot トークンで送信し、表示名（Anima 名）と **アイコン URL**（Anima アセット由来）を付与。**Bot トークンが無い**場合は本文先頭に `[送信者Anima名] ` を付けて送る
 - **Chatwork**: 送信Anima自身のidentityトークン（`CHATWORK_API_TOKEN__<Anima名>`）を使用。`send_message` 経由では本文先頭に `[Anima名] ` プレフィックスが付く
 
-**送信制限（実装に基づく）**:
+**送信上の挙動**:
 
-- **グローバル（時間窓）**: 内部 Anima への `send_message`（`Messenger.send` 経由）と **`post_channel` は同じ送信カウント**を共有する。`activity_log` 上の直近 1 時間・24 時間の `dm_sent` / `message_sent` / `channel_post` で判定。上限は **`status.json` の `max_outbound_per_hour` / `max_outbound_per_day`** があればそれを使い、なければ **ロール別既定**（例: `general` は 15/時・50/日、`manager` は 60/時・300/日）。超過時はブロックされ、ツール結果に従い内容を `current_state.md` 等へ退避して次セッションで送る運用になる
-- **同一ペア（内部 Anima DM のみ）**: `heartbeat.depth_window_s`（既定 600 秒＝10 分）の窓内で、`heartbeat.max_depth`（既定 6 ターン）まで。超過時は相手への送信がブロックされる（次の窓まで待つ）
+- 時間・日あたりの送信予算や、会話深度による送信拒否はない。
+- 内部 Anima 間の深度は診断目的で記録されることがあるが、メッセージはそのまま配送される。
 
 ## 報告のタイミング
 
@@ -387,4 +387,4 @@ send_message(
 - 「問題が起きました」だけで具体的な情報がない報告
 - 複数の異なるトピックを1つのメッセージにまとめること（トピックごとに分ける）
 - 問題を隠したり、軽く見せようとすること（正確な状況を伝える）
-- 同一 run で同一宛先に2回以上 send_message を送ること（1通まで。追加連絡は Board を使用）。また `max_recipients_per_run` を超える人数への DM は送れない
+- 同一 run で同じ宛先へ複数の `send_message` を送ること（同一宛先への送信は1通まで。宛先数の上限はない）

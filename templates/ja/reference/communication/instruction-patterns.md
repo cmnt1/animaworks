@@ -16,14 +16,13 @@
 
 **send_message の制約**:
 - `intent` は必須。`report` / `question` のみ許可。acknowledgment・感謝・FYI は Board（`post_channel`）を使用すること。配下へのタスク委譲は `delegate_task` を使用
-- 1 run あたり最大 N 宛先、各宛先1通まで。N はロール別デフォルト（general=2, ops=2, writer=3, researcher=3, engineer=5, manager=10）。`status.json` の `max_recipients_per_run` でオーバーライド可能。N 人以上への伝達は Board を使用
+- 同一 run で同一宛先へ送れる DM は 1 通まで。宛先数の上限はない
 - オプション: `thread_id`（スレッドID）、`reply_to`（返信先メッセージID）で会話のスレッドを維持可能
 
 **post_channel の制約**:
 - チャネルのメンバーであることが必須（ACL）。制限チャネルの場合、メンバー外は投稿不可
 - 同一 run 内で同じチャネルには1回のみ投稿可能
-- 同一チャネルへの再投稿にはクールダウンが必要（`config.json` の `heartbeat.channel_post_cooldown_s`、デフォルト300秒。0 で無効）
-- DM と Board は同一のアウトバウンド予算を共有（`max_outbound_per_hour` / `max_outbound_per_day`）。時間帯・日次の上限に達していると投稿がブロックされる
+- run 間の再投稿クールダウンや DM / Board 共通の送信予算はない
 
 ## 明確な指示の5要素
 

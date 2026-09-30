@@ -228,9 +228,6 @@ Role templates are organized into `templates/_shared` and locale-specific paths:
 | `background_model` | Model for background tasks such as heartbeat and cron | engineer / manager only (other roles have no key) |
 | `context_threshold` | Compaction threshold | All roles |
 | `conversation_history_threshold` | Conversation history compression threshold | All roles (0.30–0.40 in templates) |
-| `max_outbound_per_hour` | Hourly send limit (DM and Board) | Rate limit |
-| `max_outbound_per_day` | Daily send limit | Rate limit |
-| `max_recipients_per_run` | Maximum recipients per run | Rate limit |
 
 Valid role names must match `VALID_ROLES` (`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`) in code.
 
@@ -247,17 +244,6 @@ Model and execution parameters:
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-Messaging limits (rate-related settings within `defaults.json`):
-
-| Role | max_outbound_per_hour | max_outbound_per_day | max_recipients_per_run |
-|--------|------------------------|----------------------|-------------------------|
-| manager | 60 | 300 | 10 |
-| engineer | 40 | 200 | 5 |
-| researcher | 30 | 150 | 3 |
-| writer | 30 | 150 | 3 |
-| ops | 20 | 80 | 2 |
-| general | 15 | 50 | 2 |
-
 For `create_from_md` without `--role` specified, `general` is used. The ops default is `ollama/glm-4.7` for local use. In the bundled `templates/_shared/config_defaults/models.json`, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, edit `model` and `credential` in `status.json` (e.g., `openai/glm-4.7-flash`). engineer / manager can assign lightweight models for background execution such as heartbeat and cron via `background_model`.
 
 ### Application Flow
@@ -265,8 +251,8 @@ For `create_from_md` without `--role` specified, `general` is used. The ops defa
 1. **At creation** (`create_from_md`), the order is as follows:
    - `_apply_defaults_from_sheet()` … Migrate from the character sheet to `identity.md` / `injection.md` (/（ if a permission section exists) `permissions.md` → then to `permissions.json`
    - `_apply_role_defaults()` … **Overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (character-sheet-derived `permissions.json` is overwritten on the role side)
-   - `_create_status_json()` … Read all keys from the table above from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), overwrite with the character sheet's "model" and "credential" if present, and write `status.json`. Only write `execution_mode` when the character sheet's "execution mode" has a value; if unspecified, omit the key itself and let pattern resolution handle it (`models.json` etc., per `core/anima/factory.py`'s `_create_status_json`).
-2. **On role change** (`animaworks anima set-role`): Re-copy `permissions.json` and `specialty_prompt.md` via `_apply_role_defaults()`. Into `status.json`, `model`, `context_threshold`, and `conversation_history_threshold` are merged from `defaults.json`. `background_model` and `max_outbound_*` are **not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only `role` and does not touch template files. `--no-restart` can skip automatic restart via the API. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).
+   - `_create_status_json()` … Read model and context settings from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), overwrite with the character sheet's "model" and "credential" if present, and write `status.json`. Only write `execution_mode` when the character sheet's "execution mode" has a value; if unspecified, omit the key itself and let pattern resolution handle it (`models.json` etc., per `core/anima/factory.py`'s `_create_status_json`).
+2. **On role change** (`animaworks anima set-role`): Re-copy `permissions.json` and `specialty_prompt.md` via `_apply_role_defaults()`. Into `status.json`, `model`, `context_threshold`, and `conversation_history_threshold` are merged from `defaults.json`. `background_model` is **not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only `role` and does not touch template files. `--no-restart` can skip automatic restart via the API. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).
 
 ### Prompt Injection
 

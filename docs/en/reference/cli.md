@@ -17,7 +17,7 @@ Generated from the argparse definition of the `animaworks` command.
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
+                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,reload,set-role,rename,audit}
                         ...`
 
 | Name | Type | Default | Choices | Description |
@@ -181,23 +181,6 @@ Change the main model of the specified anima.
 | model | positional | — | — | Model name (e.g. azure/gpt-4.1-mini) |
 | --credential | option | — | — | Credential name |
 | --all | flag | false | — | Apply to all enabled animas |
-
-## `anima set-outbound-limit`
-
-Set per-Anima outbound message limits
-
-`usage: animaworks anima set-outbound-limit [-h] [--per-hour PER_HOUR]
-                                           [--per-day PER_DAY]
-                                           [--per-run PER_RUN] [--clear]
-                                           name`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| name | positional | — | — | Anima name |
-| --per-hour | option | — | — | Max outbound messages per hour |
-| --per-day | option | — | — | Max outbound messages per day |
-| --per-run | option | — | — | Max DM recipients per run |
-| --clear | flag | false | — | Clear overrides (fallback to role defaults) |
 
 ## `anima set-role`
 

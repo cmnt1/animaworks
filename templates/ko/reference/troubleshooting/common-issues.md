@@ -20,21 +20,10 @@
 
 1. 수신처 지정 오류(Anima 정식 명칭・사용자 별칭・`slack:` / `chatwork:` 프리픽스 등) 또는 해결 순서에 맞지 않는 지정
 2. 서버가 종료되어 있음
-3. 상대가 하트비트 간격 사이에 있음(다음 시작까지 읽지 않은 상태)
-4. 전송 처리가 오류로 실패했음(글로벌 전송 상한・대화 깊이 상한・세션 내 DM 상한, `RecipientResolutionError` 등)
-5. `intent` 가 미지정 또는 부정. DM에서는 `report` / `question` 만. 작업 위임은 `delegate_task` 을 사용(`send_message` 에 `intent="delegation"` 을 붙이면 비권장 메시지가 반환됨)
-6. 세션 내 DM 제한 초과(**동일 수신처에는 1세션 1통까지**. **다른 수신처의 최대 인원수**는 `status.json` 의 `role` 에 따른 `max_recipients_per_run` — 아래 표. 개별 덮어쓰기는 `status.json` 의 동일 이름 필드)
-
-**역할별 `max_recipients_per_run`(`core/config/schemas.py` `ROLE_OUTBOUND_DEFAULTS`)**
-
-| role | 1세션당 최대 수신처 수(각 1통) |
-|------|--------------------------------------|
-| manager | 10 |
-| engineer | 5 |
-| writer | 3 |
-| researcher | 3 |
-| ops | 2 |
-| general | 2 |
+3. 상대 Anima가 중지·비활성화되었거나 Inbox가 Provider 오류 backoff를 기다리는 중
+4. 수신처 해결, 권한 확인, 외부 채널 전달 등 실제 전송 오류가 발생했음
+5. `intent`가 미지정 또는 부정. DM에서는 `report` / `question`만 허용. 작업 위임은 `delegate_task`를 사용(`send_message`에 `intent="delegation"`을 붙이면 비권장 메시지가 반환됨)
+6. 같은 run에서 같은 수신처에 이미 DM을 보냈음(같은 수신처로 두 번째 메시지만 거부하며 수신처 수 상한은 없음)
 
 ### 대처 절차
 
@@ -77,7 +66,7 @@ send_message(to="Aoi", content="...", intent="report")   # OK
 send_message(to="aoi", content="...", intent="report")  # 名前が異なればエラーになる可能性あり
 
 # DM は intent 必須（report / question のみ）。委譲は delegate_task
-# 1セッションあたりの「別宛先」数はロールにより異なる（例: general は最大2人、engineer は5人まで）。同一宛先へは1回のみ
+# 同一 run 내 같은 수신처에는 DM을 한 번만 보낼 수 있으며 수신처 수 상한은 없음
 send_message(
     to="aoi",
     content="了解しました。作業を開始します。",
@@ -86,7 +75,7 @@ send_message(
     thread_id="thread-xyz789"  # 任意: スレッドID
 )
 
-# 確認・お礼・お知らせのみのDMは不可 → post_channel（Board）を使用
+# 단순한 확인·감사·칭찬 메시지에는 답장하지 않는다. 팀 공유가 필요하면 post_channel(Board)을 사용
 ```
 
 ---
@@ -381,45 +370,23 @@ send_message(
 
 ---
 
-## 메시지 전송이 제한됨
+## 메시지 전송에서 오류가 반환됨
 
-### 증상
+### 증상과 원인
 
-- `send_message` 또는 `post_channel`을 실행했을 때 오류가 반환됨
-- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` 또는 24시간 버전의 유사한 메시지가 표시됨
-- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました`이 표시됨(`core/messaging/cascade_limiter.py` — 발신자의 `activity_log`을 읽을 수 없을 때)
-- `ConversationDepthExceeded: ...`이 표시됨(대화 깊이 초과. 턴 수와 시간은 `heartbeat.max_depth` / `heartbeat.depth_window_s`의 설정값을 반영)
-
-### 원인
-
-- **역할별 글로벌 상한**: `dm_sent` / `message_sent` / `channel_post`를 activity_log에서 집계하여 1시간·24시간 건수로 판정(`ConversationDepthLimiter.check_global_outbound`). 상한은 `status.json`의 `max_outbound_per_hour` / `max_outbound_per_day`으로 개별 덮어쓰기하고, 미설정이면 `role`의 기본값(`ROLE_OUTBOUND_DEFAULTS`) 사용
-
-**역할별 1시간 / 24시간 상한(코드 기본값)**
-
-| role | 1시간 | 24시간 |
-|------|-------|--------|
-| manager | 60 | 300 |
-| engineer | 40 | 200 |
-| writer | 30 | 150 |
-| researcher | 30 | 150 |
-| ops | 20 | 80 |
-| general | 15 | 50 |
-
-- 동일 채널에 연속 게시가 쿨다운 기간 내였음(`config.json` `heartbeat.channel_post_cooldown_s`, 기본 300초)
-- 양자 간 왕복이 깊이 제한을 초과(`Messenger.send` 내의 `ConversationDepthLimiter.check_depth`. **내부 Anima 대상 DM만** 해당. `heartbeat.depth_window_s` / `heartbeat.max_depth`, 기본 **600초**·**최대 6턴**. 문구는 "10분·6턴")
-- 활동 로그 읽기 오류(디스크·권한·손상 등) → 안전 측에서 전송 차단
+- `RecipientResolutionError`, 외부 채널 `DeliveryFailed`, 권한 오류, 회사 경계 오류 등 실제 전달 오류가 반환됨
+- 같은 run에서 같은 수신처에 두 번째 `send_message`를 보내면 중복 방지를 위해 거부된다. 수신처 수 상한은 없다
+- 같은 run에서 같은 채널에 두 번째 `post_channel`을 게시하면 거부된다. run 간 게시 쿨다운은 없다
+- 시간·일 단위 발신 예산이나 대화 깊이에 따른 발신 차단은 없다. 내부 Anima 간 깊이는 진단용으로 기록될 수 있다
 
 ### 조치 절차
 
-1. **오류 메시지 확인**: 시간 제한·24시간 제한·깊이 제한·activity_log 실패 중 하나를 식별
-2. **전송 이력 돌아보기**: 불필요한 전송이 없었는지 확인
-3. **대기**: 시간 제한이면 다음 1시간 프레임까지(메시지에 "다음 전송 가능 시각(참고)"이 붙을 수 있음), 24시간 제한이면 다음 날까지, 깊이 제한이면 윈도우가 비워질 때까지
-4. **전송 내용 기록**: 상한 도달 시 메시지 지시대로 이번 턴에서는 `send_message`을 사용하지 않고 `state/current_state.md`에 쓴 다음, 다음 세션에서 전송
-5. **activity_log 실패 시**: 관리자에게 로그·디스크·해당 Anima의 `activity_log/`를 확인 요청(차단은 발신자 측 로그 읽기에 의존)
-6. **긴급 연락**: `call_human`은 이러한 글로벌 상한의 대상 외
-7. **전송 통합**: 여러 보고를 한 통으로 정리. 깊이 제한에 도달하면 Board(`post_channel`)로 전환
+1. **오류 확인**: 수신처 해결, `intent`(`report` / `question`), 채널 ACL, 회사 경계, 외부 API 응답을 확인한다
+2. **중복 확인**: 이번 run에서 이미 DM을 보낸 수신처에는 다시 보낼 수 없다. 수신처 수 상한을 기다릴 필요는 없다
+3. **전달 실패 조사**: Slack / Chatwork라면 반환된 오류와 연결 설정을 확인한다
+4. **Inbox Provider 오류**: `rate_guard`가 지정한 복구 시간 후 읽지 않은 메시지를 다시 처리한다
 
-자세한 내용은 `communication/sending-limits.md`를 참조.
+자세한 내용은 `communication/sending-limits.md`를 참조한다.
 
 ---
 

@@ -415,8 +415,7 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X 搜索 / AWS 收集�
 | **命令安全** | Shell 注入检测（默认仅记录，可启用强制模式） → 全局禁止列表（强制执行。没有 `permissions.global.json` 时服务器无法启动） → 单个智能体的禁止命令 → 单个智能体的允许列表 → 路径遍历检测 |
 | **文件沙箱** | 每个智能体都通过 `permissions.json` 被限制在自己的目录中。identity 和权限文件本身受到写入保护 |
 | **进程隔离** | 每个智能体使用独立的 OS 进程。通过本地 IPC 通信（Unix socket；Windows 使用 loopback TCP） |
-| **速率限制** | 会话内对重复目标去重并按角色设定上限 → 按小时和天计算的跨会话上限（日志不可读时采用 fail-closed） → 通过提示词注入近期发送记录，使智能体具备自我认知 |
-| **级联防护** | 会话深度限制＋级联检测。设置 5 分钟冷却时间并延迟处理 |
+| **消息处理** | 同一运行中防止向同一收件人重复发送；通过 Inbox 文件变更唤醒、单任务执行和消息合并处理；Provider 错误时退避重试。近期发送记录注入提示词；不设全局预算或基于深度的发送拒绝 |
 | **认证与会话管理** | Argon2id 哈希、48 字节随机令牌、最多 10 个会话，TTL 可配置 |
 | **Webhook 验证** | Slack、Chatwork、Zoom、GitHub 的 HMAC 签名验证（带重放防护） |
 | **SSRF 缓解** | 媒体代理会拦截私有 IP 和 DNS 重绑定，强制使用 HTTPS，并验证 Content-Type 和魔数 |
@@ -455,7 +454,7 @@ CLI 面向高级用户和自动化场景。日常操作使用 Web UI 即可。
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 新建 |
 | `animaworks anima list / info / status / restart / disable / enable` | 查看・控制 |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | 按 Anima 配置 |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | 按 Anima 配置 |
 | `animaworks anima reload [--all]` | 从 status.json 热重载 |
 | `animaworks anima delete / rename` | 生命周期操作 |
 | `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 集成脚本（不属于 CLI 本体的维护范围） |

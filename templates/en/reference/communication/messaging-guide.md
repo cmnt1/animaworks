@@ -17,11 +17,10 @@ Use the `send_message` tool to send messages (recommended).
 | `reply_to` | string | MAY | ID of the message being replied to (e.g., `20260215_093000_123456`) |
 | `thread_id` | string | MAY | Thread ID. Specify when joining an existing thread |
 
-### DM Limits (per run)
+### Per-run DM rule
 
-- Can send to a maximum of **2 people**
-- **A second send to the same destination is not allowed** (use Board for additional contact)
-- For communication to 3 or more people, use Board (post_channel)
+- A run can send **one DM per recipient**. This prevents duplicates; there is no recipient-count cap.
+- For additional information to the same recipient, use Board where appropriate or send in a later run.
 
 ### Destination `to` Resolution (Unified Outbound)
 
@@ -106,7 +105,7 @@ send_message(to="user", content="対応完了しました。", intent="report")
 | Task delegation | delegate_task | Delegate one persistent task to a direct subordinate. Check progress via task_tracker |
 | Question or inquiry | send_message (intent=question) | Clarifying uncertainties |
 | Acknowledgment, thanks, FYI | post_channel (Board) | "Understood" or "Shared" |
-| Communication to 3 or more people | post_channel (Board) | Announcement to the whole team |
+| Team-wide sharing | post_channel (Board) | Announcement to the relevant group |
 | Second message to the same destination | post_channel (Board) | Sharing additional information |
 
 ## Thread Management
@@ -196,11 +195,11 @@ Received messages include the following information:
 | `intent` | Sender's intent | `report`, `question` |
 | `timestamp` | Send timestamp | `2026-02-15T09:30:00` |
 
-### Reply Obligations
+### Reply Guidance
 
-- MUST: When receiving unread messages, reply to the sender
-- MUST: Always respond to questions or requests
-- SHOULD: In addition to "Understood," also communicate the next action
+- MUST: Respond to unread messages that contain a question, request, or action requiring a response
+- MUST NOT: Continue an exchange by replying to a message that is only an acknowledgement, thanks, or praise
+- SHOULD: If an acknowledgement is useful, include the next action rather than only saying "Understood"
 
 ## Receiving Messages from External Platforms
 
@@ -230,17 +229,17 @@ Messages arriving from external platforms differ from normal Anima-to-Anima mess
 2. **Reply to call_human**: When a human replies in the Slack thread of a notification sent via `call_human` (details: `communication/call-human-guide.md`)
 3. **Mention via channel**: When a message addressed to Anima is posted in a Slack channel
 
-### Immediate and deferred processing of Slack messages
+### Inbox processing for Slack messages
 
-Messages from Slack are automatically classified as either immediately processed or waiting until the periodic heartbeat, depending on their content:
+When a Slack message is written to the Inbox, a file-change notification starts Inbox processing. Intent does not filter wakeups, and messages without a mention are not delayed until the periodic heartbeat. A 45-second safety rescan catches missed file notifications.
 
-| Condition | Processing timing | Reason |
-|------|-------------|------|
-| **With @mention** (Bot is mentioned) | **Immediate processing** | `intent="question"` is automatically attached and processed immediately in the inbox as actionable |
-| **DM** (direct message to the Bot) | **Immediate processing** | Since a DM is addressed to the Bot, `intent="question"` is automatically attached |
-| **Channel message without mention** | **Processed at the next heartbeat** | Since `intent` is empty, it is not triggered immediately, and is processed as unread during periodic checks |
+| Condition | Inbox processing | Response guidance |
+|------|------------------|-------------------|
+| **With @mention** (Bot is mentioned) | Woken by the file notification | `intent="question"` is attached automatically; respond according to the content |
+| **DM** (direct message to the Bot) | Woken by the file notification | `intent="question"` is attached automatically; respond according to the content |
+| **Channel message without mention** | Woken by the file notification | Treat messages not directed to you as context; a reply or action may not be needed |
 
-This means Anima does not activate for casual conversation in channels, but responds quickly only when explicitly called via @mention or DM.
+A wakeup does not mean that a reply is always needed. Do not reply to messages that are only acknowledgements, thanks, or praise; act only when there is an additional question, request, or new information.
 
 ### Responding to external messages
 
@@ -341,75 +340,28 @@ When an external message is received:
 
 **Countermeasure**: Use the Board (post_channel) for additional communication, or send in the next run (heartbeat, etc.)
 
-### Sending to three or more people
-
-**Symptom**: Displays `Error: 1回のrunでDMを送れるのは最大2人までです`
-
-**Countermeasure**: Use the Board (post_channel) for communication to three or more people
-
 ### Forgetting to reply
 
 **Symptom**: The recipient cannot track the status and sends a follow-up inquiry
 
-**Countermeasure**: MUST: Always reply to received messages. Even if you cannot respond immediately, reply with "I've confirmed it. I will respond by XX o'clock"
+**Countermeasure**: Reply when the message needs a response. If you cannot act immediately, give the next action and expected timing; do not reply to a message that is only thanks or acknowledgement.
 
-## Send limits
+## Sending rules
 
-System-wide rate limits apply to message sending.
-Excessive sending can cause loops or failures, so understand the following limits and act accordingly.
+- `send_message` requires the `report` or `question` intent. Use `delegate_task` for task delegation.
+- A run may send at most one DM to the same recipient. There is no recipient-count cap.
+- A run may post once to a given Board channel. There is no cross-run cooldown or shared DM / Board send budget.
+- Conversation depth does not block sends. Depth between internal Animas may be logged for diagnostics, but the message body is never discarded.
 
-### Global send limits (activity_log based)
+## Reply guidance
 
-| Limit | Default value | Target |
-|------|-------------|------|
-| Per-hour cap | 30 messages/hour | Counts DMs (message_sent) |
-| Per-day cap | 100 messages/day | Counts DMs (message_sent) |
+Reply to messages that need a response. If an acknowledgement is useful, send it once with the next action or expected timing. Do not reply to a message that is only an acknowledgement, thanks, or praise; do not continue the exchange.
 
-When the limit is reached, sending results in an error. `ack`, `error`, and `system_alert` type messages are not subject to the limit.
-Values can be changed via `heartbeat.max_messages_per_hour` / `heartbeat.max_messages_per_day` in `config.json`.
+## Keeping communication clear
 
-### Limits per run
-
-- **DM**: Up to 2 people maximum, one message per destination
-- **Board**: One post per channel (with cooldown)
-
-### Cascade detection (back-and-forth limit between two parties)
-
-If there are too many back-and-forth exchanges with the same party in a short time, sending is blocked.
-This is controlled by `heartbeat.depth_window_s` (time window) and `heartbeat.max_depth` (maximum depth) in `config.json`.
-
-### What to do when limits are reached
-
-1. Limits are calculated using a sliding window in the activity_log
-2. If the hourly limit is reached: record the content to send in current_state.md and send it in the next session
-3. If the daily limit is reached: narrow down to only essential messages and wait until the next day
-4. For urgent communication, use `call_human` (not subject to rate limits)
-
-### Best practices for conserving sends
-
-- Consolidate multiple report items into a single message
-- Post acknowledgments, thanks, and FYI to the Board (saving DM quota)
-- Consolidate regular information sharing into Board channel posts
-
-## One-round rule
-
-DM (`send_message`) exchanges follow the principle of **one round per topic**.
-
-### Rules
-
-- MUST: Complete one topic in a single round of sending and replying
-- MUST: If three or more rounds are needed, move to a Board channel
-- SHOULD: Include all necessary information in the first message so no additional questions are needed
-
-### Why the one-round rule is needed
-
-- More DM back-and-forth makes it easier to hit rate limits
-- Message loops between two parties are suppressed by **cascade detection** (sending is blocked if the maximum depth is exceeded within a configurable time window)
-- Board posts are visible to other members and prevent duplication of information
-
-### Exceptions
-
-- Urgent blocker reports are not subject to the count limit
+- Include the information needed to resolve one topic without unnecessary follow-up.
+- Consolidate related reports when useful, and use Board for team-wide information.
+- Choose DM or Board based on the content. There is no system rejection based on the number of back-and-forth turns.
 
 ## Communication path rules
 

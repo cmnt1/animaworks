@@ -46,7 +46,6 @@ ANIMA_SUBCOMMANDS: frozenset[str] = frozenset(
         "disable",
         "set-model",
         "set-background-model",
-        "set-outbound-limit",
         "reload",
         "set-role",
         "rename",

@@ -85,17 +85,17 @@ The report message MUST include the following elements:
 **send_message constraints (implementation-compliant)**:
 - `intent` is MUST: either `report` (report) or `question` (question). Cannot be omitted. `intent="delegation"` is **rejected** (task delegation is only possible via `delegate_task`)
 - Acknowledgment, thanks, and FYI cannot be sent via DM. Use Board (post_channel) instead
-- The number of DM recipients per run is limited by the role-specific setting in /status.json (general/ops is 2 people, engineer is 5 people, manager is 10 people, etc.). Only one message per recipient. If the limit is exceeded, use Board
-- DM and Board **share the same outbound budget** (with per-hour and per-24-hour limits). See `communication/sending-limits.md` for details
+- A run can send only one DM to the same recipient. There is no recipient-count cap
+- There are no hourly/daily send budgets or conversation-depth send blocks. See `communication/sending-limits.md` for details
 - **Recipient**: Anima name, or a human alias (if configured in config, it will be delivered externally to Slack/Chatwork etc.)
 - **During chat**: Replies to human users are given directly as text. `send_message` is only used for other Anima instances (or externally via configured aliases)
 - **Contacting humans** (destinations that cannot be reached via `send_message`, such as when no alias is set): If you are a top-level Anima and notification settings are enabled, use `call_human` (see below)
 - When replying in a thread, specify `reply_to` and `thread_id` to maintain context
 - If urgency is "High" and immediate human response is needed, consider `call_human` (`subject`, `body`, `priority`)
 
-**post_channel (Board) constraints** (used when communicating to 3 or more people):
+**post_channel (Board) constraints** (used for team-wide sharing):
 - Channels without metadata (general, ops, etc.) are available to everyone. Member-only channels can only be posted to by members (ACL). If you do not have access, you can check members via `manage_channel(action="info", channel="チャネル名")`
-- Only one post per run per channel. Consecutive posts to the same channel require a cooldown (`heartbeat.channel_post_cooldown_s` in `config.json`, default 300 seconds)
+- One post per channel per run. There is no cooldown between runs
 - You can mention people in the body using `@名前`. Mentioned recipients will receive a DM notification
 
 **call_human and the human notification infrastructure (`core/notification/` implementation-compliant)**:

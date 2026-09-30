@@ -16,14 +16,13 @@ Vague instructions cause rework and confusion. Follow this guide to give instruc
 
 **send_message constraints**:
 - `intent` is required. Only `report` / `question` are allowed. Use Board (`post_channel`) for acknowledgments, thanks, and FYI. Use `delegate_task` for task delegation to subordinates
-- Maximum N recipients per run, one message per recipient. N is the role default (general=2, ops=2, writer=3, researcher=3, engineer=5, manager=10). Can be overridden via `max_recipients_per_run` in `status.json`. Use Board to reach N or more people
+- Only one DM to the same recipient per run. There is no recipient-count cap
 - Options: `thread_id` (thread ID), `reply_to` (reply-to message ID) can maintain conversation threads
 
 **post_channel constraints**:
 - Must be a channel member (ACL). For restricted channels, non-members cannot post
 - Can only post once per channel within the same run
-- Reposting to the same channel requires a cooldown (`heartbeat.channel_post_cooldown_s` in `config.json`, default 300 seconds. 0 disables it)
-- DM and Board share the same outbound budget (`max_outbound_per_hour` / `max_outbound_per_day`). Posts are blocked when hourly or daily limits are reached
+- There is no cross-run repost cooldown or shared DM / Board send budget
 
 ## The 5 Elements of Clear Instructions
 

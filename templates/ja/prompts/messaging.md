@@ -6,7 +6,7 @@ DM送信:
 ```json
 {{"name": "send_message", "arguments": {{"to": "相手名", "content": "メッセージ", "intent": "report"}}}}
 ```
-- intent: `report` | `question`。intentあり→即時処理、なし→30分巡回
+- intent: `report` | `question`。Inbox は新しいメッセージのファイル変更通知で起動し、intent による起動フィルタはない
 
 Board投稿:
 ```json

@@ -1,4 +1,4 @@
-"""Unit tests for ToolHandler top-level catch, output truncation, and depth-limit error handling."""
+"""Unit tests for ToolHandler top-level catch, output truncation, and send-error handling."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -47,21 +47,21 @@ class TestToolHandlerTopLevelCatch:
             handler.handle("search_memory", {"query": "test"})
 
 
-class TestToolHandlerDepthLimitError:
-    """Test that _handle_send_message checks for depth-limit error from send()."""
+class TestToolHandlerSendError:
+    """Test that _handle_send_message propagates errors returned by send()."""
 
-    def test_depth_limit_error_returns_error_string(self, tmp_path):
-        """When send() returns type='error', handler should return Error string."""
+    def test_send_error_returns_error_string(self, tmp_path):
+        """When send() returns type='error', handler should return an error string."""
         handler = _make_handler(tmp_path)
 
-        # Create a messenger mock that returns an error Message (depth limit exceeded)
+        # Create a messenger mock that returns a generic delivery error.
         messenger = MagicMock()
         messenger.anima_name = "test"
         error_msg = Message(
             from_person="system",
             to_person="test",
             type="error",
-            content="ConversationDepthExceeded: bob",
+            content="DeliveryFailed: bob",
         )
         messenger.send.return_value = error_msg
         handler._messenger = messenger
@@ -77,10 +77,10 @@ class TestToolHandlerDepthLimitError:
             result = handler._handle_send_message({"to": "bob", "content": "hello", "intent": "report"})
 
         assert "Error:" in result
-        assert "ConversationDepthExceeded" in result
+        assert "DeliveryFailed" in result
 
-    def test_depth_limit_error_does_not_track_replied_to(self, tmp_path):
-        """When send() is blocked, replied_to should NOT be updated."""
+    def test_send_error_does_not_track_replied_to(self, tmp_path):
+        """When send() returns an error, replied_to should not be updated."""
         handler = _make_handler(tmp_path)
         token = active_session_type.set("chat")
 
@@ -90,7 +90,7 @@ class TestToolHandlerDepthLimitError:
             from_person="system",
             to_person="test",
             type="error",
-            content="ConversationDepthExceeded: bob",
+            content="DeliveryFailed: bob",
         )
         messenger.send.return_value = error_msg
         handler._messenger = messenger

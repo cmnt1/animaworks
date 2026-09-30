@@ -21,7 +21,7 @@
 | [Lifecycle](architecture/lifecycle.md) | Startup paths and locks for chat, inbox, heartbeat, cron, and task. |
 | [Prompt Construction](architecture/prompt.md) | Composition of system prompts and runtime context. |
 | [Task Management](architecture/tasks.md) | Task Board, delegation, and background tasks. |
-| [Messaging](architecture/messaging.md) | DM, Board, notifications to humans, send limits, and external integration. |
+| [Messaging](architecture/messaging.md) | DM, Board, notifications to humans, Inbox wake and message processing, and external integration. |
 | [Memory System](memory/index.md) | Memory design, directories, and frontmatter. |
 | [Automatic Recall](memory/priming.md) | How memories are brought into context at runtime. |
 | [Intentional Recall and Search](memory/retrieval.md) | `search_memory`, search processing, RAG, and repair. |

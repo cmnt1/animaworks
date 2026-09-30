@@ -262,6 +262,7 @@ class TestMessageTriggeredHeartbeatGuard:
 
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False
+        limiter.cancel_deferred_timer()
 
 
 class TestRunnerHeartbeat24hDefault:

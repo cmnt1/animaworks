@@ -67,7 +67,7 @@ def test_delegation_shares_single_id_across_both_sides(monkeypatch, tmp_path: Pa
             "boss": SimpleNamespace(supervisor=None, aliases=[]),
             "worker": SimpleNamespace(supervisor="boss", aliases=[]),
         },
-        heartbeat=SimpleNamespace(depth_window_s=600, max_depth=6),
+        heartbeat=SimpleNamespace(delegation_dm_enabled=True),
     )
     with (
         patch("core.config.models.load_config", return_value=config),

@@ -32,7 +32,7 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | Board（共有チャネル）の使い方がわからない | `communication/board-guide.md` |
 | 指示の出し方・報告の仕方がわからない | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
 | 委譲・完了報告・エスカレーションの必須項目を確認したい | `communication/message-quality-protocol.md` |
-| メッセージ送信が制限された | `communication/sending-limits.md` |
+| Inbox 起動やメッセージ送信の挙動を確認したい | `communication/sending-limits.md` |
 | 人間への通知方法がわからない | `communication/call-human-guide.md` |
 | Slack ボットトークンの設定がわからない | `reference/communication/slack-bot-token-guide.md` ※技術リファレンス |
 
@@ -121,12 +121,12 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 
 | ファイル | 概要 |
 |---------|------|
-| `messaging-guide.md` | メッセージ送受信の完全ガイド（send_message のパラメータ、スレッド管理、1ラウンドルール） |
+| `messaging-guide.md` | メッセージ送受信のガイド（send_message のパラメータ、スレッド管理、返信方針） |
 | `board-guide.md` | Board（共有チャネル）ガイド（post_channel / read_channel の使い分け、投稿ルール） |
 | `instruction-patterns.md` | 指示の出し方パターン集（明確な指示の書き方、委任パターン、進捗確認） |
 | `reporting-guide.md` | 報告・エスカレーションの方法（報告タイミング、フォーマット、緊急 vs 定期） |
 | `message-quality-protocol.md` | メッセージ品質プロトコル（委譲4項目・完了報告3項目・エスカレーション4項目の必須チェック） |
-| `sending-limits.md` | 送信制限の詳細（3層レート制限、30/h・100/day 上限、カスケード検出、対処法） |
+| `sending-limits.md` | Inbox のファイル wake・メッセージ集約・run 内重複防止・ループ回避 |
 | `call-human-guide.md` | 人間への通知ガイド（call_human の使い方、返信の受け取り、通知チャネル設定） |
 | `slack-bot-token-guide.md` | → `reference/communication/slack-bot-token-guide.md` に移動。Slack ボットトークン設定ガイド |
 
@@ -186,7 +186,7 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | 指示, 委任, タスク依頼, デリゲーション | `reference/communication/instruction-patterns.md` |
 | 報告, 日報, サマリー, 完了報告, エスカレーション | `reference/communication/reporting-guide.md` |
 | 品質プロトコル, 必須項目, 検証根拠, 完了条件, 委譲チェック | `communication/message-quality-protocol.md` |
-| レート制限, 送信制限, 30通, 100通, 1ラウンドルール | `communication/sending-limits.md` |
+| Inbox wake, メッセージ集約, 重複送信防止, 了解への返信, 会話ループ | `communication/sending-limits.md` |
 | call_human, 人間通知, 人間に連絡, 通知チャネル | `communication/call-human-guide.md` |
 | Slack, ボットトークン, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | 組織, supervisor, 上司, 部下, 同僚 | `reference/organization/structure.md` |

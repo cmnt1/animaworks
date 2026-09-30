@@ -12,12 +12,12 @@
 | 도구 | 용도 | 비고 |
 |--------|------|------|
 | `send_message` | 상급자·동료에게 일대일 보고·질문 | 보고·진행 상황·판단 요청은 `intent="report"`, 질문은 `intent="question"`. Anima 이름·별칭·`slack:`/`chatwork:` 등(아래 참조) |
-| `post_channel` | 팀 전체에 공지(Board) | 확인 응답·감사 인사·FYI는 Board를 사용한다. 같은 채널에는 실행당 1회만 게시하며, 재게시하려면 쿨다운(`heartbeat.channel_post_cooldown_s`, 기본값 300초)이 필요하다 |
+| `post_channel` | 팀 전체에 공지(Board) | 확인 응답·감사 인사·FYI는 Board를 사용한다. 한 run에서 같은 채널에 한 번 게시하며, run 간 쿨다운은 없다 |
 | `call_human` | 사람에게 긴급 알림 | 서비스 종료·보안 사고 등 |
 
 **send_message 제약**:
 - `intent`는 필수이며, 값은 **`report` 또는 `question`만 가능**(보고·진행 상황은 `report`, 질문은 `question`). **`delegation`는 `send_message`에서 사용할 수 없다**(도구가 거부함). 작업 위임에는 `delegate_task`을 사용한다
-- 실행당 수신자 수는 **`max_recipients_per_run`**(`status.json`로 재정의 가능하며, 설정되지 않은 경우 역할 기본값 적용. 예: `general`는 2). 같은 수신자에게는 한 번만 보낸다. 3명 이상에게 전달하려면 Board를 사용한다
+- 한 run에서 같은 수신처에 DM을 한 번만 보낼 수 있다. 수신처 수 상한은 없다
 - 추가 연락에는 Board(post_channel)를 사용한다
 - **수신자**는 아래의 ‘수신자 확인’을 참조한다(Anima 이름·사람 별칭·`slack:` / `chatwork:` 직접 지정 등)
 - **참고**: 채팅 세션 중에는 사람에게 send_message를 사용할 수 없다. 직접 텍스트로 답변한다.
@@ -51,8 +51,7 @@
 
 **전송 제한 (구현 기반)**:
 
-- **글로벌 (시간 창)**: 내부 Anima로의 `send_message`(`Messenger.send` 경유)과 **`post_channel`는 동일한 전송 카운트를 공유**. `activity_log`상의 최근 1시간·24시간의 `dm_sent` / `message_sent` / `channel_post`로 판정. 상한은 **`status.json`의 `max_outbound_per_hour` / `max_outbound_per_day`**가 있으면 그것을 사용하고, 없으면 **역할별 기본값** (예: `general`는 15/시·50/일, `manager`는 60/시·300/일). 초과 시 차단되고, 도구 결과에 따라 내용을 `current_state.md` 등에 보관하여 다음 세션에서 보내는 운영이 됨
-- **동일 페어 (내부 Anima DM만)**: `heartbeat.depth_window_s`(기본 600초 = 10분) 창 내에서 `heartbeat.max_depth`(기본 6턴)까지. 초과 시 상대에게 전송이 차단됨 (다음 창까지 대기)
+- 시간·일 단위 발신 예산이나 대화 깊이에 따른 발신 차단은 없다. 내부 Anima 간 깊이는 진단용으로 기록될 수 있지만 메시지는 계속 전달된다.
 
 ## 보고 시기
 
@@ -387,4 +386,4 @@ send_message(
 - '문제가 발생했습니다'만 있고 구체적인 정보가 없는 보고
 - 여러 다른 토픽을 하나의 메시지에 모으는 것 (토픽별로 나눌 것)
 - 문제를 숨기거나 가볍게 보이려는 것 (정확한 상황을 전달할 것)
-- 같은 run에서 같은 수신처에 2회 이상 send_message를 보내는 것 (1통까지. 추가 연락은 Board 사용). 또한 `max_recipients_per_run`을 초과하는 인원에게 DM을 보낼 수 없음
+- 같은 run에서 같은 수신처에 `send_message`를 두 번 이상 보내는 것 (수신처당 1통이며 수신처 수 상한은 없음)

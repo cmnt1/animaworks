@@ -415,8 +415,7 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X 검색 / AWS 컬렉�
 | **명령 보안** | 셸 인젝션 감지（기본은 기록·enforce 가능） → 글로벌 금지 목록（강제. `permissions.global.json` 없이는 서버가 시작되지 않음） → 개별 에이전트 금지 명령 → 개별 에이전트 허용 목록 → 경로 탐색 감지 |
 | **파일 샌드박스** | 각 에이전트는 `permissions.json`로 자신의 디렉토리에 격리. identity와 권한 파일 자체는 쓰기 보호 |
 | **프로세스 격리** | 에이전트마다 독립 OS 프로세스. 로컬 IPC로 통신（Unix socket, Windows는 loopback TCP） |
-| **레이트 제한** | 세션 내의 대상 중복 제거와 역할별 상한 → 시간·일 단위의 횡단 상한（로그를 읽을 수 없으면 fail-closed） → 최근 전송 이력의 프롬프트 주입에 의한 자기 인식 |
-| **캐스케이드 방지** | 대화 깊이 제한＋캐스케이드 감지. 5분 쿨다운과 지연 처리 |
+| **메시지 처리** | 한 run 내 같은 수신처 중복 방지, Inbox 파일 변경 wake·단일 실행·메시지 묶음 처리, Provider backoff. 최근 발신 이력은 프롬프트에 주입하며 전역 예산이나 깊이 기반 발신 차단은 없다 |
 | **인증·세션 관리** | Argon2id 해시, 48바이트 랜덤 토큰, 최대 10세션, TTL은 설정 가능 |
 | **Webhook 검증** | Slack·Chatwork·Zoom·GitHub의 HMAC 서명 검증（리플레이 방지 포함） |
 | **SSRF 완화** | 미디어 프록시가 프라이빗 IP와 DNS 리바인딩을 차단, HTTPS 강제, Content-Type·매직 바이트 검증 |
@@ -455,7 +454,7 @@ CLI는 파워 유저와 자동화를 위한 것입니다. 일상적인 조작은
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 새로 만들기 |
 | `animaworks anima list / info / status / restart / disable / enable` | 확인·제어 |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima 단위 설정 |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima 단위 설정 |
 | `animaworks anima reload [--all]` | status.json에서 핫 리로드 |
 | `animaworks anima delete / rename` | 라이프사이클 작업 |
 | `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 통합 스크립트(CLI 본체의 유지보수 대상 아님) |

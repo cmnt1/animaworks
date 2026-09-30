@@ -79,10 +79,7 @@ def test_post_rejects_mixed_company_channel_then_observes_status_change(tmp_path
         json.dumps({"enabled": True, "company": "alpha"}),
         encoding="utf-8",
     )
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
-        allowed = handler._handle_post_channel({"channel": "team", "text": "hello"})
+    allowed = handler._handle_post_channel({"channel": "team", "text": "hello"})
 
     assert allowed == "Posted to #team"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 2
@@ -130,10 +127,7 @@ def test_company_scoped_open_channel_same_company_allows_post(tmp_path: Path) ->
     save_channel_meta(tmp_path / "shared", "general", ChannelMeta(members=[], company="alpha"))
     handler = _make_handler(tmp_path)
 
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
-        result = handler._handle_post_channel({"channel": "general", "text": "hello"})
+    result = handler._handle_post_channel({"channel": "general", "text": "hello"})
 
     assert result == "Posted to #general"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 1
@@ -165,10 +159,7 @@ def test_company_scoped_open_channel_unassigned_legacy_allows(tmp_path: Path) ->
     save_channel_meta(tmp_path / "shared", "ops", ChannelMeta(members=[], company="alpha"))
     handler = _make_handler(tmp_path, "legacy")
 
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
-        result = handler._handle_post_channel({"channel": "ops", "text": "hello"})
+    result = handler._handle_post_channel({"channel": "ops", "text": "hello"})
 
     assert result == "Posted to #ops"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 1
@@ -182,10 +173,7 @@ def test_unassigned_open_channel_allows_unassigned_anima(tmp_path: Path) -> None
     channel_file.write_text("", encoding="utf-8")
     handler = _make_handler(tmp_path, "legacy")
 
-    limiter = MagicMock()
-    limiter.check_global_outbound.return_value = True
-    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
-        result = handler._handle_post_channel({"channel": "general", "text": "hello"})
+    result = handler._handle_post_channel({"channel": "general", "text": "hello"})
 
     assert result == "Posted to #general"
     assert len(channel_file.read_text(encoding="utf-8").splitlines()) == 1

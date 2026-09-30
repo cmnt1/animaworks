@@ -22,7 +22,7 @@ Anima は会社・role・supervisor を持ち、組織内で仕事を委任し�
 
 ## メッセージング
 
-Anima 間の DM、共有 Board、外部サービス経由の連絡を扱う。送信上限、intent、受信時の制御は[メッセージング](architecture/messaging.md)に記載する。
+Anima 間の DM、共有 Board、外部サービス経由の連絡を扱う。Inbox はファイル変更通知で起動し、メッセージの集約・重複防止は[メッセージング](architecture/messaging.md)に記載する。
 
 ## タスク管理
 

@@ -46,9 +46,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.thinking` | `bool \| None` | `null` | Extended thinking (Bedrock: reasoning_effort, Ollama: think) |
 | `anima_defaults.thinking_effort` | `str \| None` | `null` | "low"/"medium"/"high"/"max" (default: "high") |
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S auth: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
-| `anima_defaults.max_outbound_per_hour` | `int \| None` | `null` | — |
-| `anima_defaults.max_outbound_per_day` | `int \| None` | `null` | — |
-| `anima_defaults.max_recipients_per_run` | `int \| None` | `null` | — |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
 | `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. Set false to disable only the periodic heartbeat. Message-triggered HB and cron are unaffected. |
@@ -354,16 +351,8 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `heartbeat.soft_timeout_seconds` | `int` | `300` | Seconds before injecting a wrap-up system-reminder into the HB session |
 | `heartbeat.hard_timeout_seconds` | `int` | `0` | Seconds before forcefully terminating the HB session; 0 = disabled |
 | `heartbeat.default_model` | `str \| None` | `null` | global background model for heartbeat/cron (None = use main model) |
-| `heartbeat.msg_heartbeat_cooldown_s` | `int` | `300` | message-triggered heartbeat cooldown |
-| `heartbeat.cascade_window_s` | `int` | `1800` | sliding window for cascade detection |
-| `heartbeat.cascade_threshold` | `int` | `3` | max round-trips per pair within window |
-| `heartbeat.depth_window_s` | `int` | `600` | bilateral depth limiter window |
-| `heartbeat.max_depth` | `int` | `6` | max bilateral exchange depth |
-| `heartbeat.actionable_intents` | `list[str]` | `["report","question"]` | — |
 | `heartbeat.enable_read_ack` | `bool` | `false` | — |
-| `heartbeat.channel_post_cooldown_s` | `int` | `300` | Min seconds between board posts per Anima (0 = no limit) |
 | `heartbeat.delegation_dm_enabled` | `bool` | `true` | delegate_task already writes the pending descriptor for the target; the DM only wakes an extra inbox run. Set false to skip it. |
-| `heartbeat.outbound_limit_enabled` | `bool` | `true` | False disables the global hourly/daily outbound message caps |
 | `heartbeat.idle_compaction_minutes` | `float` | `10.0` | Minutes after last stream end to trigger idle auto-compaction |
 | `heartbeat.resolved_interaction_reminder_hours` | `int` | `48` | Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section |
 | `voice` | `VoiceConfig` | `{VoiceConfig}` | Voice input/output and voice providers. |
@@ -467,9 +456,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `fallback_model` | `str \| None` | `null` | Fallback model used when the primary model fails. |
 | `fallback_models` | `list[str]` | `[]` | — |
 | `heartbeat_enabled` | `bool` | `true` | Enables or disables periodic heartbeats. |
-| `max_outbound_per_day` | `—` | `—` | — |
-| `max_outbound_per_hour` | `—` | `—` | — |
-| `max_recipients_per_run` | `—` | `—` | — |
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | Maximum number of output tokens for the model. |
 | `mode_s_auth` | `str \| None` | `null` | — |

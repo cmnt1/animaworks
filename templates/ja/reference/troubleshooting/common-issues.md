@@ -20,21 +20,10 @@
 
 1. 宛先指定の誤り（Anima 正式名・ユーザーエイリアス・`slack:` / `chatwork:` プレフィックス等）や、解決順に合わない指定
 2. サーバーが停止している
-3. 相手がハートビート間隔の合間にいる（次の起動まで未読のまま）
-4. 送信処理がエラーで失敗していた（グローバル送信上限・会話深度上限・セッション内 DM 上限、`RecipientResolutionError` など）
+3. 相手の Anima が停止・無効化されている、または Inbox の Provider エラー待機中
+4. 宛先解決、権限、外部チャネルの配送など実際の送信エラーが発生した
 5. `intent` が未指定または不正。DM では `report` / `question` のみ。タスク委譲は `delegate_task` を使う（`send_message` に `intent="delegation"` を付けると非推奨メッセージが返る）
-6. セッション内 DM 制限超過（**同一宛先には 1 セッション 1 通まで**。**別宛先の最大人数**は `status.json` の `role` に応じた `max_recipients_per_run` — 下表。個別上書きは `status.json` の同名フィールド）
-
-**ロール別 `max_recipients_per_run`（`core/config/schemas.py` `ROLE_OUTBOUND_DEFAULTS`）**
-
-| role | 1セッションあたり最大宛先数（各1通） |
-|------|--------------------------------------|
-| manager | 10 |
-| engineer | 5 |
-| writer | 3 |
-| researcher | 3 |
-| ops | 2 |
-| general | 2 |
+6. 同一 run で同じ宛先へ既に DM を送信済み（同一宛先への2通目のみ拒否。宛先数の上限はない）
 
 ### 対処手順
 
@@ -77,7 +66,7 @@ send_message(to="Aoi", content="...", intent="report")   # OK
 send_message(to="aoi", content="...", intent="report")  # 名前が異なればエラーになる可能性あり
 
 # DM は intent 必須（report / question のみ）。委譲は delegate_task
-# 1セッションあたりの「別宛先」数はロールにより異なる（例: general は最大2人、engineer は5人まで）。同一宛先へは1回のみ
+# 同一 run 内で同一宛先へ送れる DM は1通まで。宛先数の上限はない
 send_message(
     to="aoi",
     content="了解しました。作業を開始します。",
@@ -86,7 +75,7 @@ send_message(
     thread_id="thread-xyz789"  # 任意: スレッドID
 )
 
-# 確認・お礼・お知らせのみのDMは不可 → post_channel（Board）を使用
+# 確認・お礼・称賛だけのメッセージには返信しない。全体共有が必要なら post_channel（Board）を使用
 ```
 
 ---
@@ -381,43 +370,21 @@ send_message(
 
 ---
 
-## メッセージ送信が制限された
+## メッセージ送信でエラーが返った
 
-### 症状
+### 症状と原因
 
-- `send_message` や `post_channel` を実行したらエラーが返された
-- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` または 24 時間版の同種メッセージが表示された
-- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` と表示された（`core/messaging/cascade_limiter.py` — 送信者の `activity_log` が読めないとき）
-- `ConversationDepthExceeded: ...`（会話深度超過。ターン数と時間は `heartbeat.max_depth` / `heartbeat.depth_window_s` の設定値を反映）が表示された
-
-### 原因
-
-- **ロール別グローバル上限**: `dm_sent` / `message_sent` / `channel_post` を activity_log から集計し、1 時間・24 時間の件数で判定（`ConversationDepthLimiter.check_global_outbound`）。上限は `status.json` の `max_outbound_per_hour` / `max_outbound_per_day` で個別上書きし、未設定なら `role` のデフォルト（`ROLE_OUTBOUND_DEFAULTS`）を使う
-
-**ロール別 1時間 / 24時間 上限（コードデフォルト）**
-
-| role | 1時間 | 24時間 |
-|------|-------|--------|
-| manager | 60 | 300 |
-| engineer | 40 | 200 |
-| writer | 30 | 150 |
-| researcher | 30 | 150 |
-| ops | 20 | 80 |
-| general | 15 | 50 |
-
-- 同一チャネルへの連続投稿がクールダウン期間内だった（`config.json` `heartbeat.channel_post_cooldown_s`、デフォルト 300 秒）
-- 2 者間の往復が深度制限を超えた（`Messenger.send` 内の `ConversationDepthLimiter.check_depth`。**内部 Anima 宛ての DM のみ**が対象。`heartbeat.depth_window_s` / `heartbeat.max_depth`、デフォルト **600 秒**・**最大 6 ターン**。文言は「10 分・6 ターン」）
-- アクティビティログの読み取りエラー（ディスク・権限・破損等）→ 安全側で送信ブロック
+- `RecipientResolutionError`、外部チャネルの `DeliveryFailed`、権限・会社境界エラーなど、実際の配送エラーが返る
+- `send_message` で同一 run 内に同じ宛先へ2通目を送ろうとすると拒否される（重複防止）。宛先数の上限はない
+- `post_channel` で同じ run 内に同じチャネルへ2回目を投稿しようとすると拒否される。run 間の投稿 cooldown はない
+- 時間・日単位の送信予算や会話深度による送信拒否はない。内部 Anima 間の深度は診断ログに記録される場合がある
 
 ### 対処手順
 
-1. **エラーメッセージを確認する**: 時間制限・24 時間制限・深度制限・activity_log 失敗のいずれかを特定する
-2. **送信履歴を振り返る**: 不要な送信がなかったか確認する
-3. **待機する**: 時間制限なら次の 1 時間枠まで（メッセージに「次の送信可能時刻（目安）」が付くことがある）、24 時間制限なら翌日まで、深度制限ならウィンドウが空くまで
-4. **送信内容を記録する**: 上限到達時はメッセージの指示どおり、このターンでは `send_message` を使わず `state/current_state.md` に書き、次セッションで送る
-5. **activity_log 失敗のとき**: 管理者にログ・ディスク・該当 Anima の `activity_log/` を確認してもらう（ブロックは送信者側のログ読取に依存）
-6. **緊急連絡**: `call_human` はこれらのグローバル上限の対象外
-7. **送信を統合する**: 複数の報告を 1 通にまとめる。深度制限に達したら Board（`post_channel`）へ移行する
+1. **エラー内容を確認する**: `to` の解決先、intent（`report` / `question`）、チャネル ACL、会社境界、外部 API の応答を確認する
+2. **重複送信を確認する**: 同一 run ですでに送った宛先には追加 DM を送れない。宛先数を理由に待つ必要はない
+3. **配信失敗を調べる**: Slack / Chatwork 等の外部チャネルの場合は、返された配送エラーと接続設定を確認する
+4. **Inbox の Provider エラーの場合**: `rate_guard` が指定する回復時間後に未読メッセージが再処理される
 
 詳細は `communication/sending-limits.md` を参照。
 

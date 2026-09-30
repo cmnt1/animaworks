@@ -53,7 +53,6 @@ from core.config.schemas import (
     DEFAULT_LOCAL_LLM_MODEL,
     DEFAULT_LOCAL_LLM_PRESETS,
     DEFAULT_LOCAL_LLM_ROLE_PRESETS,
-    ROLE_OUTBOUND_DEFAULTS,
     ActivityLogConfig,
     ActivityScheduleEntry,
     AnimaDefaults,
@@ -92,5 +91,4 @@ from core.config.schemas import (
     _format_permissions_for_prompt,
     load_permissions,
     resolve_background_worker_pool_size,
-    resolve_outbound_limits,
 )

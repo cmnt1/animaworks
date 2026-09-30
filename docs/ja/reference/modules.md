@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 846522524bc52d6f87d6038dca096b1b7bf1da0a2a32ac978f842b0f2f4f0b02 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: d3c08d46c0b912224b3375961d044b9cbe4da59adc76d9e53c752c7191b40995 -->
 
 # モジュール一覧
 
@@ -15,8 +15,8 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 93 | — |
 | `cli.demo` | 394 | Native ``animaworks demo`` command. |
-| `cli.parser` | 878 | — |
-| `cli.tool_dispatch` | 91 | — |
+| `cli.parser` | 841 | — |
+| `cli.tool_dispatch` | 90 | — |
 
 ## `cli.commands`
 
@@ -26,7 +26,7 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
-| `cli.commands.anima_mgmt` | 1195 | CLI commands for anima process management. |
+| `cli.commands.anima_mgmt` | 1144 | CLI commands for anima process management. |
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
@@ -124,12 +124,12 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.anima.bootstrap_state` | 576 | — |
 | `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
-| `core.anima.factory` | 773 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
+| `core.anima.factory` | 770 | Anima creation factory: create new Digital Animas from templates, blank, or MD files. |
 | `core.anima.heartbeat` | 959 | — |
 | `core.anima.image_artifacts` | 219 | — |
-| `core.anima.inbox` | 1013 | — |
+| `core.anima.inbox` | 987 | — |
 | `core.anima.inbox_overflow` | 130 | — |
-| `core.anima.lifecycle` | 1359 | — |
+| `core.anima.lifecycle` | 1356 | — |
 | `core.anima.messaging` | 1612 | — |
 | `core.anima.response_normalize` | 141 | — |
 | `core.anima.roster` | 83 | — |
@@ -176,9 +176,9 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_config` | 879 | Model configuration resolution: load_model_config, penalties, max_tokens. |
 | `core.config.model_discovery` | 521 | Dynamic discovery of the "mode + model" catalog from the installed CLIs. |
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
-| `core.config.models` | 96 | Central configuration module — facade re-exporting split modules. |
-| `core.config.resolver` | 162 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1402 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.models` | 94 | Central configuration module — facade re-exporting split modules. |
+| `core.config.resolver` | 159 | Configuration resolution: status.json merge with anima_defaults. |
+| `core.config.schemas` | 1331 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -293,17 +293,17 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
-| `core.i18n.strings.communication` | 53 | Domain-specific i18n strings. |
+| `core.i18n.strings.communication` | 46 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
 | `core.i18n.strings.config` | 297 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
-| `core.i18n.strings.handler` | 388 | Domain-specific i18n strings (handler part 1). |
-| `core.i18n.strings.handler_ext` | 368 | Domain-specific i18n strings (handler part 2). |
+| `core.i18n.strings.handler` | 382 | Domain-specific i18n strings (handler part 1). |
+| `core.i18n.strings.handler_ext` | 364 | Domain-specific i18n strings (handler part 2). |
 | `core.i18n.strings.lifecycle` | 104 | Domain-specific i18n strings. |
 | `core.i18n.strings.memory` | 414 | Domain-specific i18n strings. |
 | `core.i18n.strings.migrate` | 99 | — |
-| `core.i18n.strings.misc` | 434 | Domain-specific i18n strings. |
+| `core.i18n.strings.misc` | 426 | Domain-specific i18n strings. |
 | `core.i18n.strings.misc_routes` | 17 | Domain-specific i18n strings (legacy route modules). |
 | `core.i18n.strings.room_manager` | 29 | i18n strings for meeting room manager. |
 | `core.i18n.strings.server` | 241 | Domain-specific i18n strings. |
@@ -606,10 +606,9 @@ anima 間および外部とのメッセージ配送。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.messaging` | 6 | — |
-| `core.messaging.cascade_limiter` | 224 | — |
 | `core.messaging.discord_webhooks` | 296 | — |
 | `core.messaging.meeting_room_store` | 130 | — |
-| `core.messaging.messenger` | 1063 | — |
+| `core.messaging.messenger` | 1044 | — |
 | `core.messaging.outbound` | 408 | — |
 | `core.messaging.outbound_auto` | 377 | — |
 | `core.messaging.sender` | 32 | — |
@@ -774,7 +773,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
 | `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
-| `core.supervisor.inbox_rate_limiter` | 406 | Inbox rate limiting, cascade detection, and deferred trigger management. |
+| `core.supervisor.inbox_rate_limiter` | 270 | Event-driven inbox wakeups and deferred trigger management. |
 | `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1104 | Process Supervisor - Manages lifecycle of Anima child processes. |
@@ -785,8 +784,8 @@ anima の監督、委任、実行調整。
 | `core.supervisor.schedule_parser` | 484 | — |
 | `core.supervisor.scheduler_manager` | 835 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
-| `core.supervisor.task_runner` | 953 | Disposable task runner entry point. |
-| `core.supervisor.task_runner_supervisor` | 1109 | Root-side lifecycle manager for disposable task runner processes. |
+| `core.supervisor.task_runner` | 927 | Disposable task runner entry point. |
+| `core.supervisor.task_runner_supervisor` | 1093 | Root-side lifecycle manager for disposable task runner processes. |
 | `core.supervisor.transport` | 239 | Transport helpers for IPC server/client communication. |
 
 ## `core.tasks`
@@ -854,7 +853,7 @@ anima の監督、委任、実行調整。
 | `core.tooling.dispatch` | 255 | — |
 | `core.tooling.handler` | 865 | — |
 | `core.tooling.handler_base` | 335 | — |
-| `core.tooling.handler_comms` | 902 | — |
+| `core.tooling.handler_comms` | 855 | — |
 | `core.tooling.handler_create_anima` | 240 | — |
 | `core.tooling.handler_delegation` | 260 | — |
 | `core.tooling.handler_files` | 1220 | — |

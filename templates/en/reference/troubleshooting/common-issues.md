@@ -20,21 +20,10 @@ If the issue is not resolved here, refer to `troubleshooting/escalation-flowchar
 
 1. Incorrect destination specification (Anima official name, user alias, `slack:` / `chatwork:` prefix, etc.) or a specification that doesn't match the resolution order
 2. The server is down
-3. The other party is between heartbeat intervals (messages remain unread until the next startup)
-4. The send process failed with an error (global send limit, conversation depth limit, in-session DM limit, `RecipientResolutionError`, etc.)
+3. The other Anima is stopped or disabled, or its Inbox is waiting for provider-error backoff
+4. A real delivery error occurred during recipient resolution, permission checks, or external-channel delivery
 5. `intent` is unspecified or invalid. For DMs, only `report` / `question` are allowed. For task delegation, use `delegate_task` (attaching `intent="delegation"` to `send_message` returns a deprecation message)
-6. In-session DM limit exceeded (**only 1 message per session to the same destination**. **The maximum number of different destinations** is `max_recipients_per_run` according to `role` in `status.json` — see table below. Individual overrides are available via the same-named field in `status.json`)
-
-**`max_recipients_per_run` by role (`core/config/schemas.py` `ROLE_OUTBOUND_DEFAULTS`)**
-
-| role | Maximum destinations per session (1 message each) |
-|------|--------------------------------------|
-| manager | 10 |
-| engineer | 5 |
-| writer | 3 |
-| researcher | 3 |
-| ops | 2 |
-| general | 2 |
+6. A DM was already sent to the same recipient in this run (only a second message to that recipient is rejected; there is no recipient-count cap)
 
 ### Resolution Steps
 
@@ -77,7 +66,7 @@ send_message(to="Aoi", content="...", intent="report")   # OK
 send_message(to="aoi", content="...", intent="report")  # 名前が異なればエラーになる可能性あり
 
 # DM は intent 必須（report / question のみ）。委譲は delegate_task
-# 1セッションあたりの「別宛先」数はロールにより異なる（例: general は最大2人、engineer は5人まで）。同一宛先へは1回のみ
+# One DM per recipient per run; there is no recipient-count cap
 send_message(
     to="aoi",
     content="了解しました。作業を開始します。",
@@ -86,7 +75,7 @@ send_message(
     thread_id="thread-xyz789"  # 任意: スレッドID
 )
 
-# 確認・お礼・お知らせのみのDMは不可 → post_channel（Board）を使用
+# Do not reply to acknowledgement/thanks/praise-only messages; use post_channel for team-wide sharing
 ```
 
 ---
@@ -381,43 +370,21 @@ See `operations/tool-usage-overview.md` for the overall tool architecture.
 
 ---
 
-## Message sending was restricted
+## A message send returned an error
 
-### Symptoms
+### Symptoms and causes
 
-- An error was returned when running `send_message` or `post_channel`
-- `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` or a similar 24-hour message was displayed
-- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` was displayed (`core/messaging/cascade_limiter.py` — when the sender’s `activity_log` cannot be read)
-- `ConversationDepthExceeded: ...` was displayed (conversation depth exceeded. Turn count and time reflect the configuration values of `heartbeat.max_depth` / `heartbeat.depth_window_s`)
+- A real delivery error is returned, such as `RecipientResolutionError`, external-channel `DeliveryFailed`, a permission error, or a company-boundary error
+- A second `send_message` to the same recipient in one run is rejected to prevent duplicates. There is no recipient-count cap
+- A second `post_channel` to the same channel in one run is rejected. There is no cross-run posting cooldown
+- There are no hourly/daily send budgets or conversation-depth send blocks. Depth between internal Animas may be recorded for diagnostics
 
-### Cause
+### Resolution steps
 
-- **Per-role global limit**: `dm_sent` / `message_sent` / `channel_post` are aggregated from activity_log and judged by the 1-hour and 24-hour counts (`ConversationDepthLimiter.check_global_outbound`). The limit can be individually overridden with `max_outbound_per_hour` / `max_outbound_per_day` in `status.json`; if not set, the default in `role` (`ROLE_OUTBOUND_DEFAULTS`) is used
-
-**Per-role 1-hour / 24-hour limits (code defaults)**
-
-| role | 1 hour | 24 hours |
-|------|--------|----------|
-| manager | 60 | 300 |
-| engineer | 40 | 200 |
-| writer | 30 | 150 |
-| researcher | 30 | 150 |
-| ops | 20 | 80 |
-| general | 15 | 50 |
-
-- Consecutive posts to the same channel were within the cooldown period (`config.json` `heartbeat.channel_post_cooldown_s`, default 300 seconds)
-- The back-and-forth between two parties exceeded the depth limit (`ConversationDepthLimiter.check_depth` within `Messenger.send`. **Only DMs addressed to internal Anima** are subject. `heartbeat.depth_window_s` / `heartbeat.max_depth`, default **600 seconds** and **maximum 6 turns**. The wording is "10 minutes, 6 turns")
-- Activity log read error (disk, permission, corruption, etc.) → sending is blocked on the safe side
-
-### Resolution Steps
-
-1. **Check the error message**: Identify whether it is a time limit, 24-hour limit, depth limit, or activity_log failure
-2. **Review the sending history**: Check whether there were any unnecessary sends
-3. **Wait**: For time limits, wait until the next 1-hour window (the message may include "next available send time (approximate)"), for 24-hour limits, wait until the next day, and for depth limits, wait until the window opens
-4. **Record the content to send**: When the limit is reached, follow the message instructions; do not use `send_message` in this turn, write to `state/current_state.md` instead, and send in the next session
-5. **For activity_log failure**: Ask the administrator to check the log, disk, and `activity_log/` of the relevant Anima (the block depends on the sender's log reading)
-6. **Emergency contact**: `call_human` is not subject to these global limits
-7. **Consolidate sends**: Combine multiple reports into one message. If the depth limit is reached, move to the Board (`post_channel`)
+1. **Inspect the error**: Check recipient resolution, `intent` (`report` / `question`), channel ACL, company boundaries, or the external API response
+2. **Check for duplicates**: A recipient already messaged in this run cannot receive another DM in that run. There is no need to wait for a recipient-count limit
+3. **Investigate delivery failures**: For Slack / Chatwork, check the returned delivery error and connection settings
+4. **For Inbox provider errors**: Unread messages are retried after the recovery time specified by `rate_guard`
 
 See `communication/sending-limits.md` for details.
 
