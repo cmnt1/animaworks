@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -609,15 +610,27 @@ def _resolve_tool_timeout(name: str) -> float | None:
 # ── MCP handlers ─────────────────────────────────────────
 
 
+_CONSOLIDATION_MARKER_MAX_AGE_S = 6 * 3600
+
+
 def _is_consolidation_mode() -> bool:
     """Check whether this Anima is currently running memory consolidation.
 
     Reads a flag file written by ``run_consolidation()`` in the main process.
+    Ignore stale markers left by a process killed before its cleanup ran.
     """
     anima_dir_env = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
     if not anima_dir_env:
         return False
-    return (Path(anima_dir_env) / "state" / ".consolidation_mode").exists()
+    marker = Path(anima_dir_env) / "state" / ".consolidation_mode"
+    try:
+        age = time.time() - marker.stat().st_mtime
+    except OSError:
+        return False
+    if age > _CONSOLIDATION_MARKER_MAX_AGE_S:
+        logger.warning("Ignoring stale consolidation marker %s (age %.0fs)", marker, age)
+        return False
+    return True
 
 
 _CONSOLIDATION_BLOCKED_NAMES: frozenset[str] = frozenset(

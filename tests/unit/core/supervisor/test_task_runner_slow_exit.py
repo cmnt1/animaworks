@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from core.supervisor import task_runner_supervisor as trs
-from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerSupervisor
+from core.supervisor.task_runner_supervisor import TaskRunnerCancelled, TaskRunnerError, TaskRunnerSupervisor
 
 
 def _supervisor(tmp_path: Path) -> TaskRunnerSupervisor:
@@ -74,6 +74,39 @@ async def test_slow_exit_after_error_terminal_still_raises(tmp_path: Path, monke
             monkeypatch,
             {"error": {"code": "EXECUTION_ERROR", "message": "boom"}},
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("externally_cancelled", [True, False])
+async def test_exit_without_result_distinguishes_cancel_from_crash(tmp_path, monkeypatch, externally_cancelled):
+    supervisor = _supervisor(tmp_path)
+    real_exec = asyncio.create_subprocess_exec
+
+    async def fake_exec(*args, **kwargs):
+        kwargs.pop("env", None)
+        return await real_exec(sys.executable, "-c", "raise SystemExit(1)", **kwargs)
+
+    def on_spawned(job):
+        job.external_cancelled = externally_cancelled
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    expected = TaskRunnerCancelled if externally_cancelled else TaskRunnerError
+    with pytest.raises(expected) as error:
+        await asyncio.wait_for(
+            supervisor._spawn_and_await(
+                lane="task",
+                job_prefix="task",
+                params_builder=lambda urls: {"environment": {"urls": urls}},
+                log_context="early-exit",
+                attempt=1,
+                display_lane="background",
+                on_spawned=on_spawned,
+                url_env={"ANIMAWORKS_EMBED_URL": "http://localhost:0"},
+            ),
+            timeout=5,
+        )
+    assert type(error.value) is expected
+    assert not supervisor.jobs
 
 
 @pytest.mark.asyncio

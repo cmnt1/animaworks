@@ -269,17 +269,22 @@ async def execute_background_contract(
         cmd.extend(raw_args)
         if subcommand and raw_args and raw_args[0] == subcommand:
             cmd = ["animaworks-tool", module_name, *raw_args]
-        cmd.append("-j")
         env = {**os.environ, "ANIMAWORKS_ANIMA_DIR": anima_dir}
-        completed = await asyncio.to_thread(
-            subprocess.run,
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
-            env=env,
-            check=False,
-        )
+
+        def _run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
+                env=env,
+                check=False,
+            )
+
+        # Prefer JSON output, but many tool subcommands do not define -j.
+        completed = await asyncio.to_thread(_run, [*cmd, "-j"])
+        if completed.returncode == 2 and "unrecognized arguments: -j" in completed.stderr:
+            completed = await asyncio.to_thread(_run, cmd)
         if completed.returncode != 0:
             error_msg = completed.stderr.strip() or f"Exit code {completed.returncode}"
             raise ToolExecutionError(f"Tool {tool_name} failed: {error_msg}")

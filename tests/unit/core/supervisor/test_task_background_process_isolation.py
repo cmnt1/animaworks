@@ -247,6 +247,66 @@ async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: 
 
 
 @pytest.mark.asyncio
+async def test_queue_cancelled_child_is_reported_as_cancel_not_crash(tmp_path: Path, caplog) -> None:
+    from core.supervisor.pending_executor import _SENTINEL_CANCELLED
+    from core.supervisor.task_runner_supervisor import TaskRunnerCancelled
+
+    executor, anima, _anima_dir = _executor(tmp_path, task_isolated=True)
+    assert executor._task_runner_supervisor is not None
+    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
+    executor._task_runner_supervisor.run_task = AsyncMock(
+        side_effect=TaskRunnerCancelled("task runner stopped because the task was cancelled (exit=-15)")
+    )
+    task_desc = {"task_id": "t-cancel", "title": "cancel", "description": "work", "task_type": "llm"}
+    with (
+        patch.object(executor, "_save_task_result") as save_result,
+        patch.object(executor, "_record_run_ended") as record_end,
+        patch.object(executor, "_sync_task_queue") as sync,
+        caplog.at_level("INFO", logger="core.supervisor.pending_executor"),
+    ):
+        await executor._execute_llm_task(task_desc)
+
+    assert any("stopped by queue cancel" in r.getMessage() for r in caplog.records)
+    assert not any(r.levelno >= 30 for r in caplog.records)
+    save_result.assert_called_once_with("t-cancel", _SENTINEL_CANCELLED)
+    assert sync.call_args.args[:2] == ("t-cancel", "cancelled")
+    record_end.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_canonical_queue_cancel_does_not_become_crash_or_requeue(tmp_path: Path, caplog) -> None:
+    from core.memory.task_queue import TaskQueueManager
+    from core.supervisor.task_runner_supervisor import TaskRunnerCancelled
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
+    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    assert executor._task_runner_supervisor is not None
+    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
+    queue = TaskQueueManager(anima_dir)
+    task_desc = {"task_id": "t-canonical-cancel", "title": "cancel", "description": "work", "task_type": "llm"}
+    publish_tasks(anima_dir, [task_desc])
+    claim = queue.store.claim("sakura", task_desc["task_id"], process_identity())
+    assert claim is not None
+
+    async def cancelled_run(*args, **kwargs):
+        queue.update_status(task_desc["task_id"], "cancelled")
+        raise TaskRunnerCancelled("task cancelled in the queue")
+
+    executor._task_runner_supervisor.run_task = AsyncMock(side_effect=cancelled_run)
+    with caplog.at_level("INFO", logger="core.supervisor.pending_executor"):
+        await executor._execute_canonical_task(claim)
+
+    entry = queue.store.get("sakura", task_desc["task_id"])
+    assert entry.status == "cancelled"
+    assert entry.meta["last_run_stop_kind"] == "interrupted"
+    assert queue.store.active_attempts("sakura") == []
+    assert queue.store.wakeups("sakura") == []
+    assert not any(r.levelno >= 30 for r in caplog.records)
+    anima.messenger.send.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
     from core.memory.task_queue import TaskQueueManager
     from core.taskboard.tasks import process_identity

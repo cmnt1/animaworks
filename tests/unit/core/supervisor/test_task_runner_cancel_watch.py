@@ -76,6 +76,7 @@ def test_watch_job_terminates_on_external_cancel(monkeypatch) -> None:
     finished_job = asyncio.run(main())
     supervisor._terminate_hung_job.assert_awaited_once()
     assert finished_job.hang_kill_started is True
+    assert finished_job.external_cancelled is True
 
 
 def test_watch_job_does_not_terminate_non_task_lane(monkeypatch) -> None:
