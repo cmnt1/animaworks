@@ -435,12 +435,6 @@ class TaskQueueManager:
 
         return "\n".join(lines) if lines else ""
 
-    @staticmethod
-    def _search_archive(target_dir: Path, child_id: str) -> str | None:
-        """Compatibility facade over archived canonical records, not JSONL."""
-        entry = TaskQueueManager(target_dir).get_task_by_id(child_id)
-        return entry.status if entry and entry.status in _TERMINAL_STATUSES else None
-
     def format_delegated_for_priming(self, animas_dir: Path, budget_chars: int = 400) -> str:
         """Format delegated tasks with subordinate status for Priming display."""
         delegated = self.get_delegated_tasks()

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 
 from core.memory.rag import repair_state
 from core.platform.tasks import spawn
@@ -234,9 +233,6 @@ class RAGRepairMixin:
             return max(1, int(getattr(load_config().rag, "repair_max_concurrent", 1)))
         except Exception:
             return 1
-
-    def _rag_repair_state_path(self, anima_name: str) -> Path:
-        return repair_state.state_path(anima_name, animas_dir=self.animas_dir)
 
     def _read_rag_repair_state(self, anima_name: str) -> dict[str, object]:
         return repair_state.read_state(anima_name, animas_dir=self.animas_dir)

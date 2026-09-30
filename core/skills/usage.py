@@ -200,23 +200,3 @@ class SkillUsageTracker:
                 s.last_used_at = event.ts
 
         return stats
-
-    def get_stale_candidates(self, days: int = 90) -> list[str]:
-        """Return skill names not used within the specified number of days."""
-        from datetime import UTC, datetime, timedelta
-
-        cutoff = datetime.now(tz=UTC) - timedelta(days=days)
-        cutoff_iso = cutoff.isoformat()
-
-        all_stats = self.get_all_stats()
-        stale: list[str] = []
-
-        for s in all_stats.values():
-            if s.last_used_at is None or s.last_used_at < cutoff_iso:
-                stale.append(s.skill_name)
-
-        return sorted(stale)
-
-    def reset_session_views(self) -> None:
-        """Clear the session debounce set (useful for testing or new sessions)."""
-        self._session_views.clear()

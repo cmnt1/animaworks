@@ -69,11 +69,6 @@ def _cache_user_name(uid: str, name: str) -> None:
         _user_name_cache[uid] = name
 
 
-def _get_cached_user_name(uid: str) -> str | None:
-    with _name_cache_lock:
-        return _user_name_cache.get(uid)
-
-
 # ── Board routing dedup ──────────────────────────────────────
 
 _board_dedup_lock = threading.Lock()

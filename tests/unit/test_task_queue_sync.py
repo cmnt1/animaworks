@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
-from core.tasks.board.tasks import TaskStore, task_database_path
 from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
 
@@ -115,47 +113,3 @@ def _legacy_archive_entry(task_id: str) -> dict:
         "assignee": "subordinate",
         "summary": "done",
     }
-
-
-class TestSearchArchive:
-    """Tests for TaskQueueManager._search_archive()."""
-
-    def test_finds_task_in_archive(self, tmp_path):
-        animas_dir = _make_animas_dir(tmp_path)
-        target_dir = animas_dir / "subordinate"
-        archive_path = target_dir / "state" / "task_queue_archive.jsonl"
-
-        archive_data = _legacy_archive_entry("abc123")
-        archive_path.write_text(json.dumps(archive_data) + "\n", encoding="utf-8")
-
-        TaskStore(task_database_path(target_dir)).import_legacy(target_dir)
-        result = TaskQueueManager._search_archive(target_dir, "abc123")
-        assert result == "done"
-
-    def test_not_in_archive_returns_none(self, tmp_path):
-        animas_dir = _make_animas_dir(tmp_path)
-        target_dir = animas_dir / "subordinate"
-        archive_path = target_dir / "state" / "task_queue_archive.jsonl"
-
-        archive_data = _legacy_archive_entry("other")
-        archive_path.write_text(json.dumps(archive_data) + "\n", encoding="utf-8")
-
-        TaskStore(task_database_path(target_dir)).import_legacy(target_dir)
-        result = TaskQueueManager._search_archive(target_dir, "abc123")
-        assert result is None
-
-    def test_no_archive_file_returns_none(self, tmp_path):
-        animas_dir = _make_animas_dir(tmp_path)
-        result = TaskQueueManager._search_archive(animas_dir / "subordinate", "abc123")
-        assert result is None
-
-    def test_corrupted_archive_handled(self, tmp_path):
-        animas_dir = _make_animas_dir(tmp_path)
-        target_dir = animas_dir / "subordinate"
-        archive_path = target_dir / "state" / "task_queue_archive.jsonl"
-
-        archive_path.write_text("not json\n" + json.dumps(_legacy_archive_entry("x")) + "\n", encoding="utf-8")
-
-        TaskStore(task_database_path(target_dir)).import_legacy(target_dir)
-        result = TaskQueueManager._search_archive(target_dir, "x")
-        assert result == "done"

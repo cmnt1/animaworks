@@ -163,14 +163,6 @@ class TestSkillUsageTrackerDebounce:
         lines = usage_file.read_text().strip().splitlines()
         assert len(lines) == 2
 
-    def test_reset_session_views(self, tracker: SkillUsageTracker, anima_dir: Path):
-        tracker.record("my-skill", SkillUsageEventType.view)
-        tracker.reset_session_views()
-        tracker.record("my-skill", SkillUsageEventType.view)
-        usage_file = anima_dir / "state" / "skill_usage.jsonl"
-        lines = usage_file.read_text().strip().splitlines()
-        assert len(lines) == 2
-
 
 class TestSkillUsageTrackerStats:
     def test_get_stats_empty(self, tracker: SkillUsageTracker):
@@ -259,26 +251,6 @@ class TestSkillUsageTrackerStats:
         stats = tracker.get_stats("good")
         assert stats.view_count == 1
         assert stats.success_count == 1
-
-
-class TestSkillUsageTrackerStale:
-    def test_get_stale_candidates_all_stale(self, anima_dir: Path):
-        usage_file = anima_dir / "state" / "skill_usage.jsonl"
-        usage_file.write_text(
-            '{"ts":"2025-01-01T00:00:00+00:00","skill_name":"old-skill","event_type":"view","is_common":false}\n'
-        )
-        tracker = SkillUsageTracker(anima_dir)
-        stale = tracker.get_stale_candidates(days=90)
-        assert "old-skill" in stale
-
-    def test_get_stale_candidates_recent_not_stale(self, tracker: SkillUsageTracker):
-        tracker.record("fresh-skill", SkillUsageEventType.success)
-        stale = tracker.get_stale_candidates(days=90)
-        assert "fresh-skill" not in stale
-
-    def test_get_stale_candidates_empty(self, tracker: SkillUsageTracker):
-        stale = tracker.get_stale_candidates(days=90)
-        assert stale == []
 
 
 class TestSkillUsageTrackerEdgeCases:

@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from core.auth.manager import load_auth
 from core.i18n import t
@@ -442,66 +442,6 @@ class InteractionRouter:
             entry["request"] = self._dump_request(req)
             entries[callback_id] = entry
             self._write_all_entries(data)
-
-    async def prune(self, max_age_days: int = 7) -> int:
-        """Remove entries older than *max_age_days*; returns number removed."""
-        async with self._lock:
-            data = self._read_all_entries()
-            entries: dict[str, Any] = data.setdefault("entries", {})
-            now = datetime.now(UTC)
-            to_delete: list[str] = []
-            for cid, entry in list(entries.items()):
-                if not isinstance(entry, dict):
-                    to_delete.append(cid)
-                    continue
-                req_blob = entry.get("request")
-                if not isinstance(req_blob, dict):
-                    to_delete.append(cid)
-                    continue
-                try:
-                    req = self._parse_request(req_blob)
-                except (ValueError, TypeError, ValidationError):
-                    to_delete.append(cid)
-                    continue
-
-                cutpoint: datetime | None = None
-                if entry.get("resolved"):
-                    res_blob = entry.get("result")
-                    if isinstance(res_blob, dict) and res_blob.get("resolved_at"):
-                        try:
-                            ra = datetime.fromisoformat(str(res_blob["resolved_at"]))
-                            if ra.tzinfo is None:
-                                cutpoint = ra.replace(tzinfo=UTC)
-                            else:
-                                cutpoint = ra.astimezone(UTC)
-                        except (ValueError, TypeError):
-                            cutpoint = None
-                    if cutpoint is None:
-                        created = req.created_at
-                        if created.tzinfo is None:
-                            cutpoint = created.replace(tzinfo=UTC)
-                        else:
-                            cutpoint = created.astimezone(UTC)
-                else:
-                    created = req.created_at
-                    if created.tzinfo is None:
-                        cutpoint = created.replace(tzinfo=UTC)
-                    else:
-                        cutpoint = created.astimezone(UTC)
-
-                if cutpoint is None:
-                    to_delete.append(cid)
-                    continue
-                age_days = (now - cutpoint).total_seconds() / 86400.0
-                if age_days > float(max_age_days):
-                    to_delete.append(cid)
-
-            for cid in to_delete:
-                entries.pop(cid, None)
-            removed = len(to_delete)
-            if removed:
-                self._write_all_entries(data)
-            return removed
 
 
 # ── Singleton ────────────────────────────────────────────

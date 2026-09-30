@@ -13,11 +13,9 @@ from __future__ import annotations
 Helpers have no executor state; this remains a leaf module in the dependency graph.
 """
 
-import json
 import logging
 import re
 import tempfile
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -242,34 +240,6 @@ def _matching_injection_pattern(command: str, config: Any) -> str:
             except re.error:
                 continue
     return "unknown"
-
-
-def _log_sdk_bash_injection_hit(
-    command: str,
-    anima_dir: Path,
-    *,
-    pattern_name: str,
-    trigger: str,
-    mode: str,
-) -> None:
-    """Append a structured Mode S injection hit to its dedicated JSONL log."""
-    event = {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "pattern_name": pattern_name,
-        "command": command[:500],
-        "anima": anima_dir.name,
-        "trigger": trigger,
-        "mode": mode,
-    }
-    line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-    injection_logger.warning("sdk_bash_injection_hit %s", line)
-    try:
-        log_path = get_data_dir() / "logs" / "sdk_bash_injection.jsonl"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-    except OSError:
-        logger.warning("Failed to write Mode S Bash injection audit log", exc_info=True)
 
 
 # ── Output guard functions ───────────────────────────────────

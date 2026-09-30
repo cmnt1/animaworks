@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -365,22 +364,6 @@ class ContextTracker:
         return True
 
     # ── Transcript-based estimation (Agent SDK) ────────────
-
-    def estimate_from_transcript(self, transcript_path: str) -> float:
-        """Estimate context usage ratio from transcript file size.
-
-        Returns the estimated ratio (0.0-1.0+).
-        """
-        if not transcript_path:
-            return self._last_ratio
-        try:
-            file_size = os.path.getsize(transcript_path)
-        except OSError:
-            return self._last_ratio
-
-        estimated_tokens = file_size // CHARS_PER_TOKEN
-        self._record(estimated_tokens, source="transcript estimate")
-        return self._last_ratio
 
     # ── Unified usage update ────────────────────────────────
 

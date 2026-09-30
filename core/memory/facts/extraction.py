@@ -117,35 +117,6 @@ def records_from_extraction(
     return out
 
 
-async def extract_fact_records(
-    anima_dir: Path,
-    text: str,
-    *,
-    source_episode: str,
-    source_session_id: str = "",
-    reference_time: str | None = None,
-    extractor: Any | None = None,
-    model: str | None = None,
-    locale: str | None = None,
-    llm_extra: dict[str, object] | None = None,
-    enabled: bool | None = None,
-) -> list[FactRecord]:
-    return (
-        await extract_fact_records_with_outcome(
-            anima_dir,
-            text,
-            source_episode=source_episode,
-            source_session_id=source_session_id,
-            reference_time=reference_time,
-            extractor=extractor,
-            model=model,
-            locale=locale,
-            llm_extra=llm_extra,
-            enabled=enabled,
-        )
-    ).records
-
-
 async def extract_fact_records_with_outcome(
     anima_dir: Path,
     text: str,

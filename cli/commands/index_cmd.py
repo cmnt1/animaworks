@@ -229,44 +229,6 @@ def _index_shared_for_anima(
     return total
 
 
-def _index_shared_collections(
-    anima_dirs: list[Path],
-    base_dir: Path,
-    *,
-    full: bool,
-    dry_run: bool,
-    errors: list[str] | None = None,
-) -> int:
-    """Index common_knowledge + common_skills into each anima's per-anima DB.
-
-    Returns total chunks indexed across all animas.
-    """
-    from core.memory.rag.cli_access import open_vector_access
-    from core.memory.rag.owner_lock import VectorOwnerBusy
-    from core.memory.rag.repair import is_repair_locked
-
-    total = 0
-    for anima_dir in anima_dirs:
-        anima_name = anima_dir.name
-        if is_repair_locked(anima_name):
-            logger.warning("  %s: skipping shared indexing because RAG repair lock is held", anima_name)
-            continue
-        try:
-            with open_vector_access(anima_name, anima_dir, purpose="index") as access:
-                total += _index_shared_for_anima(
-                    anima_dir,
-                    base_dir,
-                    access.store,
-                    full=full,
-                    dry_run=dry_run,
-                )
-        except VectorOwnerBusy as exc:
-            logger.error("  %s: cannot access vector store for shared indexing: %s", anima_name, exc)
-            if errors is not None:
-                errors.append(anima_name)
-    return total
-
-
 def _index_anima(
     args: argparse.Namespace,
     anima_dir: Path,

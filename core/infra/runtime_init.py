@@ -393,26 +393,6 @@ def _create_default_config(data_dir: Path) -> None:
     logger.info("Default config.json created at %s", data_dir / "config.json")
 
 
-def _maybe_migrate_config(data_dir: Path) -> None:
-    """Auto-migrate existing config.md setups to config.json if needed."""
-    config_path = data_dir / "config.json"
-    if config_path.exists():
-        return
-
-    animas_dir = data_dir / "animas"
-    if not animas_dir.exists():
-        return
-
-    has_legacy = any((d / "config.md").exists() for d in animas_dir.iterdir() if d.is_dir())
-    if not has_legacy:
-        return
-
-    logger.info("Migrating legacy config.md files to config.json")
-    from core.config.migrate import migrate_to_config_json
-
-    migrate_to_config_json(data_dir)
-
-
 # ── Unified migration on startup ────────────────────────────
 
 

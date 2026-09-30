@@ -215,14 +215,6 @@ class OllamaClient:
                 status[name] = {"error": str(e)}
         return status
 
-    def model_info(self, model: str | None = None) -> dict:
-        """Get model details via /api/show."""
-        server = self._get_server()
-        model = model or self.resolve_model()
-        r = self._client.post(f"{server.url}/api/show", json={"model": model})
-        r.raise_for_status()
-        return r.json()
-
     def _apply_think(self, body: dict, think: str) -> None:
         """Apply thinking configuration based on model type."""
         if think == "off":

@@ -29,10 +29,6 @@ class HealthMixin:
         """Return True if the anima is currently in bootstrap mode."""
         return anima_name in getattr(self, "_bootstrapping", set())
 
-    def is_consolidating(self, anima_name: str) -> bool:
-        """Return True if the anima is currently running daily/weekly consolidation."""
-        return anima_name in getattr(self, "_consolidating", set())
-
     def _busy_sidecar_path(self, anima_name: str) -> Path | None:
         """Return the IPC-independent busy marker path, if run_dir is available."""
         run_dir = getattr(self, "run_dir", None)

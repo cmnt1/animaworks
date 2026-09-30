@@ -9,7 +9,6 @@ Verifies:
 - Personal chunks continue to use global access_count for scoring
 - record_access writes ac_{anima_name} for shared chunks
 - record_access writes access_count for personal chunks
-- reset_shared_access_counts resets all counters in shared collections
 """
 
 from __future__ import annotations
@@ -310,52 +309,6 @@ class TestRecordAccessBranching:
         assert meta[f"{_PER_ANIMA_AC_PREFIX}rin"] == 2
         assert meta[f"{_PER_ANIMA_AC_PREFIX}sakura"] == 1
         assert meta["access_count"] == 3
-
-
-# ── reset_shared_access_counts ───────────────────────────────────────
-
-
-class TestResetSharedAccessCounts:
-    def test_resets_all_counters(self, tmp_path: Path) -> None:
-        vs = _FakeVectorStore()
-        vs.collections["shared_common_knowledge"] = _FakeCollection(
-            {
-                "doc1": {
-                    "access_count": 265,
-                    "ac_rin": 10,
-                    "ac_sakura": 20,
-                    "last_accessed_at": "2026-03-17T00:00:00+09:00",
-                    "anima": "shared",
-                },
-                "doc2": {
-                    "access_count": 50,
-                    "ac_rin": 3,
-                    "anima": "shared",
-                },
-            }
-        )
-        retriever = MemoryRetriever(vs, MagicMock(), tmp_path)
-        result = retriever.reset_shared_access_counts()
-
-        assert result["shared_common_knowledge"] == 2
-
-        meta1 = vs.collections["shared_common_knowledge"]._data["doc1"]
-        assert meta1["access_count"] == 0
-        assert meta1["ac_rin"] == 0
-        assert meta1["ac_sakura"] == 0
-        assert meta1["last_accessed_at"] == ""
-
-        meta2 = vs.collections["shared_common_knowledge"]._data["doc2"]
-        assert meta2["access_count"] == 0
-        assert meta2["ac_rin"] == 0
-
-    def test_missing_collection_skipped(self, tmp_path: Path) -> None:
-        vs = MagicMock()
-        vs.get_by_metadata.return_value = []
-        retriever = MemoryRetriever(vs, MagicMock(), tmp_path)
-        result = retriever.reset_shared_access_counts()
-
-        assert result == {}
 
 
 # ── Integration: cap + per-anima combined ────────────────────────────
