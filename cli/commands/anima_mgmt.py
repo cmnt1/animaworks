@@ -757,7 +757,7 @@ def _parse_since(raw: str | None) -> datetime | None:
         return None
     from datetime import time as _time
 
-    from core.memory.activity.logger import now_local
+    from core.activity.logger import now_local
 
     now = now_local()
     try:
@@ -781,7 +781,7 @@ def _parse_date(raw: str | None) -> tuple[datetime, datetime] | None:
     from datetime import time as _time
     from datetime import timedelta
 
-    from core.memory.activity.logger import now_local
+    from core.activity.logger import now_local
 
     now = now_local()
     val = raw.strip().lower()
@@ -804,7 +804,10 @@ def _parse_date(raw: str | None) -> tuple[datetime, datetime] | None:
 
 def cmd_anima_audit(args: argparse.Namespace) -> None:
     """Audit a subordinate anima's recent activity."""
+    from core.infra.event_export import register_activity_event_exporter
     from core.paths import get_animas_dir
+
+    register_activity_event_exporter()
 
     name: str | None = args.anima
     audit_all: bool = getattr(args, "audit_all", False)
@@ -824,7 +827,7 @@ def cmd_anima_audit(args: argparse.Namespace) -> None:
 
     animas_dir = get_animas_dir()
 
-    from core.memory.activity.audit import AuditAggregator
+    from core.activity.audit import AuditAggregator
 
     if audit_all:
         dirs = sorted([d for d in animas_dir.iterdir() if d.is_dir() and (d / "identity.md").exists()])

@@ -83,7 +83,7 @@ class SlackChannel(NotificationChannel):
             bot_token = self._resolve_env("bot_token_env")
         if not bot_token and anima_name:
             from core.channels.tokens import resolve_per_anima_token
-            from core.integrations._base import resolve_env_style_credential
+            from core.credentials import resolve_env_style_credential
 
             bot_token = (
                 resolve_per_anima_token(
@@ -95,7 +95,7 @@ class SlackChannel(NotificationChannel):
             )
         if not bot_token and self._config.get("channel"):
             try:
-                from core.integrations._base import get_credential
+                from core.credentials import get_credential
 
                 bot_token = get_credential("slack", "notification", env_var="SLACK_BOT_TOKEN")
             except Exception:

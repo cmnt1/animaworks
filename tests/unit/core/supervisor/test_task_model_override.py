@@ -24,7 +24,7 @@ from core.tasks.pending_executor import PendingTaskExecutor
 
 @pytest.fixture(autouse=True)
 def _silence_activity():
-    with patch("core.memory.activity.logger.ActivityLogger") as mock_activity:
+    with patch("core.activity.logger.ActivityLogger") as mock_activity:
         mock_activity.return_value.log = MagicMock()
         mock_activity.return_value.alog = AsyncMock()
         yield

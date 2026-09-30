@@ -113,7 +113,7 @@ class ConsolidationEngine:
 
     def record_consolidated_chunks(self, target_date: date, chunks: list[str]) -> None:
         """Advance only after the episode write succeeds; raw inputs stay intact."""
-        from core.memory._io import atomic_write_text
+        from core.memory.io import atomic_write_text
 
         checkpoint = self._load_episode_checkpoint()
         key = target_date.isoformat()
@@ -173,13 +173,13 @@ class ConsolidationEngine:
 
     def archive_episode_before_write(self, episode_path: Path) -> Path | None:
         """Copy an existing episode file to archive/episodes before overwriting it."""
-        from core.memory._io import archive_episode_before_write
+        from core.memory.io import archive_episode_before_write
 
         return archive_episode_before_write(self.anima_dir, episode_path)
 
     def write_consolidated_episode(self, target_date: date, consolidated_timeline: str) -> Path:
         """Merge a consolidated timeline into the target daily episode file."""
-        from core.memory._io import atomic_write_text
+        from core.memory.io import atomic_write_text
 
         episode_path = self.episode_path_for_date(target_date)
         existing = self.read_episode_for_date(target_date)
@@ -429,7 +429,7 @@ class ConsolidationEngine:
     ) -> int:
         """Count activity-log entries eligible for daily consolidation."""
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             if since is not None or until is not None:
@@ -499,7 +499,7 @@ class ConsolidationEngine:
         entry_content_bytes = min(64 * 1024, max(256, max_input_bytes // 2))
 
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
 

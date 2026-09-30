@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.messaging.messenger import Messenger
 
 

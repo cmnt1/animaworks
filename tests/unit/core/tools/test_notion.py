@@ -774,10 +774,10 @@ class TestCredentialResolution:
 
         with (
             patch(
-                "core.integrations._base._lookup_vault_credential",
+                "core.credentials._lookup_vault_credential",
                 return_value="per-anima-token",
             ) as mock_vault,
-            patch("core.integrations._base._lookup_shared_credentials"),
+            patch("core.credentials._lookup_shared_credentials"),
         ):
             result = _resolve_token({"anima_dir": "/tmp/animas/alice"})
             assert result == "per-anima-token"
@@ -788,9 +788,9 @@ class TestCredentialResolution:
         from core.integrations.notion import _resolve_token
 
         with (
-            patch("core.integrations._base._lookup_vault_credential", return_value=None),
+            patch("core.credentials._lookup_vault_credential", return_value=None),
             patch(
-                "core.integrations._base._lookup_shared_credentials",
+                "core.credentials._lookup_shared_credentials",
                 return_value="shared-token",
             ),
         ):
@@ -801,8 +801,8 @@ class TestCredentialResolution:
         from core.integrations.notion import _resolve_token
 
         with (
-            patch("core.integrations._base._lookup_vault_credential", return_value=None),
-            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.credentials._lookup_vault_credential", return_value=None),
+            patch("core.credentials._lookup_shared_credentials", return_value=None),
             patch("core.integrations.notion.get_credential", side_effect=ToolConfigError("missing")),
             pytest.raises(ToolConfigError, match="notion"),
         ):

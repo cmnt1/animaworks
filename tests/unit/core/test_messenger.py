@@ -140,7 +140,7 @@ class TestSend:
         (anima_dir / "activity_log").mkdir(parents=True, exist_ok=True)
         messenger.send("bob", "Report", intent="report")
 
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(days=1, types=["message_sent"])
@@ -715,7 +715,7 @@ class TestActivityLoggingWarning:
         mock_activity.log.side_effect = RuntimeError("disk full")
 
         with (
-            patch("core.memory.activity.logger.ActivityLogger", return_value=mock_activity),
+            patch("core.activity.logger.ActivityLogger", return_value=mock_activity),
             caplog.at_level(logging.WARNING, logger="animaworks.messenger"),
         ):
             messenger.send("bob", "activity will fail")
@@ -731,7 +731,7 @@ class TestActivityLoggingWarning:
         mock_activity = MagicMock()
         mock_activity.log.side_effect = RuntimeError("boom")
 
-        with patch("core.memory.activity.logger.ActivityLogger", return_value=mock_activity):
+        with patch("core.activity.logger.ActivityLogger", return_value=mock_activity):
             msg = messenger.send("bob", "should still work")
 
         assert msg.from_person == "alice"
@@ -753,7 +753,7 @@ class TestServerFallback:
             return resp
 
         with (
-            patch("core.memory._io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
+            patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
             patch("httpx.post", side_effect=fake_post),
         ):
             msg = messenger.send("bob", "hello", skip_logging=True)
@@ -764,7 +764,7 @@ class TestServerFallback:
 
     def test_send_raises_delivery_error_when_fallback_fails(self, messenger: Messenger) -> None:
         with (
-            patch("core.memory._io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
+            patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
             patch("httpx.post", side_effect=ConnectionError("server down")),
             pytest.raises(DeliveryError, match="server fallback"),
         ):

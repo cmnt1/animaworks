@@ -162,8 +162,8 @@ def _archive_current_state_for_housekeeping(
     expected_mtime: float | None = None,
 ) -> str:
     try:
-        from core.memory._io import atomic_write_text
         from core.memory.state_lock import StateFileLock
+        from core.platform.atomic_io import atomic_write_text
 
         with StateFileLock(anima_dir):
             if expected_mtime is not None and state_path.stat().st_mtime != expected_mtime:

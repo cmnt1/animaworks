@@ -31,6 +31,15 @@ from core.execution.base import (
     tool_input_save_budget,
     tool_result_save_budget,
 )
+from core.execution.events import (
+    context_update_event,
+    text_delta_event,
+    thinking_delta_event,
+    thinking_end_event,
+    thinking_start_event,
+    tool_end_event,
+    tool_start_event,
+)
 from core.execution.tool_evidence import ToolEvidence, sanitise_tool_args, summarise_tool_input
 from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import resolve_context_window
@@ -280,7 +289,7 @@ def _append_assistant_blocks_to_state(
                 events.append(detail_chunk)
             if block.id in state.active_tool_ids:
                 state.active_tool_ids.discard(block.id)
-                events.append({"type": "tool_end", "tool_id": block.id, "tool_name": block.name})
+                events.append(tool_end_event(block.name, block.id))
     return events
 
 
@@ -372,7 +381,7 @@ async def process_stream_messages(
         if ctx.check_interrupted():
             logger.info("Agent SDK streaming interrupted — sending graceful interrupt")
             state.interrupted = True
-            yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+            yield text_delta_event("[Session interrupted by user]")
             await _graceful_interrupt_stream(
                 client,
                 ctx.anima_dir,
@@ -407,13 +416,12 @@ async def process_stream_messages(
                     ctx.session_stats["last_context_tokens"] = ctx.tracker._input_tokens
                     state.usage_acc.cache_read_tokens += usage.get("cache_read_input_tokens", 0) or 0
                     state.usage_acc.cache_write_tokens += usage.get("cache_creation_input_tokens", 0) or 0
-                    yield {
-                        "type": "context_update",
-                        "context_usage_ratio": ctx.tracker.usage_ratio,
-                        "input_tokens": ctx.tracker._input_tokens,
-                        "context_window": ctx.tracker.context_window,
-                        "threshold": ctx.tracker.threshold,
-                    }
+                    yield context_update_event(
+                        context_usage_ratio=ctx.tracker.usage_ratio,
+                        input_tokens=ctx.tracker._input_tokens,
+                        context_window=ctx.tracker.context_window,
+                        threshold=ctx.tracker.threshold,
+                    )
 
             elif event_type == "content_block_start":
                 block = event.get("content_block", {})
@@ -421,26 +429,26 @@ async def process_stream_messages(
                     tool_id = block.get("id", "")
                     tool_name = block.get("name", "")
                     state.active_tool_ids.add(tool_id)
-                    yield {"type": "tool_start", "tool_name": tool_name, "tool_id": tool_id}
+                    yield tool_start_event(tool_name, tool_id)
                 elif block.get("type") == "thinking":
                     _in_thinking_block = True
-                    yield {"type": "thinking_start"}
+                    yield thinking_start_event()
 
             elif event_type == "content_block_delta":
                 delta = event.get("delta", {})
                 if delta.get("type") == "text_delta":
                     text = delta.get("text", "")
                     if text:
-                        yield {"type": "text_delta", "text": text}
+                        yield text_delta_event(text)
                 elif delta.get("type") == "thinking_delta":
                     thinking_text = delta.get("thinking", "")
                     if thinking_text:
-                        yield {"type": "thinking_delta", "text": thinking_text}
+                        yield thinking_delta_event(thinking_text)
 
             elif event_type == "content_block_stop":
                 if _in_thinking_block:
                     _in_thinking_block = False
-                    yield {"type": "thinking_end"}
+                    yield thinking_end_event()
 
         elif isinstance(message, AssistantMessage):
             sdk_error = getattr(message, "error", None)

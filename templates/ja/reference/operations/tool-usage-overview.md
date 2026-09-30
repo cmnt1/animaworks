@@ -192,7 +192,7 @@ animaworks-tool <ツール名> <サブコマンド> [引数…]
 
 ## 信頼レベル（ツール結果のラベル）
 
-`core/execution/_sanitize.py` の **`TOOL_TRUST_LEVELS`** が、ツール名 → `trusted` / `medium` / `untrusted` を定義します。**マップに無い名前はすべて `untrusted`** としてラップされます（個人ツール・Discord の `discord_*` 等）。要約:
+`core/trust.py` の **`TOOL_TRUST_LEVELS`** が、ツール名 → `trusted` / `medium` / `untrusted` を定義します。**マップに無い名前はすべて `untrusted`** としてラップされます（個人ツール・Discord の `discord_*` 等）。要約:
 
 | 信頼度 | 代表例 | 扱い方 |
 |--------|--------|--------|

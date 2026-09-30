@@ -7,7 +7,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Shared session helpers for execution engines.
+"""Shared short-term handoff helpers for execution engines.
 
 LiteLLMExecutor monitors context usage and saves short-term memory when the
 configured threshold is crossed. The next incoming message picks up the saved

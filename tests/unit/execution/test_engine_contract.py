@@ -243,7 +243,7 @@ def _gemini_proc(events: list[dict], returncode: int = 0, stderr: bytes = b"") -
 
 
 def _gemini_executor(anima_dir: Path):
-    from core.execution.engines.gemini.gemini_cli import GeminiCLIExecutor
+    from core.execution.engines.gemini.executor import GeminiCLIExecutor
 
     mc = ModelConfig(
         model="gemini/2.5-pro",
@@ -269,7 +269,7 @@ async def _drive_gemini_execute(anima_dir: Path, golden_id: str, path: str | Non
         proc = _gemini_proc(lines)
     tracker = ContextTracker(model="gemini/2.5-pro", threshold=0.5)
     with (
-        patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+        patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
     ):
         result = await executor.execute(system_prompt="You are helpful", prompt="hello", tracker=tracker)
@@ -282,7 +282,7 @@ async def _drive_gemini_stream(anima_dir: Path, golden_id: str, path: str | None
     proc = _gemini_proc(lines)
     tracker = ContextTracker(model="gemini/2.5-pro", threshold=0.5)
     with (
-        patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+        patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
     ):
         events = [
@@ -312,7 +312,7 @@ def _cursor_proc(events: list[dict], returncode: int = 0, stderr: bytes = b"") -
 
 
 def _cursor_executor(anima_dir: Path):
-    from core.execution.engines.cursor.cursor_agent import CursorAgentExecutor
+    from core.execution.engines.cursor.executor import CursorAgentExecutor
 
     mc = ModelConfig(
         model="cursor/claude-4-sonnet",
@@ -439,7 +439,7 @@ def _grok_error_wire(error: dict) -> list[bytes]:
 
 
 def _grok_executor(anima_dir: Path):
-    from core.execution.engines.grok.grok_cli import GrokCLIExecutor
+    from core.execution.engines.grok.executor import GrokCLIExecutor
 
     mc = ModelConfig(
         model="grok/grok-4.5",
@@ -461,7 +461,7 @@ async def _drive_grok(anima_dir: Path, golden_id: str, path: str) -> dict:
     else:
         proc = _FakeXProc(_grok_wire_lines(lines))
     with (
-        patch("core.execution.engines.grok.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+        patch("core.execution.engines.grok.executor._find_grok_binary", return_value="/usr/bin/grok"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
     ):
         if path == "stream":
@@ -623,7 +623,7 @@ def _install_sdk_module(_Client) -> dict:
 
 
 async def _drive_agent_sdk(anima_dir: Path, golden_id: str, path: str) -> dict:
-    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.executor import AgentSDKExecutor
 
     lines = _load_input(golden_id)
     head = lines[0] if lines else {}
@@ -722,7 +722,7 @@ def _mock_codex_result_thread(thread_id: str, lines: list[dict]):
 
 
 def _codex_executor(anima_dir: Path):
-    from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
+    from core.execution.engines.codex.executor import CodexSDKExecutor
 
     mc = ModelConfig(
         model="codex/o4-mini",
@@ -740,7 +740,7 @@ def _codex_executor(anima_dir: Path):
 
 
 async def _drive_codex(anima_dir: Path, golden_id: str, path: str) -> dict:
-    from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
+    from core.execution.engines.codex.executor import CodexSDKExecutor
 
     lines = _load_input(golden_id)
     executor: CodexSDKExecutor = _codex_executor(anima_dir)
@@ -825,7 +825,7 @@ def _litellm_executor(anima_dir: Path, model: str = "openai/gpt-4o"):
     memory.search_memory_text.return_value = []
     memory.anima_dir = anima_dir
     tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=mc,

@@ -100,7 +100,7 @@ def _do_action(param1: str, param2: int = 10) -> dict[str, Any]:
 
 #### 복수 액션 + 인증(API 연동)
 
-`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)`의 해결 순서는 **`config.json`의 `credentials.{credential_name}`**(`api_key` 또는 `keys[key_name]`) → **`vault.json`의 `shared` 섹션**(키 이름은 인자 `env_var`로 전달한 문자열) → **`shared/credentials.json`(레거시, 키는 `env_var`)** → **환경 변수 `env_var`**(`core/integrations/_base.py`).
+`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)`의 해결 순서는 **`config.json`의 `credentials.{credential_name}`**(`api_key` 또는 `keys[key_name]`) → **`vault.json`의 `shared` 섹션**(키 이름은 인자 `env_var`로 전달한 문자열) → **`shared/credentials.json`(레거시, 키는 `env_var`)** → **환경 변수 `env_var`**(`core/credentials.py`).
 
 ```python
 from __future__ import annotations
@@ -141,7 +141,7 @@ def get_tool_schemas() -> list[dict]:
 
 class MyAPIClient:
     def __init__(self) -> None:
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         self._api_key = get_credential(
             "myapi",

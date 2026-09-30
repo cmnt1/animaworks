@@ -17,6 +17,7 @@ The class is composed from responsibility-specific Mixins:
   - OrgToolsMixin     (handler_org.py)
   - SkillsToolsMixin  (handler_skills.py)
   - FileToolsMixin    (handler_files.py)
+  - ExecutionToolsMixin (handler_exec.py)
   - PermissionsMixin  (handler_perms.py)
 """
 
@@ -27,11 +28,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from core.activity.logger import ActivityLogger
 from core.exceptions import AnimaWorksError, ConfigError
-from core.execution.session_context import RuntimeSessionContext, current_runtime_session
+from core.execution.session.session_context import RuntimeSessionContext, current_runtime_session
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.activity.logger import ActivityLogger
 from core.memory.state_lock import StateFileLock
 from core.messaging.messenger import Messenger
 from core.notification import CallHumanKeys
@@ -52,6 +53,7 @@ from core.tooling.handler_base import (  # noqa: F401
 
 # ── Import Mixins ──
 from core.tooling.handler_comms import CommsToolsMixin
+from core.tooling.handler_exec import ExecutionToolsMixin
 from core.tooling.handler_files import FileToolsMixin
 from core.tooling.handler_memory import MemoryToolsMixin
 from core.tooling.handler_org import OrgToolsMixin
@@ -86,6 +88,7 @@ class ToolHandler(
     SkillsToolsMixin,
     WorkspaceToolsMixin,
     FileToolsMixin,
+    ExecutionToolsMixin,
     PermissionsMixin,
 ):
     """Dispatches tool calls to the appropriate handler.

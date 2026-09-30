@@ -169,7 +169,7 @@ class TestCollectPendingHumanNotifications:
 
     @pytest.mark.asyncio
     async def test_budget_truncation(self, anima_dir: Path):
-        from core.prompt.tokens import estimate_tokens
+        from core.text.tokens import estimate_tokens
 
         ts = now_iso()
         entries = []

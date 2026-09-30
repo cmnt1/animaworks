@@ -22,12 +22,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.execution.engine_session import clear_engine_session
-from core.execution.session_store import SessionEngine
+from core.execution.session.engine_session import clear_engine_session
+from core.execution.session.session_store import SessionEngine
 
 if TYPE_CHECKING:
+    from core.activity.models import ActivityEntry
     from core.anima.digital_anima import DigitalAnima
-    from core.memory.activity.models import ActivityEntry
 
 logger = logging.getLogger("animaworks.session_compactor")
 
@@ -236,7 +236,7 @@ def _extract_recent_chat_context(
     thread_id: str = "default",
 ) -> dict[str, Any]:
     """Extract recent chat context from the activity_log for idle compaction."""
-    from core.memory.activity.format import (
+    from core.activity.format import (
         EVENT_SETS,
         EntryRole,
         clip,
@@ -544,7 +544,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
         thread_id,
     )
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima.anima_dir)
         await activity.alog(

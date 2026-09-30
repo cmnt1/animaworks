@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from core.integrations._base import get_credential
+from core.credentials import get_credential
 from core.integrations.image.constants import (
     _DOWNLOAD_TIMEOUT,
     _HTTP_TIMEOUT,

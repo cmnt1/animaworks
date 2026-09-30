@@ -95,7 +95,7 @@ class TestMemoryManagerKnowledgeHelpers:
 class TestReportKnowledgeOutcome:
     def _make_handler(self, anima_dir: Path):
         """Create a minimal ToolHandler for testing."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.memory.manager import MemoryManager
         from core.tooling.handler import ToolHandler
 
@@ -252,7 +252,7 @@ class TestKnowledgeForgettingProtection:
 class TestKnowledgeReconsolidation:
     @pytest.fixture
     def engine(self, anima_dir: Path):
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.memory.maintenance.reconsolidation import ReconsolidationEngine
         from core.memory.manager import MemoryManager
 

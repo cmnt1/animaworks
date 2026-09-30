@@ -226,7 +226,7 @@ def run_maintenance(args: argparse.Namespace) -> dict[str, Any]:
                 "rollback_policy": "Use this current export, never an older database backup, for legacy rollback.",
                 "scope": "task state only; identity, configuration and business artifacts remain in the source runtime",
             }
-            from core.memory._io import atomic_write_text
+            from core.platform.atomic_io import atomic_write_text
 
             atomic_write_text(destination / "manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
             return manifest

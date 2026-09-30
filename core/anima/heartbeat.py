@@ -176,7 +176,7 @@ def _build_cron_rejected_notice(anima_dir: Path, name: str) -> str | None:
             )
             notice = load_prompt("fragments/cron_rejected_notice", rejected_jobs=jobs)
         try:
-            from core.memory._io import atomic_write_text
+            from core.platform.atomic_io import atomic_write_text
 
             marker_path.parent.mkdir(parents=True, exist_ok=True)
             atomic_write_text(marker_path, digest + "\n")

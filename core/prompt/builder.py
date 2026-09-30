@@ -1060,7 +1060,7 @@ def build_system_prompt(
     _ss = _load_section_strings()
     _fs = _load_fallback_strings()
 
-    from core.execution.session_types import (
+    from core.execution.session.session_types import (
         SESSION_TYPE_CRON,
         SESSION_TYPE_HEARTBEAT,
         SESSION_TYPE_INBOX,

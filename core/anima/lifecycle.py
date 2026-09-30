@@ -20,13 +20,13 @@ from contextlib import AsyncExitStack, nullcontext
 from datetime import date, timedelta
 from typing import Any
 
-from core.execution._sanitize import ORIGIN_SYSTEM
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.paths import load_prompt
 from core.platform.process import kill_tree, signal_tree, snapshot_descendants, subprocess_session_kwargs
 from core.schemas import CycleResult
 from core.time_utils import now_local
+from core.trust import ORIGIN_SYSTEM
 
 logger = logging.getLogger("animaworks.anima")
 
@@ -1221,7 +1221,7 @@ class LifecycleMixin:
                 if serialize:
                     await lock_stack.enter_async_context(self._background_lock)
                 logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
-                from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+                from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
                 _runtime_ctx = RuntimeSessionContext.create(
                     session_type="cron",

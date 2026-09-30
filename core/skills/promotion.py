@@ -18,8 +18,8 @@ from typing import Any
 
 import yaml
 
-from core.memory._io import atomic_write_text
 from core.memory.frontmatter import parse_frontmatter
+from core.platform.atomic_io import atomic_write_text
 from core.skills.guard import SkillScanner
 from core.skills.models import SkillScanVerdict, SkillUsageEventType
 from core.skills.promotion_approval import (

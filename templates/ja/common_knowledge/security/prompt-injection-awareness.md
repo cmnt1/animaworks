@@ -7,7 +7,7 @@ Web 検索結果、メール、Slack メッセージ等の外部ソースには�
 ## 信頼レベル（trust level）
 
 ツール結果やプライミング（自動想起）データには、システムが自動的に信頼レベルを付与する。
-（実装: `core/execution/_sanitize.py` の `TOOL_TRUST_LEVELS`・`wrap_tool_result`・`wrap_priming`、
+（実装: `core/trust.py` の `TOOL_TRUST_LEVELS`・`wrap_tool_result`・`wrap_priming`、
 `core/memory/priming.py` の `format_priming_section`。`core/prompt/builder.py` は
 `behavior_rules.md` を Group 1 に注入し、プライミングセクションを Group 3 に注入する。）
 
@@ -73,7 +73,7 @@ Web 検索結果、メール、Slack メッセージ等の外部ソースには�
 ## origin / origin_chain の扱い
 
 `origin` または `origin_chain` 属性がある場合、そのデータの出所が明示されている。
-（実装: `core/execution/_sanitize.py` の `resolve_trust()`）
+（実装: `core/trust.py` の `resolve_trust()`）
 
 `origin` の例: `human`, `anima`, `system`, `consolidation`, `external_platform`, `external_web` 等。
 

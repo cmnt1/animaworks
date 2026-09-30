@@ -139,7 +139,7 @@ def _fallback_credential_name(model: str, config: AnimaWorksConfig | None = None
     dedicated ``deepseek`` credential when present, else the configured
     ``background_credential`` gateway that hosts these models.
     """
-    from core.execution.error_classifier import provider_family_of
+    from core.llm.guard.error_classifier import provider_family_of
 
     entry = _match_models_json(model)
     if entry and isinstance(entry.get("credential"), str):
@@ -317,7 +317,7 @@ def resolve_effective_model_config(
 
     from core.config.io import load_config
     from core.config.model_mode import parse_fallback_entry
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     config = config if config is not None else load_config()
     guard = get_rate_guard()
@@ -532,7 +532,7 @@ def resolve_unavailable_model_config(
 ) -> ModelConfig | None:
     """Select only explicitly configured alternatives to a missing engine."""
     from core.config.io import load_config
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     config = load_config()
     guard = get_rate_guard()
@@ -569,7 +569,7 @@ def fallback_event_meta(
         return None
 
     from core.config.io import load_config
-    from core.execution.rate_guard import get_rate_guard
+    from core.llm.guard.rate_guard import get_rate_guard
 
     config = load_config()
     guard = get_rate_guard()

@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.schemas import CycleResult
 
 # ── Test 1: CycleResult schema ────────────────────────────────────────────

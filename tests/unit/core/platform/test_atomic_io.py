@@ -66,11 +66,11 @@ def test_atomic_write_fsyncs_temp_file(tmp_path: Path, monkeypatch: pytest.Monke
 
 def test_memory_atomic_write_json_wraps_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from core.exceptions import MemoryWriteError
-    from core.memory import _io
+    from core.memory import io as memory_io
 
     def fail_write(*args, **kwargs):  # noqa: ANN002, ANN003
         raise OSError("disk full")
 
-    monkeypatch.setattr(_io, "_platform_atomic_write_json", fail_write)
+    monkeypatch.setattr(memory_io, "_platform_atomic_write_json", fail_write)
     with pytest.raises(MemoryWriteError, match="disk full"):
-        _io.atomic_write_json(tmp_path / "memory.json", {"value": 1})
+        memory_io.atomic_write_json(tmp_path / "memory.json", {"value": 1})

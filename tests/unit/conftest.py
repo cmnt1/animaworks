@@ -19,7 +19,7 @@ from core.paths import TEMPLATES_DIR
 def _reset_llm_rate_guard_singleton(tmp_path: Path) -> None:
     """Point the process-wide LLM rate guard at a per-test temp file."""
     from core.config.schemas import LlmRateGuardConfig
-    from core.execution import rate_guard
+    from core.llm.guard import rate_guard
 
     rate_guard._shared_guard = rate_guard.LlmRateGuard(
         config=LlmRateGuardConfig(),

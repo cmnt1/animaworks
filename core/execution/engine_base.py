@@ -9,14 +9,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from core.execution.error_classifier import (
+from core.execution.events import stream_event
+from core.llm.guard.error_classifier import (
     FailoverReason,
     classify_llm_error_message,
     guard_key,
     litellm_realm_of,
     provider_family_of,
 )
-from core.execution.rate_guard import get_rate_guard
+from core.llm.guard.rate_guard import get_rate_guard
 
 logger = logging.getLogger(__name__)
 
@@ -72,4 +73,4 @@ def engine_error_metadata(
 
 def engine_error_event(message: str, metadata: dict[str, Any]) -> dict[str, Any]:
     """Build the normalized terminal error event emitted by CLI engines."""
-    return {"type": "error", "message": message, **metadata}
+    return stream_event("error", message=message, **metadata)

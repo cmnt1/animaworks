@@ -3,12 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.execution.engines.claude._sdk_session import _save_session_id, _session_state_path
-from core.execution.engines.codex.codex_sdk import _save_thread_id, _thread_id_path
-from core.execution.engines.cursor.cursor_agent import _chat_id_path, _save_chat_id
-from core.execution.engines.grok.grok_cli import _save_session_id as _save_grok_session_id
-from core.execution.engines.grok.grok_cli import _session_id_path as _grok_session_id_path
-from core.execution.session_store import SessionRecord, SessionStore
+from core.execution.engines.claude._sdk_session import _save_session_id
+from core.execution.session.session_ids import EngineSessionIds
+from core.execution.session.session_store import SessionRecord, SessionStore
 
 
 def test_engine_session_paths_keep_existing_layouts(tmp_path: Path) -> None:
@@ -24,33 +21,40 @@ def test_engine_session_paths_keep_existing_layouts(tmp_path: Path) -> None:
     ]
 
     for engine, session_type, thread_id, expected in cases:
+        assert EngineSessionIds(engine).path_for(tmp_path, session_type, thread_id) == expected
         assert SessionStore.path_for(engine, tmp_path, session_type, thread_id) == expected
 
-    assert _session_state_path(tmp_path, "chat", "default") == cases[0][3]
-    assert _session_state_path(tmp_path, "inbox", "thread-a") == cases[1][3]
-    assert _thread_id_path(tmp_path, "chat", "default") == cases[2][3]
-    assert _thread_id_path(tmp_path, "inbox", "thread-a") == cases[3][3]
-    assert _chat_id_path(tmp_path, "chat", "default") == cases[4][3]
-    assert _chat_id_path(tmp_path, "chat", "thread-a") == cases[5][3]
-    assert _grok_session_id_path(tmp_path, "chat", "default") == cases[6][3]
-    assert _grok_session_id_path(tmp_path, "chat", "thread-a") == cases[7][3]
 
-
-def test_existing_engine_helpers_keep_session_file_formats(tmp_path: Path) -> None:
+def test_engine_session_ids_keep_established_file_formats(tmp_path: Path) -> None:
+    sdk_ids = EngineSessionIds("agent_sdk")
     _save_session_id(tmp_path, "claude-session", "chat")
-    claude_path = tmp_path / "state/current_session_chat.json"
-    claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
-    assert claude_data["session_id"] == "claude-session"
-    assert claude_path.read_bytes().endswith(b"\n")
+    sdk_path = sdk_ids.path_for(tmp_path, "chat")
+    sdk_data = json.loads(sdk_path.read_text(encoding="utf-8"))
+    assert sdk_data["session_id"] == "claude-session"
+    assert sdk_path.read_bytes().endswith(b"\n")
+    assert sdk_ids.load_state(tmp_path, "chat")["session_id"] == "claude-session"  # type: ignore[index]
 
-    _save_thread_id(tmp_path, "codex-thread", "chat")
-    assert (tmp_path / "shortterm/chat/codex_thread_id.txt").read_text(encoding="utf-8") == "codex-thread"
+    codex_ids = EngineSessionIds("codex")
+    codex_ids.save(tmp_path, "codex-thread", "chat")
+    codex_path = codex_ids.path_for(tmp_path, "chat")
+    assert codex_path.read_text(encoding="utf-8") == "codex-thread"
+    assert codex_ids.load(tmp_path, "chat") == SessionRecord("codex-thread")
 
-    _save_chat_id(tmp_path, "cursor-session", "chat", turn_count=3)
-    assert (tmp_path / "shortterm/chat/cursor_chat_id.txt").read_text(encoding="utf-8") == "cursor-session\n3"
+    cursor_ids = EngineSessionIds("cursor")
+    cursor_ids.save(tmp_path, "cursor-session", "chat", turn_count=3)
+    cursor_path = cursor_ids.path_for(tmp_path, "chat")
+    assert cursor_path.read_text(encoding="utf-8") == "cursor-session\n3"
+    assert cursor_ids.load(tmp_path, "chat") == SessionRecord("cursor-session", 3)
 
-    _save_grok_session_id(tmp_path, "grok-session", "chat", turn_count=4)
-    assert (tmp_path / "shortterm/chat/default/grok_session_id.txt").read_text(encoding="utf-8") == "grok-session\n4"
+    grok_ids = EngineSessionIds("grok")
+    grok_ids.save(tmp_path, "grok-session", "chat", turn_count=4)
+    grok_path = grok_ids.path_for(tmp_path, "chat")
+    assert grok_path.read_text(encoding="utf-8") == "grok-session\n4"
+    assert grok_ids.load(tmp_path, "chat") == SessionRecord("grok-session", 4)
+
+    for ids, path in ((codex_ids, codex_path), (cursor_ids, cursor_path), (grok_ids, grok_path)):
+        ids.clear(tmp_path, "chat")
+        assert not path.exists()
 
 
 def test_text_records_retain_legacy_turn_count_behavior(tmp_path: Path) -> None:

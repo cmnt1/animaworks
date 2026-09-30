@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, save_config
-from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
+from core.execution.engines.codex.executor import CodexSDKExecutor
 from core.schemas import ModelConfig
 from core.tooling.handler import ToolHandler
 from core.tooling.schemas import build_unified_tool_list

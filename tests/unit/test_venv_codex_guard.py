@@ -224,7 +224,7 @@ class TestModeCFallbackCredentialGuard:
         with (
             patch("core.config.io.load_config", return_value=config),
             patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
-            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor", return_value=sentinel) as mock_litellm,
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor", return_value=sentinel) as mock_litellm,
         ):
             created = agent._create_executor()
 
@@ -239,7 +239,7 @@ class TestModeCFallbackCredentialGuard:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
         with (
             patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
-            patch("core.execution.engines.litellm.litellm_loop.LiteLLMExecutor") as litellm,
+            patch("core.execution.engines.litellm.executor.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):
             agent._create_executor()

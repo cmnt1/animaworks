@@ -33,28 +33,29 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import uuid4
 
-from core.exceptions import MemoryWriteError
-
 # ── Mixin imports ────────────────────────────────────────────
-from core.memory.activity.conversation import ConversationMixin
-from core.memory.activity.format import PrimingMixin
+from core.activity.conversation import ConversationMixin
+from core.activity.event_export import get_activity_event_exporter
+from core.activity.format import PrimingMixin
 
 # ── Re-export data models & helpers (public API) ─────────────
-from core.memory.activity.models import (  # noqa: F401
+from core.activity.models import (  # noqa: F401
     ActivityEntry,
     ActivityPage,
     EntryGroup,
     resolve_type_filter,
 )
-from core.memory.activity.replay import (  # noqa: F401
+from core.activity.replay import (  # noqa: F401
     build_semantic_replay_events,
     resolve_semantic_group_id,
 )
-from core.memory.activity.rotation import RotationMixin
-from core.memory.activity.timeline import TimelineMixin
+from core.activity.rotation import RotationMixin
+from core.activity.runtime_context import RuntimeSessionContextLike, current_runtime_session
+from core.activity.timeline import TimelineMixin
+from core.exceptions import MemoryWriteError
 from core.paths import get_data_dir
 from core.platform.atomic_io import atomic_write_json
 from core.time_utils import ensure_aware, now_iso, now_local  # noqa: F401
@@ -68,10 +69,6 @@ def set_live_event_sink(sink: Callable[[dict[str, Any]], None] | None) -> None:
     """Configure an optional in-process destination for live activity events."""
     global _LIVE_EVENT_SINK
     _LIVE_EVENT_SINK = sink
-
-
-if TYPE_CHECKING:
-    from core.execution.session_context import RuntimeSessionContext
 
 
 class _LiveEventRateLimiter:
@@ -183,13 +180,11 @@ class ActivityLogger(
         if not (self.anima_dir / "state" / "event_export_spool").is_dir():
             return
         try:
-            from core.infra.event_export import get_event_exporter
-
-            get_event_exporter(self.anima_dir)
+            get_activity_event_exporter(self.anima_dir)
         except Exception:
             logger.warning("Failed to start activity event exporter", exc_info=True)
 
-    def bind_runtime_session(self, ctx: RuntimeSessionContext) -> None:
+    def bind_runtime_session(self, ctx: RuntimeSessionContextLike) -> None:
         """Bind the execution context used by subsequent activity entries."""
         self._ctx.set(activity_context_from_trigger(ctx.trigger, ctx.session_type))
 
@@ -197,8 +192,6 @@ class ActivityLogger(
         """Prefer the active invocation over a context-local bound fallback."""
         if ctx is not None:
             return ctx
-        from core.execution.session_context import current_runtime_session
-
         runtime_ctx = current_runtime_session()
         if runtime_ctx is not None:
             return activity_context_from_trigger(runtime_ctx.trigger, runtime_ctx.session_type)
@@ -317,10 +310,9 @@ class ActivityLogger(
         """Best-effort export after the local activity write succeeds."""
         try:
             from core.config import load_config
-            from core.infra.event_export import get_event_exporter
 
             config = load_config().event_export
-            exporter = get_event_exporter(self.anima_dir, config)
+            exporter = get_activity_event_exporter(self.anima_dir, config)
             if exporter is None:
                 return
             if config.event_types is not None and entry.type not in config.event_types:

@@ -193,7 +193,7 @@ def test_compact_background_recall_defaults_are_bounded():
 @pytest.mark.asyncio
 async def test_compact_recent_activity_is_newest_first_and_bounded(tmp_path: Path):
     from core.memory.priming.items import ItemizedMemory, MemoryItem
-    from core.prompt.tokens import estimate_tokens
+    from core.text.tokens import estimate_tokens
 
     settings = CompactBackgroundRecallConfig(
         recent_activity_max_items=5,

@@ -106,7 +106,7 @@ class TestBotTokenMode:
         ch._resolve_env = MagicMock(return_value="")
         from core.integrations._base import ToolConfigError
 
-        with patch("core.integrations._base.get_credential", side_effect=ToolConfigError("no cred")):
+        with patch("core.credentials.get_credential", side_effect=ToolConfigError("no cred")):
             result = await ch.send("Subject", "Body")
         assert "neither bot_token nor webhook_url configured" in result
 
@@ -202,8 +202,8 @@ class TestUsernameOverride:
         with (
             patch("httpx.AsyncClient") as mock_client_cls,
             # Suppress higher-priority avatar sources so template resolution is tested
-            patch("core.integrations._base._lookup_vault_credential", return_value=""),
-            patch("core.integrations._base._lookup_shared_credentials", return_value=""),
+            patch("core.credentials._lookup_vault_credential", return_value=""),
+            patch("core.credentials._lookup_shared_credentials", return_value=""),
         ):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_resp
@@ -229,8 +229,8 @@ class TestUsernameOverride:
 
         with (
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch("core.integrations._base._lookup_vault_credential", return_value=""),
-            patch("core.integrations._base._lookup_shared_credentials", return_value=""),
+            patch("core.credentials._lookup_vault_credential", return_value=""),
+            patch("core.credentials._lookup_shared_credentials", return_value=""),
             patch("core.integrations._anima_icon_url.resolve_anima_icon_url", return_value=""),
         ):
             mock_client = AsyncMock()
@@ -262,7 +262,7 @@ class TestWebhookFallback:
         from core.integrations._base import ToolConfigError
 
         with (
-            patch("core.integrations._base.get_credential", side_effect=ToolConfigError("no cred")),
+            patch("core.credentials.get_credential", side_effect=ToolConfigError("no cred")),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()

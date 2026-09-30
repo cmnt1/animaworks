@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 from core.platform.atomic_io import atomic_write_json
 from core.platform.locks import locked_path
 
-logger = logging.getLogger("animaworks.execution.rate_guard")
+logger = logging.getLogger("animaworks.llm.guard.rate_guard")
 
 _STATE_FILENAME = "llm_rate_guard.json"
 _HISTORY_FILENAME = "llm_rate_guard_history.jsonl"

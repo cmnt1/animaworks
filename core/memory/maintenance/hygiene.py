@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.memory.io import atomic_write_text
 
 _REPORT_CATEGORIES = (
     "merged_leftovers",

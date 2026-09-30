@@ -25,7 +25,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
-logger = logging.getLogger("animaworks.execution.sanitize")
+logger = logging.getLogger("animaworks.trust")
 
 # ── Origin categories ─────────────────────────────────────────
 

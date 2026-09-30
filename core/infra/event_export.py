@@ -367,6 +367,16 @@ def get_event_exporter(
     return exporter
 
 
+def register_activity_event_exporter() -> None:
+    """Inject this infrastructure-owned exporter into the activity port."""
+    from core.activity.event_export import set_activity_event_exporter_factory
+
+    set_activity_event_exporter_factory(lambda anima_dir, config=None: get_event_exporter(anima_dir, config))
+
+
+register_activity_event_exporter()
+
+
 def reset_event_exporters() -> None:
     """Stop and clear all exporters; intended for isolated test lifecycles."""
     with _exporters_lock:
@@ -376,4 +386,4 @@ def reset_event_exporters() -> None:
         exporter.stop(timeout=2.0)
 
 
-__all__ = ["EventExporter", "get_event_exporter", "reset_event_exporters"]
+__all__ = ["EventExporter", "get_event_exporter", "register_activity_event_exporter", "reset_event_exporters"]

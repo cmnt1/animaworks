@@ -25,15 +25,13 @@ import pytest
 
 from core.agent.executor_factory import ExecutorFactoryMixin
 from core.execution.base import ExecutionResult, TokenUsage
-from core.execution.engines.codex.codex_sdk import (
+from core.execution.engines.codex.executor import (
     CodexSDKExecutor,
-    _clear_thread_id,
-    _load_thread_id,
-    _save_thread_id,
     _should_cli_exec_fallback,
     _stderr_contains_fatal_signal,
     clear_codex_thread_id,
 )
+from core.execution.session.session_ids import EngineSessionIds
 from core.execution.engines.codex.events import (
     _codex_item_tool_name,
     _CodexUsageAccumulator,
@@ -53,6 +51,13 @@ from core.execution.engines.codex.setup import (
     _should_prefer_cli_exec,
 )
 from core.prompt.context import ContextTracker
+
+_CODEX_SESSION_IDS = EngineSessionIds("codex")
+
+
+def _load_codex_thread_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> str | None:
+    record = _CODEX_SESSION_IDS.load(anima_dir, session_type, thread_id)
+    return record.session_id if record is not None else None
 
 
 def _install_fake_openai_codex() -> None:
@@ -444,34 +449,34 @@ class TestHelpers:
 
 class TestSessionPersistence:
     def test_save_and_load_thread_id(self, anima_dir):
-        _save_thread_id(anima_dir, "thread-abc", "chat")
-        assert _load_thread_id(anima_dir, "chat") == "thread-abc"
+        _CODEX_SESSION_IDS.save(anima_dir, "thread-abc", "chat")
+        assert _load_codex_thread_id(anima_dir, "chat") == "thread-abc"
 
     def test_load_thread_id_missing(self, anima_dir):
-        assert _load_thread_id(anima_dir, "chat") is None
+        assert _load_codex_thread_id(anima_dir, "chat") is None
 
     def test_clear_thread_id(self, anima_dir):
-        _save_thread_id(anima_dir, "thread-xyz", "heartbeat")
-        _clear_thread_id(anima_dir, "heartbeat")
-        assert _load_thread_id(anima_dir, "heartbeat") is None
+        _CODEX_SESSION_IDS.save(anima_dir, "thread-xyz", "heartbeat")
+        _CODEX_SESSION_IDS.clear(anima_dir, "heartbeat")
+        assert _load_codex_thread_id(anima_dir, "heartbeat") is None
 
     def test_executor_clear_session_only_clears_resolved_namespace(self, executor, anima_dir):
-        _save_thread_id(anima_dir, "chat-thread", "chat")
-        _save_thread_id(anima_dir, "heartbeat-thread", "heartbeat")
+        _CODEX_SESSION_IDS.save(anima_dir, "chat-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "heartbeat-thread", "heartbeat")
 
         executor.clear_session("message:owner")
 
-        assert _load_thread_id(anima_dir, "chat") is None
-        assert _load_thread_id(anima_dir, "heartbeat") == "heartbeat-thread"
+        assert _load_codex_thread_id(anima_dir, "chat") is None
+        assert _load_codex_thread_id(anima_dir, "heartbeat") == "heartbeat-thread"
 
     def test_clear_single_thread_id_for_non_chat_thread(self, anima_dir):
-        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
-        _save_thread_id(anima_dir, "chat-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-inbox", "inbox", "inbox")
+        _CODEX_SESSION_IDS.save(anima_dir, "chat-thread", "chat")
 
         clear_codex_thread_id(anima_dir, "inbox", "inbox")
 
-        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
-        assert _load_thread_id(anima_dir, "chat") == "chat-thread"
+        assert _load_codex_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_codex_thread_id(anima_dir, "chat") == "chat-thread"
 
 
 # ── Executor instantiation tests ─────────────────────────────
@@ -488,7 +493,7 @@ class TestExecutorInit:
         assert "CODEX_HOME" in env
 
     def test_build_env_includes_runtime_session(self, executor):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         ctx = RuntimeSessionContext.create(
             session_type="chat",
@@ -1142,7 +1147,7 @@ def test_agent_executor_factory_forwards_worker_codex_home(model_config, anima_d
     sentinel = SimpleNamespace()
     with (
         patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=True),
-        patch("core.execution.engines.codex.codex_sdk.CodexSDKExecutor", return_value=sentinel) as constructor,
+        patch("core.execution.engines.codex.executor.CodexSDKExecutor", return_value=sentinel) as constructor,
     ):
         result = factory._create_executor()
 
@@ -1177,7 +1182,7 @@ class TestBlockingExecution:
         assert "sandbox" not in mock_thread.turn.call_args.kwargs
         assert result.usage.input_tokens == 100
         assert result.usage.output_tokens == 50
-        assert _load_thread_id(anima_dir, "chat") == "thread-001"
+        assert _load_codex_thread_id(anima_dir, "chat") == "thread-001"
 
     @pytest.mark.asyncio
     async def test_execute_keeps_text_from_tool_turn(self, executor):
@@ -1222,7 +1227,7 @@ class TestBlockingExecution:
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             await executor.execute(prompt="test")
 
-        assert _load_thread_id(anima_dir, "chat") == "tid-saved"
+        assert _load_codex_thread_id(anima_dir, "chat") == "tid-saved"
 
     @pytest.mark.asyncio
     async def test_execute_heartbeat_trigger_does_not_persist_thread(self, executor, anima_dir):
@@ -1245,8 +1250,8 @@ class TestBlockingExecution:
             )
 
         assert result.text == "Heartbeat response"
-        assert _load_thread_id(anima_dir, "heartbeat") is None
-        assert _load_thread_id(anima_dir, "chat") is None
+        assert _load_codex_thread_id(anima_dir, "heartbeat") is None
+        assert _load_codex_thread_id(anima_dir, "chat") is None
 
     @pytest.mark.asyncio
     async def test_execute_inbox_trigger_does_not_resume_or_persist_thread(self, executor, anima_dir):
@@ -1259,8 +1264,8 @@ class TestBlockingExecution:
 
         mock_codex = _mock_codex(mock_thread)
 
-        _save_thread_id(anima_dir, "old-chat", "chat")
-        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        _CODEX_SESSION_IDS.save(anima_dir, "old-chat", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-inbox", "inbox", "inbox")
         with (
             patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
@@ -1273,8 +1278,8 @@ class TestBlockingExecution:
 
         assert result.text == "Inbox response"
         mock_codex.thread_resume.assert_not_called()
-        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
-        assert _load_thread_id(anima_dir, "chat") == "old-chat"
+        assert _load_codex_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_codex_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_execute_interrupted_before_run(self, model_config, anima_dir):
@@ -1341,7 +1346,7 @@ class TestBlockingExecution:
 
     @pytest.mark.asyncio
     async def test_execute_retry_on_resume_failure(self, executor, anima_dir):
-        _save_thread_id(anima_dir, "stale-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-thread", "chat")
 
         mock_turn = MagicMock()
         mock_turn.final_response = "After retry"
@@ -1569,8 +1574,8 @@ class TestStreamingExecution:
         mock_thread = _mock_stream_thread("new-inbox-thread", [msg_event, done_event])
         mock_codex = _mock_codex(mock_thread)
 
-        _save_thread_id(anima_dir, "old-chat", "chat")
-        _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
+        _CODEX_SESSION_IDS.save(anima_dir, "old-chat", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "stale-inbox", "inbox", "inbox")
 
         events = []
         with (
@@ -1589,8 +1594,8 @@ class TestStreamingExecution:
 
         assert any(e["type"] == "done" for e in events)
         mock_codex.thread_resume.assert_not_called()
-        assert _load_thread_id(anima_dir, "inbox", "inbox") is None
-        assert _load_thread_id(anima_dir, "chat") == "old-chat"
+        assert _load_codex_thread_id(anima_dir, "inbox", "inbox") is None
+        assert _load_codex_thread_id(anima_dir, "chat") == "old-chat"
 
     @pytest.mark.asyncio
     async def test_stream_tool_events(self, executor, anima_dir):
@@ -1630,6 +1635,59 @@ class TestStreamingExecution:
         assert "tool_end" in types
         tool_start = next(e for e in events if e["type"] == "tool_start")
         assert "web_search" in tool_start["tool_name"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sdk_type", "name"),
+        [
+            ("dynamicToolCall", "dynamic-operation"),
+            ("collabAgentToolCall", "collaboration-agent"),
+        ],
+    )
+    async def test_dynamic_and_collaboration_items_emit_tool_lifecycle(self, executor, sdk_type, name):
+        started_item = SimpleNamespace(type=sdk_type, id="tool-1", name=name, status="inProgress")
+        completed_item = SimpleNamespace(
+            type=sdk_type,
+            id="tool-1",
+            name=name,
+            input={"query": "test"},
+            output="result",
+            status="completed",
+        )
+        events = [
+            SimpleNamespace(
+                method="item/started",
+                payload=SimpleNamespace(item=started_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="item/completed",
+                payload=SimpleNamespace(item=completed_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("special-tool-thread", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for event in executor.execute_streaming(
+                system_prompt="test",
+                prompt="run a tool",
+                tracker=tracker,
+            ):
+                chunks.append(event)
+
+        starts = [event for event in chunks if event["type"] == "tool_start"]
+        ends = [event for event in chunks if event["type"] == "tool_end"]
+        assert starts == [{"type": "tool_start", "tool_name": name, "tool_id": "tool-1"}]
+        assert ends == [{"type": "tool_end", "tool_id": "tool-1", "tool_name": name}]
+        done = next(event for event in chunks if event["type"] == "done")
+        assert done["tool_call_records"][0]["tool_name"] == name
+        assert done["tool_call_records"][0]["result_summary"] == "result"
 
     @pytest.mark.asyncio
     async def test_stream_command_execution_logs_bash_activity(self, executor, anima_dir):
@@ -2623,7 +2681,7 @@ class TestCodexUsageDeltas:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("blocking", [False, True])
     async def test_native_resume_stream_and_blocking_have_same_turn_local_usage(self, executor, anima_dir, blocking):
-        _save_thread_id(anima_dir, "resumed-thread", "chat")
+        _CODEX_SESSION_IDS.save(anima_dir, "resumed-thread", "chat")
         first = _usage_snapshot(1200, 120, 900, 200, 20, 100)
         final = _usage_snapshot(1700, 180, 1300, 300, 40, 250)
         thread = _mock_stream_thread(
@@ -2810,7 +2868,7 @@ class TestPartialToolEvidence:
         thread.turn.return_value.stream.return_value = events()
         codex = _mock_codex(thread)
         if resumed:
-            _save_thread_id(anima_dir, "thread-tools", "chat")
+            _CODEX_SESSION_IDS.save(anima_dir, "thread-tools", "chat")
         with (
             patch.object(executor, "_create_codex_client", return_value=codex),
             patch.object(executor, "_execute_streaming_via_cli_exec") as cli,

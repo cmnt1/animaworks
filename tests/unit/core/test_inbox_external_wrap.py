@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.anima.inbox import _SOURCE_TO_ORIGIN
-from core.execution._sanitize import (
+from core.trust import (
     ORIGIN_ANIMA,
     ORIGIN_EXTERNAL_PLATFORM,
     ORIGIN_HUMAN,
@@ -105,7 +105,7 @@ class TestInboxPromptPartsWrap:
         # Reconstruct the same formatting logic used in process_inbox_message
         # by invoking a extracted unit: re-import and simulate the loop.
         from core.anima.inbox import _build_reply_instruction, _truncate_with_thread_ctx
-        from core.execution._sanitize import wrap_inbox_message
+        from core.trust import wrap_inbox_message
         from core.i18n import t
         from core.paths import load_prompt
 

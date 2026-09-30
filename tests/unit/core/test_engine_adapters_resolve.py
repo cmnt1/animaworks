@@ -12,6 +12,13 @@ import pytest
 from core.agent.executor_factory import ENGINE_ADAPTERS, _resolve
 
 
+_EXPECTED_ENGINE_MODES = {"s", "c", "d", "g", "x", "a"}
+
+
+def test_all_engine_adapters_are_registered() -> None:
+    assert set(ENGINE_ADAPTERS) == _EXPECTED_ENGINE_MODES
+
+
 @pytest.mark.parametrize("mode", sorted(ENGINE_ADAPTERS))
 def test_engine_adapter_paths_resolve(mode: str) -> None:
     adapter = ENGINE_ADAPTERS[mode]
@@ -26,7 +33,7 @@ def test_engine_adapter_paths_resolve(mode: str) -> None:
 
 def test_mode_a_resolves_via_concrete_engine_module() -> None:
     adapter = ENGINE_ADAPTERS["a"]
-    assert adapter.executor_path == "core.execution.engines.litellm.litellm_loop:LiteLLMExecutor"
+    assert adapter.executor_path == "core.execution.engines.litellm.executor:LiteLLMExecutor"
     assert isinstance(_resolve(adapter.executor_path), type)
 
 

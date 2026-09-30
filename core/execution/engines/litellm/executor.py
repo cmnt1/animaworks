@@ -25,13 +25,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.exceptions import LLMAPIError
-from core.execution._session import save_threshold_shortterm
+from core.execution._shortterm_handoff import save_threshold_shortterm
 from core.execution._streaming import (
     parse_accumulated_tool_calls,
     stream_error_boundary,
     try_parse_text_tool_call,
 )
-from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,
@@ -56,19 +55,16 @@ from core.execution.engines.litellm._llm_call import (
     StreamingCall,
     load_ollama_total_timeout,
 )
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error,
-    guard_key,
-    litellm_realm_of,
-    provider_family_of,
-)
 from core.execution.events import (
     context_update_event,
     done_event,
     error_event,
+    stream_event,
     stream_events,
     text_delta_event,
+    thinking_delta_event,
+    thinking_end_event,
+    thinking_start_event,
     tool_start_event,
 )
 from core.execution.loop_guards import (
@@ -82,7 +78,6 @@ from core.execution.loop_guards import (
     strip_tool_protocol_messages,
     tool_call_signature,
 )
-from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
@@ -92,6 +87,15 @@ from core.execution.reminder import (
     msg_tool_loop_halt,
     msg_tool_loop_warning,
 )
+from core.llm.guard.backoff import decorrelated_jitter
+from core.llm.guard.error_classifier import (
+    FailoverReason,
+    classify_llm_error,
+    guard_key,
+    litellm_realm_of,
+    provider_family_of,
+)
+from core.llm.guard.rate_guard import get_rate_guard
 from core.memory import MemoryManager
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -354,7 +358,7 @@ class ToolLoop:
     @staticmethod
     def _trailing_event(update: CallUpdate) -> dict[str, Any]:
         if update.kind == "trailing_thinking":
-            return {"type": "thinking_delta", "text": update.text}
+            return thinking_delta_event(update.text)
         return text_delta_event(update.text)
 
     def _assistant_history(
@@ -547,7 +551,7 @@ class ToolLoop:
                     if update.kind.startswith("thinking_"):
                         thinking_seen = True
                     if self.streaming:
-                        yield {"type": update.kind, "text": update.text} if update.text else {"type": update.kind}
+                        yield stream_event(update.kind, **({"text": update.text} if update.text else {}))
 
             if result is None and not repetition_detected:
                 raise RuntimeError("LiteLLM call adapter ended without a CallResult")
@@ -630,9 +634,9 @@ class ToolLoop:
             # detection so a JSON text call is not exposed as an answer.
             if self.streaming and result is not None and not result.incremental and not repetition_detected:
                 for thinking in result.thinking:
-                    yield {"type": "thinking_start"}
-                    yield {"type": "thinking_delta", "text": thinking}
-                    yield {"type": "thinking_end"}
+                    yield thinking_start_event()
+                    yield thinking_delta_event(thinking)
+                    yield thinking_end_event()
                 if iter_text:
                     yield text_delta_event(iter_text)
 
@@ -744,9 +748,9 @@ class ToolLoop:
                     if leaked_thinking:
                         logger.info("A stream: stripped leaked thinking (%d chars)", len(leaked_thinking))
                         if not thinking_seen:
-                            post_cleanup_events.append({"type": "thinking_start"})
-                        post_cleanup_events.append({"type": "thinking_delta", "text": leaked_thinking})
-                        post_cleanup_events.append({"type": "thinking_end"})
+                            post_cleanup_events.append(thinking_start_event())
+                        post_cleanup_events.append(thinking_delta_event(leaked_thinking))
+                        post_cleanup_events.append(thinking_end_event())
                     elif not thinking_seen:
                         untagged_thinking, cleaned = strip_untagged_thinking(full_text)
                         if untagged_thinking:
@@ -754,9 +758,9 @@ class ToolLoop:
                             logger.info("A stream: stripped untagged thinking (%d chars)", len(untagged_thinking))
                             post_cleanup_events.extend(
                                 (
-                                    {"type": "thinking_start"},
-                                    {"type": "thinking_delta", "text": untagged_thinking},
-                                    {"type": "thinking_end"},
+                                    thinking_start_event(),
+                                    thinking_delta_event(untagged_thinking),
+                                    thinking_end_event(),
                                 )
                             )
                     if result.reasoning_parts and not leaked_thinking and not thinking_seen:
@@ -764,9 +768,9 @@ class ToolLoop:
                         if reasoning:
                             post_cleanup_events.extend(
                                 (
-                                    {"type": "thinking_start"},
-                                    {"type": "thinking_delta", "text": reasoning},
-                                    {"type": "thinking_end"},
+                                    thinking_start_event(),
+                                    thinking_delta_event(reasoning),
+                                    thinking_end_event(),
                                 )
                             )
 
@@ -811,7 +815,7 @@ class ToolLoop:
                     yield context_event
                 for update in trailing_updates:
                     if update.kind == "trailing_thinking":
-                        yield {"type": "thinking_delta", "text": update.text}
+                        yield thinking_delta_event(update.text)
                     else:
                         yield text_delta_event(update.text)
                 full_text = self._salvage_text(mode="A stream" if self.streaming else "A")
@@ -855,7 +859,7 @@ class ToolLoop:
                     yield context_event
                 for update in trailing_updates:
                     if update.kind == "trailing_thinking":
-                        yield {"type": "thinking_delta", "text": update.text}
+                        yield thinking_delta_event(update.text)
                     else:
                         yield text_delta_event(update.text)
                 continue
@@ -893,7 +897,7 @@ class ToolLoop:
                 yield context_event
             for update in trailing_updates:
                 if update.kind == "trailing_thinking":
-                    yield {"type": "thinking_delta", "text": update.text}
+                    yield thinking_delta_event(update.text)
                 else:
                     yield text_delta_event(update.text)
 

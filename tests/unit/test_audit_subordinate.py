@@ -719,7 +719,7 @@ class TestMergedTimeline:
             ],
         )
 
-        from core.memory.activity.audit import AuditAggregator
+        from core.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
 
@@ -740,7 +740,7 @@ class TestMergedTimeline:
             ],
         )
 
-        from core.memory.activity.audit import AuditAggregator
+        from core.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
 
@@ -765,7 +765,7 @@ class TestMergedTimeline:
             ],
         )
 
-        from core.memory.activity.audit import AuditAggregator
+        from core.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
 
@@ -784,7 +784,7 @@ class TestMergedTimeline:
             ],
         )
 
-        from core.memory.activity.audit import AuditAggregator
+        from core.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
 
@@ -795,7 +795,7 @@ class TestMergedTimeline:
         """Empty anima dirs produce no-activity message."""
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
 
-        from core.memory.activity.audit import AuditAggregator
+        from core.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
 
@@ -820,7 +820,7 @@ class TestMergedTimeline:
             ],
         )
 
-        from core.memory.activity.audit import AuditAggregator
+        from core.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
 

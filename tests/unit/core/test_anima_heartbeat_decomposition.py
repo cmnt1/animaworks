@@ -172,7 +172,7 @@ class TestBuildHeartbeatPrompt:
 
         with (
             patch("core.anima.heartbeat.load_prompt", return_value="NOTICE"),
-            patch("core.memory._io.atomic_write_text", side_effect=OSError("read-only")),
+            patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError("read-only")),
         ):
             assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
 

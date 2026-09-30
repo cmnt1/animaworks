@@ -35,7 +35,7 @@ class TestPraiseLoopPrevention:
         assert "単なる了解・感謝・称賛には返信せず" in prompt
 
     def test_depth_observation_never_discards_a_message(self, tmp_path: Path, caplog) -> None:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.messaging.messenger import Messenger
 
         shared_dir = tmp_path / "shared"

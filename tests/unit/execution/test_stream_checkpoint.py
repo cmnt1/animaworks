@@ -16,8 +16,8 @@ from typing import Any
 
 import pytest
 
-from core.execution._session import build_stream_retry_prompt
-from core.execution.engines.claude.agent_sdk import StreamDisconnectedError
+from core.execution._shortterm_handoff import build_stream_retry_prompt
+from core.execution.engines.claude.executor import StreamDisconnectedError
 from core.memory.conversation.shortterm import ShortTermMemory, StreamCheckpoint
 
 # ── Fixtures ──────────────────────────────────────────────────

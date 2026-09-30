@@ -1086,7 +1086,7 @@ class TestRunIdleCompaction:
             new_callable=AsyncMock,
         ) as mock_compact:
             mock_compact.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.logger.ActivityLogger") as mock_activity:
+            with patch("core.activity.logger.ActivityLogger") as mock_activity:
                 mock_activity.return_value.alog = AsyncMock()
                 await run_idle_compaction(anima, "thread-1")
 
@@ -1111,7 +1111,7 @@ class TestRunIdleCompaction:
         storage_engine: str,
         should_clear: bool,
     ) -> None:
-        from core.execution.session_store import SessionRecord, SessionStore
+        from core.execution.session.session_store import SessionRecord, SessionStore
 
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
@@ -1121,7 +1121,7 @@ class TestRunIdleCompaction:
 
         with (
             patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
         ):
             mock_activity.return_value.alog = AsyncMock()
             mock_conv = MagicMock()
@@ -1170,7 +1170,7 @@ class TestRunIdleCompaction:
             ) as mock_a,
         ):
             mock_a.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.logger.ActivityLogger") as mock_activity:
+            with patch("core.activity.logger.ActivityLogger") as mock_activity:
                 mock_activity.return_value.alog = AsyncMock()
                 await run_idle_compaction(anima, "thread-1")
 
@@ -1194,7 +1194,7 @@ class TestRunIdleCompaction:
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("compaction failed"),
             ),
-            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
+            patch("core.activity.logger.ActivityLogger") as mock_activity,
         ):
             mock_activity.return_value.alog = AsyncMock()
             await run_idle_compaction(anima, "thread-1")

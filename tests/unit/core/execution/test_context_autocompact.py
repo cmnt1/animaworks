@@ -1,4 +1,4 @@
-"""Unit tests for A1 mid-session context auto-compact (core.execution.engines.claude.agent_sdk)."""
+"""Unit tests for A1 mid-session context auto-compact (core.execution.engines.claude.executor)."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0

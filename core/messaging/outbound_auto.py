@@ -17,7 +17,7 @@ import os
 from typing import Any
 
 from core.channels.slack import SlackHTTPClient
-from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+from core.credentials import _lookup_shared_credentials, _lookup_vault_credential
 from core.messaging.messenger import InboxItem
 
 logger = logging.getLogger("animaworks.outbound_auto")

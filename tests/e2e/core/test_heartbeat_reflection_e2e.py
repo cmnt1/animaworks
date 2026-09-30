@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.time_utils import today_local
 from core.tooling.handler import active_session_type
 

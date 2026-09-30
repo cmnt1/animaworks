@@ -20,5 +20,5 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     if name in __all__:
-        return getattr(importlib.import_module("core.memory.activity.logger"), name)
+        return getattr(importlib.import_module("core.activity.logger"), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

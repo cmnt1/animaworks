@@ -13,7 +13,6 @@ Provides atomic file writes (temp + rename) and fsync-backed appends
 to protect against data loss on process crash or power failure.
 """
 
-import logging
 import shutil
 from pathlib import Path
 from typing import Any
@@ -21,8 +20,6 @@ from typing import Any
 from core.platform.atomic_io import atomic_write_json as _platform_atomic_write_json
 from core.platform.atomic_io import atomic_write_text as _platform_atomic_write_text
 from core.time_utils import now_local
-
-logger = logging.getLogger("animaworks.memory._io")
 
 
 def archive_episode_before_write(anima_dir: Path, episode_path: Path) -> Path | None:
@@ -60,17 +57,3 @@ def atomic_write_json(path: Path, obj: Any, **kwargs: Any) -> None:
         _platform_atomic_write_json(path, obj, **kwargs)
     except OSError as exc:
         raise MemoryWriteError(f"Atomic write failed for {path}: {exc}") from exc
-
-
-def cleanup_tmp_files(directory: Path, prefix: str = ".") -> int:
-    """Remove stale .tmp files from directory. Returns count removed."""
-    removed = 0
-    if not directory.exists():
-        return removed
-    for tmp in directory.glob(f"{prefix}*.tmp"):
-        try:
-            tmp.unlink()
-            removed += 1
-        except OSError:
-            logger.debug("Failed to remove stale tmp file %s", tmp, exc_info=True)
-    return removed

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config import load_config
-from core.memory._io import atomic_write_json
+from core.memory.io import atomic_write_json
 from core.memory.peer_profiles import normalize_peer_name
 from core.paths import load_prompt
 from core.time_utils import now_local, today_local
@@ -291,7 +291,7 @@ def _entry_line(entry: Any) -> str:
 
 
 def _collect_activity(anima_dir: Path, since: datetime | None, *, max_entries: int = 2000) -> list[Any]:
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     days = 2
     if since is not None:
@@ -496,7 +496,7 @@ async def perform_background_review(
     settings: Any,
 ) -> bool:
     """Run one bounded review; failures are recorded and never escape to callers."""
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.memory.manager import MemoryManager
 
     memory = MemoryManager(anima_dir)

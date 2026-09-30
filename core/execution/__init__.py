@@ -27,12 +27,12 @@ from typing import Any
 from core.execution.base import BaseExecutor, ExecutionResult
 
 _LAZY = {
-    "AgentSDKExecutor": "core.execution.engines.claude.agent_sdk",
-    "CodexSDKExecutor": "core.execution.engines.codex.codex_sdk",
-    "CursorAgentExecutor": "core.execution.engines.cursor.cursor_agent",
-    "GeminiCLIExecutor": "core.execution.engines.gemini.gemini_cli",
-    "GrokCLIExecutor": "core.execution.engines.grok.grok_cli",
-    "LiteLLMExecutor": "core.execution.engines.litellm.litellm_loop",
+    "AgentSDKExecutor": "core.execution.engines.claude.executor",
+    "CodexSDKExecutor": "core.execution.engines.codex.executor",
+    "CursorAgentExecutor": "core.execution.engines.cursor.executor",
+    "GeminiCLIExecutor": "core.execution.engines.gemini.executor",
+    "GrokCLIExecutor": "core.execution.engines.grok.executor",
+    "LiteLLMExecutor": "core.execution.engines.litellm.executor",
 }
 
 

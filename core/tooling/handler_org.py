@@ -15,7 +15,7 @@ from core.tooling.handler_org_dashboard import DashboardMixin
 from core.tooling.handler_subordinate_control import SubordinateControlMixin
 
 if TYPE_CHECKING:
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
     from core.messaging.messenger import Messenger
 
 

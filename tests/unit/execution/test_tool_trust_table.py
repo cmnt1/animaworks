@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.execution._sanitize import (
+from core.trust import (
     TOOL_TRUST_LEVELS,
     read_session_trust,
     record_session_trust,

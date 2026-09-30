@@ -17,8 +17,8 @@ description: >-
 
 | 모드 | 구현 | Bash | 이 스킬의 적용 |
 |--------|------|------|------------------|
-| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | 기본적으로 사용 가능 | 적용됨. Claude Code 서브프로세스 내에서 Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 등) + Task/Agent가 사용 가능. Bash 실행 시 cwd는 anima_dir |
-| **Mode C** | `codex_sdk.py` (Codex SDK) | Codex CLI의 도구 세트에 의존 | **codex exec는 불필요** — 프레임워크가 Codex를 직접 실행. cursor-agent / claude -p는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | 기본적으로 사용 가능 | 적용됨. Claude Code 서브프로세스 내에서 Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 등) + Task/Agent가 사용 가능. Bash 실행 시 cwd는 anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Codex CLI의 도구 세트에 의존 | **codex exec는 불필요** — 프레임워크가 Codex를 직접 실행. cursor-agent / claude -p는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
 | **Mode D** | Cursor Agent (cursor-agent 서브프로세스) | Cursor CLI의 도구 세트에 의존 | **cursor-agent -p는 불필요** — 프레임워크가 cursor-agent를 직접 실행. MCP 통합. Mode S에 가까운 도구 접근이지만 실체는 cursor-agent 바이너리. codex exec / claude -p는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
 | **Mode G** | Gemini CLI (gemini 서브프로세스) | Gemini CLI의 도구 세트에 의존 | **Gemini CLI의 수동 시작은 불필요** — 프레임워크가 직접 실행. MCP 통합, stream-json 출력. 다른 CLI는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
 | **Mode A/B** | LiteLLM + tool_use / 1샷 | permissions.json에서 허용 시에만 | Bash 허용이 있으면 적용 |
@@ -349,4 +349,4 @@ nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
 - 실행 결과는 자신의 episodes/에 기록하고, 배운 패턴은 knowledge/에 축적할 것
 - 실행에는 5분~20분 이상 걸린다. 반드시 백그라운드로 실행하고, timeout을 설정할 것
 - git 관리된 리포지토리에서 작업할 것 (변경의 추적·취소가 용이)
-- Mode S에서는 Bash 실행 시 `ANIMAWORKS_ANIMA_DIR` (Anima의 데이터 디렉터리)와 `ANIMAWORKS_PROJECT_DIR` (AnimaWorks 프레임워크의 루트)가 환경 변수로 설정된다 (`agent_sdk.py`의 `_build_env()`에서 주입)
+- Mode S에서는 Bash 실행 시 `ANIMAWORKS_ANIMA_DIR` (Anima의 데이터 디렉터리)와 `ANIMAWORKS_PROJECT_DIR` (AnimaWorks 프레임워크의 루트)가 환경 변수로 설정된다 (`core/execution/engines/claude/executor.py`의 `_build_env()`에서 주입)

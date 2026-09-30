@@ -168,7 +168,7 @@ def test_outbound_discord_request_golden(
 ) -> None:
     from core.messaging.outbound import ResolvedRecipient, send_external
 
-    monkeypatch.setattr("core.integrations._base.get_credential", lambda *_args, **_kwargs: "discord-outbound-token")
+    monkeypatch.setattr("core.credentials.get_credential", lambda *_args, **_kwargs: "discord-outbound-token")
     result = send_external(
         ResolvedRecipient(is_internal=False, name="owner", channel="discord", discord_user_id="123456789012345678"),
         "hello",

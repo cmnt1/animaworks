@@ -13,7 +13,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from core.execution.session_types import resolve_runtime_session_type
+from core.activity.runtime_context import set_runtime_session_provider
+from core.execution.session.session_types import resolve_runtime_session_type
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,9 @@ active_runtime_session: contextvars.ContextVar[RuntimeSessionContext | None] = c
 
 def current_runtime_session() -> RuntimeSessionContext | None:
     return active_runtime_session.get(None)
+
+
+set_runtime_session_provider(current_runtime_session)
 
 
 # Compatibility alias: session-type resolution has one canonical definition.

@@ -21,10 +21,10 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.execution._sanitize import TRUST_RANK, record_session_trust, resolve_tool_trust
 from core.execution.engines.claude._sdk_security import (
     _build_output_guard,
     _check_a1_bash_command,
@@ -35,8 +35,20 @@ from core.execution.engines.claude._sdk_stream import _log_tool_use
 from core.platform.tasks import spawn
 from core.prompt.context import CHARS_PER_TOKEN
 from core.tooling.surface import ToolSurfaceContext, resolve_tool_surface
+from core.trust import TRUST_RANK, record_session_trust, resolve_tool_trust
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
+
+
+@dataclass(frozen=True, slots=True)
+class _PreToolGuardDecision:
+    """A tool-specific guard outcome before the SDK response is constructed."""
+
+    reason: str
+    blocked: bool = True
+    block_reason: str = ""
+    should_log: bool = True
+    log_tool_name: str | None = None
 
 
 # ── Subordinate management ───────────────────────────────────
@@ -152,6 +164,135 @@ def _build_pre_tool_hook(
         _cache_subordinate_paths(anima_dir)
     )
 
+    def _deny(
+        reason: str,
+        *,
+        blocked: bool = True,
+        block_reason: str = "",
+        should_log: bool = True,
+        log_tool_name: str | None = None,
+    ) -> _PreToolGuardDecision:
+        return _PreToolGuardDecision(
+            reason=reason,
+            blocked=blocked,
+            block_reason=block_reason,
+            should_log=should_log,
+            log_tool_name=log_tool_name,
+        )
+
+    def _guard_agent_task(tool_name: str, _tool_input: dict[str, Any]) -> _PreToolGuardDecision:
+        from core.i18n import t as _t
+
+        logger.info("Hard-blocked %s tool for %s", tool_name, anima_dir.name)
+        return _deny(_t("sdk_hooks.agent_task_blocked"), block_reason="Agent/Task hard-blocked")
+
+    def _guard_submit_tasks(_tool_name: str, tool_input: dict[str, Any]) -> _PreToolGuardDecision:
+        trigger = session_stats.get("trigger", "") if session_stats else ""
+        if str(trigger).startswith("task:"):
+            from core.i18n import t as _t
+
+            logger.info("Blocked submit_tasks from TaskExec session (%s) for %s", trigger, anima_dir.name)
+            return _deny(_t("sdk_hooks.task_no_subtask"), should_log=False, log_tool_name="submit_tasks")
+        if "submit_tasks" not in resolve_tool_surface(ToolSurfaceContext(), str(trigger or ""), "S"):
+            from core.i18n import t as _t
+
+            logger.info(
+                "Blocked submit_tasks outside explicit background session (%s) for %s",
+                trigger or "<none>",
+                anima_dir.name,
+            )
+            return _deny(_t("sdk_hooks.submit_tasks_unavailable"), should_log=False, log_tool_name="submit_tasks")
+
+        from core.tooling.handler_base import _error_result
+        from core.tooling.handler_skills import SkillsToolsMixin
+
+        class _SubmitTasksProxy(SkillsToolsMixin):
+            _anima_dir = anima_dir
+            _anima_name = anima_dir.name
+
+        proxy = _SubmitTasksProxy()
+        from core.execution.session.session_context import current_runtime_session
+
+        runtime = current_runtime_session()
+        proxy._session_origin = runtime.origin if runtime is not None else ""
+        try:
+            result_str = proxy._handle_submit_tasks(tool_input)
+        except Exception as exc:
+            result_str = _error_result("SubmitTasksError", str(exc))
+
+        is_error = False
+        task_ids_str = ""
+        try:
+            parsed = json.loads(result_str)
+            if isinstance(parsed, dict):
+                if "error" in parsed or parsed.get("status") == "error":
+                    is_error = True
+                else:
+                    task_ids_str = ", ".join(parsed.get("task_ids", []))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if is_error:
+            reason = f"INTERCEPT_OK: submit_tasks error: {result_str}"
+        else:
+            from core.i18n import t as _t
+
+            reason = _t("sdk_hooks.submit_tasks_success", task_ids=task_ids_str)
+        return _deny(reason, blocked=False, log_tool_name="submit_tasks")
+
+    def _guard_agent_output(_tool_name: str, _tool_input: dict[str, Any]) -> _PreToolGuardDecision:
+        from core.i18n import t as _t
+
+        return _deny(_t("sdk_hooks.agent_task_blocked"), block_reason="Agent/Task disabled")
+
+    def _guard_file_access(
+        tool_input: dict[str, Any],
+        *,
+        write: bool,
+    ) -> _PreToolGuardDecision | None:
+        file_path = tool_input.get("file_path", "")
+        check_kwargs: dict[str, Any] = {
+            "subordinate_activity_dirs": _sub_activity_dirs,
+            "subordinate_management_files": _sub_mgmt_files,
+            "descendant_read_files": _desc_read_files,
+            "descendant_read_dirs": _desc_read_dirs,
+            "peer_activity_dirs": _peer_activity_dirs,
+            "superuser": superuser,
+        }
+        if write:
+            check_kwargs["task_cwd"] = task_cwd
+        violation = _check_a1_file_access(file_path, anima_dir, write=write, **check_kwargs)
+        if violation:
+            return _deny(violation, block_reason=violation)
+        return None
+
+    def _guard_bash(_tool_name: str, tool_input: dict[str, Any]) -> _PreToolGuardDecision | None:
+        command = tool_input.get("command", "")
+        trigger = session_stats.get("trigger", "unknown") if session_stats else "unknown"
+        violation = _check_a1_bash_command(command, anima_dir, superuser=superuser, trigger=trigger)
+        if violation:
+            return _deny(violation, block_reason=violation)
+        return None
+
+    def _file_access_guard(*, write: bool) -> Callable[[str, dict[str, Any]], _PreToolGuardDecision | None]:
+        def guard(_tool_name: str, tool_input: dict[str, Any]) -> _PreToolGuardDecision | None:
+            return _guard_file_access(tool_input, write=write)
+
+        return guard
+
+    tool_guard_handlers: dict[str, Callable[[str, dict[str, Any]], _PreToolGuardDecision | None]] = {
+        "Agent": _guard_agent_task,
+        "Task": _guard_agent_task,
+        "submit_tasks": _guard_submit_tasks,
+        "mcp__aw__submit_tasks": _guard_submit_tasks,
+        "TaskOutput": _guard_agent_output,
+        "AgentOutput": _guard_agent_output,
+        "Write": _file_access_guard(write=True),
+        "Edit": _file_access_guard(write=True),
+        "Read": _file_access_guard(write=False),
+        "Bash": _guard_bash,
+    }
+
     async def _pre_tool_hook(
         input_data: HookInput,
         tool_use_id: str | None,
@@ -160,6 +301,34 @@ def _build_pre_tool_hook(
         tool_name = input_data.get("tool_name", "")
         raw_inp = input_data.get("tool_input", {})
         tool_input = raw_inp if isinstance(raw_inp, dict) else {}
+        context_observation_reason = ""
+
+        def _finish(
+            output: SyncHookJSONOutput,
+            *,
+            should_log: bool = True,
+            blocked: bool | None = None,
+            block_reason: str = "",
+            log_tool_name: str | None = None,
+        ) -> SyncHookJSONOutput:
+            """Record the tool decision at one point, then return its SDK output."""
+            if context_observation_reason:
+                _log_tool_use(
+                    anima_dir,
+                    tool_name,
+                    tool_input,
+                    tool_use_id=tool_use_id,
+                    blocked=False,
+                    block_reason=context_observation_reason,
+                )
+            if should_log:
+                log_kwargs: dict[str, Any] = {"tool_use_id": tool_use_id}
+                if blocked is not None:
+                    log_kwargs["blocked"] = blocked
+                if block_reason:
+                    log_kwargs["block_reason"] = block_reason
+                _log_tool_use(anima_dir, log_tool_name or tool_name, tool_input, **log_kwargs)
+            return output
 
         # ── Heartbeat soft timeout check ──
         if session_stats is not None and session_stats.get("trigger") == "heartbeat":
@@ -175,12 +344,15 @@ def _build_pre_tool_hook(
                     soft_timeout,
                     anima_dir.name,
                 )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="allow",
-                        additionalContext=_t("reminder.hb_time_limit"),
-                    )
+                return _finish(
+                    SyncHookJSONOutput(
+                        hookSpecificOutput=PreToolUseHookSpecificOutput(
+                            hookEventName="PreToolUse",
+                            permissionDecision="allow",
+                            additionalContext=_t("reminder.hb_time_limit"),
+                        )
+                    ),
+                    should_log=False,
                 )
 
         # ── Task context compaction — end the current SDK turn for same-session resume ──
@@ -207,7 +379,7 @@ def _build_pre_tool_hook(
                     compaction_count + 1,
                     compaction_max,
                 )
-                return SyncHookJSONOutput(continue_=False)
+                return _finish(SyncHookJSONOutput(continue_=False), should_log=False)
 
         # ── Compaction blocked — end session for AnimaWorks chaining ──
         if session_stats is not None and session_stats.get("compaction_blocked"):
@@ -217,7 +389,7 @@ def _build_pre_tool_hook(
                 "Compaction was blocked by PreCompact — ending session for AnimaWorks session chaining (anima=%s)",
                 anima_dir.name,
             )
-            return SyncHookJSONOutput(continue_=False)
+            return _finish(SyncHookJSONOutput(continue_=False), should_log=False)
 
         # ── Context budget observation ──
         if session_stats is not None:
@@ -237,16 +409,8 @@ def _build_pre_tool_hook(
                     remaining,
                     context_window,
                 )
-                _log_tool_use(
-                    anima_dir,
-                    tool_name,
-                    tool_input,
-                    tool_use_id=tool_use_id,
-                    blocked=False,
-                    block_reason=(
-                        f"context_observation: estimated {estimated_tokens} tokens, "
-                        f"remaining {remaining} — SDK managing"
-                    ),
+                context_observation_reason = (
+                    f"context_observation: estimated {estimated_tokens} tokens, remaining {remaining} — SDK managing"
                 )
 
         # ── Trust tracking: update min_trust_seen in session_stats ──
@@ -257,242 +421,45 @@ def _build_pre_tool_hook(
             session_stats["min_trust_seen"] = min(current_min, rank)
 
             # Persist to the active tool session so its MCP subprocess can read.
-            from core.execution.session_context import current_runtime_session
+            from core.execution.session.session_context import current_runtime_session
 
             ctx = current_runtime_session()
             if ctx is not None:
                 record_session_trust(anima_dir, ctx.tool_session_id, rank)
 
-        # Task / Agent tool — hard block (no pending task creation)
-        #
-        # The SDK Agent/Task tool creates background LLM sessions that
-        # the chat model doesn't trust: it says "TaskExecに回されましたが、
-        # 自分で直接確認します" and does the work itself, causing double
-        # execution and massive token waste.  Block entirely and redirect
-        # to direct tool use, CLI background execution, or subordinate
-        # delegation when available.
-        if tool_name in ("Agent", "Task"):
-            from core.i18n import t as _t
-
-            _log_tool_use(
-                anima_dir,
-                tool_name,
-                tool_input,
-                tool_use_id=tool_use_id,
-                blocked=True,
-                block_reason="Agent/Task hard-blocked",
-            )
-            logger.info(
-                "Hard-blocked %s tool for %s",
-                tool_name,
-                anima_dir.name,
-            )
-            return SyncHookJSONOutput(
-                hookSpecificOutput=PreToolUseHookSpecificOutput(
-                    hookEventName="PreToolUse",
-                    permissionDecision="deny",
-                    permissionDecisionReason=_t("sdk_hooks.agent_task_blocked"),
+        # Tool-name-specific checks are dispatched through one guard table.
+        guard_handler = tool_guard_handlers.get(tool_name)
+        if guard_handler is not None:
+            guard = guard_handler(tool_name, tool_input)
+            if guard is not None:
+                return _finish(
+                    SyncHookJSONOutput(
+                        hookSpecificOutput=PreToolUseHookSpecificOutput(
+                            hookEventName="PreToolUse",
+                            permissionDecision="deny",
+                            permissionDecisionReason=guard.reason,
+                        )
+                    ),
+                    should_log=guard.should_log,
+                    blocked=guard.blocked,
+                    block_reason=guard.block_reason,
+                    log_tool_name=guard.log_tool_name,
                 )
-            )
-
-        # submit_tasks intercept → DAG batch to pending
-        if tool_name in ("submit_tasks", "mcp__aw__submit_tasks"):
-            # Block from TaskExec (same recursion guard as Agent/Task)
-            _trigger_st = session_stats.get("trigger", "") if session_stats else ""
-            if _trigger_st.startswith("task:"):
-                from core.i18n import t as _t
-
-                logger.info(
-                    "Blocked submit_tasks from TaskExec session (%s) for %s",
-                    _trigger_st,
-                    anima_dir.name,
-                )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=_t("sdk_hooks.task_no_subtask"),
-                    )
-                )
-            if "submit_tasks" not in resolve_tool_surface(ToolSurfaceContext(), str(_trigger_st or ""), "S"):
-                from core.i18n import t as _t
-
-                logger.info(
-                    "Blocked submit_tasks outside explicit background session (%s) for %s",
-                    _trigger_st or "<none>",
-                    anima_dir.name,
-                )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=_t("sdk_hooks.submit_tasks_unavailable"),
-                    )
-                )
-
-            from core.tooling.handler_base import _error_result
-            from core.tooling.handler_skills import SkillsToolsMixin
-
-            class _SubmitTasksProxy(SkillsToolsMixin):
-                _anima_dir = anima_dir
-                _anima_name = anima_dir.name
-
-            proxy = _SubmitTasksProxy()
-            from core.execution.session_context import current_runtime_session
-
-            _runtime = current_runtime_session()
-            proxy._session_origin = _runtime.origin if _runtime is not None else ""
-            try:
-                result_str = proxy._handle_submit_tasks(tool_input)
-            except Exception as exc:
-                result_str = _error_result("SubmitTasksError", str(exc))
-
-            _log_tool_use(
-                anima_dir,
-                "submit_tasks",
-                tool_input,
-                tool_use_id=tool_use_id,
-                blocked=False,
-            )
-
-            # Build deny reason: distinguish success from error
-            is_error = False
-            task_ids_str = ""
-            try:
-                parsed = json.loads(result_str)
-                if isinstance(parsed, dict):
-                    if "error" in parsed or parsed.get("status") == "error":
-                        is_error = True
-                    else:
-                        task_ids_str = ", ".join(parsed.get("task_ids", []))
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-            if is_error:
-                deny_reason = f"INTERCEPT_OK: submit_tasks error: {result_str}"
-            else:
-                from core.i18n import t as _t
-
-                deny_reason = _t("sdk_hooks.submit_tasks_success", task_ids=task_ids_str)
-
-            return SyncHookJSONOutput(
-                hookSpecificOutput=PreToolUseHookSpecificOutput(
-                    hookEventName="PreToolUse",
-                    permissionDecision="deny",
-                    permissionDecisionReason=deny_reason,
-                )
-            )
-
-        # TaskOutput/AgentOutput — block (Agent/Task are disabled)
-        if tool_name in ("TaskOutput", "AgentOutput"):
-            from core.i18n import t as _t
-
-            _log_tool_use(
-                anima_dir,
-                tool_name,
-                tool_input,
-                tool_use_id=tool_use_id,
-                blocked=True,
-                block_reason="Agent/Task disabled",
-            )
-            return SyncHookJSONOutput(
-                hookSpecificOutput=PreToolUseHookSpecificOutput(
-                    hookEventName="PreToolUse",
-                    permissionDecision="deny",
-                    permissionDecisionReason=_t("sdk_hooks.agent_task_blocked"),
-                )
-            )
-
-        # Write / Edit: check file path
-        if tool_name in ("Write", "Edit"):
-            file_path = tool_input.get("file_path", "")
-            violation = _check_a1_file_access(
-                file_path,
-                anima_dir,
-                write=True,
-                subordinate_activity_dirs=_sub_activity_dirs,
-                subordinate_management_files=_sub_mgmt_files,
-                descendant_read_files=_desc_read_files,
-                descendant_read_dirs=_desc_read_dirs,
-                peer_activity_dirs=_peer_activity_dirs,
-                superuser=superuser,
-                task_cwd=task_cwd,
-            )
-            if violation:
-                _log_tool_use(
-                    anima_dir, tool_name, tool_input, tool_use_id=tool_use_id, blocked=True, block_reason=violation
-                )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=violation,
-                    )
-                )
-
-        # Read: check for path traversal to other animas
-        if tool_name == "Read":
-            file_path = tool_input.get("file_path", "")
-            violation = _check_a1_file_access(
-                file_path,
-                anima_dir,
-                write=False,
-                subordinate_activity_dirs=_sub_activity_dirs,
-                subordinate_management_files=_sub_mgmt_files,
-                descendant_read_files=_desc_read_files,
-                descendant_read_dirs=_desc_read_dirs,
-                peer_activity_dirs=_peer_activity_dirs,
-                superuser=superuser,
-            )
-            if violation:
-                _log_tool_use(
-                    anima_dir, tool_name, tool_input, tool_use_id=tool_use_id, blocked=True, block_reason=violation
-                )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=violation,
-                    )
-                )
-
-        # Bash: inspect command
-        if tool_name == "Bash":
-            command = tool_input.get("command", "")
-            trigger = session_stats.get("trigger", "unknown") if session_stats else "unknown"
-            violation = _check_a1_bash_command(
-                command,
-                anima_dir,
-                superuser=superuser,
-                trigger=trigger,
-            )
-            if violation:
-                _log_tool_use(
-                    anima_dir, tool_name, tool_input, tool_use_id=tool_use_id, blocked=True, block_reason=violation
-                )
-                return SyncHookJSONOutput(
-                    hookSpecificOutput=PreToolUseHookSpecificOutput(
-                        hookEventName="PreToolUse",
-                        permissionDecision="deny",
-                        permissionDecisionReason=violation,
-                    )
-                )
-
-        # Log the tool call (allowed)
-        _log_tool_use(anima_dir, tool_name, tool_input, tool_use_id=tool_use_id)
 
         # Output guard
         updated = _build_output_guard(tool_name, tool_input, anima_dir)
         if updated is not None:
-            return SyncHookJSONOutput(
-                hookSpecificOutput=PreToolUseHookSpecificOutput(
-                    hookEventName="PreToolUse",
-                    permissionDecision="allow",
-                    updatedInput=updated,
+            return _finish(
+                SyncHookJSONOutput(
+                    hookSpecificOutput=PreToolUseHookSpecificOutput(
+                        hookEventName="PreToolUse",
+                        permissionDecision="allow",
+                        updatedInput=updated,
+                    )
                 )
             )
 
-        return SyncHookJSONOutput()
+        return _finish(SyncHookJSONOutput())
 
     return _pre_tool_hook
 
@@ -571,7 +538,7 @@ def _build_pre_compact_hook(
 def _log_compaction_event(anima_dir: Path, trigger: str, *, blocked: bool) -> None:
     """Record compaction event to activity log."""
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         action = "blocked" if blocked else "allowed"
@@ -676,7 +643,7 @@ async def _update_knowledge_frontmatter(path: Path) -> None:
 
         import yaml
 
-        from core.memory._io import atomic_write_text
+        from core.platform.atomic_io import atomic_write_text
 
         fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True)
         atomic_write_text(path, f"---\n{fm}---\n\n{body.lstrip()}")

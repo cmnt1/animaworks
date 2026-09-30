@@ -105,7 +105,7 @@ class ToolEvidence:
         if self._anima_dir is None:
             return
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             meta: dict[str, Any] = {"args": sanitise_tool_args(tool_name, tool_input)}
             if tool_use_id:
@@ -139,7 +139,7 @@ class ToolEvidence:
         if self._anima_dir is None:
             return
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             meta: dict[str, Any] = {"tool_use_id": tool_use_id, "is_error": is_error}
             if extra_meta:

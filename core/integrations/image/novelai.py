@@ -16,7 +16,8 @@ from typing import Any
 
 import httpx
 
-from core.integrations._base import get_credential, logger
+from core.credentials import get_credential
+from core.integrations._base import logger
 from core.integrations.image.constants import (
     _HTTP_TIMEOUT,
     NOVELAI_API_URL,

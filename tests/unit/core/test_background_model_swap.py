@@ -202,8 +202,8 @@ class TestResolveBackgroundConfig:
     def test_rate_guard_block_switches_main_config_to_fallback(self, tmp_path: Path):
         """A heartbeat with no background override preflights the main model."""
         from core.config.schemas import LlmRateGuardConfig
-        from core.execution.error_classifier import guard_key
-        from core.execution.rate_guard import LlmRateGuard
+        from core.llm.guard.error_classifier import guard_key
+        from core.llm.guard.rate_guard import LlmRateGuard
 
         mc = ModelConfig(
             model="codex/gpt-5.3-codex",
@@ -226,7 +226,7 @@ class TestResolveBackgroundConfig:
         with (
             patch(_PATCH_LOAD_CONFIG) as mock_config,
             patch("core.config.io.load_config") as mock_io_config,
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             # CI runners have no grok CLI; without this the x: candidate is
             # skipped as unavailable and no fallback is selected.
             patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),

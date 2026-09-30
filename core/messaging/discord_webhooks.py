@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from core.channels.discord import DiscordAPIError, DiscordClient
+from core.credentials import get_credential
 from core.integrations._anima_icon_url import resolve_anima_icon_url
-from core.integrations._base import get_credential
 from core.integrations._discord_markdown import DISCORD_MESSAGE_LIMIT
 from core.paths import get_data_dir
 from core.platform.atomic_io import atomic_write_json

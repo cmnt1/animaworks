@@ -52,8 +52,15 @@ class StreamEvent(TypedDict, total=False):
     result_message: Any
     tool_name: str
     tool_id: str
+    tool_input: Any
+    input: Any
+    tool_detail: str
     detail: str
+    result: str
+    result_summary: str
+    is_error: bool
     usage: Any
+    usage_already_emitted: bool
     session_id: str | None
     tool_call_records: list[dict[str, Any]]
     record: Any
@@ -62,6 +69,11 @@ class StreamEvent(TypedDict, total=False):
     reason: str
     stop_kind: str
     truncated: bool
+    error: bool
+    force_chain: bool
+    task_compact_requested: bool
+    session_rotation_pending: bool
+    replied_to_from_transcript: Any
     context_update: Any
     context_usage_ratio: float
     input_tokens: int
@@ -74,9 +86,34 @@ _EventInput = TypeVar("_EventInput", bound=Mapping[str, Any])
 _EVENT_UNSET = object()
 
 
+def stream_event(event_type: str, **fields: Any) -> StreamEvent:
+    """Build a dict-compatible event with the supplied established wire fields."""
+    return cast(StreamEvent, {"type": event_type, **fields})
+
+
 def text_delta_event(text: str) -> StreamEvent:
     """Build the common visible-text event."""
-    return {"type": "text_delta", "text": text}
+    return stream_event("text_delta", text=text)
+
+
+def thinking_start_event() -> StreamEvent:
+    """Build a thinking-block start event."""
+    return stream_event("thinking_start")
+
+
+def thinking_delta_event(text: str) -> StreamEvent:
+    """Build an incremental thinking event."""
+    return stream_event("thinking_delta", text=text)
+
+
+def thinking_end_event() -> StreamEvent:
+    """Build a thinking-block end event."""
+    return stream_event("thinking_end")
+
+
+def thinking_event(thinking: str) -> StreamEvent:
+    """Build a complete thinking event."""
+    return stream_event("thinking", thinking=thinking)
 
 
 def context_update_event(
@@ -87,23 +124,55 @@ def context_update_event(
     threshold: float,
 ) -> StreamEvent:
     """Build a context measurement event with the established wire keys."""
-    return {
-        "type": "context_update",
-        "context_usage_ratio": context_usage_ratio,
-        "input_tokens": input_tokens,
-        "context_window": context_window,
-        "threshold": threshold,
-    }
+    return stream_event(
+        "context_update",
+        context_usage_ratio=context_usage_ratio,
+        input_tokens=input_tokens,
+        context_window=context_window,
+        threshold=threshold,
+    )
 
 
-def tool_start_event(tool_name: str, tool_id: str) -> StreamEvent:
-    """Build the common tool-start event."""
-    return {"type": "tool_start", "tool_name": tool_name, "tool_id": tool_id}
+def tool_start_event(tool_name: str, tool_id: str, **fields: Any) -> StreamEvent:
+    """Build a tool-start event, preserving engine-specific optional fields."""
+    return stream_event("tool_start", tool_name=tool_name, tool_id=tool_id, **fields)
 
 
-def tool_end_event(tool_name: str, tool_id: str, *, record: Any) -> StreamEvent:
-    """Build the common tool-completion event."""
-    return {"type": "tool_end", "tool_id": tool_id, "tool_name": tool_name, "record": record}
+def tool_end_event(
+    tool_name: str,
+    tool_id: str,
+    *,
+    record: Any = _EVENT_UNSET,
+    **fields: Any,
+) -> StreamEvent:
+    """Build a tool-completion event without adding absent optional fields."""
+    event: StreamEvent = stream_event("tool_end", tool_id=tool_id, tool_name=tool_name)
+    if record is not _EVENT_UNSET:
+        event["record"] = record
+    event.update(fields)
+    return event
+
+
+def tool_detail_event(
+    tool_id: str,
+    *,
+    tool_name: Any = _EVENT_UNSET,
+    detail: Any = _EVENT_UNSET,
+    **fields: Any,
+) -> StreamEvent:
+    """Build a tool-detail event while preserving optional key presence."""
+    event: StreamEvent = stream_event("tool_detail", tool_id=tool_id)
+    if tool_name is not _EVENT_UNSET:
+        event["tool_name"] = tool_name
+    if detail is not _EVENT_UNSET:
+        event["detail"] = detail
+    event.update(fields)
+    return event
+
+
+def usage_event(usage: Any) -> StreamEvent:
+    """Build a token-usage event."""
+    return stream_event("usage", usage=usage)
 
 
 def done_event(
@@ -114,8 +183,9 @@ def done_event(
     usage: Any = _EVENT_UNSET,
     stop_kind: Any = _EVENT_UNSET,
     truncated: Any = _EVENT_UNSET,
+    **fields: Any,
 ) -> StreamEvent:
-    """Build a terminal success event without changing optional key presence."""
+    """Build a terminal success event without adding absent optional keys."""
     event: StreamEvent = {
         "type": "done",
         "full_text": full_text,
@@ -129,14 +199,22 @@ def done_event(
         event["stop_kind"] = stop_kind
     if truncated is not _EVENT_UNSET:
         event["truncated"] = truncated
+    event.update(fields)
     return event
 
 
-def error_event(message: str, *, terminal: bool = False, reason: str | None = None) -> StreamEvent:
+def error_event(
+    message: str,
+    *,
+    terminal: bool = False,
+    reason: str | None = None,
+    **fields: Any,
+) -> StreamEvent:
     """Build an error event using the established public event shape."""
-    event: StreamEvent = {"type": "error", "terminal": terminal, "message": message}
+    event: StreamEvent = stream_event("error", terminal=terminal, message=message)
     if reason is not None:
         event["reason"] = reason
+    event.update(fields)
     return event
 
 

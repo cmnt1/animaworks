@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from core.agent.prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 from core.prompt.builder import build_system_prompt
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.agent")
 
@@ -79,7 +79,7 @@ class PrimingMixin:
         Returns:
             Tuple of (priming_section, pending_human_notifications).
         """
-        from core.execution.session_types import (
+        from core.execution.session.session_types import (
             SESSION_TYPE_CHAT,
             SESSION_TYPE_CRON,
             SESSION_TYPE_HEARTBEAT,
@@ -193,12 +193,12 @@ class PrimingMixin:
         Chat behavior remains conversation-backed; inbox reads only the activity
         log so unrelated chat history cannot leak into a background run.
         """
-        from core.execution.session_types import trigger_uses_chat_session
+        from core.execution.session.session_types import trigger_uses_chat_session
 
         if trigger.startswith("inbox:"):
             try:
-                from core.memory.activity.format import entry_text
-                from core.memory.activity.logger import ActivityLogger
+                from core.activity.format import entry_text
+                from core.activity.logger import ActivityLogger
 
                 animas_dir = self.anima_dir.parent
                 anima_names = {path.name.casefold() for path in animas_dir.iterdir() if path.is_dir()}
@@ -245,8 +245,8 @@ class PrimingMixin:
         full heartbeat prompt template.
         """
         try:
-            from core.memory.activity.format import entry_text
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.format import entry_text
+            from core.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(

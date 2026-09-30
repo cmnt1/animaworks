@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from core.anima.factory import validate_anima_name
-from core.memory._io import atomic_write_text
+from core.platform.atomic_io import atomic_write_text
 from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_iso, now_local

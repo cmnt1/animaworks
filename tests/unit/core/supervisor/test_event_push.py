@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger, set_live_event_sink
+from core.activity.logger import ActivityLogger, set_live_event_sink
 from core.supervisor.event_bus import RootEventBus
 from core.supervisor.ipc import IPCRequest, IPCResponse
 from core.supervisor.manager import HealthConfig, ProcessSupervisor
@@ -213,7 +213,7 @@ async def test_activity_logger_uses_sink_without_writing_fallback_file(
     anima_dir.mkdir(parents=True)
     activity = ActivityLogger(anima_dir)
     received: list[dict] = []
-    monkeypatch.setattr("core.memory.activity.logger._LIVE_EVENT_SINK", None)
+    monkeypatch.setattr("core.activity.logger._LIVE_EVENT_SINK", None)
     set_live_event_sink(received.append)
     try:
         with patch.object(ActivityLogger, "_export_event"):
@@ -236,7 +236,7 @@ async def test_activity_logger_falls_back_to_file_when_sink_raises(
     anima_dir = tmp_path / "animas" / "alice"
     anima_dir.mkdir(parents=True)
     activity = ActivityLogger(anima_dir)
-    monkeypatch.setattr("core.memory.activity.logger._LIVE_EVENT_SINK", None)
+    monkeypatch.setattr("core.activity.logger._LIVE_EVENT_SINK", None)
 
     def failing_sink(_event: dict) -> None:
         raise RuntimeError("sink unavailable")
@@ -245,7 +245,7 @@ async def test_activity_logger_falls_back_to_file_when_sink_raises(
     try:
         with (
             patch.object(ActivityLogger, "_export_event"),
-            patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path),
+            patch("core.activity.logger.get_data_dir", return_value=tmp_path),
         ):
             activity.log("tool_use", tool="Read", summary="fallback")
     finally:

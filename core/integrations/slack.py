@@ -53,7 +53,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 def _resolve_slack_token(args: dict[str, Any]) -> str | None:
     """Resolve per-Anima Slack bot token from tool dispatch args."""
     from core.channels.tokens import resolve_per_anima_token
-    from core.integrations._base import resolve_env_style_credential
+    from core.credentials import resolve_env_style_credential
 
     return resolve_per_anima_token(
         "slack",

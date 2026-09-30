@@ -44,7 +44,7 @@ _FACT_EXTRACTION_TASKS: set[asyncio.Task[tuple[int, int]]] = set()
 def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> str:
     """Gather non-conversation activities from activity log for episode enrichment."""
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
 
@@ -72,7 +72,7 @@ def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> 
         if not session_entries:
             return ""
 
-        from core.memory.activity.format import entry_text
+        from core.activity.format import entry_text
 
         lines = [t("conversation.activity_context_header")]
         for e in session_entries:

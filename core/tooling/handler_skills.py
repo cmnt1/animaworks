@@ -18,8 +18,8 @@ from core.time_utils import now_iso, now_local
 from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
+    from core.activity.logger import ActivityLogger
     from core.memory import MemoryManager
-    from core.memory.activity.logger import ActivityLogger
     from core.tooling.dispatch import ExternalToolDispatcher
 
 logger = logging.getLogger("animaworks.tool_handler")
@@ -773,9 +773,9 @@ class SkillsToolsMixin:
 
     def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
         """Validate a complete DAG batch, then publish it in one transaction."""
-        from core.execution._sanitize import ORIGIN_HUMAN
         from core.tasks.dispatch import publish_tasks
         from core.tasks.wake import request_wake
+        from core.trust import ORIGIN_HUMAN
 
         source = "human" if getattr(self, "_session_origin", "") == ORIGIN_HUMAN else "anima"
 

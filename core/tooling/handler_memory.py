@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.i18n import t
-from core.memory._io import archive_episode_before_write
+from core.memory.io import archive_episode_before_write
 from core.memory.retrieval.search_metadata import format_result_metadata_line
 from core.tooling.handler_base import (
     _error_result,
@@ -28,8 +28,8 @@ from core.tooling.handler_base import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from core.activity.logger import ActivityLogger
     from core.memory import MemoryManager
-    from core.memory.activity.logger import ActivityLogger
     from core.memory.state_lock import StateFileLock
 
 logger = logging.getLogger("animaworks.tool_handler")
@@ -76,6 +76,168 @@ class _PathNormResult:
 
     rel: str
     channel_redirect: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoryWriteRequest:
+    """Normalized inputs shared by scope-specific memory writers."""
+
+    rel: str
+    path: Path
+    content: str
+    mode: str
+    was_existing: bool
+    write_origin: str
+    skill_capture: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoryWriteOutcome:
+    """Scope writer metadata needed by the common post-write path."""
+
+    auto_frontmatter_applied: bool = False
+    error: str | None = None
+
+
+_MEMORY_WRITE_SCOPE_PREFIXES = (
+    ("common_knowledge/", "common_knowledge"),
+    ("common_skills/", "common_skills"),
+    ("knowledge/", "knowledge"),
+    ("procedures/", "procedures"),
+    ("episodes/", "episodes"),
+    ("facts/", "facts"),
+    ("state/", "state"),
+    ("skills/", "skills"),
+    ("shortterm/", "shortterm"),
+    ("tools/", "tools"),
+)
+_MEMORY_WRITE_HANDLERS = {
+    "knowledge": "_write_knowledge_memory_file",
+    "procedures": "_write_procedure_memory_file",
+    "episodes": "_write_episode_memory_file",
+    "facts": "_write_plain_memory_file",
+    "state": "_write_plain_memory_file",
+    "skills": "_write_plain_memory_file",
+    "common_knowledge": "_write_plain_memory_file",
+    "common_skills": "_write_plain_memory_file",
+    "shortterm": "_write_plain_memory_file",
+    "tools": "_write_plain_memory_file",
+    "default": "_write_plain_memory_file",
+}
+
+
+def _knowledge_frontmatter_text(path: Path, rel: str, content: str, write_origin: str) -> str:
+    """Build completed YAML metadata for a knowledge overwrite."""
+    import yaml
+
+    from core.memory.frontmatter import parse_frontmatter, strip_content_frontmatter
+    from core.time_utils import now_local
+
+    if content.lstrip().startswith("---"):
+        meta, body = parse_frontmatter(content.lstrip())
+        if meta:
+            if path.exists():
+                try:
+                    existing_text = path.read_text(encoding="utf-8")
+                    existing_meta, _ = parse_frontmatter(existing_text)
+                    if existing_meta.get("created_at"):
+                        meta.setdefault("created_at", existing_meta["created_at"])
+                except OSError:
+                    pass
+            if write_origin:
+                meta["origin"] = write_origin
+            from core.memory.frontmatter import validate_and_complete_frontmatter
+
+            validate_and_complete_frontmatter(meta, path)
+            meta["updated_at"] = now_local().isoformat()
+            frontmatter = yaml.dump(meta, default_flow_style=False, allow_unicode=True)
+            return f"---\n{frontmatter}---\n\n{body.lstrip()}"
+
+        clean_body = strip_content_frontmatter(content.lstrip())
+        timestamp = now_local().isoformat()
+        metadata: dict[str, Any] = {
+            "confidence": 0.5,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "source_episodes": 0,
+            "auto_consolidated": False,
+            "version": 1,
+        }
+        if path.exists():
+            try:
+                existing_text = path.read_text(encoding="utf-8")
+                existing_meta, _ = parse_frontmatter(existing_text)
+                if existing_meta.get("created_at"):
+                    metadata["created_at"] = existing_meta["created_at"]
+            except OSError:
+                pass
+        if write_origin:
+            metadata["origin"] = write_origin
+        frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True)
+        logger.info("Frontmatter parse failed for %s — applied fallback metadata", rel)
+        return f"---\n{frontmatter}---\n\n{clean_body.lstrip()}"
+
+    original_created_at = None
+    if path.exists():
+        try:
+            existing_text = path.read_text(encoding="utf-8")
+            existing_meta, _ = parse_frontmatter(existing_text)
+            original_created_at = existing_meta.get("created_at")
+        except OSError:
+            pass
+    timestamp = now_local().isoformat()
+    metadata = {
+        "confidence": 0.5,
+        "created_at": original_created_at or timestamp,
+        "updated_at": timestamp,
+        "source_episodes": 0,
+        "auto_consolidated": False,
+        "version": 1,
+    }
+    if write_origin:
+        metadata["origin"] = write_origin
+    clean_body = strip_content_frontmatter(content)
+    frontmatter = yaml.dump(metadata, default_flow_style=False, allow_unicode=True)
+    return f"---\n{frontmatter}---\n\n{clean_body}"
+
+
+def _append_memory_content(path: Path, content: str) -> None:
+    with open(path, "a", encoding="utf-8") as file:
+        file.write(content)
+
+
+def _append_knowledge_content(path: Path, content: str, write_origin: str) -> None:
+    """Append knowledge content and retain the most conservative source origin."""
+    _append_memory_content(path, content)
+    if not write_origin or not path.is_file():
+        return
+
+    from core.memory.frontmatter import parse_frontmatter
+    from core.trust import ORIGIN_TRUST_MAP, TRUST_RANK
+
+    current_text = path.read_text(encoding="utf-8")
+    if not current_text.startswith("---"):
+        return
+    current_meta, current_body = parse_frontmatter(current_text)
+    if not current_meta:
+        return
+
+    current_origin = current_meta.get("origin")
+    current_trust = ORIGIN_TRUST_MAP.get(str(current_origin), "untrusted")
+    next_trust = ORIGIN_TRUST_MAP.get(write_origin, "untrusted")
+    current_rank = TRUST_RANK.get(current_trust, 0)
+    next_rank = TRUST_RANK.get(next_trust, 0)
+    # Both mixed and external_web currently map to untrusted; prefer the
+    # more specific external_web label on a tie.
+    should_downgrade = (
+        not current_origin or current_rank > next_rank or (current_origin == "mixed" and write_origin == "external_web")
+    )
+    if should_downgrade:
+        import yaml
+
+        current_meta["origin"] = write_origin
+        frontmatter = yaml.dump(current_meta, default_flow_style=False, allow_unicode=True)
+        path.write_text(f"---\n{frontmatter}---\n\n{current_body.lstrip()}", encoding="utf-8")
 
 
 def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
@@ -736,7 +898,7 @@ class MemoryToolsMixin:
 
     def _resolve_write_origin(self) -> str:
         """Return the conservative origin for knowledge written this session."""
-        from core.execution._sanitize import read_session_trust
+        from core.trust import read_session_trust
 
         min_trust = getattr(self, "_min_trust_seen", 2)
         runtime_context = getattr(self, "_runtime_session_context", None)
@@ -744,6 +906,63 @@ class MemoryToolsMixin:
         if tool_session_id:
             min_trust = min(min_trust, read_session_trust(self._anima_dir, tool_session_id))
         return {0: "external_web", 1: "mixed"}.get(min_trust, "")
+
+    def _write_plain_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if request.mode == "append":
+            _append_memory_content(request.path, request.content)
+        else:
+            request.path.write_text(request.content, encoding="utf-8")
+        return _MemoryWriteOutcome()
+
+    def _write_knowledge_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if request.mode == "overwrite" and request.rel.endswith(".md"):
+            request.path.write_text(
+                _knowledge_frontmatter_text(request.path, request.rel, request.content, request.write_origin),
+                encoding="utf-8",
+            )
+            return _MemoryWriteOutcome(auto_frontmatter_applied=True)
+        if request.mode == "append":
+            _append_knowledge_content(request.path, request.content, request.write_origin)
+            return _MemoryWriteOutcome()
+        return self._write_plain_memory_file(request)
+
+    def _write_procedure_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if (
+            request.mode == "overwrite"
+            and request.rel.endswith(".md")
+            and not request.content.lstrip().startswith("---")
+        ):
+            metadata = {
+                "description": _extract_first_heading(request.content),
+                "success_count": 0,
+                "failure_count": 0,
+                "confidence": 0.5,
+            }
+            self._memory.write_procedure_with_meta(request.path, request.content, metadata)
+            return _MemoryWriteOutcome(auto_frontmatter_applied=True)
+        return self._write_plain_memory_file(request)
+
+    def _write_episode_memory_file(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        if request.mode == "overwrite" and request.was_existing:
+            try:
+                archive_episode_before_write(self._anima_dir, request.path)
+            except OSError as exc:
+                logger.warning("Failed to archive episode before overwrite: %s", request.path, exc_info=True)
+                return _MemoryWriteOutcome(
+                    error=_error_result(
+                        "WriteError",
+                        f"Failed to archive existing episode before overwrite: {exc}",
+                    )
+                )
+        return self._write_plain_memory_file(request)
+
+    def _write_memory_scope(self, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
+        scope = next(
+            (scope for prefix, scope in _MEMORY_WRITE_SCOPE_PREFIXES if request.rel.startswith(prefix)),
+            "default",
+        )
+        writer_name = _MEMORY_WRITE_HANDLERS[scope]
+        return getattr(self, writer_name)(request)
 
     def _handle_write_memory_file(self, args: dict[str, Any]) -> str:
         raw_path = args["path"]
@@ -856,276 +1075,147 @@ class MemoryToolsMixin:
 
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        request = _MemoryWriteRequest(
+            rel=rel,
+            path=path,
+            content=content,
+            mode=mode,
+            was_existing=_was_existing,
+            write_origin=write_origin,
+            skill_capture=_skill_capture,
+        )
+
         lock = self._state_file_lock if self._state_file_lock and self._is_state_file(path) else None
         if lock:
             lock.acquire()
         try:
-            if rel.startswith("episodes/") and mode == "overwrite" and _was_existing:
-                try:
-                    archive_episode_before_write(self._anima_dir, path)
-                except OSError as exc:
-                    logger.warning("Failed to archive episode before overwrite: %s", path, exc_info=True)
-                    return _error_result(
-                        "WriteError",
-                        f"Failed to archive existing episode before overwrite: {exc}",
-                    )
-
-            # Auto-add YAML frontmatter for procedure overwrite writes
-            auto_frontmatter_applied = False
-            if (
-                rel.startswith("procedures/")
-                and rel.endswith(".md")
-                and mode == "overwrite"
-                and not content.lstrip().startswith("---")
-            ):
-                desc = _extract_first_heading(content)
-                metadata = {
-                    "description": desc,
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "confidence": 0.5,
-                }
-                self._memory.write_procedure_with_meta(path, content, metadata)
-                auto_frontmatter_applied = True
-            elif (
-                rel.startswith("knowledge/")
-                and rel.endswith(".md")
-                and mode == "overwrite"
-                and content.lstrip().startswith("---")
-            ):
-                # LLM wrote frontmatter — parse, validate, and complete
-                import yaml as _yaml_km_fm
-
-                from core.memory.frontmatter import (
-                    parse_frontmatter as _parse_fm_hw,
-                )
-                from core.memory.frontmatter import (
-                    validate_and_complete_frontmatter as _validate_fm_hw,
-                )
-                from core.time_utils import now_local as _now_local_hw
-
-                _meta_hw, _body_hw = _parse_fm_hw(content.lstrip())
-                if _meta_hw:
-                    # Preserve original created_at on overwrite; update updated_at
-                    if path.exists():
-                        try:
-                            _existing_text = path.read_text(encoding="utf-8")
-                            _existing_meta, _ = _parse_fm_hw(_existing_text)
-                            if _existing_meta.get("created_at"):
-                                _meta_hw.setdefault("created_at", _existing_meta["created_at"])
-                        except OSError:
-                            pass
-                    if write_origin:
-                        _meta_hw["origin"] = write_origin
-                    _validate_fm_hw(_meta_hw, path)
-                    _meta_hw["updated_at"] = _now_local_hw().isoformat()
-                    _fm_hw = _yaml_km_fm.dump(_meta_hw, default_flow_style=False, allow_unicode=True)
-                    path.write_text(f"---\n{_fm_hw}---\n\n{_body_hw.lstrip()}", encoding="utf-8")
-                    auto_frontmatter_applied = True
-                else:
-                    # Parse failed — strip broken FM, apply framework-generated metadata
-                    from core.memory.frontmatter import strip_content_frontmatter as _strip_fm_hw
-
-                    _clean_body_hw = _strip_fm_hw(content.lstrip())
-                    _ts_fb = _now_local_hw().isoformat()
-                    _fallback_meta: dict[str, Any] = {
-                        "confidence": 0.5,
-                        "created_at": _ts_fb,
-                        "updated_at": _ts_fb,
-                        "source_episodes": 0,
-                        "auto_consolidated": False,
-                        "version": 1,
-                    }
-                    if path.exists():
-                        try:
-                            _existing_text_fb = path.read_text(encoding="utf-8")
-                            _existing_meta_fb, _ = _parse_fm_hw(_existing_text_fb)
-                            if _existing_meta_fb.get("created_at"):
-                                _fallback_meta["created_at"] = _existing_meta_fb["created_at"]
-                        except OSError:
-                            pass
-                    if write_origin:
-                        _fallback_meta["origin"] = write_origin
-                    _fm_fb = _yaml_km_fm.dump(
-                        _fallback_meta,
-                        default_flow_style=False,
-                        allow_unicode=True,
-                    )
-                    path.write_text(
-                        f"---\n{_fm_fb}---\n\n{_clean_body_hw.lstrip()}",
-                        encoding="utf-8",
-                    )
-                    auto_frontmatter_applied = True
-                    logger.info(
-                        "Frontmatter parse failed for %s — applied fallback metadata",
-                        rel,
-                    )
-            elif (
-                rel.startswith("knowledge/")
-                and rel.endswith(".md")
-                and mode == "overwrite"
-                and not content.lstrip().startswith("---")
-            ):
-                import yaml as _yaml_km
-
-                from core.memory.frontmatter import strip_content_frontmatter
-                from core.time_utils import now_local
-
-                # Preserve original created_at on overwrite
-                _original_created_at = None
-                if path.exists():
-                    try:
-                        from core.memory.frontmatter import parse_frontmatter as _parse_fm_ow
-
-                        _existing_text_ow = path.read_text(encoding="utf-8")
-                        _existing_meta_ow, _ = _parse_fm_ow(_existing_text_ow)
-                        _original_created_at = _existing_meta_ow.get("created_at")
-                    except OSError:
-                        pass
-                ts = now_local().isoformat()
-                metadata: dict[str, Any] = {
-                    "confidence": 0.5,
-                    "created_at": _original_created_at or ts,
-                    "updated_at": ts,
-                    "source_episodes": 0,
-                    "auto_consolidated": False,
-                    "version": 1,
-                }
-                if write_origin:
-                    metadata["origin"] = write_origin
-                _clean = strip_content_frontmatter(content)
-                _fm = _yaml_km.dump(metadata, default_flow_style=False, allow_unicode=True)
-                path.write_text(f"---\n{_fm}---\n\n{_clean}", encoding="utf-8")
-                auto_frontmatter_applied = True
-            elif mode == "append":
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(content)
-                if write_origin and path.is_file():
-                    from core.execution._sanitize import ORIGIN_TRUST_MAP, TRUST_RANK
-                    from core.memory.frontmatter import parse_frontmatter
-
-                    current_text = path.read_text(encoding="utf-8")
-                    if current_text.startswith("---"):
-                        current_meta, current_body = parse_frontmatter(current_text)
-                        if current_meta:
-                            current_origin = current_meta.get("origin")
-                            current_trust = ORIGIN_TRUST_MAP.get(str(current_origin), "untrusted")
-                            next_trust = ORIGIN_TRUST_MAP.get(write_origin, "untrusted")
-                            current_rank = TRUST_RANK.get(current_trust, 0)
-                            next_rank = TRUST_RANK.get(next_trust, 0)
-                            # Both mixed and external_web currently map to untrusted;
-                            # prefer the more specific external_web label on a tie.
-                            should_downgrade = (
-                                not current_origin
-                                or current_rank > next_rank
-                                or (current_origin == "mixed" and write_origin == "external_web")
-                            )
-                            if should_downgrade:
-                                import yaml
-
-                                current_meta["origin"] = write_origin
-                                fm = yaml.dump(current_meta, default_flow_style=False, allow_unicode=True)
-                                path.write_text(f"---\n{fm}---\n\n{current_body.lstrip()}", encoding="utf-8")
-            else:
-                path.write_text(content, encoding="utf-8")
+            outcome = self._write_memory_scope(request)
+            if outcome.error:
+                return outcome.error
         finally:
             if lock:
                 lock.release()
-        if _skill_capture is not None:
+        return self._complete_memory_write(request, auto_frontmatter_applied=outcome.auto_frontmatter_applied)
+
+    def _complete_memory_write(
+        self,
+        request: _MemoryWriteRequest,
+        *,
+        auto_frontmatter_applied: bool,
+    ) -> str:
+        self._record_memory_file_change(request)
+        similar_hint = self._memory_write_similarity_hint(request)
+        self._reload_schedule_if_needed(request.rel)
+        result = self._format_memory_write_result(
+            request,
+            auto_frontmatter_applied=auto_frontmatter_applied,
+            similar_hint=similar_hint,
+        )
+        self._update_memory_write_indexes(request)
+        return result
+
+    def _record_memory_file_change(self, request: _MemoryWriteRequest) -> None:
+        if request.skill_capture is not None:
             from core.skills.ledger import record_skill_change
 
             record_skill_change(
-                path,
-                _skill_capture,
+                request.path,
+                request.skill_capture,
                 anima_dir=self._anima_dir,
-                after_text=path.read_text(encoding="utf-8") if path.is_file() else None,
-                after_exists=path.is_file(),
+                after_text=request.path.read_text(encoding="utf-8") if request.path.is_file() else None,
+                after_exists=request.path.is_file(),
                 actor=self._anima_name,
                 route="write_memory_file",
-                reason=f"mode={mode}",
+                reason=f"mode={request.mode}",
             )
 
-        logger.info(
-            "write_memory_file path=%s mode=%s",
-            args["path"],
-            args.get("mode", "overwrite"),
-        )
-
-        # Activity log: memory write
+        logger.info("write_memory_file path=%s mode=%s", request.rel, request.mode)
         self._activity.log(
             "memory_write",
-            summary=f"{rel} ({args.get('mode', 'overwrite')})",
-            meta={"path": rel, "mode": args.get("mode", "overwrite")},
+            summary=f"{request.rel} ({request.mode})",
+            meta={"path": request.rel, "mode": request.mode},
         )
 
-        # ── Filename token hint for new knowledge files ──
-        _similar_hint = ""
-        if rel.startswith("knowledge/") and mode == "overwrite" and not _was_existing:
-            _new_stem = Path(rel).stem.replace("-", "_")
-            _new_tokens = set(_new_stem.split("_"))
-            _knowledge_dir = self._anima_dir / "knowledge"
-            if _knowledge_dir.is_dir():
-                _existing_names = [
-                    f.name for f in _knowledge_dir.iterdir() if f.suffix == ".md" and f.name != Path(rel).name
-                ]
-                _similar = []
-                for _ef in _existing_names:
-                    _ef_tokens = set(_ef.replace("-", "_").replace(".md", "").split("_"))
-                    if len(_new_tokens & _ef_tokens) >= 2:
-                        _similar.append(_ef)
-                if _similar:
-                    _similar.sort()
-                    _lines = "\n".join(f"  - {s}" for s in _similar[:10])
-                    _similar_hint = t("handler.similar_knowledge_hint", files=_lines)
+    def _memory_write_similarity_hint(self, request: _MemoryWriteRequest) -> str:
+        if not (request.rel.startswith("knowledge/") and request.mode == "overwrite" and not request.was_existing):
+            return ""
 
-        # Trigger schedule reload if heartbeat or cron config changed
-        if args["path"] in ("heartbeat.md", "cron.md") and self._on_schedule_changed:
-            try:
-                self._on_schedule_changed(self._anima_name)
-                logger.info("Schedule reload triggered for '%s'", self._anima_name)
-            except Exception:
-                logger.exception("Schedule reload failed for '%s'", self._anima_name)
+        knowledge_dir = self._anima_dir / "knowledge"
+        if not knowledge_dir.is_dir():
+            return ""
+        new_tokens = set(Path(request.rel).stem.replace("-", "_").split("_"))
+        existing_names = [
+            file.name
+            for file in knowledge_dir.iterdir()
+            if file.suffix == ".md" and file.name != Path(request.rel).name
+        ]
+        similar = [
+            name
+            for name in existing_names
+            if len(new_tokens & set(name.replace("-", "_").replace(".md", "").split("_"))) >= 2
+        ]
+        if not similar:
+            return ""
+        similar.sort()
+        lines = "\n".join(f"  - {name}" for name in similar[:10])
+        return t("handler.similar_knowledge_hint", files=lines)
 
-        result = f"Written to {args['path']}"
-        if _similar_hint:
-            result = f"{result}\n\n{_similar_hint}"
+    def _reload_schedule_if_needed(self, rel: str) -> None:
+        if rel not in ("heartbeat.md", "cron.md") or not self._on_schedule_changed:
+            return
+        try:
+            self._on_schedule_changed(self._anima_name)
+            logger.info("Schedule reload triggered for '%s'", self._anima_name)
+        except Exception:
+            logger.exception("Schedule reload failed for '%s'", self._anima_name)
 
-        if rel.startswith("knowledge/") and _looks_like_case_record(content):
+    def _format_memory_write_result(
+        self,
+        request: _MemoryWriteRequest,
+        *,
+        auto_frontmatter_applied: bool,
+        similar_hint: str,
+    ) -> str:
+        rel = request.rel
+        result = f"Written to {rel}"
+        if similar_hint:
+            result = f"{result}\n\n{similar_hint}"
+
+        if rel.startswith("knowledge/") and _looks_like_case_record(request.content):
             result = f"{result}\n\n{t('handler.case_record_episodes_hint')}"
             logger.info("Knowledge write resembles a case record; suggested episodes destination: %s", rel)
 
-        # Warn (but don't block) if episode filename is non-standard
-        episode_warning = _validate_episode_path(args["path"])
+        episode_warning = _validate_episode_path(rel)
         if episode_warning:
-            logger.warning("Non-standard episode path: %s", args["path"])
+            logger.warning("Non-standard episode path: %s", rel)
             result = f"{result}\n\n{episode_warning}"
 
-        # Validate skill file format (soft validation: warn but don't block)
         if (rel.startswith("skills/") or rel.startswith("common_skills/")) and rel.endswith(".md"):
-            validation_msg = _validate_skill_format(args["content"])
+            validation_msg = _validate_skill_format(request.content)
             if validation_msg:
                 result = f"{result}\n\n{t('handler.skill_format_validation', msg=validation_msg)}"
 
-        # Validate procedure file format (soft validation: warn but don't block)
         if rel.startswith("procedures/") and rel.endswith(".md") and not auto_frontmatter_applied:
-            validation_msg = _validate_procedure_format(args["content"])
+            validation_msg = _validate_procedure_format(request.content)
             if validation_msg:
                 result = f"{result}\n\n{t('handler.procedure_format_validation', msg=validation_msg)}"
+        return result
 
-        # Auto-update RAG index for skill/procedure writes
+    def _update_memory_write_indexes(self, request: _MemoryWriteRequest) -> None:
+        rel = request.rel
+        path = request.path
         if rel.startswith(("skills/", "procedures/")) and rel.endswith(".md"):
             indexer = self._memory._get_indexer()
             if indexer:
                 memory_type = "skills" if rel.startswith("skills/") else "procedures"
                 try:
                     indexer.index_file(path, memory_type=memory_type, force=True)
-                except Exception as e:
-                    logger.warning("Failed to update RAG index for %s: %s", rel, e)
+                except Exception as exc:
+                    logger.warning("Failed to update RAG index for %s: %s", rel, exc)
             self._update_longterm_bm25_source(rel)
 
-        # Auto-update RAG index for knowledge writes.
         if rel.startswith("knowledge/") and rel.endswith(".md"):
-            origin = write_origin
+            origin = request.write_origin
             if not origin:
                 try:
                     from core.memory.frontmatter import parse_frontmatter
@@ -1144,14 +1234,12 @@ class MemoryToolsMixin:
                         force=True,
                         origin=origin or None,
                     )
-                except Exception as e:
-                    logger.warning("Failed to update RAG index for %s: %s", rel, e)
+                except Exception as exc:
+                    logger.warning("Failed to update RAG index for %s: %s", rel, exc)
             self._update_longterm_bm25_source(rel)
 
         if rel.startswith("episodes/") and rel.endswith(".md"):
             self._update_longterm_bm25_source(rel)
-
-        return result
 
     def _handle_archive_memory_file(self, args: dict[str, Any]) -> str:
         """Archive a memory file by moving it to archive/superseded/."""

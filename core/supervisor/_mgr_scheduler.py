@@ -862,7 +862,7 @@ class SchedulerMixin:
         )
 
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             results = ActivityLogger.rotate_all(
                 self.animas_dir,

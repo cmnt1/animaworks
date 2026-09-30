@@ -6,14 +6,7 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Tests for core.memory._io — crash-safe I/O utilities.
-
-Tests cover:
-- Atomic write normal operation (write, read-back, overwrite)
-- Parent directory auto-creation
-- Error handling (original preserved, temp cleaned up)
-- cleanup_tmp_files removal, non-existent dir, non-tmp file safety
-"""
+"""Tests for core.memory.io — MemoryWriteError wrappers and memory I/O."""
 
 import os
 from pathlib import Path
@@ -22,7 +15,8 @@ from unittest.mock import patch
 import pytest
 
 from core.exceptions import MemoryWriteError
-from core.memory._io import atomic_write_text, cleanup_tmp_files
+from core.memory.io import atomic_write_text
+from core.platform.atomic_io import cleanup_tmp_files
 
 
 # ── TestAtomicWriteText ────────────────────────────────────────────

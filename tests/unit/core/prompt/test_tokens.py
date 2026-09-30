@@ -8,7 +8,7 @@ from core.memory.priming.constants import (
     _DEFAULT_MAX_PRIMING_TOKENS,
 )
 from core.memory.priming.engine import PrimingEngine
-from core.prompt.tokens import estimate_tokens, truncate_to_tokens
+from core.text.tokens import estimate_tokens, truncate_to_tokens
 
 
 def test_estimate_ascii_calibration() -> None:

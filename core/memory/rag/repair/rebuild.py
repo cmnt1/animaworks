@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.i18n import t
-from core.memory._io import atomic_write_text
+from core.memory.io import atomic_write_text
 from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.rag.repair")

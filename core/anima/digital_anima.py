@@ -26,12 +26,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.activity.logger import ActivityLogger
 from core.agent.agent_core import AgentCore
 from core.agent.session_compactor import SessionCompactor
 from core.exceptions import ExecutionError  # noqa: F401
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.activity.logger import ActivityLogger
 from core.messaging.messenger import Messenger
 from core.platform.atomic_io import atomic_write_json
 from core.schemas import AnimaStatus, ModelConfig
@@ -92,6 +92,9 @@ class DigitalAnima(
         self.shared_dir = shared_dir
         self.name = anima_dir.name
         self._busy_status_enabled = busy_status_enabled
+        from core.infra.event_export import register_activity_event_exporter
+
+        register_activity_event_exporter()
         self._activity = ActivityLogger(anima_dir)
 
         self.memory = MemoryManager(anima_dir)

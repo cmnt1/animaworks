@@ -13,9 +13,9 @@ from pathlib import Path
 
 from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
-from core.memory._io import atomic_write_text
 from core.memory.config_reader import ConfigReader
 from core.memory.frontmatter import FrontmatterService
+from core.memory.io import atomic_write_text
 from core.memory.maintenance.cron_logger import CronLogger
 from core.memory.maintenance.resolution_tracker import ResolutionTracker
 from core.memory.retrieval.rag_search import RAGMemorySearch

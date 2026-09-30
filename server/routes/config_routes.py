@@ -295,7 +295,7 @@ def create_config_router() -> APIRouter:
             return {"channels": [], "error": "guild_id not configured"}
 
         try:
-            from core.integrations._base import get_credential
+            from core.credentials import get_credential
             from core.integrations._discord_client import DiscordClient
 
             token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")

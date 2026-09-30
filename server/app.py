@@ -497,7 +497,8 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         # ── Slack: ensure .env slots + warn about missing tokens ──
         try:
-            from core.config.env_slots import check_missing_slack_tokens, ensure_all_anima_slots
+            from core.config.env_slots import ensure_all_anima_slots
+            from core.credentials import check_missing_slack_tokens
 
             ensure_all_anima_slots()
             missing = check_missing_slack_tokens()
@@ -949,6 +950,9 @@ def create_app(
     animas_dir: Path,
     shared_dir: Path,
 ) -> FastAPI:
+    from core.infra.event_export import register_activity_event_exporter
+
+    register_activity_event_exporter()
     app = FastAPI(title="AnimaWorks", version=_get_app_version(), lifespan=lifespan)
 
     ws_manager = WebSocketManager()

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.execution.error_classifier import FailoverReason, RecoveryHint
+from core.llm.guard.error_classifier import FailoverReason, RecoveryHint
 from core.execution.loop_guards import call_llm_with_retry
 
 # ── call_llm_with_retry: on_context_overflow ─────────────────
@@ -209,6 +209,6 @@ class TestDeepseekThinkingKwargs:
 
 class TestFgTimeoutDefault:
     def test_default_is_120(self):
-        from core.tooling.handler_files import _FG_CMD_TIMEOUT_DEFAULT
+        from core.tooling.handler_exec import _FG_CMD_TIMEOUT_DEFAULT
 
         assert _FG_CMD_TIMEOUT_DEFAULT == 120

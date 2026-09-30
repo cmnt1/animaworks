@@ -193,7 +193,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
         ):
             result = resolve_effective_model_config(primary_config)
 
@@ -208,7 +208,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"openai:codex": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
         ):
             result = resolve_effective_model_config(primary_config)
 
@@ -239,7 +239,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"grok:grok": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
         ):
             result = resolve_effective_model_config(primary)
 
@@ -262,7 +262,7 @@ class TestResolveEffectiveModelConfig:
         )
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
         ):
             result = resolve_effective_model_config(primary_config)
@@ -290,7 +290,7 @@ class TestResolveEffectiveModelConfig:
         )
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
         ):
             result = resolve_effective_model_config(primary_config)
@@ -312,7 +312,7 @@ class TestResolveEffectiveModelConfig:
         )
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
         ):
             result = resolve_effective_model_config(primary_config)
@@ -329,7 +329,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"openai:codex": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.shutil.which", return_value=None),
             caplog.at_level(logging.DEBUG, logger="animaworks.config"),
         ):
@@ -351,7 +351,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"grok:grok": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.importlib.util.find_spec", return_value=None),
             caplog.at_level(logging.DEBUG, logger="animaworks.config"),
         ):
@@ -386,7 +386,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"openai:codex": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             caplog.at_level(logging.WARNING, logger="animaworks.config"),
         ):
             result = resolve_effective_model_config(primary)
@@ -418,7 +418,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"openai:codex": 120.0})
         with (
             patch("core.config.io.load_config", return_value=cfg),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
         ):
             result = resolve_effective_model_config(primary)
 
@@ -449,7 +449,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"openai:codex": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             caplog.at_level(logging.WARNING, logger="animaworks.config"),
         ):
             result = resolve_effective_model_config(primary)
@@ -470,7 +470,7 @@ class TestResolveEffectiveModelConfig:
         guard = _guard_with_blocks({"anthropic:api": 120.0})
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
         ):
             result = resolve_effective_model_config(primary)
 
@@ -495,7 +495,7 @@ class TestResolveEffectiveModelConfig:
         )
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
         ):
             meta = fallback_event_meta(primary_config, effective)
 
@@ -525,7 +525,7 @@ class TestBusyFallbackSkip:
         guard = _guard_with_blocks(blocks)
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
-            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.llm.guard.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
             patch(
                 "core.config.model_config._match_models_json",

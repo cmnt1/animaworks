@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._session import save_threshold_shortterm
+from core.execution._shortterm_handoff import save_threshold_shortterm
 from core.memory.conversation.shortterm import (
     SessionState,
     ShortTermMemory,
@@ -80,7 +80,7 @@ class TestSaveThresholdShortterm:
         shortterm: ShortTermMemory,
         sample_tool_uses: list[dict[str, Any]],
     ) -> None:
-        with patch("core.execution._session.now_iso", return_value="2026-02-22T10:00:00"):
+        with patch("core.execution._shortterm_handoff.now_iso", return_value="2026-02-22T10:00:00"):
             saved = save_threshold_shortterm(
                 mock_tracker,
                 shortterm,

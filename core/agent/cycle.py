@@ -26,9 +26,13 @@ if TYPE_CHECKING:
 
 from core.agent.priming import SystemPromptContext
 from core.agent.prompt_log import _save_prompt_log, _save_prompt_log_end
-from core.execution.engine_session import clear_all_engine_sessions, clear_engine_session
-from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
-from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
+from core.execution.session.engine_session import clear_all_engine_sessions, clear_engine_session
+from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+from core.execution.session.session_types import (
+    is_clean_start_session,
+    resolve_runtime_session_type,
+    trigger_uses_chat_session,
+)
 from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -83,7 +87,7 @@ def _resolve_error_category(reason: str, message: str) -> str | None:
     if not message:
         return None
     try:
-        from core.execution.error_classifier import classify_llm_error_message
+        from core.llm.guard.error_classifier import classify_llm_error_message
 
         classified, _hint = classify_llm_error_message(message)
         return getattr(classified, "value", None)
@@ -211,7 +215,7 @@ class CycleMixin:
             notes="Auto-saved before session recycling",
         )
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             await ActivityLogger(self.anima_dir).alog(
                 "session_recycled",
@@ -315,7 +319,7 @@ class CycleMixin:
                 exc_info=True,
             )
             try:
-                from core.memory.activity.logger import ActivityLogger
+                from core.activity.logger import ActivityLogger
 
                 ActivityLogger(self.anima_dir).log(
                     "budget_check_failed",
@@ -348,7 +352,7 @@ class CycleMixin:
             "trigger": trigger,
         }
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             ActivityLogger(self.anima_dir).log(
                 "budget_exceeded",
@@ -1168,7 +1172,7 @@ class CycleMixin:
                             elif chunk["type"] == "thinking_delta":
                                 thinking_text_parts.append(chunk.get("text", ""))
                             if chunk["type"] == "context_update" and task_compaction_after_pending is not None:
-                                from core.memory.activity.logger import ActivityLogger
+                                from core.activity.logger import ActivityLogger
 
                                 await ActivityLogger(self.anima_dir).alog(
                                     "task_compacted_after",
@@ -1208,7 +1212,7 @@ class CycleMixin:
 
                 is_stream_error = isinstance(e, StreamDisconnectedError)
                 if is_stream_error:
-                    from core.execution.error_classifier import FailoverReason, classify_llm_error
+                    from core.llm.guard.error_classifier import FailoverReason, classify_llm_error
 
                     cause = e.__cause__ if isinstance(e.__cause__, Exception) else e
                     classified, hint = classify_llm_error(cause)
@@ -1276,7 +1280,7 @@ class CycleMixin:
                     }
 
                     # Load checkpoint and build retry prompt
-                    from core.execution._session import build_stream_retry_prompt
+                    from core.execution._shortterm_handoff import build_stream_retry_prompt
                     from core.memory.conversation.shortterm import StreamCheckpoint
 
                     checkpoint = shortterm.load_checkpoint()
@@ -1346,7 +1350,7 @@ class CycleMixin:
                     tracker._input_tokens,
                 )
                 try:
-                    from core.memory.activity.logger import ActivityLogger
+                    from core.activity.logger import ActivityLogger
 
                     await ActivityLogger(self.anima_dir).alog(
                         "task_compacted",

@@ -791,7 +791,7 @@ def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool)
 def step_neo4j_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove retired Neo4j settings and preserve configured fact edge types."""
     del verbose
-    from core.memory._io import atomic_write_text
+    from core.platform.atomic_io import atomic_write_text
 
     details: list[str] = []
     errors: list[str] = []

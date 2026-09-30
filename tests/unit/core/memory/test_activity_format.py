@@ -1,4 +1,4 @@
-"""Unit + golden tests for core/memory/activity_format shared helpers."""
+"""Unit + golden tests for core/activity/format shared helpers."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity.format import (
+from core.activity.format import (
     EVENT_SETS,
     EntryRole,
     clip,
@@ -19,7 +19,7 @@ from core.memory.activity.format import (
     iter_entries,
     pair_tool_events,
 )
-from core.memory.activity.models import ActivityEntry
+from core.activity.models import ActivityEntry
 from core.time_utils import now_local
 
 
@@ -271,7 +271,7 @@ def test_entry_text_accepts_dict():
 
 
 def test_audit_extract_content_golden():
-    from core.memory.activity.audit import AuditAggregator
+    from core.activity.audit import AuditAggregator
 
     fx = AuditAggregator._extract_content
     long = "x" * 400

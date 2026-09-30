@@ -136,7 +136,7 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as activity,
+            patch("core.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="Agent SDK timeout"),
         ):
@@ -169,7 +169,7 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as activity,
+            patch("core.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
             activity.return_value.alog = AsyncMock()
@@ -199,7 +199,7 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as activity,
+            patch("core.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
             activity.return_value.alog = AsyncMock()
@@ -234,7 +234,7 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as activity,
+            patch("core.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
             activity.return_value.alog = AsyncMock()
@@ -269,7 +269,7 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger") as activity,
+            patch("core.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="authentication"),
         ):

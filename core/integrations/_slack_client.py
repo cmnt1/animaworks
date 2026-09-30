@@ -13,7 +13,8 @@ import re
 from datetime import timedelta, timezone
 from typing import Any
 
-from core.integrations._base import ToolConfigError, get_credential
+from core.credentials import get_credential
+from core.integrations._base import ToolConfigError
 from core.integrations._retry import retry_after_from_attr, retry_on_rate_limit
 
 # ── Constants ──────────────────────────────────────────────

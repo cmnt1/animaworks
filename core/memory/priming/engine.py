@@ -38,7 +38,7 @@ from core.memory.priming.constants import _DEFAULT_MAX_PRIMING_TOKENS
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
 

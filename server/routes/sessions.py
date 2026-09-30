@@ -9,7 +9,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.memory.manager import MemoryManager

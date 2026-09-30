@@ -43,7 +43,7 @@ sys.modules.setdefault("claude_agent_sdk.types", _mock_types)
 
 from core.execution.base import ExecutionResult  # noqa: E402
 from core.execution.engines.claude._sdk_hooks import _CONTEXT_AUTOCOMPACT_SAFETY, _build_pre_tool_hook  # noqa: E402
-from core.execution.engines.claude.agent_sdk import _tool_result_content_len  # noqa: E402
+from core.execution.engines.claude.executor import _tool_result_content_len  # noqa: E402
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker  # noqa: E402
 
 # ── Fixtures ─────────────────────────────────────────────────

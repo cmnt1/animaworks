@@ -24,7 +24,7 @@ from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -536,7 +536,7 @@ async def channel_c_related_knowledge(
             return (ItemizedMemory(""), ItemizedMemory(""))
 
         if results:
-            from core.execution._sanitize import ORIGIN_UNKNOWN, resolve_trust
+            from core.trust import ORIGIN_UNKNOWN, resolve_trust
 
             medium_by_path: dict[str, MemoryItem] = {}
             untrusted_by_path: dict[str, MemoryItem] = {}

@@ -217,7 +217,7 @@ class TestExplicitEnvPassthrough:
 
         monkeypatch.setenv("ANIMAWORKS_INTERNAL_AUTH", "sora.mytoken")
         obj = SimpleNamespace(_anima_dir=tmp_path)
-        monkeypatch.setattr("core.execution.session_context.current_runtime_session", lambda: None)
+        monkeypatch.setattr("core.execution.session.session_context.current_runtime_session", lambda: None)
         env = sdk.SDKOptionsMixin._build_mcp_env(obj)
         assert env.get("ANIMAWORKS_INTERNAL_AUTH") == "sora.mytoken"
 

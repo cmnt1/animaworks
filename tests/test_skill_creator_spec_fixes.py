@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import core.execution._sanitize  # noqa: F401
+import core.trust  # noqa: F401
 from core.tooling.handler_base import _validate_skill_format
 
 # ── Helpers ──────────────────────────────────────────────────

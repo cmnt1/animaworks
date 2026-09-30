@@ -33,6 +33,9 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
 
     Returns the runtime data directory path.
     """
+    from core.infra.event_export import register_activity_event_exporter
+
+    register_activity_event_exporter()
     data_dir = get_data_dir()
 
     # Check for proper initialization (config.json is the marker).

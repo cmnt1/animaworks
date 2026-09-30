@@ -17,7 +17,7 @@ import pytest
 from core.schemas import ModelConfig
 
 if TYPE_CHECKING:
-    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.executor import AgentSDKExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ def _make_executor(
     extra_mcp_servers: dict[str, dict] | None = None,
 ) -> AgentSDKExecutor:
     """Create an AgentSDKExecutor with minimal config."""
-    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.executor import AgentSDKExecutor
 
     mc = ModelConfig(model=model, api_key="test-key", extra_mcp_servers=extra_mcp_servers or {})
     return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
@@ -401,13 +401,13 @@ class TestBashSendRemoved:
 
     def test_bash_send_re_not_on_module(self) -> None:
         """_BASH_SEND_RE attribute does NOT exist on the module."""
-        import core.execution.engines.claude.agent_sdk as mod
+        import core.execution.engines.claude.executor as mod
 
         assert not hasattr(mod, "_BASH_SEND_RE")
 
     def test_check_unconfirmed_sends_not_on_class(self) -> None:
         """_check_unconfirmed_sends method does NOT exist on AgentSDKExecutor."""
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         assert not hasattr(AgentSDKExecutor, "_check_unconfirmed_sends")
 

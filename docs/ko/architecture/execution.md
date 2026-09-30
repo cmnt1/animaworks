@@ -22,7 +22,7 @@
 
 ## 공통 실행 계층과 장애 시 동작
 
-각 엔진의 구현은 `core/execution/engines/`에 위치한다. 공통 계층의 `core/execution/events.py`, `session_store.py`, `process_runner.py`, `watchdog.py`, `tool_evidence.py`, `cli_stream.py`은 이벤트, 세션 저장, 프로세스 제어, tool evidence를 공통화한다. 오류 분류, 프로세스 종료, 바이너리 탐색, `clear_session`, 응답·오류 판정도 중간 계층에서 처리한다. D와 G도 이 구성에 포함된다.
+각 엔진의 구현은 `core/execution/engines/`에 위치한다. 공통 계층의 `core/execution/events.py`, `core/execution/session/session_store.py`, `process_runner.py`, `watchdog.py`, `tool_evidence.py`, `cli_stream.py`은 이벤트, 세션 저장, 프로세스 제어, tool evidence를 공통화한다. 오류 분류, 프로세스 종료, 바이너리 탐색, `clear_session`, 응답·오류 판정도 중간 계층에서 처리한다. D와 G도 이 구성에 포함된다.
 
 watchdog는 engine event가 1200초 동안 도착하지 않으면 idle로 판정한다. 전체 실행 시간을 재는 timeout은 아니다. rate limit이나 provider 과부하 정보는 `llm_rate_guard`에 provider family별로 공유되고, 다른 Anima가 같은 provider로 연속 요청하는 것을 억제한다. 이 guard는 읽기·쓰기에 실패해도 일반적인 실행을 멈추지 않는 설계이다.
 

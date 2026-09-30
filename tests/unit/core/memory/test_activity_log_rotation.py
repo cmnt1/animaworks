@@ -6,7 +6,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.time_utils import today_local
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ class TestToolResultFormat:
     """Test that tool_result type is properly formatted in priming output."""
 
     def test_format_entry_tool_result(self, tmp_path: Path) -> None:
-        from core.memory.activity.logger import ActivityEntry
+        from core.activity.logger import ActivityEntry
 
         entry = ActivityEntry(
             ts="2026-02-22T10:00:00+09:00",

@@ -45,7 +45,7 @@ _DEPTH_OBSERVATION_THRESHOLD = 6
 def _log_conversation_depth(sender: str, receiver: str, sender_anima_dir: Path) -> None:
     """Log unusually deep exchanges without affecting message delivery."""
     try:
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         entries = ActivityLogger(sender_anima_dir).recent(
             days=1,
@@ -271,7 +271,7 @@ class Messenger:
         filepath = target_dir / f"{msg.id}.json"
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
-            from core.memory._io import atomic_write_text
+            from core.platform.atomic_io import atomic_write_text
 
             atomic_write_text(filepath, msg.model_dump_json(indent=2))
             if not filepath.exists():
@@ -289,7 +289,7 @@ class Messenger:
         # Activity Log: record message_sent for all send paths (S/A/B/CLI)
         if not skip_logging:
             try:
-                from core.memory.activity.logger import ActivityLogger
+                from core.activity.logger import ActivityLogger
 
                 anima_dir = self.shared_dir.parent / "animas" / self.anima_name
                 if anima_dir.exists():
@@ -569,7 +569,7 @@ class Messenger:
 
         # New source: unified activity log
         try:
-            from core.memory.activity.logger import ActivityLogger
+            from core.activity.logger import ActivityLogger
 
             anima_dir = self.shared_dir.parent / "animas" / self.anima_name
             if anima_dir.exists():
@@ -1006,7 +1006,7 @@ class Messenger:
             )
             return None  # type: ignore[return-value]
 
-        from core.execution._sanitize import ORIGIN_EXTERNAL_PLATFORM
+        from core.trust import ORIGIN_EXTERNAL_PLATFORM
 
         msg = Message(
             from_person=f"{source}:{external_user_id}" if external_user_id else source,

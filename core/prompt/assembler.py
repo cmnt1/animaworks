@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from core.prompt.tokens import estimate_tokens
+from core.text.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.prompt_builder")
 

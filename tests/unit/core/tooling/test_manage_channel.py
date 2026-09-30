@@ -50,7 +50,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "alice"):
 
     handler._session_id = uuid.uuid4().hex[:12]
 
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     handler._activity = MagicMock(spec=ActivityLogger)
 

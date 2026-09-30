@@ -24,7 +24,7 @@ def test_shared_execution_imports_do_not_load_engines(tmp_path: Path) -> None:
         """
 import sys
 import core.execution.base
-import core.execution.rate_guard
+import core.llm.guard.rate_guard
 import core.execution.cli_stream
 assert not any(name.startswith('core.execution.engines.') for name in sys.modules)
 """,

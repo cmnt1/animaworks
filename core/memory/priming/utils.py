@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.memory.priming.constants import _MAX_KEYWORD_INPUT_LEN, _MINIMAL_STOPWORDS, _RE_UNICODE_WORDS
-from core.prompt.tokens import truncate_to_tokens
+from core.text.tokens import truncate_to_tokens
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever

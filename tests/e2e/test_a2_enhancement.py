@@ -65,7 +65,7 @@ def memory(anima_dir: Path) -> MagicMock:
 
 @pytest.fixture
 def executor(model_config, anima_dir, memory):
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
     from core.tooling.handler import ToolHandler
 
     th = ToolHandler(

@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.memory.conversation.memory import ConversationMemory, ConversationTurn
 from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.schemas import ModelConfig

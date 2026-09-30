@@ -14,7 +14,7 @@ from urllib.parse import quote, urlparse
 import httpx
 from PIL import Image
 
-from core.integrations._base import get_credential
+from core.credentials import get_credential
 from core.integrations.image.utils import _image_to_data_uri
 
 _API = "https://api.atlascloud.ai/api/v1/model"

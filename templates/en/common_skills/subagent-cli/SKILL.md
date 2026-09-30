@@ -17,8 +17,8 @@ This skill applies **only when the Bash tool is available**.
 
 | Mode | Implementation | Bash | Applicability of This Skill |
 |--------|------|------|------------------|
-| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | Available by default | Applies. Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP (send_message, etc.) + Task/Agent are available inside the Claude Code subprocess. The cwd during Bash execution is anima_dir |
-| **Mode C** | `codex_sdk.py` (Codex SDK) | Depends on Codex CLI's toolset | **codex exec is not needed** — the framework executes Codex directly. cursor-agent / claude -p can be called via Bash (if Bash is available) |
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | Available by default | Applies. Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP (send_message, etc.) + Task/Agent are available inside the Claude Code subprocess. The cwd during Bash execution is anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Depends on Codex CLI's toolset | **codex exec is not needed** — the framework executes Codex directly. cursor-agent / claude -p can be called via Bash (if Bash is available) |
 | **Mode D** | Cursor Agent (cursor-agent subprocess) | Depends on Cursor CLI's toolset | **cursor-agent -p is not needed** — the framework executes cursor-agent directly. MCP integration. Tool access is similar to Mode S, but the actual binary is cursor-agent. codex exec / claude -p can be called via Bash (if Bash is available) |
 | **Mode G** | Gemini CLI (gemini subprocess) | Depends on Gemini CLI's toolset | **Manual Gemini CLI startup is not needed** — the framework executes it directly. MCP integration, stream-json output. Other CLIs can be called via Bash (if Bash is available) |
 | **Mode A/B**** | LiteLLM + tool_use / 1-shot | Only when permitted by permissions.json | Applies if Bash is permitted |
@@ -349,4 +349,4 @@ Periodically check whether the process is still alive, and once complete, read t
 - Record execution results in your own episodes/, and accumulate learned patterns in knowledge/
 - Execution takes 5 to 20 minutes or more. Always run in the background and set a timeout
 - Work in git-managed repositories (for easy change tracking and rollback)
-- In Mode S, during Bash execution, `ANIMAWORKS_ANIMA_DIR` (Anima's data directory) and `ANIMAWORKS_PROJECT_DIR` (AnimaWorks framework root) are set as environment variables (injected via `agent_sdk.py`'s `_build_env()`)
+- In Mode S, during Bash execution, `ANIMAWORKS_ANIMA_DIR` (Anima's data directory) and `ANIMAWORKS_PROJECT_DIR` (AnimaWorks framework root) are set as environment variables (injected via `core/execution/engines/claude/executor.py`'s `_build_env()`)

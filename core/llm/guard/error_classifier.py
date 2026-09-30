@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, tzinfo
 from zoneinfo import ZoneInfo
 
-logger = logging.getLogger("animaworks.execution.error_classifier")
+logger = logging.getLogger("animaworks.llm.guard.error_classifier")
 
 
 # ── Error taxonomy ──────────────────────────────────────────────────────────

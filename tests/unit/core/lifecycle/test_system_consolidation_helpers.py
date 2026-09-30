@@ -12,11 +12,11 @@ import pytest
 
 def test_activity_log_only_anima_passes_daily_consolidation_gate(tmp_path: Path) -> None:
     from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
-    from core.memory.activity.logger import ActivityLogger
+    from core.activity.logger import ActivityLogger
 
     anima_dir = tmp_path / "animas" / "ritsu"
     anima_dir.mkdir(parents=True)
-    with patch("core.memory.activity.logger.now_iso", return_value="2026-06-10T12:00:00+09:00"):
+    with patch("core.activity.logger.now_iso", return_value="2026-06-10T12:00:00+09:00"):
         ActivityLogger(anima_dir).log(
             "response_sent",
             summary="worked from activity log only",

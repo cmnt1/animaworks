@@ -145,11 +145,11 @@ class TestOutboundPerAnimaSkipsPrefix:
 
             with (
                 patch(
-                    "core.integrations._base._lookup_vault_credential",
+                    "core.credentials._lookup_vault_credential",
                     return_value="xoxb-per-anima-token",
                 ),
                 patch(
-                    "core.integrations._base._lookup_shared_credentials",
+                    "core.credentials._lookup_shared_credentials",
                     return_value=None,
                 ),
             ):
@@ -189,11 +189,11 @@ class TestOutboundSharedTokenIncludesPrefix:
 
             with (
                 patch(
-                    "core.integrations._base._lookup_vault_credential",
+                    "core.credentials._lookup_vault_credential",
                     return_value=None,
                 ),
                 patch(
-                    "core.integrations._base._lookup_shared_credentials",
+                    "core.credentials._lookup_shared_credentials",
                     return_value=None,
                 ),
             ):
@@ -271,11 +271,11 @@ class TestWebhookPerAnimaAppIdRouting:
 
         with (
             patch(
-                "core.integrations._base._lookup_vault_credential",
+                "core.credentials._lookup_vault_credential",
                 side_effect=_mock_vault,
             ),
             patch(
-                "core.integrations._base._lookup_shared_credentials",
+                "core.credentials._lookup_shared_credentials",
                 return_value=None,
             ),
         ):

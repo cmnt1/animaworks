@@ -1,4 +1,4 @@
-"""Tests for core.execution.engines.litellm.litellm_loop — Mode A: LiteLLM tool_use loop."""
+"""Tests for core.execution.engines.litellm.executor — Mode A: LiteLLM tool_use loop."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -90,7 +90,7 @@ def executor(
     tool_handler: ToolHandler,
     memory: MagicMock,
 ):
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=model_config,
@@ -127,7 +127,7 @@ class TestBuildBaseTools:
     def test_excludes_use_tool_in_mode_a(self, anima_dir, model_config, memory):
         """use_tool is NOT included in Mode A (LiteLLM) — Mode B only."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -171,7 +171,7 @@ class TestBuildLlmKwargs:
     def test_includes_api_base(self, model_config: ModelConfig, anima_dir: Path, memory: MagicMock):
         model_config.api_base_url = "http://localhost:11434/v1"
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -396,7 +396,7 @@ class TestUseTool:
     async def test_use_tool_in_loop_returns_result(self, anima_dir, model_config, memory):
         """use_tool is callable in the loop and returns tool result to LLM."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -547,7 +547,7 @@ class TestThresholdShorttermMetadata:
 class TestBgPoolTools:
     def test_contains_image_gen_schema_names(self):
         """_BG_POOL_TOOLS includes all image_gen tool schema names."""
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         expected_image_tools = {
             "generate_character_assets",
@@ -564,14 +564,14 @@ class TestBgPoolTools:
 
     def test_contains_other_bg_tools(self):
         """_BG_POOL_TOOLS includes local_llm and run_command."""
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         assert "local_llm" in LiteLLMExecutor._BG_POOL_TOOLS
         assert "run_command" in LiteLLMExecutor._BG_POOL_TOOLS
 
     def test_does_not_contain_category_names(self):
         """_BG_POOL_TOOLS must NOT contain old category name 'image_generation'."""
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         assert "image_generation" not in LiteLLMExecutor._BG_POOL_TOOLS
 
@@ -602,7 +602,7 @@ class TestBuildLlmKwargsTimeoutAndNumCtx:
             context_threshold=0.50,
         )
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=ollama_config,

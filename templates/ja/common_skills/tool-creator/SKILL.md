@@ -99,7 +99,7 @@ def _do_action(param1: str, param2: int = 10) -> dict[str, Any]:
 
 #### 複数アクション + 認証（API 連携）
 
-`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` の解決順序は **`config.json` の `credentials.{credential_name}`**（`api_key` または `keys[key_name]`）→ **`vault.json` の `shared` セクション**（キー名は引数 `env_var` で渡した文字列）→ **`shared/credentials.json`（レガシー、キーは `env_var`）** → **環境変数 `env_var`**（`core/integrations/_base.py`）。
+`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` の解決順序は **`config.json` の `credentials.{credential_name}`**（`api_key` または `keys[key_name]`）→ **`vault.json` の `shared` セクション**（キー名は引数 `env_var` で渡した文字列）→ **`shared/credentials.json`（レガシー、キーは `env_var`）** → **環境変数 `env_var`**（`core/credentials.py`）。
 
 ```python
 from __future__ import annotations
@@ -140,7 +140,7 @@ def get_tool_schemas() -> list[dict]:
 
 class MyAPIClient:
     def __init__(self) -> None:
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         self._api_key = get_credential(
             "myapi",

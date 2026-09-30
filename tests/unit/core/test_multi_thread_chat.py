@@ -280,7 +280,7 @@ class TestConversationViewThreadFilter:
         """Entries with different thread_ids should be separated."""
         import json
 
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         log_dir = anima_dir / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -342,7 +342,7 @@ class TestConversationViewThreadFilter:
         """Without thread_id filter, all entries should be returned."""
         import json
 
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         log_dir = anima_dir / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -384,7 +384,7 @@ class TestConversationViewThreadFilter:
         """Entries without meta.thread_id should be treated as 'default'."""
         import json
 
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         log_dir = anima_dir / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)

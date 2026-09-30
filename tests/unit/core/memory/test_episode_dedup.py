@@ -566,7 +566,7 @@ class TestResolutions:
 
     def test_record_resolutions_writes_activity(self, conv_memory, anima_dir, data_dir):
         """_record_resolutions logs issue_resolved events."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
         from core.memory.manager import MemoryManager
 
         mm = MemoryManager(anima_dir)
@@ -593,7 +593,7 @@ class TestActivityLogType:
 
     def test_issue_resolved_ascii_label(self, anima_dir):
         """issue_resolved event gets RSLV label in priming format."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log("issue_resolved", content="テスト解決", summary="解決済み: テスト")

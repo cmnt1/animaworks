@@ -1,4 +1,4 @@
-"""Tests for A1 mode security functions in core.execution.engines.claude.agent_sdk."""
+"""Tests for A1 mode security functions in core.execution.engines.claude.executor."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0

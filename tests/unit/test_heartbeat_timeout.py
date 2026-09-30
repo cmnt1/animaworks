@@ -319,7 +319,7 @@ class TestHardTimeoutRecoveryNote:
 
     @pytest.mark.asyncio
     async def test_slow_activity_log_does_not_block_heartbeat_failure(self, tmp_path, monkeypatch):
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         state_dir = tmp_path / "state"
         state_dir.mkdir()

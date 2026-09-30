@@ -66,19 +66,19 @@ from core.execution.engines.claude._sdk_stream import (
     _tool_result_content_len,  # noqa: F401 - backward-compatible re-export
     process_stream_messages,
 )
-from core.execution.error_classifier import (
+from core.execution.events import done_event, error_event, stream_events
+from core.execution.process_runner import ProcessRunner
+from core.llm.guard.error_classifier import (
     classify_llm_error_message,
     detect_cli_error_envelope,
     guard_key,
     provider_family_of,
 )
-from core.execution.events import stream_events
-from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
+from core.llm.guard.rate_guard import get_rate_guard
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
-from core.prompt.tokens import estimate_tokens
 from core.schemas import ImageData, ModelConfig
+from core.text.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 
@@ -736,32 +736,30 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         failure = _sdk_failure_text(state.result_message, "\n".join(state.response_text), state.sdk_error)
         if failure and not state.interrupted:
             reason, _hint = classify_llm_error_message(failure)
-            yield {
-                "type": "error",
-                "terminal": True,
-                "message": failure,
-                "reason": reason.value,
-                "usage": state.usage_acc.to_dict(),
-                "tool_call_records": [asdict(r) for r in all_tool_records],
-            }
+            yield error_event(
+                failure,
+                terminal=True,
+                reason=reason.value,
+                usage=state.usage_acc.to_dict(),
+                tool_call_records=[asdict(r) for r in all_tool_records],
+            )
             return
         replied_to = self._read_replied_to_file()
-        yield {
-            "type": "done",
-            "full_text": full_text,
-            "result_message": state.result_message,
-            "stop_kind": "interrupted"
+        yield done_event(
+            full_text,
+            result_message=state.result_message,
+            stop_kind="interrupted"
             if state.interrupted
             else "empty_response"
             if full_text == "(no response)"
             else "normal",
-            "replied_to_from_transcript": replied_to,
-            "tool_call_records": [asdict(r) for r in all_tool_records],
-            "force_chain": session_stats.get("force_chain", False),
-            "task_compact_requested": session_stats.get("task_compact_requested", False),
-            "session_id": getattr(state.result_message, "session_id", None),
-            "usage": state.usage_acc.to_dict(),
-        }
+            replied_to_from_transcript=replied_to,
+            tool_call_records=[asdict(r) for r in all_tool_records],
+            force_chain=session_stats.get("force_chain", False),
+            task_compact_requested=session_stats.get("task_compact_requested", False),
+            session_id=getattr(state.result_message, "session_id", None),
+            usage=state.usage_acc.to_dict(),
+        )
 
     async def compact_session_by_id(
         self,

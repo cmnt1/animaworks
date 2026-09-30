@@ -1,4 +1,4 @@
-"""Tests for agent_sdk.py resume timeout guard and session type constants.
+"""Tests for the Claude executor resume timeout guard and session type constants.
 
 Covers:
   - RESUME_TIMEOUT_SEC constant is defined
@@ -240,12 +240,12 @@ class TestResumeTimeoutConstant:
     """RESUME_TIMEOUT_SEC is defined with a reasonable value."""
 
     def test_resume_timeout_defined(self) -> None:
-        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.executor import RESUME_TIMEOUT_SEC
 
         assert RESUME_TIMEOUT_SEC == 15.0
 
     def test_resume_timeout_is_positive(self) -> None:
-        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.executor import RESUME_TIMEOUT_SEC
 
         assert RESUME_TIMEOUT_SEC > 0
 
@@ -256,7 +256,7 @@ class TestNonChatSessionCleanup:
         self, model_config: ModelConfig, anima_dir: Path
     ) -> None:
         from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
         from core.prompt.context import ContextTracker
         from tests.helpers.mocks import patch_agent_sdk
 
@@ -283,7 +283,7 @@ class TestNonChatSessionCleanup:
         self, model_config: ModelConfig, anima_dir: Path
     ) -> None:
         from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
         from core.prompt.context import ContextTracker
         from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
@@ -385,7 +385,7 @@ class TestResumeTimeoutGuard:
         self, model_config: ModelConfig, anima_dir: Path
     ) -> None:
         """When a session_id is present, asyncio.wait_for wraps first-event receive."""
-        from core.execution.engines.claude.agent_sdk import _save_session_id
+        from core.execution.engines.claude.executor import _save_session_id
         from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         # Persist a session ID so execute_streaming takes the resume path
@@ -411,7 +411,7 @@ class TestResumeTimeoutGuard:
             return await original_wait_for(coro, timeout=timeout, **kwargs)
 
         with _patch_sdk_for_streaming(messages):
-            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.executor import AgentSDKExecutor
             from core.prompt.context import ContextTracker
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
@@ -427,7 +427,7 @@ class TestResumeTimeoutGuard:
                     events.append(event)
 
         # asyncio.wait_for should have been called with RESUME_TIMEOUT_SEC
-        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.executor import RESUME_TIMEOUT_SEC
 
         timeout_values = [c["timeout"] for c in wait_for_calls]
         assert RESUME_TIMEOUT_SEC in timeout_values, (
@@ -460,7 +460,7 @@ class TestResumeTimeoutGuard:
             return await original_wait_for(coro, timeout=timeout, **kwargs)
 
         with _patch_sdk_for_streaming(messages):
-            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.executor import AgentSDKExecutor
             from core.prompt.context import ContextTracker
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
@@ -476,7 +476,7 @@ class TestResumeTimeoutGuard:
                     events.append(event)
 
         # No wait_for should have been called for resume timeout
-        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.executor import RESUME_TIMEOUT_SEC
 
         resume_timeout_calls = [c for c in wait_for_calls if c["timeout"] == RESUME_TIMEOUT_SEC]
         assert resume_timeout_calls == [], (
@@ -487,7 +487,7 @@ class TestResumeTimeoutGuard:
     async def test_clear_session_id_called_on_resume_timeout(self, model_config: ModelConfig, anima_dir: Path) -> None:
         """When resume times out, _clear_session_id is called and falls back to
         fresh session."""
-        from core.execution.engines.claude.agent_sdk import _save_session_id
+        from core.execution.engines.claude.executor import _save_session_id
         from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         _save_session_id(anima_dir, "stale-session-for-timeout", "chat")
@@ -517,7 +517,7 @@ class TestResumeTimeoutGuard:
 
         async def _timeout_on_first_then_succeed(coro, timeout=None, **kwargs):
             """Raise TimeoutError on the first call (resume), succeed thereafter."""
-            from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
+            from core.execution.engines.claude.executor import RESUME_TIMEOUT_SEC
 
             if timeout == RESUME_TIMEOUT_SEC and call_count[0] == 0:
                 call_count[0] += 1
@@ -526,7 +526,7 @@ class TestResumeTimeoutGuard:
 
         with _patch_sdk_for_streaming(fresh_messages):
             from core.execution.engines.claude._sdk_session import _clear_session_id
-            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.executor import AgentSDKExecutor
             from core.prompt.context import ContextTracker
 
             original_clear = _clear_session_id

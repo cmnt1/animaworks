@@ -28,7 +28,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from core.memory._io import atomic_write_text
+from core.memory.io import atomic_write_text
 from core.memory.rag.exclusion import is_archive_path
 from core.platform.locks import locked_path
 from core.time_utils import ensure_aware, get_app_timezone, today_local

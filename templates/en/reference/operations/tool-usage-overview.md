@@ -193,7 +193,7 @@ For specific subcommands, check each module's `cli_main` or `animaworks-tool <na
 
 ## Trust Levels (Labels for Tool Results)
 
-`core/execution/_sanitize.py`'s **`TOOL_TRUST_LEVELS`** defines tool name → `trusted` / `medium` / `untrusted`. **All names not in the map are wrapped as `untrusted`** (personal tools, Discord's `discord_*`, etc.). Summary:
+`core/trust.py`'s **`TOOL_TRUST_LEVELS`** defines tool name → `trusted` / `medium` / `untrusted`. **All names not in the map are wrapped as `untrusted`** (personal tools, Discord's `discord_*`, etc.). Summary:
 
 | Trust Level | Representative Examples | How to Handle |
 |--------|--------|--------|

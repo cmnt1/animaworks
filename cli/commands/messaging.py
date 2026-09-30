@@ -55,7 +55,7 @@ def _persist_replied_to_for_a1(to: str) -> None:
     import json as _json
     from pathlib import Path
 
-    from core.execution.session_context import RuntimeSessionContext
+    from core.execution.session.session_context import RuntimeSessionContext
 
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR")
     if not anima_dir:

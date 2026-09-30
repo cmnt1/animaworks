@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._sanitize import (
+from core.trust import (
     ORIGIN_ANIMA,
     ORIGIN_CONSOLIDATION,
     ORIGIN_EXTERNAL_PLATFORM,

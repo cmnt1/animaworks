@@ -69,11 +69,11 @@ def _make_brave_response(data: dict | None = None, status: int = 200) -> httpx.R
 
 class TestResolveBackend:
     def test_brave_when_key_available(self):
-        with patch("core.integrations._base.get_credential", return_value="fake-key"):
+        with patch("core.credentials.get_credential", return_value="fake-key"):
             assert _resolve_backend() == "brave"
 
     def test_duckduckgo_when_no_key(self):
-        with patch("core.integrations._base.get_credential", side_effect=Exception("no key")):
+        with patch("core.credentials.get_credential", side_effect=Exception("no key")):
             assert _resolve_backend() == "duckduckgo"
 
 
@@ -181,7 +181,7 @@ class TestBrave:
         mock_resp = _make_brave_response()
         with (
             patch("core.integrations.web_search._resolve_backend", return_value="brave"),
-            patch("core.integrations._base.get_credential", return_value="fake-key"),
+            patch("core.credentials.get_credential", return_value="fake-key"),
             patch("core.integrations.web_search.httpx.get", return_value=mock_resp),
         ):
             results = search("test")
@@ -193,7 +193,7 @@ class TestBrave:
         error_resp = _make_brave_response(status=500)
         with (
             patch("core.integrations.web_search._resolve_backend", return_value="brave"),
-            patch("core.integrations._base.get_credential", return_value="fake-key"),
+            patch("core.credentials.get_credential", return_value="fake-key"),
             patch("core.integrations.web_search.httpx.get", return_value=error_resp),
             pytest.raises(httpx.HTTPStatusError),
         ):

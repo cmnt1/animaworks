@@ -509,7 +509,7 @@ def create_system_router() -> APIRouter:
         id: str,
     ):
         """Return one complete trigger-based activity group by stable ID."""
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         anima_names = request.app.state.anima_names
         if anima not in anima_names:
@@ -554,7 +554,7 @@ def create_system_router() -> APIRouter:
         filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
         task_exec, task, single.
         """
-        from core.memory.activity.logger import ActivityLogger, build_semantic_replay_events
+        from core.activity.logger import ActivityLogger, build_semantic_replay_events
 
         animas_dir = request.app.state.animas_dir
         anima_names = request.app.state.anima_names

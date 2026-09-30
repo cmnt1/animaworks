@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.execution.base import BaseExecutor, StreamDisconnectedError
-from core.execution.session_store import SessionRecord, SessionStore
+from core.execution.session.session_store import SessionRecord, SessionStore
 from core.prompt.builder import BuildResult
 from core.schemas import ModelConfig
 

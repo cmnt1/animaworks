@@ -107,8 +107,8 @@ class TestCoreModuleImports:
     @pytest.mark.parametrize(
         "module_path",
         [
-            "core.execution.engines.claude.agent_sdk",
-            "core.execution.engines.litellm.litellm_loop",
+            "core.execution.engines.claude.executor",
+            "core.execution.engines.litellm.executor",
             "core.supervisor.manager",
             "core.supervisor.runner",
             "core.supervisor.ipc",
@@ -143,12 +143,12 @@ class TestNoSilentPasses:
             # builder.py: status.json parse failure falls back to None defaults
             # for supervisor/speciality/role in org tree construction.
             "builder.py",
-            # session.py, messenger.py, _sdk_hooks.py, agent_sdk.py, consolidation.py:
+            # session.py, messenger.py, _sdk_hooks.py, executor.py, consolidation.py:
             # documented last-resort fallbacks (e.g. IPC cleanup, config parse).
             "session.py",
             "messenger.py",
             "_sdk_hooks.py",
-            "agent_sdk.py",
+            "executor.py",
             "consolidation.py",
             # org_context.py: status.json parse failure per-anima falls back to
             # None defaults for role/model in org tree construction (same as builder.py).

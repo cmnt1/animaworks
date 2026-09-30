@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/activity/logger.py — ASCII labels, pointer, and pagination."""
+"""Unit tests for core/activity/logger.py — ASCII labels, pointer, and pagination."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity.logger import ActivityEntry, ActivityLogger, ActivityPage
+from core.activity.logger import ActivityEntry, ActivityLogger, ActivityPage
 from core.time_utils import now_jst
 
 
@@ -523,7 +523,7 @@ class TestTimeDiff:
 
     def test_both_aware(self) -> None:
         """Two aware timestamps compute correct diff."""
-        from core.memory.activity.models import time_diff
+        from core.activity.models import time_diff
 
         t1 = "2026-02-20T10:00:00+09:00"
         t2 = "2026-02-20T10:00:10+09:00"
@@ -531,7 +531,7 @@ class TestTimeDiff:
 
     def test_both_naive(self) -> None:
         """Two naive timestamps compute correct diff (tagged as JST)."""
-        from core.memory.activity.models import time_diff
+        from core.activity.models import time_diff
 
         t1 = "2026-02-20T10:00:00"
         t2 = "2026-02-20T10:00:05"
@@ -539,7 +539,7 @@ class TestTimeDiff:
 
     def test_mixed_naive_and_aware(self) -> None:
         """Mixed naive + aware timestamps must not raise TypeError."""
-        from core.memory.activity.models import time_diff
+        from core.activity.models import time_diff
 
         naive = "2026-02-20T10:00:00"
         aware = "2026-02-20T10:00:30+09:00"
@@ -549,7 +549,7 @@ class TestTimeDiff:
 
     def test_invalid_returns_inf(self) -> None:
         """Invalid timestamps return infinity."""
-        from core.memory.activity.models import time_diff
+        from core.activity.models import time_diff
 
         assert time_diff("not-a-date", "2026-02-20T10:00:00") == float("inf")
 

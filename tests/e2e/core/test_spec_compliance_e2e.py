@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity.logger import ActivityLogger
+from core.activity.logger import ActivityLogger
 from core.time_utils import today_local
 
 # ── Fixtures ──────────────────────────────────────────────────

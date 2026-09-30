@@ -28,7 +28,7 @@ class TestPersistRepliedTo:
         return ToolHandler(anima_dir=tmp_path, memory=memory)
 
     def test_persist_creates_file_and_appends(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         handler = self._make_handler(tmp_path)
         ctx = RuntimeSessionContext.create(session_type="chat", thread_id="thread-a", trigger="message:mio")
@@ -54,7 +54,7 @@ class TestPersistRepliedTo:
         assert entry2["success"] is False
 
     def test_persist_creates_run_directory(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         handler = self._make_handler(tmp_path)
         # run/ directory does not exist yet
@@ -85,7 +85,7 @@ class TestReadRepliedToFile:
         assert executor._read_replied_to_file() == set()
 
     def test_read_valid_entries(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         path = tmp_path / "run" / "replied_to" / "chat" / "default.jsonl"
         path.parent.mkdir(parents=True)
@@ -100,7 +100,7 @@ class TestReadRepliedToFile:
         assert result == {"alice", "charlie"}  # bob excluded (success=false)
 
     def test_read_corrupted_lines_are_skipped(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         path = tmp_path / "run" / "replied_to" / "heartbeat" / "default.jsonl"
         path.parent.mkdir(parents=True)
@@ -115,7 +115,7 @@ class TestReadRepliedToFile:
         assert result == {"alice", "charlie"}
 
     def test_read_empty_file_returns_empty_set(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         path = tmp_path / "run" / "replied_to" / "chat" / "thread-a.jsonl"
         path.parent.mkdir(parents=True)
@@ -126,7 +126,7 @@ class TestReadRepliedToFile:
             assert executor._read_replied_to_file() == set()
 
     def test_read_empty_lines_ignored(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         path = tmp_path / "run" / "replied_to" / "chat" / "default.jsonl"
         path.parent.mkdir(parents=True)
@@ -140,7 +140,7 @@ class TestReadRepliedToFile:
             assert executor._read_replied_to_file() == {"alice"}
 
     def test_read_ignores_other_session_files(self, tmp_path):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         chat_path = tmp_path / "run" / "replied_to" / "chat" / "default.jsonl"
         hb_path = tmp_path / "run" / "replied_to" / "heartbeat" / "default.jsonl"
@@ -159,11 +159,11 @@ class TestSendPatternsRemoved:
     """Verify _SEND_PATTERNS and _parse_replied_to are removed from agent_sdk."""
 
     def test_send_patterns_not_in_module(self):
-        import core.execution.engines.claude.agent_sdk as mod
+        import core.execution.engines.claude.executor as mod
 
         assert not hasattr(mod, "_SEND_PATTERNS")
 
     def test_parse_replied_to_not_in_executor(self):
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         assert not hasattr(AgentSDKExecutor, "_parse_replied_to")

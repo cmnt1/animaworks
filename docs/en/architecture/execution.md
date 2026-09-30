@@ -22,7 +22,7 @@ The resolution order from the model name is: explicit per-anima specification in
 
 ## Common Execution Layer and Failure Behavior
 
-Implementations for each engine are placed in `core/execution/engines/`. The common layer's `core/execution/events.py`, `session_store.py`, `process_runner.py`, `watchdog.py`, `tool_evidence.py`, and `cli_stream.py` standardize events, session persistence, process control, and tool evidence. Error classification, process termination, binary search, `clear_session`, and response/error determination are also handled in the intermediate layer. D and G are included in this structure.
+Implementations for each engine are placed in `core/execution/engines/`. The common layer's `core/execution/events.py`, `core/execution/session/session_store.py`, `process_runner.py`, `watchdog.py`, `tool_evidence.py`, and `cli_stream.py` standardize events, session persistence, process control, and tool evidence. Error classification, process termination, binary search, `clear_session`, and response/error determination are also handled in the intermediate layer. D and G are included in this structure.
 
 The watchdog determines idle status when no engine event arrives for 1200 seconds. This is not a timeout measuring total execution time. Rate limit and provider overload information is shared per provider family in `llm_rate_guard`, preventing other Anima instances from making consecutive requests to the same provider. This guard is designed so that read/write failures do not stop normal execution.
 

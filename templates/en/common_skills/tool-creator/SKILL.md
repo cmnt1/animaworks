@@ -100,7 +100,7 @@ When calling from `animaworks-tool`, **`cli_main` must be implemented** afterwar
 
 #### Multiple Actions + Authentication (API Integration)
 
-The resolution order for `get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` is: **`credentials.{credential_name}` of `config.json`** (`api_key` or `keys[key_name]`) → **the `shared` section of `vault.json`** (key name is the string passed as argument `env_var`) → **`shared/credentials.json` (legacy, key is `env_var`)** → **environment variable `env_var`** (`core/integrations/_base.py`).
+The resolution order for `get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` is: **`credentials.{credential_name}` of `config.json`** (`api_key` or `keys[key_name]`) → **the `shared` section of `vault.json`** (key name is the string passed as argument `env_var`) → **`shared/credentials.json` (legacy, key is `env_var`)** → **environment variable `env_var`** (`core/credentials.py`).
 
 ```python
 from __future__ import annotations
@@ -141,7 +141,7 @@ def get_tool_schemas() -> list[dict]:
 
 class MyAPIClient:
     def __init__(self) -> None:
-        from core.integrations._base import get_credential
+        from core.credentials import get_credential
 
         self._api_key = get_credential(
             "myapi",

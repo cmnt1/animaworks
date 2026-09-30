@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from core.memory.activity.logger import ActivityEntry, ActivityLogger
-from core.memory.activity.models import EVENT_TYPE_ALIASES, resolve_type_filter
+from core.activity.logger import ActivityEntry, ActivityLogger
+from core.activity.models import EVENT_TYPE_ALIASES, resolve_type_filter
 
 # ── _resolve_type_filter ─────────────────────────────────
 
@@ -392,7 +392,7 @@ class TestResponseSentUnchanged:
     def test_response_sent_exists_in_code(self) -> None:
         import inspect
 
-        from core.memory.activity.logger import ActivityLogger
+        from core.activity.logger import ActivityLogger
 
         source = inspect.getsource(ActivityLogger._format_entry)
         assert '"response_sent"' in source

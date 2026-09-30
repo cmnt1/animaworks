@@ -140,6 +140,20 @@ def _atomic_write_data(
         _fsync_directory(path.parent)
 
 
+def cleanup_tmp_files(directory: Path, prefix: str = ".") -> int:
+    """Remove stale ``.tmp`` files from *directory* and return the count."""
+    removed = 0
+    if not directory.exists():
+        return removed
+    for tmp in directory.glob(f"{prefix}*.tmp"):
+        try:
+            tmp.unlink()
+            removed += 1
+        except OSError:
+            logger.debug("Failed to remove stale tmp file %s", tmp, exc_info=True)
+    return removed
+
+
 def _fsync_directory(directory: Path) -> None:
     """Best-effort fsync of a directory after replacing its entry."""
     try:

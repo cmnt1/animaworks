@@ -89,7 +89,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "common_knowledge/communication/sending-limits.md": [
         "core/messaging/outbound.py",
-        "core/memory/activity/logger.py",
+        "core/activity/logger.py",
     ],
     # ── common_knowledge — operations ──
     "reference/operations/task-management.md": [
@@ -116,7 +116,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "server/routes/tasks.py",
     ],
     "reference/operations/mode-s-auth-guide.md": [
-        "core/execution/engines/claude/agent_sdk.py",
+        "core/execution/engines/claude/executor.py",
         "core/execution/engines/claude/_sdk_security.py",
     ],
     "reference/operations/project-setup.md": [
@@ -167,7 +167,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — security ──
     "common_knowledge/security/prompt-injection-awareness.md": [
         "core/prompt/builder.py",
-        "core/execution/_sanitize.py",
+        "core/trust.py",
     ],
     # ── common_knowledge — troubleshooting ──
     "reference/troubleshooting/common-issues.md": ["core/"],
@@ -200,8 +200,8 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/skill_creator.py",
     ],
     "common_skills/subagent-cli/SKILL.md": [
-        "core/execution/engines/claude/agent_sdk.py",
-        "core/execution/engines/codex/codex_sdk.py",
+        "core/execution/engines/claude/executor.py",
+        "core/execution/engines/codex/executor.py",
     ],
     "common_skills/subordinate-management/SKILL.md": [
         "core/tooling/handler_org.py",
@@ -222,7 +222,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     "docs/memory": ["core/memory/"],
     "docs/brain-mapping": ["core/memory/", "core/prompt/"],
     "docs/security": [
-        "core/execution/_sanitize.py",
+        "core/trust.py",
         "core/execution/engines/claude/_sdk_security.py",
         "core/tooling/handler.py",
         "core/prompt/builder.py",

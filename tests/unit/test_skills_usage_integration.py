@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._sanitize import ORIGIN_HUMAN, ORIGIN_SYSTEM
+from core.trust import ORIGIN_HUMAN, ORIGIN_SYSTEM
 from core.skills.models import SkillUsageEventType
 from core.skills.usage import SkillUsageTracker
 from core.tooling.handler import ToolHandler

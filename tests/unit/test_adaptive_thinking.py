@@ -371,7 +371,7 @@ class TestLiteLLMAdaptiveThinking:
         return MagicMock(spec=ToolHandler)
 
     def test_claude_46_gets_adaptive_thinking(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="claude-sonnet-4-6",
@@ -393,7 +393,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "temperature" not in kwargs
 
     def test_claude_5_gets_adaptive_not_budget(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(model="anthropic/claude-opus-5-5", thinking=True, thinking_effort="max", api_key="k")
         ex = LiteLLMExecutor(
@@ -409,7 +409,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "temperature" not in kwargs
 
     def test_old_claude_gets_manual_thinking(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="claude-sonnet-4-5-20250929",
@@ -428,7 +428,7 @@ class TestLiteLLMAdaptiveThinking:
         assert kwargs["temperature"] == 1
 
     def test_ollama_gets_think_param(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="ollama/qwen3:14b",
@@ -448,7 +448,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "extra_body" not in kwargs
 
     def test_bedrock_gets_reasoning_effort(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/claude-opus-4-6",
@@ -468,7 +468,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "thinking" not in kwargs
 
     def test_bedrock_kimi_gets_reasoning_config(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/moonshotai.kimi-k2.5",
@@ -489,7 +489,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "enable_thinking" not in kwargs
 
     def test_bedrock_kimi_thinking_false_no_reasoning_config(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/moonshotai.kimi-k2.5",
@@ -508,7 +508,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "reasoning_effort" not in kwargs
 
     def test_bedrock_qwen_gets_enable_thinking_true(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/qwen.qwen3-next-80b-a3b",
@@ -530,7 +530,7 @@ class TestLiteLLMAdaptiveThinking:
 
     def test_bedrock_qwen_thinking_false_omits_enable_thinking(self, anima_dir, tool_handler, memory):
         """thinking=False must NOT send enable_thinking — causes 'Please continue' on qwen3-next."""
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/qwen.qwen3-next-80b-a3b",
@@ -549,7 +549,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "reasoning_effort" not in kwargs
 
     def test_openai_gets_extra_body_enable_thinking_true(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="openai/qwen3.5-9b",
@@ -570,7 +570,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "enable_thinking" not in kwargs  # top-level, not extra_body
 
     def test_openai_gets_extra_body_enable_thinking_false(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="openai/qwen3.5-9b",
@@ -589,7 +589,7 @@ class TestLiteLLMAdaptiveThinking:
         assert "think" not in kwargs
 
     def test_openai_thinking_none_defaults_to_true(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="openai/qwen3.5-9b",
@@ -607,7 +607,7 @@ class TestLiteLLMAdaptiveThinking:
         assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
     def test_bedrock_glm_gets_enable_thinking_true(self, anima_dir, tool_handler, memory):
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/zhipuai.glm-4.7-250414",
@@ -629,7 +629,7 @@ class TestLiteLLMAdaptiveThinking:
 
     def test_bedrock_glm_thinking_false_omits_enable_thinking(self, anima_dir, tool_handler, memory):
         """thinking=False must NOT send enable_thinking — same fix as Bedrock Qwen."""
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="bedrock/zhipuai.glm-4.7-250414",
@@ -649,7 +649,7 @@ class TestLiteLLMAdaptiveThinking:
 
     def test_openai_gpt_with_thinking_uses_extra_body(self, anima_dir, tool_handler, memory):
         """Non-Qwen openai/* models also use extra_body when thinking is set."""
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         cfg = ModelConfig(
             model="openai/gpt-4o",

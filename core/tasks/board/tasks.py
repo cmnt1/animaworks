@@ -890,7 +890,7 @@ class TaskStore:
 
     def export(self, anima_dir: Path, *, destination: Path | None = None, descriptors: bool = False) -> int:
         """Produce a current rollback/export view; never replay old completed work."""
-        from core.memory._io import atomic_write_text
+        from core.platform.atomic_io import atomic_write_text
 
         target_dir = destination or anima_dir
         with self.transaction() as db:

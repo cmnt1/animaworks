@@ -34,8 +34,8 @@ LAYER_RULES: tuple[tuple[str, int], ...] = (
     ("core.lifecycle", 5),
     ("core.voice", 5),
     ("core.mcp", 5),
-    ("core.execution.session_types", 2),
-    ("core.execution.session_context", 2),
+    ("core.execution.session.session_types", 2),
+    ("core.execution.session.session_context", 2),
     ("core.activity", 2),  # Planned package; no current modules expected.
     ("core.trust", 2),  # Planned package; no current modules expected.
     ("core.text", 2),  # Planned package; no current modules expected.
