@@ -1,16 +1,16 @@
-## Message Sending
+## Messaging
 
-**Who can send:** {animas_line}
+**Recipients:** {animas_line}
 
-DM sending:
+DM:
 ```json
-{{"name": "send_message", "arguments": {{"to": "相手名", "content": "メッセージ", "intent": "report"}}}}
+{{"name": "send_message", "arguments": {{"to": "recipient_name", "content": "message", "intent": "report"}}}}
 ```
-- intent: `report` | `question`. Inbox starts with file change notifications for new messages, with no intent-based startup filter
+- intent: `report` | `question`. A new Inbox message wakes processing via a file-change notification; intent does not filter wakeups
 
-Board posting:
+Board:
 ```json
-{{"name": "post_channel", "arguments": {{"channel": "general", "text": "投稿内容"}}}}
+{{"name": "post_channel", "arguments": {{"channel": "general", "text": "post content"}}}}
 ```
 {board_channel_guidance}
-- Reference history with `read_channel(channel)` / `read_dm_history(peer)`
+- `read_channel(channel)` / `read_dm_history(peer)` for history
