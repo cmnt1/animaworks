@@ -72,7 +72,7 @@ Chat과 Heartbeat(그리고 cron / TaskExec 등의 백그라운드 처리)는 **
   3. `config.json`의 `background_task.eligible_tools`（각 도구의 `threshold_s`가 같은 맵의 값으로 덮어씀）
   `is_eligible(name)`은 **이름이 맵에 포함되어 있는지만** 확인한다（값은 참고용 초 단위로 저장되며, 임계값 비교에는 사용되지 않는다）。
 - **에이전트를 통한 실행**: `ToolHandler`가 미등록 도구를 외부 디스패치할 때, 이름이 위 맵에 있으면 `BackgroundTaskManager.submit`로 보내고 `task_id`을 포함하는 JSON을 즉시 반환한다. 결과는 `check_background_task` / `list_background_tasks` 등의 도구로 확인한다.
-- **CLI를 통한 실행（`animaworks-tool submit`）**: 명령형 도구의 설명자는 계속해서 **`state/background_tasks/pending/`**과 processing 흐름을 사용한다. `PendingTaskExecutor`은 이 명령 대기열을 모니터링하고, 별도로 정식 작업 저장소에서 LLM 작업을 가져온다. LLM 작업 제출을 위해 파일을 만들지는 않는다.
+- **CLI를 통한 실행（`animaworks-tool submit`）**: 명령형 도구도 TaskStore에 `task_type="command"`로 등록된다. `PendingTaskExecutor`가 TaskStore에서 실행 시도를 가져오고 BackgroundTaskManager가 실행한다. 호환성을 위해 결과 상태는 `state/background_tasks/{task_id}.json`에도 저장되며 완료 알림으로 확인할 수 있다.
 - **정리**: `cleanup_old_tasks(max_age_hours=24)`는 `completed` / `failed`에서 `completed_at`부터 지정된 시간을 초과한 JSON과, `running` 상태로 `created_at`부터 **48시간 초과** 경과한 파일（프로세스 충돌 등으로 남은 고아 파일）을 삭제한다. 보존 시간은 호출 측에서 인수 `max_age_hours`로 지정하며, 설정 키는 없다.
 
 같은 모듈의 **`rotate_dm_logs`**은 `shared/dm_logs/*.jsonl` 중 `max_age_days`（기본값 7일）보다 오래된 행을 `{元ファイル名}.{YYYYMMDD}.archive.jsonl`에 추가해 아카이브하고, 활성 파일에는 최근 행만 남도록 다시 쓴다（DM 기록 비대화 방지）。

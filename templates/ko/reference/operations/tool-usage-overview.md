@@ -184,7 +184,7 @@ Mode A의 스키마에서는 **PascalCase 이름**입니다. `ToolHandler` 내�
 animaworks-tool <ツール名> <サブコマンド> [引数…]
 ```
 
-- **`animaworks-tool submit <ツール名> [引数…]`** — 장시간 처리를 백그라운드로 투입. 디스크립터는 **`state/background_tasks/pending/`**에 저장되며, 와처가 실행합니다（`core/integrations/__init__.py`의 `_handle_submit`). 대상 서브커맨드가 `EXECUTION_PROFILE`에서 `background_eligible`가 아닌 경우 경고만（투입은 이루어짐）.
+- **`animaworks-tool submit <tool> [args…]`** — 장시간 작업을 `task_type="command"`로 TaskStore에 등록하고, PendingTaskExecutor가 실행 시도를 가져와 실행합니다. 결과는 기존처럼 `state/background_tasks/{task_id}.json`과 완료 알림에서 확인할 수 있습니다. 대상 서브커맨드가 `EXECUTION_PROFILE`에서 `background_eligible`가 아니면 경고만 출력합니다(투입은 진행됨).
 - 사용 가능한 이름은 **`core/integrations`의 코어 모듈** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` 아래의 `tools/`**의 합집합. `--help`에서 목록 표시됩니다.
 - `ANIMAWORKS_ANIMA_DIR`이 설정되어 있을 때, 서브커맨드는 **`load_permissions` + `is_action_gated`**로 거부될 수 있습니다（예: Discord의 `channel_post`).
 - 정의되지 않은 첫 번째 인자는 메인 CLI의 서브커맨드（`anima`, `vault` 등）로 폴백될 수 있습니다.

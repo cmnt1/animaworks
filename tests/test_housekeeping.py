@@ -42,7 +42,6 @@ class TestHousekeepingConfig:
         assert cfg.facts_lock_stale_hours == 24
         assert cfg.curator_report_retention_days == 30
         assert cfg.task_results_retention_days == 7
-        assert cfg.pending_failed_retention_days == 14
         assert cfg.corrupt_vectordb_keep_generations == 2
         assert cfg.tmp_retention_days == 14
         assert cfg.backup_retention_days == 90
@@ -936,7 +935,6 @@ class TestRunHousekeeping:
                 cron_log_retention_days=30,
                 shortterm_retention_days=7,
                 task_results_retention_days=7,
-                pending_failed_retention_days=7,
             ),
         )
 
@@ -953,7 +951,6 @@ class TestRunHousekeeping:
         assert "frontend_logs" in results
         assert "dm_archives" in results
         assert results["task_results"]["deleted_files"] == 1
-        assert results["pending_failed"]["deleted_files"] == 0
         assert old_pf.exists()
         assert "corrupt_vectordb_archives" in results
         assert "runtime_tmp" in results
@@ -979,7 +976,6 @@ class TestRunHousekeeping:
         assert "shortterm" in results
         assert "facts_locks" in results
         assert "task_results" in results
-        assert "pending_failed" in results
         assert "codex_execution_logs" in results
         assert "codex_tmp" in results
         assert "anima_runtime_artifacts" in results
@@ -1160,71 +1156,6 @@ class TestCleanupTaskResults:
 
         result = _cleanup_task_results(tmp_path, retention_days=7)
         assert result["deleted_files"] == 2
-
-
-# ── Pending failed cleanup tests ────────────────────────────────
-
-
-class TestCleanupPendingFailed:
-    """Tests for _cleanup_pending_failed."""
-
-    def test_ignores_legacy_llm_failed_directory(self, tmp_path: Path):
-        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
-
-        failed_dir = tmp_path / "alice" / "state" / "pending" / "failed"
-        failed_dir.mkdir(parents=True)
-
-        old_time = time.time() - (20 * 86400)
-        old_file = failed_dir / "task_old.json"
-        old_file.write_text("{}")
-        os.utime(old_file, (old_time, old_time))
-
-        result = _cleanup_pending_failed(tmp_path, retention_days=14)
-        assert result["deleted_files"] == 0
-        assert old_file.exists()
-
-    def test_deletes_old_cmd_failed(self, tmp_path: Path):
-        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
-
-        failed_dir = tmp_path / "alice" / "state" / "background_tasks" / "pending" / "failed"
-        failed_dir.mkdir(parents=True)
-
-        old_time = time.time() - (20 * 86400)
-        old_file = failed_dir / "cmd_old.json"
-        old_file.write_text("{}")
-        os.utime(old_file, (old_time, old_time))
-
-        result = _cleanup_pending_failed(tmp_path, retention_days=14)
-        assert result["deleted_files"] == 1
-        assert not old_file.exists()
-
-    def test_deletes_only_background_task_failed_dir(self, tmp_path: Path):
-        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
-
-        old_time = time.time() - (20 * 86400)
-
-        llm_failed = tmp_path / "alice" / "state" / "pending" / "failed"
-        llm_failed.mkdir(parents=True)
-        f1 = llm_failed / "llm_old.json"
-        f1.write_text("{}")
-        os.utime(f1, (old_time, old_time))
-
-        cmd_failed = tmp_path / "alice" / "state" / "background_tasks" / "pending" / "failed"
-        cmd_failed.mkdir(parents=True)
-        f2 = cmd_failed / "cmd_old.json"
-        f2.write_text("{}")
-        os.utime(f2, (old_time, old_time))
-
-        result = _cleanup_pending_failed(tmp_path, retention_days=14)
-        assert result["deleted_files"] == 1
-        assert f1.exists()
-        assert not f2.exists()
-
-    def test_skips_missing_dir(self, tmp_path: Path):
-        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
-
-        result = _cleanup_pending_failed(tmp_path / "nonexistent", retention_days=14)
-        assert result["skipped"] is True
 
 
 class TestRuntimeBloatRetention:

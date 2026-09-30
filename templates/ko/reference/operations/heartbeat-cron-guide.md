@@ -38,7 +38,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 `submit_tasks`는 검증 후, 작업과 완전한 실행 입력을 하나의 정본 TaskStore에 일괄 저장한다.
 실행 권한의 획득과 시도 이력은 호스트가 관리한다. `in_progress`는 열람용이며, 에이전트는 `update_task`로 `done` / `pending` / `cancelled`을 선언한다. 중단된 pending 작업은 같은 ID에 `resume: true`을 지정하여 명시적으로 재개하고, 다른 작업으로 대체하지 않는다.
 
-**장시간 CLI 도구**(`animaworks-tool submit …`)는 별도 경로로 `state/background_tasks/pending/`에 기록되며, `BackgroundTaskManager`(`core/tasks/background.py`)이 백그라운드로 실행한다. 상세는 `operations/background-tasks.md`을 참조.
+**장시간 CLI 도구**(`animaworks-tool submit …`)는 `task_type="command"`로 TaskStore에 등록된다. PendingTaskExecutor가 실행 시도를 가져와 백그라운드에서 실행하며 결과는 기존 완료 알림과 `state/background_tasks/{task_id}.json`에서 확인할 수 있다. 자세한 내용은 `operations/background-tasks.md`를 참조.
 
 **주의**: 저장 위치를 직접 편집하지 않는다. 구 `state/task_queue.jsonl`와 `state/pending/`는 마이그레이션·내보내기용 증적으로 보존하고, 가동 중 투입처로 사용하지 않는다.
 

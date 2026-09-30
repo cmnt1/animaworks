@@ -26,6 +26,6 @@ TaskExec의 결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`�
 
 이전 `state/task_queue.jsonl`과 `state/pending/`은 마이그레이션, 내보내기용 증적만 있으며 보존합니다. 마이그레이션은 이전 쓰기 처리의 종료와 백업 후 운영자가 명시적으로 수행합니다. 임의의 읽기로 가동 중인 이전 데이터를 가져오지 않습니다.
 
-장시간 명령 도구는 별개입니다. `animaworks-tool submit`는 계속해서 `state/background_tasks/pending/`을 사용하며 BackgroundTaskManager가 명령 상태, 알림을 저장합니다. LLM 작업의 변경을 이유로 이 파일 경로를 제거하지 않습니다.
+장시간 명령 도구도 `task_type="command"`로 TaskStore에 실행 시도가 기록된다. 호환성을 위해 `animaworks-tool submit`의 결과는 `state/background_tasks/{task_id}.json`과 완료 알림에서 계속 확인할 수 있다. 자세한 내용은 `reference/operations/task-management.md`와 `operations/background-tasks.md`를 참조.
 
 도구 예시는 `reference/operations/task-management.md`, 명령 실행은 `operations/background-tasks.md`를 참조하세요.

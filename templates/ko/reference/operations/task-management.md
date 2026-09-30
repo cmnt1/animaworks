@@ -66,4 +66,4 @@ TaskExec의 결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`�
 
 ## 장시간 명령 도구는 별도 경로
 
-이미지 생성이나 run_command 등 대응하는 장시간 외부 도구에는 `animaworks-tool submit TOOL ...`을 사용한다. 이것은 `submit_tasks`과는 별개이고, 명령 기술자는 계속 `state/background_tasks/pending/`에 저장된다. BackgroundTaskManager는 `state/background_tasks/{task_id}.json`에 `running` / `completed` / `failed`을 기록한다. `list_background_tasks` / `check_background_task`로 확인한다. 이 파일 경로와 알림을 유지한다. 상세는 `operations/background-tasks.md`.
+이미지 생성이나 run_command 등 지원되는 장시간 외부 도구에는 `animaworks-tool submit TOOL ...`을 사용한다. `submit_tasks`와 같은 TaskStore에 `task_type="command"`로 등록되고, PendingTaskExecutor가 실행 시도를 가져와 BackgroundTaskManager를 통해 실행한다. 실행 시도는 TaskStore에 기록되며, 호환성을 위해 `state/background_tasks/{task_id}.json`과 완료 알림도 유지된다. `list_background_tasks` / `check_background_task`로 결과를 확인한다. 자세한 내용은 `operations/background-tasks.md`를 참조.

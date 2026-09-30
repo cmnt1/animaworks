@@ -798,7 +798,6 @@ class HousekeepingConfig(BaseModel):
     facts_lock_stale_hours: int = Field(default=24, ge=1)
     curator_report_retention_days: int = Field(default=30, ge=1)
     task_results_retention_days: int = 7
-    pending_failed_retention_days: int = 14
     corrupt_vectordb_keep_generations: int = Field(default=2, ge=0)
     tmp_retention_days: int = Field(default=14, ge=1)
     backup_retention_days: int = Field(default=90, ge=1)

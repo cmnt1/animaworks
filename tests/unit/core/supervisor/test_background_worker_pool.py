@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.anima.digital_anima import BackgroundWorkerSlot, DigitalAnima
-from core.platform.processing_lease import processing_lease_path, write_processing_lease
 from core.tasks.board.tasks import process_identity
 from core.tasks.dispatch import publish_tasks
 from core.tasks.pending_executor import PendingTaskExecutor
@@ -376,38 +375,6 @@ async def test_watcher_shutdown_cancels_dispatch_after_drain_timeout(tmp_path: P
     assert cancelled.is_set()
     assert dispatch.cancelled()
     assert not executor._active_dispatch_tasks
-
-
-async def test_command_claim_stays_active_until_background_task_finishes(tmp_path: Path) -> None:
-    executor = _executor(tmp_path)
-    processing_path = tmp_path / "processing" / "command.json"
-    processing_path.parent.mkdir()
-    processing_path.write_text('{"task_id":"command"}', encoding="utf-8")
-    failed_dir = tmp_path / "failed"
-    failed_dir.mkdir()
-    write_processing_lease(processing_path, anima="pool-test", task_id="command")
-    executor._active_task_ids.add("command")
-    release = asyncio.Event()
-
-    async def wait_for_release() -> None:
-        await release.wait()
-
-    background_task = asyncio.create_task(wait_for_release())
-    executor._track_command_claim(
-        background_task,
-        task_id="command",
-        processing_path=processing_path,
-    )
-    assert "command" in executor._active_task_ids
-    assert processing_path.exists()
-
-    release.set()
-    await background_task
-    await asyncio.sleep(0)
-
-    assert "command" not in executor._active_task_ids
-    assert not processing_path.exists()
-    assert not processing_lease_path(processing_path).exists()
 
 
 async def _measure_concurrency(

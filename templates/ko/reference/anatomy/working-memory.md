@@ -97,7 +97,7 @@ Anima의 작업 메모리. "지금 막 무엇을 하고 있는지" "무엇을 �
 
 수락된 결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`(최대 2000자)에 저장된다. 후속에는 호스트가 선택한 수락된 결과를 전달한다. 오래된 파일의 존재만으로 완료로 판단하지 않는다. 원기록을 보존하고, 결과를 써서 성공한 시도를 가장하지 않는다.
 
-장시간 명령 도구는 별도 경로를 유지한다. `animaworks-tool submit`은 `state/background_tasks/pending/`에 투입하고, BackgroundTaskManager가 명령 상태·알림을 관리한다. 상세는 `operations/background-tasks.md`과 `operations/task-management.md`.
+장시간 명령 도구도 `task_type="command"`로 TaskStore에 등록된다. PendingTaskExecutor가 실행 시도를 가져오고 BackgroundTaskManager가 실행한다. 시도는 TaskStore에 기록되며, 호환성을 위해 `state/background_tasks/{task_id}.json`과 완료 알림도 유지된다. 자세한 내용은 `operations/background-tasks.md`와 `operations/task-management.md`를 참조.
 
 ## read_subordinate_state
 

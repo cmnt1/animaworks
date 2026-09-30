@@ -26,6 +26,6 @@ The result summary of TaskExec is placed in `state/task_results/{task_id}/{attem
 
 The legacy `state/task_queue.jsonl` and `state/pending/` are retained solely as audit trails for migration and export. Migration is performed explicitly by operators after stopping legacy write operations and taking backups. Do not import live legacy data through arbitrary reads.
 
-Long-running command tools are separate. `animaworks-tool submit` continues to use `state/background_tasks/pending/`, and BackgroundTaskManager stores command status and notifications. Do not remove this file path because of changes to LLM tasks.
+Long-running command tools are also recorded in TaskStore as `task_type="command"`. For compatibility, `animaworks-tool submit` results remain available in `state/background_tasks/{task_id}.json` and through completion notifications. See `reference/operations/task-management.md` and `operations/background-tasks.md`.
 
 See `reference/operations/task-management.md` for tool examples and `operations/background-tasks.md` for command execution.

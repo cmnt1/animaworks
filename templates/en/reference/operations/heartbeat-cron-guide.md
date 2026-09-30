@@ -38,7 +38,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 After validation, `submit_tasks` saves the task and complete execution input in bulk to a single authoritative TaskStore.
 Execution right acquisition and attempt history are managed by the host. `in_progress` is for viewing; the agent declares `done` / `pending` / `cancelled` via `update_task`. To resume an interrupted pending task, explicitly specify `resume: true` with the same ID; do not replace it with a different task.
 
-**Long-running CLI tools** (`animaworks-tool submit …`) are written to `state/background_tasks/pending/` via a separate path, and `BackgroundTaskManager` (`core/tasks/background.py`) executes them in the background. See `operations/background-tasks.md` for details.
+**Long-running CLI tools** (`animaworks-tool submit …`) are registered in TaskStore as `task_type="command"`. PendingTaskExecutor claims an attempt and runs the tool in the background; the result remains available in `state/background_tasks/{task_id}.json` with the existing completion notification. See `operations/background-tasks.md` for details.
 
 **Note**: Do not edit the storage location directly. The legacy `state/task_queue.jsonl` and `state/pending/` are kept as evidence for migration and export, not as active submission targets.
 

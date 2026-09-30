@@ -183,7 +183,7 @@ Mode A のスキーマでは **PascalCase 名**です。`ToolHandler` 内部で�
 animaworks-tool <ツール名> <サブコマンド> [引数…]
 ```
 
-- **`animaworks-tool submit <ツール名> [引数…]`** — 長時間処理をバックグラウンド投入。記述子は **`state/background_tasks/pending/`** に保存され、ワッチャーが実行します（`core/integrations/__init__.py` の `_handle_submit`）。対象サブコマンドが `EXECUTION_PROFILE` で `background_eligible` でない場合は警告のみ（投入は行われる）。
+- **`animaworks-tool submit <ツール名> [引数…]`** — 長時間処理を `task_type="command"` として TaskStore に登録し、PendingTaskExecutor が試行を取得して実行します。実行結果は従来どおり `state/background_tasks/{task_id}.json` と完了通知から確認できます。対象サブコマンドが `EXECUTION_PROFILE` で `background_eligible` でない場合は警告のみ（投入は行われる）。
 - 利用可能な名前は **`core/integrations` のコアモジュール** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` 下の `tools/`** の和集合。`--help` で一覧表示されます。
 - `ANIMAWORKS_ANIMA_DIR` が設定されているとき、サブコマンドは **`load_permissions` + `is_action_gated`** で拒否される場合があります（例: Discord の `channel_post`）。
 - 未定義の第1引数は、メイン CLI のサブコマンド（`anima`, `vault` 等）へフォールバックされる場合があります。

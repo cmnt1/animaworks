@@ -277,18 +277,6 @@ def _cmd_list_background_tasks(args: argparse.Namespace, anima_dir: Path) -> Non
     bg_dir = anima_dir / "state" / "background_tasks"
     tasks: list[dict] = []
 
-    for subdir in ("pending", "done"):
-        sub_path = bg_dir / subdir
-        if not sub_path.is_dir():
-            continue
-        for path in sorted(sub_path.glob("*.json")):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                data["_source"] = subdir
-                tasks.append(data)
-            except (json.JSONDecodeError, OSError):
-                continue
-
     for path in sorted(bg_dir.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -312,17 +300,15 @@ def _cmd_check_background_task(args: argparse.Namespace, anima_dir: Path) -> Non
         sys.exit(1)
 
     bg_dir = anima_dir / "state" / "background_tasks"
-    for subdir in ("pending", "done", ""):
-        base = bg_dir / subdir if subdir else bg_dir
-        task_file = base / f"{task_id}.json"
-        if task_file.exists():
-            try:
-                data = json.loads(task_file.read_text(encoding="utf-8"))
-                print(json.dumps(data, ensure_ascii=False, indent=2))
-                return
-            except (json.JSONDecodeError, OSError) as e:
-                print(json.dumps({"error": str(e)}, ensure_ascii=False, indent=2))
-                sys.exit(1)
+    task_file = bg_dir / f"{task_id}.json"
+    if task_file.exists():
+        try:
+            data = json.loads(task_file.read_text(encoding="utf-8"))
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+            return
+        except (json.JSONDecodeError, OSError) as e:
+            print(json.dumps({"error": str(e)}, ensure_ascii=False, indent=2))
+            sys.exit(1)
 
     print(json.dumps({"error": "task not found", "task_id": task_id}, ensure_ascii=False, indent=2))
     sys.exit(1)

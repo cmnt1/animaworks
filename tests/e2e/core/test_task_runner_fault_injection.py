@@ -17,11 +17,9 @@ import pytest
 from core.anima.digital_anima import DigitalAnima
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
-from core.platform.processing_lease import read_processing_lease, write_processing_lease
 from core.schemas import CronTask
 from core.supervisor import task_runner_supervisor
 from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerJob, TaskRunnerSupervisor
-from core.tasks.pending_executor import PendingTaskExecutor
 from core.tasks.queue import TaskQueueManager
 
 pytestmark = [
@@ -175,84 +173,6 @@ async def test_cron_sigkill_preserves_root_next_cycle_and_db(fault_anima: tuple[
     finally:
         await supervisor.close()
         await asyncio.gather(running, return_exceptions=True)
-
-
-@pytest.mark.asyncio
-async def test_root_restart_recovers_background_lease_once(
-    fault_anima: tuple[Path, Path],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    anima_dir, shared_dir = fault_anima
-    monkeypatch.setattr(task_runner_supervisor, "_TASK_RUNNER_GRACE_TIMEOUT", 0.2)
-    old_root = TaskRunnerSupervisor(_ANIMA, anima_dir, shared_dir)
-    queue = TaskQueueManager(anima_dir)
-    entry = queue.add_task(
-        source="anima",
-        original_instruction="fault injection",
-        assignee=_ANIMA,
-        summary="background interrupted by restart",
-        status="in_progress",
-    )
-    processing_dir = anima_dir / "state" / "background_tasks" / "pending" / "processing"
-    failed_dir = processing_dir.parent / "failed"
-    processing_dir.mkdir(parents=True)
-    failed_dir.mkdir()
-    descriptor = processing_dir / f"{entry.task_id}.json"
-    descriptor.write_text(json.dumps({"task_id": entry.task_id}), encoding="utf-8")
-    spawned = asyncio.Event()
-    captured: list[TaskRunnerJob] = []
-
-    async def on_spawned(job: TaskRunnerJob) -> None:
-        captured.append(job)
-        write_processing_lease(
-            descriptor,
-            anima=_ANIMA,
-            task_id=entry.task_id,
-            pid=os.getpid(),
-            job_id=job.identity.job_id,
-            task_pid=job.pid,
-            pgid=job.pgid,
-            root_epoch=job.identity.root_epoch,
-            attempt=1,
-            process_start_time=job.process_start_time,
-        )
-        os.kill(job.pid or 0, signal.SIGSTOP)
-        spawned.set()
-
-    background = asyncio.create_task(
-        old_root.run_background(
-            kind="command",
-            payload={"tool_name": "fault-injection", "raw_args": []},
-            on_spawned=on_spawned,
-        )
-    )
-    try:
-        await asyncio.wait_for(spawned.wait(), timeout=5)
-        lease = read_processing_lease(descriptor)
-        assert lease and lease["attempt"] == 1 and lease["task_pid"] == captured[0].pid
-    finally:
-        await old_root.close()
-    with pytest.raises(TaskRunnerError):
-        await background
-
-    new_root = TaskRunnerSupervisor(_ANIMA, anima_dir, shared_dir)
-    try:
-        PendingTaskExecutor._recover_processing(processing_dir, anima_dir)
-        failed = failed_dir / descriptor.name
-        failed_lease = read_processing_lease(failed)
-
-        assert not descriptor.exists()
-        assert not failed.exists()
-        assert failed_lease is None
-        recovered = queue.get_task_by_id(entry.task_id)
-        assert recovered.status == "pending"
-        assert recovered.meta["last_run_stop_kind"] == "crash"
-        assert "INTERRUPTED" in recovered.summary and "PARTIALLY EXECUTED" in recovered.summary
-        assert len(captured) == 1
-        assert new_root.root_epoch != old_root.root_epoch
-        assert not new_root.jobs
-    finally:
-        await new_root.close()
 
 
 @pytest.mark.asyncio

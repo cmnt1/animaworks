@@ -10,10 +10,10 @@ from core.tasks.board.tasks import task_database_path
 
 
 def require_task_store_ready(anima_dir: Path) -> None:
-    """Refuse implicit migration of populated legacy state on a runtime read.
+    """Verify that populated legacy task state has been explicitly migrated.
 
-    This preflight never creates a database or import marker. Explicit offline
-    migration owns the transition; an empty/new runtime can initialize safely.
+    This read-only check is used by the task-store maintenance CLI after
+    migration. Runtime TaskQueueManager reads never import legacy state.
     """
     database = task_database_path(anima_dir)
     if database.is_file():

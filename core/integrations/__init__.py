@@ -13,8 +13,6 @@ import logging
 import sys
 from pathlib import Path
 
-from core.platform.atomic_io import atomic_write_json
-
 logger = logging.getLogger("animaworks.tools")
 
 
@@ -151,11 +149,12 @@ def _gated_action_candidates(
 def _handle_submit(argv: list[str]) -> None:
     """Handle ``animaworks-tool submit <tool> <args...>``.
 
-    Writes a pending task descriptor to ``state/background_tasks/pending/``
-    and exits immediately.  The runner's pending watcher will pick it up.
+    Stores a command task in TaskStore and exits immediately. The task watcher
+    claims it and executes the tool in the background lane.
     """
     import json
     import os
+    import shlex
     import time
     import uuid
 
@@ -171,7 +170,7 @@ def _handle_submit(argv: list[str]) -> None:
     anima_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
     if not anima_dir:
         print(
-            "Error: ANIMAWORKS_ANIMA_DIR not set. Cannot determine pending directory.",
+            "Error: ANIMAWORKS_ANIMA_DIR not set. Cannot determine the task owner.",
         )
         sys.exit(1)
 
@@ -188,7 +187,7 @@ def _handle_submit(argv: list[str]) -> None:
             subcommand = arg
             break
 
-    # Permission gate before writing the descriptor (fail early).
+    # Permission gate before submitting the task (fail early).
     from core.tooling.permissions import check_tool_access
 
     if tool_name in TOOL_MODULES:
@@ -240,23 +239,25 @@ def _handle_submit(argv: list[str]) -> None:
     except Exception:
         logger.debug("Profile check failed for %s %s", tool_name, subcommand, exc_info=True)
 
-    # Write pending task descriptor
-    pending_dir = anima_dir_path / "state" / "background_tasks" / "pending"
-    pending_dir.mkdir(parents=True, exist_ok=True)
-
+    submitted_at = time.time()
+    title = f"{tool_name}:{subcommand}" if subcommand else tool_name
     task_desc = {
+        "task_type": "command",
         "task_id": task_id,
         "tool_name": tool_name,
         "subcommand": subcommand,
         "raw_args": tool_args,
         "anima_name": anima_name,
         "anima_dir": str(anima_dir_path),
-        "submitted_at": time.time(),
+        "submitted_at": submitted_at,
+        "submitted_by": anima_name,
         "status": "pending",
+        "title": title,
+        "description": shlex.join(["animaworks-tool", tool_name, *tool_args]),
     }
+    from core.tasks.queue import TaskQueueManager
 
-    task_path = pending_dir / f"{task_id}.json"
-    atomic_write_json(task_path, task_desc, indent=2, ensure_ascii=False)
+    TaskQueueManager(anima_dir_path).submit(task_desc, source="anima", meta={"executor": "command"})
 
     # Output result
     result = {

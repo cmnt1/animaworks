@@ -111,12 +111,7 @@ class TaskQueueManager:
         from core.tasks.board.tasks import TaskStore, task_database_path
 
         if self._store is None:
-            from core.tasks.board.readiness import require_task_store_ready
-
-            require_task_store_ready(self.anima_dir)
-            candidate = TaskStore(task_database_path(self.anima_dir))
-            candidate.import_legacy(self.anima_dir)
-            self._store = candidate
+            self._store = TaskStore(task_database_path(self.anima_dir))
         return self._store
 
     def submit(

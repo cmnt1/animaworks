@@ -398,7 +398,7 @@ submit의 상세 → `common_knowledge/operations/background-tasks.md`
 
 **디렉터리 정리**
 
-- **`state/background_tasks/`** — `submit` 유래의 비동기 작업 기술자(`pending` / `done` 등). `internal list-background-tasks` / `check-background-task`은 여기를 읽는다.
+- **`state/background_tasks/`** — BackgroundTaskManager가 저장하는 실행 결과 JSON(`running` / `completed` / `failed`). `animaworks-tool submit` 입력과 실행 시도는 TaskStore에 저장되고, `internal list-background-tasks` / `check-background-task`은 이 결과 JSON을 읽는다.
 - **`state/background_notifications/`** — 도구 완료 알림 등을 heartbeat가 흡수하는 용도(MCP·스케줄러 등이 쓰는 경로 있음). CLI의 `list-background-tasks`와는 별개.
 
 ### 자식 프로세스용 서브커맨드(internal / vault / supervisor)

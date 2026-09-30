@@ -397,7 +397,7 @@ submit の詳細 → `common_knowledge/operations/background-tasks.md`
 
 **ディレクトリの整理**
 
-- **`state/background_tasks/`** — `submit` 由来の非同期タスク記述子（`pending` / `done` 等）。`internal list-background-tasks` / `check-background-task` はここを読む。
+- **`state/background_tasks/`** — BackgroundTaskManager が保存する実行結果 JSON（`running` / `completed` / `failed`）。`animaworks-tool submit` の投入内容と試行は TaskStore に保存し、`internal list-background-tasks` / `check-background-task` はこの結果 JSON を読む。
 - **`state/background_notifications/`** — ツール完了通知などを heartbeat が吸い上げる用途（MCP・スケジューラ等が書き込む経路あり）。CLI の `list-background-tasks` とは別。
 
 ### 子プロセス向けサブコマンド（internal / vault / supervisor）

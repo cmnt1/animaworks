@@ -398,7 +398,7 @@ For details on submit → `common_knowledge/operations/background-tasks.md`
 
 **Directory Organization**
 
-- **`state/background_tasks/`** — asynchronous task descriptors originating from `submit` (such as `pending` / `done`). `internal list-background-tasks` / `check-background-task` read from here.
+- **`state/background_tasks/`** — result JSON files saved by BackgroundTaskManager (`running` / `completed` / `failed`). `animaworks-tool submit` inputs and attempts are stored in TaskStore; `internal list-background-tasks` / `check-background-task` read the result JSON files here.
 - **`state/background_notifications/`** — used by heartbeat to collect tool completion notifications, etc. (there is a path where MCP, schedulers, etc. write here). Separate from the CLI's `list-background-tasks`.
 
 ### Subcommands for Child Processes (internal / vault / supervisor)

@@ -818,8 +818,8 @@ class TestPendingTaskExecutorLLM:
         await executor.execute_pending_task({"task_type": "llm", "task_id": "t1"})
         executor._execute_llm_task.assert_called_once()
 
-    async def test_command_task_uses_existing_path(self, data_dir, make_anima):
-        """task_type='command' should use existing BackgroundTaskManager dispatch."""
+    async def test_command_task_uses_background_manager(self, data_dir, make_anima):
+        """task_type='command' should execute through BackgroundTaskManager."""
         anima_dir = make_anima("exec_test2")
         shared_dir = data_dir / "shared"
 
