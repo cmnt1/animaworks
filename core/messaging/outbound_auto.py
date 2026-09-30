@@ -16,14 +16,12 @@ import logging
 import os
 from typing import Any
 
-import httpx
-
+from core.channels.slack import SlackHTTPClient
 from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 from core.messaging.messenger import InboxItem
 
 logger = logging.getLogger("animaworks.outbound_auto")
 
-_SLACK_POST_URL = "https://slack.com/api/chat.postMessage"
 _SLACK_TIMEOUT = 30.0
 _MAX_SLACK_TEXT = 40000
 
@@ -44,14 +42,9 @@ def _resolve_avatar_url(anima_name: str) -> str:
 
 def _resolve_bot_token(anima_name: str) -> str | None:
     """Resolve the per-Anima or shared Slack bot token."""
-    per_anima_key = f"SLACK_BOT_TOKEN__{anima_name}"
-    token = _lookup_vault_credential(per_anima_key)
-    if token:
-        return token
-    token = _lookup_shared_credentials(per_anima_key)
-    if token:
-        return token
-    token = os.environ.get(per_anima_key)
+    from core.channels.tokens import resolve_per_anima_token
+
+    token = resolve_per_anima_token("slack", anima_name)
     if token:
         return token
     # Fallback to shared token
@@ -111,7 +104,7 @@ class SlackAutoResponder:
         icon_url = _resolve_avatar_url(anima_name)
 
         posted_ts: list[str] = []
-        async with httpx.AsyncClient(timeout=_SLACK_TIMEOUT) as client:
+        async with SlackHTTPClient(timeout=_SLACK_TIMEOUT) as client:
             for target in slack_targets:
                 ts = await self._post_one(
                     client,
@@ -171,7 +164,7 @@ class SlackAutoResponder:
 
     @staticmethod
     async def _post_one(
-        client: httpx.AsyncClient,
+        client: SlackHTTPClient,
         *,
         token: str,
         channel_id: str,
@@ -193,13 +186,7 @@ class SlackAutoResponder:
         if icon_url:
             payload["icon_url"] = icon_url
         try:
-            resp = await client.post(
-                _SLACK_POST_URL,
-                headers={"Authorization": f"Bearer {token}"},
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+            data = await client.post_message(token, payload)
             if not data.get("ok"):
                 logger.error(
                     "SlackAutoResponder: chat.postMessage failed for %s: %s",
@@ -248,12 +235,15 @@ class DiscordAutoResponder:
 
         discord_text = md_to_discord(response_text)
 
+        import asyncio
+
         posted_ids: list[str] = []
         for target in targets:
             try:
                 mention = target.get("mention_prefix", "")
                 text = f"{mention}{discord_text}" if mention else discord_text
-                msg_id = wm.send_as_anima(
+                msg_id = await asyncio.to_thread(
+                    wm.send_as_anima,
                     target["channel_id"],
                     anima_name,
                     text,
@@ -370,14 +360,8 @@ class BoardSlackSync:
             payload["icon_url"] = icon_url
 
         try:
-            async with httpx.AsyncClient(timeout=_SLACK_TIMEOUT) as client:
-                resp = await client.post(
-                    _SLACK_POST_URL,
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            async with SlackHTTPClient(timeout=_SLACK_TIMEOUT) as client:
+                data = await client.post_message(token, payload)
                 if not data.get("ok"):
                     logger.error(
                         "BoardSlackSync: failed for '%s' -> %s: %s",

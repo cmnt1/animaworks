@@ -131,9 +131,9 @@ class ChatworkClient:
         return self.delete(f"/rooms/{room_id}/messages/{message_id}")
 
     def post_message(self, room_id: str, body: str) -> dict:
-        if len(body) > 10000:
-            raise ValueError(f"Message exceeds 10,000 characters ({len(body)} chars)")
-        return self.post(f"/rooms/{room_id}/messages", data={"body": body})
+        from core.channels.chatwork import post_message_sync
+
+        return post_message_sync(self.post, room_id, body)
 
     def my_tasks(self, status: str = "open") -> list[dict]:
         """List my tasks. status: open / done"""

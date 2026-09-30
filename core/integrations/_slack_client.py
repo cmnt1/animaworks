@@ -188,16 +188,17 @@ class SlackClient:
         username: str = "",
         icon_url: str = "",
     ) -> dict:
-        """Send a message via chat.postMessage."""
-        kwargs = {"channel": channel_id, "text": text}
-        if thread_ts:
-            kwargs["thread_ts"] = thread_ts
-        if username:
-            kwargs["username"] = username
-        if icon_url:
-            kwargs["icon_url"] = icon_url
-        response = self._call("chat_postMessage", **kwargs)
-        return response
+        """Send a message via the shared Slack channel client."""
+        from core.channels.slack import post_sdk_message
+
+        return post_sdk_message(
+            self._call,
+            channel_id,
+            text,
+            thread_ts,
+            username=username,
+            icon_url=icon_url,
+        )
 
     def update_message(self, channel_id: str, ts: str, text: str) -> dict:
         """Update an existing message via chat.update (silent, no notification)."""

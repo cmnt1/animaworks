@@ -49,32 +49,17 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 # ── Token Resolution ───────────────────────────────────────
 
 
-def _resolve_per_anima_token(anima_dir: str | Path | None) -> str | None:
-    """Resolve per-Anima Discord bot token from anima_dir path.
-
-    Uses ``DISCORD_BOT_TOKEN__<anima_name>`` from vault.json / shared/credentials.json.
-    Returns None to fall back to the shared token.
-    """
-    if not anima_dir:
-        return None
-    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
-
-    anima_name = Path(anima_dir).name
-    per_anima_key = f"DISCORD_BOT_TOKEN__{anima_name}"
-    token = _lookup_vault_credential(per_anima_key)
-    if token:
-        logger.debug("Using per-Anima Discord token for '%s'", anima_name)
-        return token
-    token = _lookup_shared_credentials(per_anima_key)
-    if token:
-        logger.debug("Using per-Anima Discord token for '%s'", anima_name)
-        return token
-    return None
-
-
 def _resolve_discord_token(args: dict[str, Any]) -> str | None:
     """Resolve per-Anima Discord bot token from tool dispatch args."""
-    return _resolve_per_anima_token(args.get("anima_dir"))
+    from core.channels.tokens import resolve_per_anima_token
+    from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
+
+    return resolve_per_anima_token(
+        "discord",
+        args.get("anima_dir"),
+        credential_lookup=lambda key: _lookup_vault_credential(key) or _lookup_shared_credentials(key),
+        log=True,
+    )
 
 
 def _resolve_discord_identity(args: dict[str, Any]) -> tuple[str, str]:
