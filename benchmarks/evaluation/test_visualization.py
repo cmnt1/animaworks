@@ -13,7 +13,7 @@ np = pytest.importorskip("numpy")
 pd = pytest.importorskip("pandas")
 pytest.importorskip("matplotlib")
 
-from tests.evaluation.framework.visualization import ExperimentVisualizer
+from benchmarks.evaluation.framework.visualization import ExperimentVisualizer
 
 
 class TestExperimentVisualizer:

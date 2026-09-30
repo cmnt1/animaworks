@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from argparse import Namespace
 from pathlib import Path
 
 from core.anima.bootstrap_state import (
@@ -186,53 +185,6 @@ def test_fresh_recreates_blank_and_preserves_model_settings(tmp_path: Path) -> N
     assert status["credential"] == "codex-azure"
     assert status["execution_mode"] == "C"
     assert status["background_model"] == "azure/gpt-4.1-mini"
-
-
-def test_repair_bootstrap_status_command_is_read_only(tmp_path: Path, monkeypatch, capsys) -> None:
-    anima_dir = _make_anima_dir(tmp_path)
-    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-
-    from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
-
-    cmd_anima_repair_bootstrap(Namespace(anima="midori", status=True, retry=False, fresh=False, gateway_url=None))
-
-    out = capsys.readouterr().out
-    assert "State: pending_user_input" in out
-    assert not (anima_dir / "state" / "bootstrap_state.json").exists()
-
-
-def test_repair_bootstrap_retry_command_restores_failed_artifact(tmp_path: Path, monkeypatch, capsys) -> None:
-    anima_dir = _make_anima_dir(tmp_path)
-    (anima_dir / "bootstrap.md").rename(anima_dir / "bootstrap.md.failed")
-    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-
-    from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
-
-    cmd_anima_repair_bootstrap(Namespace(anima="midori", status=False, retry=True, fresh=False, gateway_url=None))
-
-    out = capsys.readouterr().out
-    assert "Prepared bootstrap retry" in out
-    assert (anima_dir / "bootstrap.md").exists()
-    assert not (anima_dir / "bootstrap.md.failed").exists()
-
-
-def test_repair_bootstrap_complete_command_finishes_defined_runtime(tmp_path: Path, monkeypatch, capsys) -> None:
-    anima_dir = _make_anima_dir(tmp_path)
-    (anima_dir / "identity.md").write_text("# Midori\n\nDefined identity\n", encoding="utf-8")
-    (anima_dir / "injection.md").write_text("# Role\n\nDefined role\n", encoding="utf-8")
-    (anima_dir / "bootstrap.md").rename(anima_dir / "bootstrap.md.failed")
-    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-
-    from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
-
-    cmd_anima_repair_bootstrap(
-        Namespace(anima="midori", status=False, retry=False, complete=True, fresh=False, gateway_url=None)
-    )
-
-    out = capsys.readouterr().out
-    assert "Completed bootstrap repair" in out
-    assert "State: completed" in out
-    assert not (anima_dir / "bootstrap.md.failed").exists()
 
 
 def test_interactive_profile_remains_resumable_during_incremental_writes(tmp_path: Path) -> None:

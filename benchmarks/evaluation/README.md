@@ -14,7 +14,7 @@ The framework provides a comprehensive system for evaluating the performance of 
 ## Directory Structure
 
 ```
-tests/evaluation/
+benchmarks/evaluation/
 ├── framework/              # Core framework implementation
 │   ├── __init__.py
 │   ├── config.py           # Experiment configuration data models
@@ -184,7 +184,7 @@ results = await experiment.run_all()
 ### Running Unit Tests
 
 ```bash
-pytest tests/evaluation/test_framework.py -v
+pytest benchmarks/evaluation/test_framework.py -v
 ```
 
 ### Example: Running a Single Participant

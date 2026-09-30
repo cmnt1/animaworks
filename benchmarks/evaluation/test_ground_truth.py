@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import pytest
 from pathlib import Path
-from tests.evaluation.framework import AnnotationSet, DatasetGenerator, GroundTruth, GroundTruthManager, RelevantMemory
+from benchmarks.evaluation.framework import AnnotationSet, DatasetGenerator, GroundTruth, GroundTruthManager, RelevantMemory
 
 
 @pytest.fixture

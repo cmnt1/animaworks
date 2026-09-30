@@ -401,35 +401,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_anima_info.set_defaults(func=_lazy_anima_info)
 
-    # anima repair-bootstrap
-    p_anima_repair_bootstrap = anima_sub.add_parser(
-        "repair-bootstrap",
-        help="Inspect or repair first-run bootstrap state",
-    )
-    p_anima_repair_bootstrap.add_argument("anima", help="Anima name")
-    repair_group = p_anima_repair_bootstrap.add_mutually_exclusive_group(required=True)
-    repair_group.add_argument(
-        "--status",
-        action="store_true",
-        help="Show bootstrap state and validation errors without changing files",
-    )
-    repair_group.add_argument(
-        "--retry",
-        action="store_true",
-        help="Restore bootstrap artifacts and prepare another bootstrap attempt",
-    )
-    repair_group.add_argument(
-        "--complete",
-        action="store_true",
-        help="Archive stale bootstrap artifacts and mark a fully defined Anima as completed",
-    )
-    repair_group.add_argument(
-        "--fresh",
-        action="store_true",
-        help="Archive runtime data and recreate a blank Anima while preserving model settings",
-    )
-    p_anima_repair_bootstrap.set_defaults(func=_lazy_anima_repair_bootstrap)
-
     # anima permissions
     p_anima_permissions = anima_sub.add_parser(
         "permissions",
@@ -463,29 +434,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply to all enabled animas",
     )
     p_anima_set_model.set_defaults(func=_lazy_anima_set_model)
-
-    # anima codex-yolo
-    p_anima_codex_yolo = anima_sub.add_parser(
-        "codex-yolo",
-        help="Set Codex-mode Animas to YOLO sandbox defaults",
-    )
-    p_anima_codex_yolo.add_argument(
-        "anima",
-        nargs="?",
-        default=None,
-        help="Anima name (not required with --all)",
-    )
-    p_anima_codex_yolo.add_argument(
-        "--all",
-        action="store_true",
-        help="Apply to all enabled Codex-mode animas",
-    )
-    p_anima_codex_yolo.add_argument(
-        "--restart",
-        action="store_true",
-        help="Restart updated animas when the server is running",
-    )
-    p_anima_codex_yolo.set_defaults(func=_lazy_anima_codex_yolo)
 
     # anima set-background-model
     p_bg = anima_sub.add_parser("set-background-model", help="Set heartbeat/cron model")
@@ -875,12 +823,6 @@ def _lazy_anima_permissions(args: argparse.Namespace) -> None:
     cmd_anima_permissions(args)
 
 
-def _lazy_anima_repair_bootstrap(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_repair_bootstrap
-
-    cmd_anima_repair_bootstrap(args)
-
-
 def _lazy_anima_set_role(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_role
 
@@ -891,12 +833,6 @@ def _lazy_anima_set_model(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_set_model
 
     cmd_anima_set_model(args)
-
-
-def _lazy_anima_codex_yolo(args: argparse.Namespace) -> None:
-    from cli.commands.anima_mgmt import cmd_anima_codex_yolo
-
-    cmd_anima_codex_yolo(args)
 
 
 def _lazy_anima_set_background_model(args: argparse.Namespace) -> None:

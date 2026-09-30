@@ -108,7 +108,7 @@ This document summarizes the implementation of Phase 3-4 of the AnimaWorks memor
 
 **Output:**
 ```
-tests/evaluation/demo_output/
+benchmarks/evaluation/demo_output/
 ├── fig1_latency_comparison.png/pdf      (203KB + 26KB)
 ├── fig2_precision_recall.png/pdf        (179KB + 18KB)
 ├── fig3_scalability.png                 (216KB)
@@ -140,7 +140,7 @@ evaluation = [
 ### Statistical Analysis
 
 ```python
-from tests.evaluation.framework.analysis import StatisticalAnalyzer
+from benchmarks.evaluation.framework.analysis import StatisticalAnalyzer
 
 analyzer = StatisticalAnalyzer(alpha=0.05)
 
@@ -155,7 +155,7 @@ print(f"Latency reduction: {result['mean_reduction_pct']:.1f}%")
 ### Visualization
 
 ```python
-from tests.evaluation.framework.visualization import ExperimentVisualizer
+from benchmarks.evaluation.framework.visualization import ExperimentVisualizer
 
 viz = ExperimentVisualizer(style="publication")
 
@@ -170,7 +170,7 @@ generated = viz.generate_all_figures(results_dir=Path("results/processed"), outp
 
 ```bash
 source .venv/bin/activate
-python tests/evaluation/scripts/demo_analysis_visualization.py
+python benchmarks/evaluation/scripts/demo_analysis_visualization.py
 ```
 
 **Demo Results:**
@@ -210,7 +210,7 @@ python tests/evaluation/scripts/demo_analysis_visualization.py
 ## File Structure
 
 ```
-tests/evaluation/
+benchmarks/evaluation/
 ├── framework/
 │   ├── analysis.py              # Statistical analysis (620 lines)
 │   ├── visualization.py         # Visualization (550 lines)

@@ -250,7 +250,7 @@
   "chat.bootstrap_complete": "準備完了！",
   "chat.bootstrap_failed": "セットアップに失敗しました。自動的にリトライします...",
   "chat.bootstrap_max_retries": "セットアップを完了できませんでした",
-  "chat.bootstrap_needs_repair": "セットアップが途中で止まっています。repair-bootstrap で状態を確認してください。",
+  "chat.bootstrap_needs_repair": "セットアップが途中で止まっています。管理者に状態の確認を依頼してください。",
   "chat.bootstrap_step_avatar": "アバターを生成中...",
   "chat.bootstrap_step_finish": "セットアップを完了中...",
   "chat.bootstrap_step_identity": "アイデンティティを確認中...",

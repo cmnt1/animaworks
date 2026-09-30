@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 6a95562faf19b04a67bb1fdb00580477e8f779027e3ac2c3512dd495b68452ee -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 16370797526eb218ec872c0359b6174cb1765fbbfc294ecd3786fc5426b9269a -->
 
 # モジュール一覧
 
@@ -15,7 +15,7 @@
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 76 | — |
 | `cli.demo` | 391 | Native ``animaworks demo`` command. |
-| `cli.parser` | 947 | — |
+| `cli.parser` | 883 | — |
 | `cli.tool_dispatch` | 91 | — |
 
 ## `cli.commands`
@@ -26,7 +26,7 @@
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
-| `cli.commands.anima_mgmt` | 1451 | CLI commands for anima process management. |
+| `cli.commands.anima_mgmt` | 1205 | CLI commands for anima process management. |
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
@@ -159,7 +159,7 @@ Digital Anima のライフサイクルと実行時オブジェクト。
 | `core.config.file_access_policy` | 310 | — |
 | `core.config.global_permissions` | 251 | — |
 | `core.config.io` | 253 | Configuration I/O: singleton cache, load, and save. |
-| `core.config.local_llm` | 100 | Helpers for local Ollama-backed model defaults and role presets. |
+| `core.config.local_llm` | 69 | Helpers for local Ollama-backed model defaults and role presets. |
 | `core.config.migrate` | 220 | Migrate legacy permissions.md files to permissions.json. |
 | `core.config.model_catalog` | 171 | Static model catalog and per-request model override validation. |
 | `core.config.model_config` | 880 | Model configuration resolution: load_model_config, penalties, max_tokens. |
@@ -955,7 +955,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.chat_resume` | 114 | — |
 | `server.routes.chat_ui_state` | 103 | — |
 | `server.routes.chat_ws_effects` | 55 | — |
-| `server.routes.config_routes` | 466 | — |
+| `server.routes.config_routes` | 331 | — |
 | `server.routes.external_tasks` | 261 | — |
 | `server.routes.internal` | 1012 | — |
 | `server.routes.logs_routes` | 217 | — |
@@ -965,7 +965,7 @@ LLM 利用量とコストの記録・集計。
 | `server.routes.sessions` | 297 | — |
 | `server.routes.setup` | 609 | — |
 | `server.routes.skills` | 132 | — |
-| `server.routes.system` | 1200 | — |
+| `server.routes.system` | 1130 | — |
 | `server.routes.taskboard` | 235 | — |
 | `server.routes.usage_routes` | 847 | — |
 | `server.routes.users` | 279 | — |

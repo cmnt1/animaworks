@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: ff54349a500770313c446d318827ecfcb43645fe2d0a38745ca8d22b6e8019b6 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 5a8420fdf514480f2d4f495ff5686f7547cdf7385499334bf514ca56636251f0 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -17,7 +17,7 @@
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
+                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
                         ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
@@ -39,18 +39,6 @@ Audit a subordinate anima's recent activity
 | --days | option | 1 | — | Number of days to audit (default: 1, max: 30) |
 | --since | option | — | — | Start time in HH:MM format (today, JST). Overrides --days when specified |
 | --date | option | — | — | Specific date (YYYY-MM-DD, 'today', or 'yesterday'). Shows only that day's activity |
-
-## `anima codex-yolo`
-
-Set Codex-mode Animas to YOLO sandbox defaults
-
-`usage: animaworks anima codex-yolo [-h] [--all] [--restart] [anima]`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name (not required with --all) |
-| --all | flag | false | — | Apply to all enabled Codex-mode animas |
-| --restart | flag | false | — | Restart updated animas when the server is running |
 
 ## `anima create`
 
@@ -153,22 +141,6 @@ Rename an anima
 | old_name | positional | — | — | Current anima name |
 | new_name | positional | — | — | New anima name |
 | --force | flag | false | — | Skip confirmation prompt |
-
-## `anima repair-bootstrap`
-
-Inspect or repair first-run bootstrap state
-
-`usage: animaworks anima repair-bootstrap [-h]
-                                         (--status | --retry | --complete | --fresh)
-                                         anima`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
-| --status | flag | false | — | Show bootstrap state and validation errors without changing files |
-| --retry | flag | false | — | Restore bootstrap artifacts and prepare another bootstrap attempt |
-| --complete | flag | false | — | Archive stale bootstrap artifacts and mark a fully defined Anima as completed |
-| --fresh | flag | false | — | Archive runtime data and recreate a blank Anima while preserving model settings |
 
 ## `anima restart`
 

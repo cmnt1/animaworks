@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=8dfafb774697bcfebed1629917b28172f870c16d4c6445eee1a618b53cb61db7 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=6d159be9b1cb266211d34e4ad5933a40ed1afe326c89fb302b903881b3ba8763 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # API Reference
 
@@ -108,19 +108,16 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/config_routes.py`
 
-| GET | `/api/discord/channel-members` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return all Discord channel membership mappings. | `server/routes/config_routes.py:get_discord_channel_members` |
-| PUT | `/api/discord/channel-members/{channel_id}` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Update Anima members for a Discord channel. | `server/routes/config_routes.py:put_discord_channel_members` |
-| GET | `/api/discord/channels` | Session required (optional in local_trust mode, or if localhost trust is enabled) | List Discord guild channels with membership info. | `server/routes/config_routes.py:get_discord_channels` |
-| GET | `/api/settings/anthropic-auth` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return current Anthropic auth mode and runtime availability. | `server/routes/config_routes.py:get_anthropic_auth` |
-| PUT | `/api/settings/anthropic-auth` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Persist Anthropic auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_anthropic_auth` |
-| GET | `/api/settings/local-llm` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return local Ollama-backed model settings and runtime availability. | `server/routes/config_routes.py:get_local_llm` |
-| PUT | `/api/settings/local-llm` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Persist local LLM settings and make Ollama the default execution target. | `server/routes/config_routes.py:update_local_llm` |
-| POST | `/api/settings/local-llm/apply-role-presets` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Apply the configured role-based local LLM presets to existing animas. | `server/routes/config_routes.py:apply_local_llm_role_presets` |
-| GET | `/api/settings/openai-auth` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return current OpenAI auth mode and runtime availability. | `server/routes/config_routes.py:get_openai_auth` |
-| PUT | `/api/settings/openai-auth` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Persist OpenAI auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_openai_auth` |
-| GET | `/api/system/available-models` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
-| GET | `/api/system/available-tools` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
-| GET | `/api/system/config` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
+| GET | `/api/discord/channel-members` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return all Discord channel membership mappings. | `server/routes/config_routes.py:get_discord_channel_members` |
+| PUT | `/api/discord/channel-members/{channel_id}` | Session required (local_trust mode, or optional if localhost trust is enabled) | Update Anima members for a Discord channel. | `server/routes/config_routes.py:put_discord_channel_members` |
+| GET | `/api/discord/channels` | Session required (local_trust mode, or optional if localhost trust is enabled) | List Discord guild channels with membership info. | `server/routes/config_routes.py:get_discord_channels` |
+| GET | `/api/settings/anthropic-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return current Anthropic auth mode and runtime availability. | `server/routes/config_routes.py:get_anthropic_auth` |
+| PUT | `/api/settings/anthropic-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Persist Anthropic auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_anthropic_auth` |
+| GET | `/api/settings/openai-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return current OpenAI auth mode and runtime availability. | `server/routes/config_routes.py:get_openai_auth` |
+| PUT | `/api/settings/openai-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Persist OpenAI auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_openai_auth` |
+| GET | `/api/system/available-models` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
+| GET | `/api/system/available-tools` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
+| GET | `/api/system/config` | Session required (local_trust mode, or optional if localhost trust is enabled) | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
 
 ## `server/routes/external_tasks.py`
 
@@ -213,31 +210,27 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/system.py`
 
-| GET | `/api/activity/group` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return one complete trigger-based activity group by stable ID. | `server/routes/system.py:get_activity_group` |
-| GET | `/api/activity/recent` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return recent activity events from unified ActivityLogger. | `server/routes/system.py:get_recent_activity` |
-| GET | `/api/activity/running-tasks` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return active background TaskExec workers grouped by Anima. | `server/routes/system.py:get_running_activity_tasks` |
-| GET | `/api/settings/activity-level` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return the current global activity level and schedule. | `server/routes/system.py:get_activity_level` |
-| PUT | `/api/settings/activity-level` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Update global activity level and reschedule all heartbeats. | `server/routes/system.py:set_activity_level` |
-| PUT | `/api/settings/activity-schedule` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Update the time-based activity schedule (night mode). | `server/routes/system.py:set_activity_schedule` |
-| POST | `/api/settings/display-mode` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Update display mode and sync config.image_gen.image_style. | `server/routes/system.py:set_display_mode` |
-| GET | `/api/shared/users` | Session required (optional in local_trust mode, or if localhost trust is enabled) | List registered user names from shared/users/. | `server/routes/system.py:list_shared_users` |
-| POST | `/api/system/rewrite-runtime-refs` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Synchronize live caches after REWRITE_REFS updates disk state. | `server/routes/system.py:rewrite_runtime_refs` |
-| GET | `/api/system/connections` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return WebSocket and process connection info. | `server/routes/system.py:system_connections` |
-| GET | `/api/system/cost` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return token usage summary and estimated cost. | `server/routes/system.py:get_token_cost` |
-| GET | `/api/system/frontend-logs` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Read frontend logs from JSONL files with optional filters. | `server/routes/system.py:view_frontend_logs` |
-| POST | `/api/system/frontend-logs` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Receive a batch of frontend log entries and write to daily JSONL. | `server/routes/system.py:receive_frontend_logs` |
-| GET | `/api/system/health` | Not required (excluded list) | Simple health check endpoint. | `server/routes/system.py:health_check` |
-| POST | `/api/system/hot-reload` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Hot-reload all configuration and connections. | `server/routes/system.py:hot_reload_all` |
-| POST | `/api/system/hot-reload/animas` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Sync Anima processes with disk state. | `server/routes/system.py:hot_reload_animas` |
-| POST | `/api/system/hot-reload/credentials` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Hot-reload credentials and dependent connections. | `server/routes/system.py:hot_reload_credentials` |
-| POST | `/api/system/hot-reload/slack` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Hot-reload Slack Socket Mode connections only. | `server/routes/system.py:hot_reload_slack` |
-| GET | `/api/system/log-level` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return the current root log level. | `server/routes/system.py:get_log_level` |
-| POST | `/api/system/log-level` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Change the log level at runtime (no restart required). | `server/routes/system.py:set_log_level` |
-| POST | `/api/system/reload` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Full sync: add new animas, refresh existing, remove deleted. | `server/routes/system.py:reload_animas` |
-| GET | `/api/system/scheduler` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return scheduler status and job information. | `server/routes/system.py:system_scheduler` |
-| GET | `/api/system/status` | Session required (optional in local_trust mode, or if localhost trust is enabled) | — | `server/routes/system.py:system_status` |
-| GET | `/api/system/token-budget` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Return current-month token budget status for each Anima. | `server/routes/system.py:get_token_budget` |
-| GET | `/api/tasks/summary` | Session required (optional in local_trust mode, or if localhost trust is enabled) | Aggregate active task counts across all animas from TaskBoard projection. | `server/routes/system.py:get_tasks_summary` |
+| GET | `/api/activity/group` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return one complete trigger-based activity group by stable ID. | `server/routes/system.py:get_activity_group` |
+| GET | `/api/activity/recent` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return recent activity events from unified ActivityLogger. | `server/routes/system.py:get_recent_activity` |
+| GET | `/api/activity/running-tasks` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return active background TaskExec workers grouped by Anima. | `server/routes/system.py:get_running_activity_tasks` |
+| GET | `/api/settings/activity-level` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return the current global activity level and schedule. | `server/routes/system.py:get_activity_level` |
+| PUT | `/api/settings/activity-level` | Session required (local_trust mode, or optional if localhost trust is enabled) | Update global activity level and reschedule all heartbeats. | `server/routes/system.py:set_activity_level` |
+| PUT | `/api/settings/activity-schedule` | Session required (local_trust mode, or optional if localhost trust is enabled) | Update the time-based activity schedule (night mode). | `server/routes/system.py:set_activity_schedule` |
+| POST | `/api/settings/display-mode` | Session required (local_trust mode, or optional if localhost trust is enabled) | Update display mode and sync config.image_gen.image_style. | `server/routes/system.py:set_display_mode` |
+| GET | `/api/shared/users` | Session required (local_trust mode, or optional if localhost trust is enabled) | List registered user names from shared/users/. | `server/routes/system.py:list_shared_users` |
+| GET | `/api/system/connections` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return WebSocket and process connection info. | `server/routes/system.py:system_connections` |
+| GET | `/api/system/frontend-logs` | Session required (local_trust mode, or optional if localhost trust is enabled) | Read frontend logs from JSONL files with optional filters. | `server/routes/system.py:view_frontend_logs` |
+| POST | `/api/system/frontend-logs` | Session required (local_trust mode, or optional if localhost trust is enabled) | Receive a batch of frontend log entries and write to daily JSONL. | `server/routes/system.py:receive_frontend_logs` |
+| GET | `/api/system/health` | Not required (exclusion list) | Simple health check endpoint. | `server/routes/system.py:health_check` |
+| POST | `/api/system/hot-reload/credentials` | Session required (local_trust mode, or optional if localhost trust is enabled) | Hot-reload credentials and dependent connections. | `server/routes/system.py:hot_reload_credentials` |
+| POST | `/api/system/hot-reload/slack` | Session required (local_trust mode, or optional if localhost trust is enabled) | Hot-reload Slack Socket Mode connections only. | `server/routes/system.py:hot_reload_slack` |
+| GET | `/api/system/log-level` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return the current root log level. | `server/routes/system.py:get_log_level` |
+| POST | `/api/system/log-level` | Session required (local_trust mode, or optional if localhost trust is enabled) | Change the log level at runtime (no restart required). | `server/routes/system.py:set_log_level` |
+| POST | `/api/system/reload` | Session required (local_trust mode, or optional if localhost trust is enabled) | Full sync: add new animas, refresh existing, remove deleted. | `server/routes/system.py:reload_animas` |
+| POST | `/api/system/rewrite-runtime-refs` | Session required (local_trust mode, or optional if localhost trust is enabled) | Synchronize live caches after REWRITE_REFS updates disk state. | `server/routes/system.py:rewrite_runtime_refs` |
+| GET | `/api/system/scheduler` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return scheduler status and job information. | `server/routes/system.py:system_scheduler` |
+| GET | `/api/system/status` | Session required (local_trust mode, or optional if localhost trust is enabled) | — | `server/routes/system.py:system_status` |
+| GET | `/api/system/token-budget` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return current-month token budget status for each Anima. | `server/routes/system.py:get_token_budget` |
 
 ## `server/routes/taskboard.py`
 

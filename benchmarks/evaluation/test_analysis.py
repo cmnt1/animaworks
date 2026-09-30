@@ -12,7 +12,7 @@ np = pytest.importorskip("numpy")
 pd = pytest.importorskip("pandas")
 pytest.importorskip("statsmodels")
 
-from tests.evaluation.framework.analysis import StatisticalAnalyzer
+from benchmarks.evaluation.framework.analysis import StatisticalAnalyzer
 
 
 class TestStatisticalAnalyzer:
