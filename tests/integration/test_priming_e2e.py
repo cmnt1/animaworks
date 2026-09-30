@@ -199,11 +199,8 @@ Pythonでの実装・テスト・デバッグが得意
 async def test_priming_with_real_anima_directory(anima_dir: Path):
     """Test priming works correctly with actual Anima directory structure.
 
-    Verifies:
-    - Channel A: Sender profile is retrieved
-    - Channel B: Recent episodes are loaded
-    - Channel C: Related knowledge is searched
-    - Channel D: Skills are matched
+    Verifies compact chat priming retrieves the sender profile and returns a
+    correctly bounded result without running background-only activity channels.
     """
     # Patch get_shared_dir for this test
     with patch("core.paths.get_shared_dir", return_value=anima_dir.parent / "shared"):
@@ -221,9 +218,9 @@ async def test_priming_with_real_anima_directory(anima_dir: Path):
         assert "山田さん" in result.sender_profile or "yamada" in result.sender_profile.lower()
         assert "プロジェクトマネージャー" in result.sender_profile
 
-        # Channel B: Recent episodes should be loaded (today and yesterday)
-        assert result.recent_activity != ""
-        assert "朝のタスク確認" in result.recent_activity or "ミーティング" in result.recent_activity
+        # Recent activity and episodes are only part of background recall.
+        assert result.recent_activity == ""
+        assert result.episodes == ""
 
         # Channel C: Related knowledge should be found (priming-layer-design.md)
         # Note: May be empty if ripgrep is not installed or RAG is not available
@@ -256,7 +253,7 @@ async def test_message_to_response_flow(anima_dir: Path):
 
         # Simulate message reception
         message = "Chatworkで山田さんに進捗報告を送りたい"
-        sender_name = "human"
+        sender_name = "yamada"
 
         # Execute priming
         priming_result = await engine.prime_memories(
@@ -410,7 +407,6 @@ async def test_priming_dynamic_budget_adjustment(anima_dir: Path):
             message="こんにちは",
             sender_name="yamada",
             channel="chat",
-            profile="compact",
             max_tokens=2000,
         )
 
@@ -421,7 +417,6 @@ async def test_priming_dynamic_budget_adjustment(anima_dir: Path):
             "RAG統合による検索精度向上の見込みについて詳しく説明してください。",
             sender_name="yamada",
             channel="chat",
-            profile="compact",
             max_tokens=2000,
         )
 
@@ -434,16 +429,13 @@ async def test_priming_dynamic_budget_adjustment(anima_dir: Path):
             assert greeting_result.estimated_tokens() <= 600  # 500 + margin
             assert request_result.estimated_tokens() <= 2000
 
-        # Test heartbeat (minimal budget: 200 tokens)
+        # Test heartbeat with a minimal recall budget.
         heartbeat_result = await engine.prime_memories(
             message="定期チェック",
             sender_name="system",
             channel="heartbeat",
-            profile="compact",
-            max_tokens=2000,
+            max_tokens=200,
         )
 
-        # Heartbeat should be smallest
+        # The compact background channels must stay within the small budget.
         assert heartbeat_result.estimated_tokens() <= 250  # 200 + formatting margin
-        assert heartbeat_result.recent_activity == ""
-        assert heartbeat_result.episodes == ""

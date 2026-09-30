@@ -413,6 +413,7 @@ class TestPrimeMemoriesIncludesChannelF:
             result = await engine.prime_memories(
                 message="What happened with the deploy?",
                 sender_name="human",
+                channel="heartbeat",
             )
 
         assert result.episodes != ""

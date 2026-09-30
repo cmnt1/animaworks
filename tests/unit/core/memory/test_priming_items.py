@@ -295,41 +295,5 @@ async def test_prime_memories_related_keeps_whole_channel_c_item(tmp_path: Path,
     assert "G" not in scheduled_channels
 
 
-@pytest.mark.asyncio
-async def test_full_profile_shares_budget_by_channel_priority(tmp_path: Path, monkeypatch) -> None:
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    (anima_dir / "episodes").mkdir()
-    engine = PrimingEngine(anima_dir)
-    large = "知" * 5000
-    notifications = "通知内容"
-
-    async def filled(*args, **kwargs):
-        return large
-
-    async def related(*args, **kwargs):
-        return large, large
-
-    async def pending_notifications(*args, **kwargs):
-        return notifications
-
-    monkeypatch.setattr(engine, "_channel_a_sender_profile", filled)
-    monkeypatch.setattr(engine, "_channel_b_recent_activity", filled)
-    monkeypatch.setattr(engine, "_channel_c0_important_knowledge", filled)
-    monkeypatch.setattr(engine, "_channel_c_related_knowledge", related)
-    monkeypatch.setattr(engine, "_channel_e_pending_tasks", filled)
-    monkeypatch.setattr(engine, "_collect_recent_outbound", filled)
-    monkeypatch.setattr(engine, "_channel_f_episodes", filled)
-    monkeypatch.setattr(engine, "_collect_pending_human_notifications", pending_notifications)
-
-    result = await engine.prime_memories("query", profile="full", max_tokens=500)
-
-    assert result.estimated_tokens() - estimate_tokens(result.pending_human_notifications) <= 500
-    assert result.sender_profile
-    assert result.pending_tasks
-    assert result.recent_outbound
-    assert not result.episodes
-
-
 async def empty_pair() -> tuple[str, str]:
     return "", ""

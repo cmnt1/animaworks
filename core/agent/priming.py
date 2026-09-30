@@ -89,7 +89,7 @@ class PrimingMixin:
         try:
             from core.memory.priming.policy import resolve_priming_policy
 
-            policy = resolve_priming_policy(self.anima_dir)
+            policy = resolve_priming_policy()
             if not hasattr(self, "_priming_engine"):
                 from core.paths import get_shared_dir
 
@@ -101,7 +101,6 @@ class PrimingMixin:
                 channel=channel,
                 intent=message_intent,
                 recent_human_messages=recent_human_messages,
-                profile="compact" if prompt_tier in (TIER_MINIMAL, TIER_MICRO, TIER_LIGHT) else policy.profile,
                 max_tokens=min(policy.max_tokens, 1000) if prompt_tier == TIER_STANDARD else policy.max_tokens,
                 include_related=prompt_tier not in (TIER_MINIMAL, TIER_MICRO, TIER_LIGHT),
             )

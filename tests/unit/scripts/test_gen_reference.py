@@ -39,13 +39,13 @@ def test_api_extraction_includes_setup_websocket_and_auth_classes():
     assert "| POST | `/api/internal/vector/query` | 内部 |" in body
 
 
-def test_config_uses_japanese_override_and_model_default():
+def test_config_omits_retired_priming_profile_and_has_localized_sections():
     _, payload, _ = gen_reference.extract_config()
-    field = next(row for row in payload["config"] if row["key"] == "priming.profile")
+    keys = {row["key"] for row in payload["config"]}
     direct_sections = [row for row in payload["config"] if row["model"] == "AnimaWorksConfig"]
 
-    assert field["default"] == '"compact"'
-    assert field["description"].startswith("起動時コンテキスト")
+    assert "priming.profile" not in keys
+    assert "priming.max_tokens" in keys
     assert all(row["description"] != "—" for row in direct_sections)
 
 

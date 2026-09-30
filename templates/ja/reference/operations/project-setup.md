@@ -48,7 +48,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
   "version": 1,
   "setup_complete": true,
   "locale": "ja",
-  "system": { "mode": "server", "log_level": "INFO" },
+  "system": { "mode": "server" },
   "credentials": {
     "anthropic": { "api_key": "sk-ant-..." },
     "openai": { "api_key": "sk-..." }
@@ -61,7 +61,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "profile": "compact" },
+  "priming": { "max_tokens": 2000 },
   "image_gen": {}
 }
 ```
@@ -75,7 +75,7 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `version` | 設定スキーマバージョン（現在 `1`） |
 | `setup_complete` | 初回セットアップ完了フラグ |
 | `locale` | UI言語（`"ja"` / `"en"`） |
-| `system` | サーバーモード・ログレベル |
+| `system` | サーバーモード・タイムゾーン |
 | `credentials` | APIキー・エンドポイント（名前付き） |
 | `model_modes` | モデル名→実行モードの上書きマップ |
 | `anima_defaults` | 全 Anima 共通のデフォルト設定 |
@@ -179,7 +179,6 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `local_llm` |  |
 | `workspaces` |  |
 | `github_identities` |  |
-| `channel_company_defaults` |  |
 | `activity_level` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |

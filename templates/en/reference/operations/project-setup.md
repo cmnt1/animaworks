@@ -48,7 +48,7 @@ All settings are defined in the `AnimaWorksConfig` model and have the following 
   "version": 1,
   "setup_complete": true,
   "locale": "ja",
-  "system": { "mode": "server", "log_level": "INFO" },
+  "system": { "mode": "server" },
   "credentials": {
     "anthropic": { "api_key": "sk-ant-..." },
     "openai": { "api_key": "sk-..." }
@@ -61,7 +61,7 @@ All settings are defined in the `AnimaWorksConfig` model and have the following 
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "profile": "compact" },
+  "priming": { "max_tokens": 2000 },
   "image_gen": {}
 }
 ```
@@ -75,7 +75,7 @@ Role of each section:
 | `version` | Configuration schema version (currently `1`) |
 | `setup_complete` | Initial setup completion flag |
 | `locale` | UI language (`"ja"` / `"en"`) |
-| `system` | Server mode and log level |
+| `system` | Server mode and timezone |
 | `credentials` | API keys and endpoints (named) |
 | `model_modes` | Model name → execution mode override map |
 | `anima_defaults` | Default settings common to all Anima |
@@ -179,7 +179,7 @@ Role of each section:
 | `local_llm` |  |
 | `workspaces` |  |
 | `github_identities` |  |
-| `channel_company_defaults` |  |
+
 | `activity_level` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |

@@ -156,4 +156,4 @@ async def test_current_state_symlink_into_denied_root_is_not_read_for_priming(tm
     ):
         await engine.prime_memories(message="", sender_name="human")
 
-    engine._extract_keywords.assert_called_once_with("")
+    engine._extract_keywords.assert_not_called()

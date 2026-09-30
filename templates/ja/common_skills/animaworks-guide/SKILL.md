@@ -231,7 +231,7 @@ animaworks config -i                     # 対話式ウィザード（credential
 animaworks config list                   # 全設定値の一覧表示
 animaworks config list --section system  # セクションでフィルタ（例: system, credentials）
 animaworks config list --show-secrets    # API keyを表示
-animaworks config get {キー}             # 特定の設定値取得（ドット記法: system.log_level）
+animaworks config get {キー}             # 特定の設定値取得（ドット記法: system.mode）
 animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
 ```

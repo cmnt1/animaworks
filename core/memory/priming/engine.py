@@ -12,12 +12,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-
-from core.config.file_access_policy import find_denied_root, load_denied_roots
-from core.i18n import t
 
 # Import submodules directly to avoid circular import when package __init__ loads engine
 from core.memory.priming import (
@@ -41,7 +37,7 @@ from core.memory.priming import (
 from core.memory.priming.constants import _DEFAULT_MAX_PRIMING_TOKENS
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
-from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
+from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
 from core.prompt.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
@@ -132,14 +128,13 @@ class PrimingEngine:
         channel: str = "chat",
         intent: str = "",
         recent_human_messages: list[str] | None = None,
-        profile: str = "full",
         max_tokens: int | None = None,
         include_related: bool = True,
     ) -> PrimingResult:
         """Prime memories based on incoming message.
 
-        A single ``max_tokens`` budget governs every itemized channel; pointer
-        cues are intentionally small so the resident surface stays minimal.
+        The compact path bounds itemized channel output by ``max_tokens``;
+        pending human notifications are retained separately.
         """
         logger.debug(
             "Priming memories: sender=%s, message_len=%d, channel=%s",
@@ -149,225 +144,9 @@ class PrimingEngine:
         )
 
         token_budget = _DEFAULT_MAX_PRIMING_TOKENS if max_tokens is None else max_tokens
-
-        if profile == "compact":
-            return await self._prime_compact(
-                message, sender_name, channel, intent, token_budget, recent_human_messages, include_related
-            )
-
-        logger.debug("Token budget: %d", token_budget)
-
-        effective_message = message
-        if not effective_message.strip():
-            state_path = self.anima_dir / "state" / "current_state.md"
-            try:
-                denied_roots = load_denied_roots(self.anima_dir)
-                resolved_state_path = state_path.resolve()
-                if find_denied_root(resolved_state_path, denied_roots) is None and resolved_state_path.is_file():
-                    effective_message = resolved_state_path.read_text(encoding="utf-8")[:300]
-            except (OSError, RuntimeError):
-                pass
-
-        keywords = self._extract_keywords(message or effective_message)
-        knowledge_queries = build_queries(effective_message, keywords, recent_human_messages)
-        knowledge_search_cache = _channel_c.KnowledgeSearchCache()
-
-        channel_calls = [
-            ("A", self._channel_a_sender_profile(sender_name)),
-            ("B", self._channel_b_recent_activity(sender_name, keywords, channel=channel)),
-            (
-                "C0",
-                self._channel_c0_important_knowledge(
-                    knowledge_queries,
-                    trigger=channel,
-                    search_cache=knowledge_search_cache,
-                ),
-            ),
-            (
-                "C",
-                self._channel_c_related_knowledge(
-                    keywords,
-                    message=effective_message,
-                    recent_human_messages=recent_human_messages,
-                    trigger=channel,
-                    search_cache=knowledge_search_cache,
-                ),
-            ),
-            ("E", self._channel_e_pending_tasks()),
-            ("outbound", self._collect_recent_outbound()),
-            (
-                "F",
-                self._channel_f_episodes(
-                    keywords,
-                    message=message,
-                    recent_human_messages=recent_human_messages,
-                    trigger=channel,
-                ),
-            ),
-            (
-                "pending_human_notifications",
-                self._collect_pending_human_notifications(channel=channel),
-            ),
-        ]
-        channel_names = [name for name, _ in channel_calls]
-        gathered = await asyncio.gather(
-            *(self._run_priming_channel(name, coro) for name, coro in channel_calls),
-            return_exceptions=True,
+        return await self._prime_compact(
+            message, sender_name, channel, intent, token_budget, recent_human_messages, include_related
         )
-        results = dict(zip(channel_names, gathered, strict=True))
-
-        def unpack_itemized(value: object) -> tuple[str, tuple[MemoryItem, ...]]:
-            if not isinstance(value, str):
-                return "", ()
-            return str(value), tuple(getattr(value, "items", ()))
-
-        sender_profile = results["A"] if isinstance(results["A"], str) else ""
-        recent_activity, recent_activity_items = unpack_itemized(results["B"])
-
-        important_knowledge, important_items = unpack_itemized(results["C0"])
-        channel_c_result = results["C"]
-        if isinstance(channel_c_result, tuple):
-            related_knowledge, related_items = unpack_itemized(channel_c_result[0])
-            related_knowledge_untrusted, untrusted_items = unpack_itemized(channel_c_result[1])
-        else:
-            related_knowledge = ""
-            related_knowledge_untrusted = ""
-            related_items = ()
-            untrusted_items = ()
-        channel_c_related_knowledge = related_knowledge
-
-        pending_tasks, pending_task_items = unpack_itemized(results["E"])
-        recent_outbound, outbound_items = unpack_itemized(results["outbound"])
-        episodes, episode_items = unpack_itemized(results["F"])
-        pending_human_notifications, _ = unpack_itemized(results["pending_human_notifications"])
-
-        for name, r in results.items():
-            if isinstance(r, Exception):
-                logger.warning("Priming channel %s failed: %s", name, r)
-
-        # Channel B carries recent-conversation dates in ``updated``; exclude the
-        # same-date episodes from Channel F so recent conversation is not
-        # duplicated by the episode channel.
-        b_dates = {item.updated[:10] for item in recent_activity_items if item.updated}
-        episode_items = tuple(_channel_f.exclude_episodes_for_dates(list(episode_items), b_dates))
-
-        remaining = max(0, token_budget)
-        allocated: dict[str, str] = {}
-
-        def _allocated_token_count() -> int:
-            important = allocated.get("important_knowledge", "")
-            related = allocated.get("related_knowledge", "")
-            combined_knowledge = f"{important}\n\n{related}" if important and related else important or related
-            complete_text = "".join(
-                (
-                    allocated.get("sender_profile", ""),
-                    allocated.get("recent_activity", ""),
-                    combined_knowledge,
-                    allocated.get("related_knowledge_untrusted", ""),
-                    allocated.get("pending_tasks", ""),
-                    allocated.get("recent_outbound", ""),
-                    allocated.get("episodes", ""),
-                    pending_human_notifications,
-                )
-            )
-            return max(
-                0,
-                estimate_tokens(complete_text) - estimate_tokens(pending_human_notifications),
-            )
-
-        def _select(
-            allocation_key: str,
-            items: Sequence[MemoryItem],
-            text: str,
-            *,
-            header: str = "",
-            tail: bool = False,
-            max_budget: int | None = None,
-        ) -> str:
-            nonlocal remaining
-            budget = remaining if max_budget is None else min(remaining, max_budget)
-            selected: list[MemoryItem] = []
-            if items:
-                item_budget = max(0, budget - estimate_tokens(header))
-                selected = select_within_budget(items, item_budget)
-                value = render_items(selected, header)
-            elif text:
-                value = truncate_tail(text, budget) if tail else truncate_head(text, budget)
-            else:
-                value = ""
-
-            allocated[allocation_key] = value
-            while _allocated_token_count() > token_budget:
-                if selected:
-                    selected.pop()
-                    value = render_items(selected, header)
-                elif text:
-                    budget = max(0, budget - 1)
-                    value = truncate_tail(text, budget) if tail else truncate_head(text, budget)
-                else:
-                    value = ""
-                allocated[allocation_key] = value
-
-            remaining = max(0, token_budget - _allocated_token_count())
-            return value
-
-        sender_profile_text = _select(
-            "sender_profile",
-            (),
-            sender_profile,
-            max_budget=min(_BUDGET_SENDER_PROFILE, token_budget // 4),
-        )
-        pending_tasks_text = _select(
-            "pending_tasks",
-            pending_task_items,
-            pending_tasks,
-            max_budget=min(_BUDGET_PENDING_TASKS, token_budget // 3),
-        )
-        recent_outbound_text = _select(
-            "recent_outbound",
-            outbound_items,
-            recent_outbound,
-            header=t("priming.outbound_header"),
-            max_budget=_BUDGET_RECENT_OUTBOUND,
-        )
-        important_text = _select(
-            "important_knowledge",
-            important_items,
-            important_knowledge,
-            header=t("priming.important_knowledge_header"),
-        )
-        medium_text = _select("related_knowledge", related_items, channel_c_related_knowledge)
-        related_knowledge_text = (
-            f"{important_text}\n\n{medium_text}" if important_text and medium_text else important_text or medium_text
-        )
-        untrusted_text = _select("related_knowledge_untrusted", untrusted_items, related_knowledge_untrusted)
-        recent_activity_text = _select("recent_activity", recent_activity_items, recent_activity, tail=True)
-        episodes_text = _select("episodes", episode_items, episodes, tail=True)
-
-        result = PrimingResult(
-            sender_profile=sender_profile_text,
-            recent_activity=recent_activity_text,
-            related_knowledge=related_knowledge_text,
-            related_knowledge_untrusted=untrusted_text,
-            pending_tasks=pending_tasks_text,
-            recent_outbound=recent_outbound_text,
-            episodes=episodes_text,
-            pending_human_notifications=pending_human_notifications,
-        )
-
-        logger.info(
-            "Priming complete: %d chars (~%d tokens), sender_prof=%d, activity=%d, "
-            "knowledge=%d, episodes=%d, outbound=%d",
-            result.total_chars(),
-            result.estimated_tokens(),
-            len(result.sender_profile),
-            len(result.recent_activity),
-            len(result.related_knowledge),
-            len(result.episodes),
-            len(result.recent_outbound),
-        )
-
-        return result
 
     async def _prime_compact(
         self,
@@ -383,7 +162,7 @@ class PrimingEngine:
 
         Resident pointers are explicit opt-ins. Background triggers may also
         receive bounded recent activity plus configured knowledge and episode
-        recall; broader graph expansion remains outside the compact profile.
+        recall; broader graph expansion is not part of automatic priming.
         """
         started = time.perf_counter()
         calls = [
@@ -572,8 +351,7 @@ class PrimingEngine:
 
         if not bool(getattr(priming, "compact_background_recall_enabled", True)):
             return None
-        settings_by_trigger = getattr(priming, "compact_background_recall", defaults.compact_background_recall)
-        return settings_by_trigger.get(channel, defaults.compact_background_recall[channel])
+        return getattr(priming, "compact_background_recall", defaults.compact_background_recall)
 
     # ── Channel wrappers (delegate to modules; tests may patch these) ────
 

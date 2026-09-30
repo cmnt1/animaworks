@@ -93,7 +93,7 @@ class TestBackgroundTaskConfig:
         """BackgroundTaskConfig has expected defaults."""
         btc = BackgroundTaskConfig()
         assert btc.enabled is True
-        assert btc.result_retention_hours == 24
+        assert not hasattr(btc, "result_retention_hours")
         assert btc.result_memory_retention_minutes == 60
         assert btc.max_completed_tasks_in_memory == 200
         assert btc.worker_pool_size == 1
@@ -220,7 +220,6 @@ class TestAnimaWorksConfigBackground:
         config = AnimaWorksConfig()
         # Modify background_task settings
         config.background_task.enabled = False
-        config.background_task.result_retention_hours = 48
         config.background_task.result_memory_retention_minutes = 30
         config.background_task.max_completed_tasks_in_memory = 50
         config.background_task.eligible_tools["custom_tool"] = BackgroundToolConfig(
@@ -234,7 +233,7 @@ class TestAnimaWorksConfigBackground:
 
         # Verify background_task round-trip
         assert restored.background_task.enabled is False
-        assert restored.background_task.result_retention_hours == 48
+        assert not hasattr(restored.background_task, "result_retention_hours")
         assert restored.background_task.result_memory_retention_minutes == 30
         assert restored.background_task.max_completed_tasks_in_memory == 50
         assert "custom_tool" in restored.background_task.eligible_tools

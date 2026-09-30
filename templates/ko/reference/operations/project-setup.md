@@ -48,7 +48,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
   "version": 1,
   "setup_complete": true,
   "locale": "ja",
-  "system": { "mode": "server", "log_level": "INFO" },
+  "system": { "mode": "server" },
   "credentials": {
     "anthropic": { "api_key": "sk-ant-..." },
     "openai": { "api_key": "sk-..." }
@@ -61,7 +61,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
   },
   "consolidation": { "daily_enabled": true, "daily_time": "02:00" },
   "rag": { "enabled": true },
-  "priming": { "profile": "compact" },
+  "priming": { "max_tokens": 2000 },
   "image_gen": {}
 }
 ```
@@ -75,7 +75,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `version` | 설정 스키마 버전(현재 `1`) |
 | `setup_complete` | 최초 설정 완료 플래그 |
 | `locale` | UI 언어(`"ja"` / `"en"`) |
-| `system` | 서버 모드·로그 레벨 |
+| `system` | 서버 모드·타임존 |
 | `credentials` | API 키·엔드포인트(이름 지정) |
 | `model_modes` | 모델명→실행 모드의 덮어쓰기 맵 |
 | `anima_defaults` | 모든 Anima 공통의 기본 설정 |
@@ -179,7 +179,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `local_llm` |  |
 | `workspaces` |  |
 | `github_identities` |  |
-| `channel_company_defaults` |  |
+
 | `activity_level` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |

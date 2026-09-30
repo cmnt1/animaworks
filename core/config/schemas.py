@@ -27,7 +27,6 @@ logger = logging.getLogger("animaworks.config")
 
 class SystemConfig(BaseModel):
     mode: str = "server"
-    log_level: str = "INFO"
     timezone: str = ""  # IANA TZ name; empty = auto-detect from system
 
 
@@ -264,7 +263,6 @@ class RAGConfig(BaseModel):
     shared_check_ttl_seconds: float = Field(default=30.0, ge=0)
     shared_check_backoff_initial_seconds: float = Field(default=5.0, ge=0)
     shared_check_backoff_max_seconds: float = Field(default=300.0, ge=0)
-    quick_check_timeout_seconds: float = 10.0
     rerank_enabled: bool = True
     rerank_candidate_pool: int = 50
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
@@ -378,23 +376,13 @@ class CompactBackgroundRecallConfig(BaseModel):
     recent_activity_max_tokens: int = Field(default=300, ge=0)
 
 
-_DEFAULT_COMPACT_BACKGROUND_RECALL: dict[str, CompactBackgroundRecallConfig] = {
-    trigger: CompactBackgroundRecallConfig() for trigger in ("heartbeat", "inbox", "cron")
-}
-
-
 class PrimingConfig(BaseModel):
     """Configuration for priming layer (automatic memory retrieval)."""
 
-    profile: Literal["compact", "full"] = "compact"
     max_tokens: int = Field(default=2000, ge=200)
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
     compact_background_recall_enabled: bool = True
-    compact_background_recall: dict[str, CompactBackgroundRecallConfig] = Field(
-        default_factory=lambda: {
-            trigger: settings.model_copy(deep=True) for trigger, settings in _DEFAULT_COMPACT_BACKGROUND_RECALL.items()
-        }
-    )
+    compact_background_recall: CompactBackgroundRecallConfig = Field(default_factory=CompactBackgroundRecallConfig)
 
 
 class BackgroundReviewConfig(BaseModel):
@@ -749,7 +737,6 @@ class BackgroundTaskConfig(BaseModel):
         "local_llm": BackgroundToolConfig(threshold_s=60),
         "run_command": BackgroundToolConfig(threshold_s=60),
     }
-    result_retention_hours: int = 24  # disk cleanup retention (cleanup is explicitly invoked)
     result_memory_retention_minutes: int = Field(default=60, ge=0)  # in-process result cache
     max_completed_tasks_in_memory: int = Field(default=200, ge=0)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
@@ -1370,8 +1357,6 @@ class AnimaWorksConfig(BaseModel):
     # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
     # Used by executors to inject GH_TOKEN and pin push identity.
     github_identities: dict[str, str] = Field(default_factory=dict)
-    # channel name → company name for open-channel company attribution migration
-    channel_company_defaults: dict[str, str] = Field(default_factory=dict)
     activity_level: int = Field(
         default=100,
         ge=10,

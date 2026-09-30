@@ -152,7 +152,7 @@ submit したらすぐに次の作業に移ること。
   2. `BackgroundTaskManager.from_profiles` 経由で、各モジュールの `EXECUTION_PROFILE` から `background_eligible: true` のサブコマンドを抽出（`core.integrations._base.get_eligible_tools_from_profiles`）。キーは `"{tool_name}:{subcmd}"`、秒数は `expected_seconds`（未設定時 60）
   3. `config.json` の `background_task.eligible_tools` — 各キーに対し `threshold_s` を秒数として上書き
 - **無効化**: `config.json` で `background_task.enabled: false` にすると `BackgroundTaskManager` 自体が作られない（その場合、submit キューは取り込まれても実行側で警告になる）。
-- **掃除**: `cleanup_old_tasks(max_age_hours=24)` は、(1) `completed` / `failed` で `completed_at` が **24 時間超**過去の JSON を削除、(2) `running` のまま `created_at` が **48 時間超**過去のファイル（プロセスクラッシュ等の孤児）を削除。戻り値は削除件数。`config.json` の `background_task.result_retention_hours` はスキーマに存在するが、**現行の `BackgroundTaskManager` 実装からは参照されない**（呼び出し側が `cleanup_old_tasks` に任意の `max_age_hours` を渡す API のみ）。
+- **掃除**: `cleanup_old_tasks(max_age_hours=24)` は、(1) `completed` / `failed` で `completed_at` が指定時間を超えた JSON、(2) `running` のまま `created_at` が **48 時間超**過去のファイル（プロセスクラッシュ等の孤児）を削除する。戻り値は削除件数。保持時間は呼び出し側が `max_age_hours` で指定し、対応する `config.json` 設定キーはない。
 
 ### 同ファイル内のその他 API: `rotate_dm_logs`
 

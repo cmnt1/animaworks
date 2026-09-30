@@ -18,7 +18,6 @@ skills: スキル読み込みと管理の設定。
 chatwork_tool: Chatwork ツールの権限設定。
 prompt: システムプロンプトとプロンプト構築の設定。
 priming: anima の起動時に読み込む情報の設定。
-priming.profile: 起動時コンテキストに使用するプロファイル。compact は要点を優先し、full は広い情報を読み込みます。
 image_gen: 画像生成プロバイダーと既定パラメーター。
 human_notification: 人間への通知方法と通知先。
 interaction: anima 間の対話とメッセージ処理。
@@ -40,7 +39,6 @@ inbox: anima の受信箱と通知表示。
 local_llm: ローカル LLM エンドポイントとモデル設定。
 workspaces: 名前付き workspace パスの対応。
 github_identities: 会社 slug と GitHub アカウントの対応。
-channel_company_defaults: チャネル名に対する既定の会社属性。
 activity_level: 全体の活動頻度を調整する倍率。
 activity_schedule: 時刻帯ごとの活動頻度。
 icon_url_template: anima アイコン URL のテンプレート。
@@ -58,6 +56,5 @@ status_json_extra:
   enabled: anima の有効・無効。
   company: 所属する会社。
   department: 所属する部署。
-  priming_profile: 起動時コンテキストのプロファイル。
   needs_user_input: ユーザー入力が必要な状態かどうか。
   bootstrap_state: 初期化処理の状態。

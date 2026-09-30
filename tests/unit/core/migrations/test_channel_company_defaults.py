@@ -177,18 +177,14 @@ def test_migration_step_is_registered_as_structural_before_version(tmp_path: Pat
     register_all_steps(runner)
     steps = runner.list_steps()
     ids = [step["id"] for step in steps]
-    registered = next(
-        step for step in steps if step["id"] == "channel_company_defaults_20260723"
-    )
+    registered = next(step for step in steps if step["id"] == "channel_company_defaults_20260723")
 
     assert registered["category"] == "structural"
-    assert ids.index("split_board_by_company_20260720") < ids.index(
-        "channel_company_defaults_20260723"
-    )
+    assert ids.index("split_board_by_company_20260720") < ids.index("channel_company_defaults_20260723")
     assert ids.index("channel_company_defaults_20260723") < ids.index("update_version")
 
 
-def test_company_config_schema_roundtrip() -> None:
+def test_retired_company_defaults_key_is_ignored_by_config_schema() -> None:
     config = AnimaWorksConfig.model_validate(
         {
             "channel_company_defaults": {"general": "alpha"},
@@ -198,11 +194,10 @@ def test_company_config_schema_roundtrip() -> None:
         }
     )
 
-    assert config.channel_company_defaults == {"general": "alpha"}
+    assert not hasattr(config, "channel_company_defaults")
+    assert "channel_company_defaults" not in config.model_dump()
     assert config.external_messaging.slack.default_channel_company == "alpha"
     restored = AnimaWorksConfig.model_validate(config.model_dump())
-    assert restored.channel_company_defaults == {"general": "alpha"}
     assert restored.external_messaging.slack.default_channel_company == "alpha"
     defaults = AnimaWorksConfig()
-    assert defaults.channel_company_defaults == {}
     assert defaults.external_messaging.slack.default_channel_company == ""

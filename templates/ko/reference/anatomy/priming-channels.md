@@ -1,6 +1,6 @@
 # Priming 채널 기술 참조
 
-기본 `compact`는 발신자, 작업, 상주 지식을 획득하고, 조건을 충족하는 경우에만 관련 지식을 검색한다. 옵트인 `full`는 최근 활동과 에피소드도 획득한다. 채널 구성은 `priming.profile`에서 선택되며, 모든 트리거에서 모든 채널이 작동하는 것은 아니다.
+Priming은 compact 단일 경로로 동작한다. 발신자·작업·상주 지식·최근 전송·인간용 알림을 가져오고, 조건을 충족하면 관련 지식도 검색한다. heartbeat / inbox / cron에서는 공통 제한 설정에 따라 최근 활동과 에피소드도 가져온다.
 
 `PrimingEngine`가 획득하는 채널과 예산의 사양을 보여준다. C0(important_knowledge)는 Channel C의 지식 파이프라인 내 보조 블록이다.
 
@@ -42,7 +42,7 @@
 
 - **소스**: `activity_log/{date}.jsonl` + 공유 채널의 최신 게시물
 
-**Priming 주입과 명시적 검색의 차이**: Channel B는 `full` 프로필로 획득한다. 과거 행동 로그를 키워드로 넓게 찾는 용도는 `search_memory(scope="activity_log")`를 사용한다. 주입과 도구 검색은 별도의 경로이다.
+**Priming 주입과 명시적 검색의 차이**: Channel B는 heartbeat / inbox / cron의 compact 배경 회상에서 공통 설정의 제한 내에 가져온다. 과거 행동 로그를 키워드로 넓게 찾는 용도는 `search_memory(scope="activity_log")`를 사용한다. 주입과 도구 검색은 별도의 경로이다.
 
 ### 트리거별 필터링
 
@@ -106,13 +106,13 @@ RAG 벡터 검색으로 관련 에피소드를 주입한다.
 
 ---
 
-## 예산과 프로필
+## 예산과 설정
 
-`config.json`의 `priming.profile`은 `compact` 또는 `full`을 지정한다(기본값: `compact`). Anima별 `status.json`에 `priming_profile`을 지정하면 해당 설정이 우선된다. `priming.max_tokens`은 회상의 토큰 예산(기본값: 2000), `priming.channel_timeout_seconds`은 채널별 획득 타임아웃(기본값: 60초).
+프로필 선택은 없으며 Priming은 항상 compact 경로를 사용한다. `priming.max_tokens`은 회상 예산(기본값: 2000), `priming.channel_timeout_seconds`은 채널별 획득 타임아웃(기본값: 60초)이다. `compact_background_recall`은 heartbeat / inbox / cron에서 공유하는 하나의 제한 설정이며, `compact_background_recall_enabled`로 세 트리거에서 일괄 비활성화할 수 있다.
 
-- `compact`는 A(발신자), E(작업), C0(상주 지식), 최근 전송, 보류 중인 인간 알림을 획득한다. C(관련 지식)는 chat/task 트리거, 또는 question/request/delegation 의도가 있고 메시지가 있는 경우에 획득한다. B(최근 활동)·F(에피소드)·G(병렬 작업 표시)는 획득하지 않는다.
-- `full`는 A / B / C0 / C / E / F와 최근 전송, 인간 알림을 획득한다.
-- A의 상한은 `min(400, max_tokens // 4)`, E의 상한은 `min(500, max_tokens // 3)`. 최근 전송은 최대 3건·250토큰. `full`의 채널 항목과 `compact`의 관련 지식은 `max_tokens`의 남은 범위에 맞춘다.
+- A(발신자)는 `min(400, max_tokens // 4)`, E(작업)는 `min(500, max_tokens // 3)`이 상한이다. 최근 전송은 최대 3건·250토큰이다.
+- C(관련 지식)는 chat/task 트리거, 또는 question/request/delegation 의도가 있고 메시지가 있는 경우에 획득한다.
+- B(최근 활동)는 heartbeat / inbox / cron에서 설정 상한 내에 획득한다. F(에피소드)는 같은 트리거에서 메시지가 있고 관련 검색이 활성화된 경우 설정 상한 내에 획득한다.
 - 보류 중인 인간 알림은 회상 예산과 별도로 취급된다.
 
 ---

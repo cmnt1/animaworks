@@ -148,7 +148,7 @@ create_skill(skill_name="deploy-procedure", description="本番デプロイ手�
 
 ## Automatic Memory Processes
 
-The default `compact` recalls sender information, incomplete tasks, explicitly stated resident pointers, recent send history, and human-facing unread notifications. It searches relevant knowledge for conversation and task requests or questions, but does not search during normal heartbeat, cron, or report events. Broad activity history, episodes, and graph expansion are available via optional `full` or explicit search. `priming.max_tokens` defaults to 2,000, with notifications and mandatory resident rules held separately. Per-Anima `status.json: priming_profile` can override without changing model routing.
+Compact automatic recall includes sender information, incomplete tasks, explicitly stated resident pointers, recent send history, and human-facing unread notifications. It searches relevant knowledge for conversation and task requests or questions, and retrieves recent activity and episodes within shared limits for heartbeat, cron, and inbox triggers. Broad graph expansion is not injected automatically; use explicit search when needed. `priming.max_tokens` defaults to 2,000, with notifications and mandatory resident rules held separately.
 
 Search when past instructions, customer information, or ongoing work is needed. There is no need to search ritualistically for every response or report success after each use. Skill and procedure bodies are read when needed. Only explicitly stated memories are auto-resident; `[IMPORTANT]` alone does not designate residency.
 

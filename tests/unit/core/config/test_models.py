@@ -53,7 +53,7 @@ class TestSystemConfig:
     def test_defaults(self):
         sc = SystemConfig()
         assert sc.mode == "server"
-        assert sc.log_level == "INFO"
+        assert not hasattr(sc, "log_level")
         assert not hasattr(sc, "gateway")
         assert not hasattr(sc, "worker")
 
@@ -469,7 +469,7 @@ class TestLoadConfig:
         # Write a config with an anima (supervisor/speciality only; model in status.json)
         config_data = {
             "version": 1,
-            "system": {"mode": "server", "log_level": "INFO"},
+            "system": {"mode": "server"},
             "credentials": {"anthropic": {"api_key": ""}},
             "anima_defaults": {"model": "claude-sonnet-4-6", "credential": "anthropic"},
             "animas": {"alice": {"supervisor": "bob", "speciality": "engineer"}},
@@ -480,6 +480,35 @@ class TestLoadConfig:
         assert "alice" in config.animas
         assert config.animas["alice"].supervisor == "bob"
         assert config.animas["alice"].speciality == "engineer"
+
+    def test_removed_config_keys_are_ignored_without_breaking_legacy_config(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "system": {"mode": "server", "log_level": "DEBUG"},
+                    "rag": {"quick_check_timeout_seconds": 2.0},
+                    "background_task": {"result_retention_hours": 48},
+                    "priming": {
+                        "profile": "full",
+                        "compact_background_recall": {"heartbeat": {"episodes_max_items": 9}},
+                    },
+                    "channel_company_defaults": {"general": "alpha"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        config = load_config(path)
+
+        assert config.system.mode == "server"
+        assert not hasattr(config.system, "log_level")
+        assert not hasattr(config.rag, "quick_check_timeout_seconds")
+        assert not hasattr(config.background_task, "result_retention_hours")
+        assert not hasattr(config.priming, "profile")
+        assert config.priming.compact_background_recall.episodes_max_items == 2
+        assert not hasattr(config, "channel_company_defaults")
+        assert "channel_company_defaults" not in config.model_dump()
 
     def test_removed_consolidation_keys_are_ignored(self, tmp_path):
         path = tmp_path / "config.json"

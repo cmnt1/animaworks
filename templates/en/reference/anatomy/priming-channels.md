@@ -1,6 +1,6 @@
 # Priming Channel Technical Reference
 
-The default `compact` retrieves the sender, task, and resident knowledge, and searches for related knowledge only when conditions are met. The opt-in `full` also retrieves recent activity and episodes. Channel configuration is selected via `priming.profile`, and not all channels run on every trigger.
+Priming always follows a single compact retrieval path. It retrieves the sender, tasks, resident knowledge, recent outbound messages, and pending human notifications, and searches related knowledge when conditions are met. Heartbeat, inbox, and cron triggers also retrieve recent activity and episodes within shared limits.
 
 `PrimingEngine` specifies the channels and budget that are retrieved. C0 (important_knowledge) is an auxiliary block within Channel C's knowledge pipeline.
 
@@ -42,7 +42,7 @@ Injects a recent activity timeline.
 
 - **Source**: `activity_log/{date}.jsonl` + latest posts from shared channels
 
-**Difference between Priming injection and explicit search**: Channel B is retrieved via the `full` profile. For broadly searching past action logs by keyword, use `search_memory(scope="activity_log")`. Injection and tool search are separate paths.
+**Difference between Priming injection and explicit search**: Channel B is retrieved within shared limits for compact background recall on heartbeat, inbox, and cron triggers. For broadly searching past action logs by keyword, use `search_memory(scope="activity_log")`. Injection and tool search are separate paths.
 
 ### Trigger-specific filtering
 
@@ -106,13 +106,13 @@ Injects related episodes via RAG vector search.
 
 ---
 
-## Budget and Profile
+## Budget and Settings
 
-The `priming.profile` of `config.json` specifies `compact` or `full` (default: `compact`). If `priming_profile` is specified in the per-Anima `status.json`, that configuration takes priority. `priming.max_tokens` is the recall token budget (default: 2000), and `priming.channel_timeout_seconds` is the per-channel retrieval timeout (default: 60 seconds).
+There is no profile selection; Priming always uses the compact retrieval path. `priming.max_tokens` is the recall budget (default: 2000), and `priming.channel_timeout_seconds` is the per-channel retrieval timeout (default: 60 seconds). `compact_background_recall` is one shared set of limits for heartbeat, inbox, and cron; `compact_background_recall_enabled` disables it for all three triggers.
 
-- `compact` retrieves A (sender), E (tasks), C0 (resident knowledge), recent outbound, and pending human notifications. C (related knowledge) is retrieved on chat/task triggers, or when there is an question/request/delegation intent and a message exists. B (recent activity), F (episodes), and G (parallel task display) are not retrieved.
-- `full` retrieves A / B / C0 / C / E / F plus recent outbound and human notifications.
-- The limit for A is `min(400, max_tokens // 4)`, and the limit for E is `min(500, max_tokens // 3)`. Recent outbound is up to 3 items and 250 tokens. Channel items from `full` and related knowledge from `compact` fit within the remaining space of `max_tokens`.
+- A (sender) is limited to `min(400, max_tokens // 4)`, E (tasks) to `min(500, max_tokens // 3)`. Recent outbound is limited to 3 items and 250 tokens.
+- C (related knowledge) is retrieved on chat/task triggers, or when there is a question/request/delegation intent and a message exists.
+- B (recent activity) is retrieved within configured limits on heartbeat, inbox, and cron. F (episodes) is retrieved within the same shared limits for these triggers when a message exists and related retrieval is enabled.
 - Pending human notifications are handled separately from the recall budget.
 
 ---

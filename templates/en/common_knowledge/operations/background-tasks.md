@@ -139,7 +139,7 @@ Once you submit, move on to the next task immediately. Results are incorporated 
   2. Via `BackgroundTaskManager.from_profiles`, extract subcommands of `background_eligible: true` from each module's `EXECUTION_PROFILE` (`core.integrations._base.get_eligible_tools_from_profiles`). Keys are `"{tool_name}:{subcmd}"`, seconds are `expected_seconds` (default 60 if not set)
   3. `background_task.eligible_tools` in `config.json` — for each key, overwrite `threshold_s` as the number of seconds
 - **Disabling**: Setting `background_task.enabled: false` via `config.json` prevents `BackgroundTaskManager` itself from being created (in that case, the submit queue is still picked up but a warning appears on the execution side).
-- **Cleanup**: `cleanup_old_tasks(max_age_hours=24)` (1) deletes JSON files whose `completed_at` is **more than 24 hours** old via `completed` / `failed`, and (2) deletes files whose `created_at` has been in `running` state for **more than 48 hours** (orphans from process crashes, etc.). The return value is the number of deletions. `background_task.result_retention_hours` in `config.json` exists in the schema, but is **not referenced by the current `BackgroundTaskManager` implementation** (the API only allows callers to pass an arbitrary `max_age_hours` to `cleanup_old_tasks`).
+- **Cleanup**: `cleanup_old_tasks(max_age_hours=24)` deletes `completed` / `failed` JSON files whose `completed_at` exceeds the caller-specified age, plus files left `running` for **more than 48 hours** (orphans from process crashes, etc.). The return value is the number of deletions. Callers set the completed-task retention with `max_age_hours`; there is no corresponding `config.json` key.
 
 ### Other APIs in the same file: `rotate_dm_logs`
 

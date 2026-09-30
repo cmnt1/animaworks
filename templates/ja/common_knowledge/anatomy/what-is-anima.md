@@ -73,7 +73,7 @@ Chat と Heartbeat（および cron / TaskExec などのバックグラウンド
   `is_eligible(name)` は **名前がマップに含まれるかだけ**を見る（値は目安秒数として保持され、閾値比較には使われない）。
 - **エージェント経由**: `ToolHandler` が未登録ツールを外部ディスパッチする際、名前が上記マップにあれば `BackgroundTaskManager.submit` に回し、即座に `task_id` を含む JSON を返す。結果確認は `check_background_task` / `list_background_tasks` などのツールで行う。
 - **CLI 経由（`animaworks-tool submit`）**: コマンド型ツールの記述子は引き続き **`state/background_tasks/pending/`** と processing の流れを使う。`PendingTaskExecutor` はこのコマンドキューを監視し、別途、正規タスクストアからLLMタスクを取得する。LLMタスク投入のためにファイルを作成しない。
-- **整理**: `cleanup_old_tasks(max_age_hours=24)` は、`completed` / `failed` で `completed_at` から **24 時間超**経過した JSON を削除し、さらに `running` のまま `created_at` から **48 時間超**経過したファイル（プロセスクラッシュ等の孤児）も削除する。`config.json` の `background_task.result_retention_hours` はスキーマ上あるが、**現行の `BackgroundTaskManager` は参照しない**（呼び出し側が `cleanup_old_tasks` に渡す時間で制御する想定）。
+- **整理**: `cleanup_old_tasks(max_age_hours=24)` は、`completed` / `failed` で `completed_at` から指定時間を超えた JSON と、`running` のまま `created_at` から **48 時間超**経過したファイル（プロセスクラッシュ等の孤児）を削除する。保持時間は呼び出し側が引数 `max_age_hours` で指定し、設定キーはない。
 
 同じモジュールの **`rotate_dm_logs`** は、`shared/dm_logs/*.jsonl` のうち `max_age_days`（デフォルト 7 日）より古い行を `{元ファイル名}.{YYYYMMDD}.archive.jsonl` に追記アーカイブし、アクティブファイルを最近の行だけに書き換える（DM 履歴の肥大化対策）。
 

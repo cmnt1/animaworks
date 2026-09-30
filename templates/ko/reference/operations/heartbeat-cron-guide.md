@@ -173,7 +173,7 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 - **후보 도구 맵의 구축 `from_profiles()`**: 다음 3층을 dict의 `update`으로 병합하고, **후승**으로 덮어쓴다. (1) `_DEFAULT_ELIGIBLE_TOOLS`(코드 기본) (2) 인수 `profiles`(`EXECUTION_PROFILE` 집약) (3) 인수 `config_eligible`(보통은 `config.json`의 `background_task.eligible_tools`에서 `threshold_s`을 전개한 `名前 → 秒`). 값은 프로필 연계용 기대 초(정수).
 - **코드 기본 `_DEFAULT_ELIGIBLE_TOOLS`(초)**: `generate_character_assets` 30, `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 각 30, `generate_3d_model` / `generate_rigged_model` / `generate_animations` 각 30, `local_llm` 60, `run_command` 60.
 - **청소 `cleanup_old_tasks(max_age_hours=24)`**: `status`이 `completed` / `failed`으로 `completed_at`이 **인수로 지정한 시간(기본 24시간)보다 오래된** JSON을 삭제한다. 추가로 `running`인 채로 `created_at`부터 **48시간 초과** 경과한 파일은 크래시 고아로 삭제한다. 반환값은 삭제 건수.
-- **`result_retention_hours`에 대해**: `config.json`의 `background_task.result_retention_hours`은 스키마상 있지만, **`BackgroundTaskManager.cleanup_old_tasks`은 이 값을 읽지 않는다**(기본은 메서드 인수 `max_age_hours=24`). 운영에서 보존 시간을 바꾸는 경우는 호출 측이 `max_age_hours`에 맞추는 것을 상정.
+- **보존 시간**: `cleanup_old_tasks`의 완료 작업 보존 시간은 인수 `max_age_hours`(기본값 24시간)로 지정한다. 대응하는 `config.json` 키는 없다.
 
 #### rotate_dm_logs(시스템 Cron)
 

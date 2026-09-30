@@ -119,6 +119,7 @@ async def test_priming_all_channels(temp_anima_dir, temp_shared_dir):
         result = await engine.prime_memories(
             message="山田さんとプライミングレイヤーについて話したい",
             sender_name="山田",
+            channel="heartbeat",
         )
 
     # Verify sender profile was loaded
@@ -152,6 +153,7 @@ async def test_priming_empty_result(temp_anima_dir, temp_shared_dir):
     result = await engine.prime_memories(
         message="Hello",
         sender_name="unknown_user",
+        channel="heartbeat",
     )
 
     # Should have some episodes, but no sender profile

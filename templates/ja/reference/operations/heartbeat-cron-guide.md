@@ -173,7 +173,7 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 - **候補ツールマップの構築 `from_profiles()`**: 次の 3 層を dict の `update` でマージし、**後勝ち**で上書きする。(1) `_DEFAULT_ELIGIBLE_TOOLS`（コード既定）(2) 引数 `profiles`（`EXECUTION_PROFILE` 集約）(3) 引数 `config_eligible`（通常は `config.json` の `background_task.eligible_tools` から `threshold_s` を展開した `名前 → 秒`）。値はプロファイル連携用の期待秒（整数）。
 - **コード既定 `_DEFAULT_ELIGIBLE_TOOLS`（秒）**: `generate_character_assets` 30、`generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` 各 30、`generate_3d_model` / `generate_rigged_model` / `generate_animations` 各 30、`local_llm` 60、`run_command` 60。
 - **掃除 `cleanup_old_tasks(max_age_hours=24)`**: `status` が `completed` / `failed` で `completed_at` が **引数で指定した時間（デフォルト 24 時間）より古い** JSON を削除する。加えて `running` のまま `created_at` から **48 時間超**経過したファイルはクラッシュ孤児として削除する。戻り値は削除件数。
-- **`result_retention_hours` について**: `config.json` の `background_task.result_retention_hours` はスキーマ上あるが、**`BackgroundTaskManager.cleanup_old_tasks` はこの値を読まない**（デフォルトはメソッド引数 `max_age_hours=24`）。運用で保持時間を変える場合は、呼び出し側が `max_age_hours` に合わせる想定。
+- **保持時間**: `cleanup_old_tasks` の完了タスク保持時間は引数 `max_age_hours`（デフォルト24時間）で指定する。対応する `config.json` 設定キーはない。
 
 #### rotate_dm_logs（システム Cron）
 

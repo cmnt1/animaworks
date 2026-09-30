@@ -86,7 +86,7 @@ async def test_prime_memories_keeps_japanese_channels_within_token_budgets(
     monkeypatch.setattr(engine, "_channel_f_episodes", empty)
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
 
-    result = await engine.prime_memories("根拠を教えて")
+    result = await engine.prime_memories("根拠を教えて", channel="heartbeat")
 
     assert result.recent_activity
     assert result.related_knowledge
