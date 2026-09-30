@@ -849,11 +849,9 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import load_config, save_config
+        from core.config.models import update_config
 
-        config = load_config()
-        config.image_gen.image_style = mode
-        save_config(config)
+        update_config(lambda config: setattr(config.image_gen, "image_style", mode))
         logger.info("Display mode changed to %s (image_style synced)", mode)
         return {"ok": True, "mode": mode}
 
@@ -885,22 +883,22 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import load_config, save_config
+        from core.config.models import update_config
 
-        config = load_config()
-        config.activity_level = level
+        # When night mode is active, also update the matching schedule entry.
+        from core.supervisor.scheduler_manager import _time_in_range
 
-        # When night mode is active, also update the matching schedule entry
-        if config.activity_schedule:
-            from core.supervisor.scheduler_manager import _time_in_range
+        now_hhmm = now_local().strftime("%H:%M")
 
-            now_hhmm = now_local().strftime("%H:%M")
+        def set_activity_level(config):
+            config.activity_level = level
             for entry in config.activity_schedule:
                 if _time_in_range(entry.start, entry.end, now_hhmm):
                     entry.level = level
                     break
+            return config
 
-        save_config(config)
+        update_config(set_activity_level)
 
         # Notify supervisor to reschedule all heartbeats
         supervisor = getattr(request.app.state, "supervisor", None)
@@ -940,7 +938,7 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import ActivityScheduleEntry, load_config, save_config
+        from core.config.models import ActivityScheduleEntry, update_config
 
         entries: list[ActivityScheduleEntry] = []
         for i, item in enumerate(raw_schedule):
@@ -957,19 +955,20 @@ def create_system_router() -> APIRouter:
                     status_code=400,
                 )
 
-        config = load_config()
-        config.activity_schedule = entries
-
         # Apply the level for the current time immediately
-        if entries:
-            from core.supervisor.scheduler_manager import SchedulerManager
+        now_hhmm = now_local().strftime("%H:%M")
 
-            now_hhmm = now_local().strftime("%H:%M")
-            target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
-            if target is not None:
-                config.activity_level = target
+        def set_activity_schedule(config):
+            config.activity_schedule = entries
+            if entries:
+                from core.supervisor.scheduler_manager import SchedulerManager
 
-        save_config(config)
+                target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
+                if target is not None:
+                    config.activity_level = target
+            return config
+
+        config = update_config(set_activity_schedule)
 
         # Reschedule heartbeats and activity schedule jobs
         supervisor = getattr(request.app.state, "supervisor", None)

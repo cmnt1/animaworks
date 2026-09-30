@@ -464,13 +464,6 @@ class HealthMixin:
 
         Returns False when status.json exists with ``enabled: false``.
         """
-        status_file = anima_dir / "status.json"
-        if not status_file.exists():
-            return True  # Backward compatibility: no file = enabled
-        try:
-            data = json.loads(status_file.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                return True  # Malformed (non-object) status = enabled
-            return bool(data.get("enabled", True))
-        except (json.JSONDecodeError, OSError):
-            return True  # Treat unreadable file as enabled
+        from core.platform.status_store import read_status
+
+        return bool(read_status(anima_dir).get("enabled", True))

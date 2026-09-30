@@ -22,10 +22,9 @@ from pathlib import Path
 
 from core.config.models import (
     AnimaModelConfig,
-    load_config,
     read_anima_company,
     read_anima_supervisor,
-    save_config,
+    update_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,74 +142,59 @@ def sync_org_structure(
 
     # ── Phase 3: reconcile with config.json ──────────────────────
 
-    config = load_config(config_path)
     changed = False
 
-    for name, disk_supervisor in discovered.items():
-        # Skip animas involved in circular references
-        if name in circular_animas:
-            logger.warning(
-                "Org sync: skipping %s due to circular reference",
-                name,
-            )
-            continue
+    def reconcile_config(config):
+        nonlocal changed
+        for name, disk_supervisor in discovered.items():
+            # Skip animas involved in circular references
+            if name in circular_animas:
+                logger.warning("Org sync: skipping %s due to circular reference", name)
+                continue
 
-        if name not in config.animas:
-            # Anima not yet in config — add with discovered supervisor
-            config.animas[name] = AnimaModelConfig(
-                supervisor=disk_supervisor,
-                company=discovered_companies[name],
-            )
-            changed = True
-            logger.info(
-                "Org sync: added anima '%s' with supervisor=%s",
-                name,
-                disk_supervisor,
-            )
-            continue
+            if name not in config.animas:
+                config.animas[name] = AnimaModelConfig(
+                    supervisor=disk_supervisor,
+                    company=discovered_companies[name],
+                )
+                changed = True
+                logger.info("Org sync: added anima '%s' with supervisor=%s", name, disk_supervisor)
+                continue
 
-        existing = config.animas[name]
+            existing = config.animas[name]
+            if existing.supervisor != disk_supervisor:
+                logger.info(
+                    "Org sync: updating supervisor for '%s': '%s' -> '%s'",
+                    name,
+                    existing.supervisor,
+                    disk_supervisor,
+                )
+                existing.supervisor = disk_supervisor
+                changed = True
 
-        if existing.supervisor != disk_supervisor:
-            # status.json / identity.md is the SSoT — sync to config.json
-            logger.info(
-                "Org sync: updating supervisor for '%s': '%s' -> '%s'",
-                name,
-                existing.supervisor,
-                disk_supervisor,
-            )
-            existing.supervisor = disk_supervisor
-            changed = True
+            disk_company = discovered_companies[name]
+            if existing.company != disk_company:
+                logger.info(
+                    "Org sync: updating company for '%s': '%s' -> '%s'",
+                    name,
+                    existing.company,
+                    disk_company,
+                )
+                existing.company = disk_company
+                changed = True
 
-        disk_company = discovered_companies[name]
-        if existing.company != disk_company:
-            logger.info(
-                "Org sync: updating company for '%s': '%s' -> '%s'",
-                name,
-                existing.company,
-                disk_company,
-            )
-            existing.company = disk_company
-            changed = True
+        # ── Phase 4: prune config entries with no directory on disk ──
+        for cname in list(config.animas.keys()):
+            if cname in discovered:
+                continue
+            if not (animas_dir / cname).is_dir():
+                del config.animas[cname]
+                changed = True
+                logger.info("Org sync: pruned config entry '%s' (no directory on disk)", cname)
+        return config
 
-    # ── Phase 4: prune config entries with no directory on disk ──
-
-    for cname in list(config.animas.keys()):
-        if cname in discovered:
-            continue
-        candidate = animas_dir / cname
-        if not candidate.is_dir():
-            del config.animas[cname]
-            changed = True
-            logger.info(
-                "Org sync: pruned config entry '%s' (no directory on disk)",
-                cname,
-            )
-
-    # ── Phase 5: persist if anything changed ─────────────────────
-
+    update_config(reconcile_config, config_path)
     if changed:
-        save_config(config, config_path)
         logger.info("Org sync: config.json updated")
     else:
         logger.debug("Org sync: no changes needed")

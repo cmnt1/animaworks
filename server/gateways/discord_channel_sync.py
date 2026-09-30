@@ -29,7 +29,7 @@ import logging
 import re
 from typing import Any
 
-from core.config.models import load_config, save_config
+from core.config.models import load_config
 from core.integrations._base import get_credential
 from core.integrations._discord_client import DiscordAPIError, DiscordClient
 from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta
@@ -231,9 +231,13 @@ class DiscordChannelSync:
                 )
 
         # ── Persist config ──
-        cfg.external_messaging.discord.board_mapping = board_mapping
-        cfg.external_messaging.discord.channel_members = channel_members
-        save_config(cfg)
+        from core.config.io import update_config
+
+        def persist_discord_mappings(config) -> None:
+            config.external_messaging.discord.board_mapping = board_mapping
+            config.external_messaging.discord.channel_members = channel_members
+
+        update_config(persist_discord_mappings)
 
         summary = {
             "status": "ok",

@@ -588,8 +588,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config") as mock_save,
-            patch("core.config.invalidate_cache") as mock_invalidate,
+            patch(
+                "core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config
+            ) as mock_update,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -602,8 +603,7 @@ class TestCompleteSetup:
         assert data["status"] == "ok"
         assert mock_config.locale == "en"
         assert mock_config.setup_complete is True
-        mock_save.assert_called_once_with(mock_config)
-        mock_invalidate.assert_called_once()
+        mock_update.assert_called_once()
 
     async def test_complete_with_credentials(self):
         mock_config = MagicMock()
@@ -616,8 +616,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -644,8 +643,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -673,8 +671,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -706,8 +703,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch("core.anima.factory.create_blank", return_value=anima_dir),
         ):
@@ -736,8 +732,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -759,8 +754,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
             patch("core.anima.factory.create_blank", side_effect=FileExistsError("already exists")),
         ):
@@ -790,8 +784,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
             patch("core.anima.factory.create_blank", side_effect=RuntimeError("disk error")),
         ):
@@ -821,8 +814,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
             patch("core.anima.factory.create_blank") as mock_create,
         ):
@@ -853,8 +845,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.auth.manager.save_auth") as mock_save_auth,
             patch("core.paths.get_shared_dir", return_value=shared_dir),
         ):
@@ -895,8 +886,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.auth.manager.save_auth"),
             patch("core.paths.get_shared_dir", return_value=shared_dir),
         ):
@@ -934,8 +924,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.auth.manager.save_auth"),
             patch("core.paths.get_shared_dir", return_value=shared_dir),
         ):
@@ -980,8 +969,7 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config"),
-            patch("core.config.invalidate_cache"),
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
             patch("core.anima.factory.create_blank"),
         ):
@@ -1010,8 +998,9 @@ class TestCompleteSetup:
 
         with (
             patch("core.config.load_config", return_value=mock_config),
-            patch("core.config.save_config") as mock_save,
-            patch("core.config.invalidate_cache"),
+            patch(
+                "core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config
+            ) as mock_update,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -1022,6 +1011,6 @@ class TestCompleteSetup:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        mock_save.assert_called_once()
+        mock_update.assert_called_once()
         # save_auth should NOT have been called (no user field)
         assert mock_config.setup_complete is True

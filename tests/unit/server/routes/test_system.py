@@ -1132,7 +1132,10 @@ class TestActivityScheduleAPI:
 
         with (
             patch("core.config.models.load_config", return_value=mock_config),
-            patch("core.config.models.save_config") as save_mock,
+            patch(
+                "core.config.models.update_config",
+                side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
+            ) as update_mock,
             patch(
                 "core.supervisor.scheduler_manager.SchedulerManager.resolve_scheduled_level",
                 return_value=100,
@@ -1162,7 +1165,7 @@ class TestActivityScheduleAPI:
         assert data["activity_schedule"][1]["start"] == "22:00"
         assert data["activity_schedule"][1]["end"] == "08:00"
         assert data["activity_schedule"][1]["level"] == 30
-        save_mock.assert_called_once()
+        update_mock.assert_called_once()
 
     async def test_put_activity_schedule_empty_list(self):
         """PUT /api/settings/activity-schedule with empty list clears the schedule."""
@@ -1172,7 +1175,10 @@ class TestActivityScheduleAPI:
 
         with (
             patch("core.config.models.load_config", return_value=mock_config),
-            patch("core.config.models.save_config") as save_mock,
+            patch(
+                "core.config.models.update_config",
+                side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
+            ) as update_mock,
         ):
             app = _make_test_app()
             transport = ASGITransport(app=app)
@@ -1186,7 +1192,7 @@ class TestActivityScheduleAPI:
         data = resp.json()
         assert data["ok"] is True
         assert data["activity_schedule"] == []
-        save_mock.assert_called_once()
+        update_mock.assert_called_once()
 
     async def test_put_activity_schedule_invalid_entry_missing_fields(self):
         """PUT /api/settings/activity-schedule with missing fields returns 400."""

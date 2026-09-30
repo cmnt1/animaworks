@@ -6,10 +6,13 @@ from __future__ import annotations
 
 """Crash-safe atomic file writing helpers shared across the application."""
 
+import copy
+import fcntl
 import json
 import logging
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +58,52 @@ def atomic_write_json(
     if trailing_newline:
         text += "\n"
     atomic_write_text(path, text, mode=mode, fsync_dir=fsync_dir)
+
+
+def update_json(
+    path: Path,
+    fn: Callable[[dict[str, Any]], dict[str, Any] | None],
+    *,
+    mode: int | None = None,
+    always_write: bool = False,
+    write_if_missing: bool = True,
+    after_update: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Lock, read, modify, and atomically write an object-valued JSON file.
+
+    The sibling ``.lock`` file is intentionally persistent: unlinking a lock
+    file can let concurrent processes lock different inodes for the same path.
+    Missing files are treated as empty objects; malformed or non-object JSON
+    is rejected without modifying the file. Unchanged objects are left alone
+    unless ``always_write`` is requested. ``after_update``, when supplied, runs
+    under the lock after a successful update.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(f"{path.name}.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            if path.exists():
+                with path.open(encoding="utf-8") as data_file:
+                    current = json.load(data_file)
+                if not isinstance(current, dict):
+                    raise ValueError(f"Expected a JSON object in {path}")
+            else:
+                current = {}
+
+            original = copy.deepcopy(current)
+            updated = fn(current)
+            if updated is None:
+                updated = current
+            if not isinstance(updated, dict):
+                raise TypeError("JSON update callback must return a dict or None")
+            if always_write or updated != original or (write_if_missing and not path.exists()):
+                atomic_write_json(path, updated, mode=mode)
+            if after_update is not None:
+                after_update(updated)
+            return updated
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _atomic_write_data(

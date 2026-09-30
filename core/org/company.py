@@ -310,14 +310,17 @@ def _remove_membership_link(link: Path | None) -> None:
 
 def _write_anima_company(anima_dir: Path, company_name: str | None) -> None:
     status_path = anima_dir / "status.json"
-    status = _read_json_object(status_path, missing_ok=True)
-    if company_name is None:
-        status.pop("company", None)
-    else:
-        status["company"] = company_name
+    from core.platform.status_store import update_status
+
+    def apply_update(status: dict[str, Any]) -> None:
+        if company_name is None:
+            status.pop("company", None)
+        else:
+            status["company"] = company_name
+
     try:
-        atomic_write_json(status_path, status)
-    except OSError as exc:
+        update_status(anima_dir, apply_update)
+    except (OSError, ValueError) as exc:
         raise CompanyError(f"Failed to update {status_path}: {exc}") from exc
 
 

@@ -20,6 +20,7 @@ _EXPORTS = {
     "resolve_anima_config": "core.config.resolver",
     "resolve_execution_mode": "core.config.model_mode",
     "save_config": "core.config.io",
+    "update_config": "core.config.io",
 }
 
 

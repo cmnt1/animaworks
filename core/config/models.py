@@ -18,7 +18,7 @@ from core.config.anima_registry import (
     rename_anima_in_config,
     unregister_anima_from_config,
 )
-from core.config.io import get_config_path, invalidate_cache, load_config, save_config
+from core.config.io import get_config_path, invalidate_cache, load_config, save_config, update_config
 from core.config.model_config import (
     DEFAULT_MAX_TOKENS,
     load_model_config,

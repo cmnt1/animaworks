@@ -402,10 +402,10 @@ class TestPersistGuard:
         cfg = AnimaWorksConfig(icon_url_template="https://global/{name}.png")
         with (
             patch("core.config.load_config", return_value=cfg),
-            patch("core.config.save_config") as mock_save,
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(cfg) or cfg) as mock_update,
         ):
             persist_anima_icon_path_template()
-        mock_save.assert_not_called()
+        mock_update.assert_called_once()
 
     def test_skips_external_url_channels(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(_ICON_URL_TEMPLATE_ENV_KEY, raising=False)
@@ -426,10 +426,10 @@ class TestPersistGuard:
         )
         with (
             patch("core.config.load_config", return_value=cfg),
-            patch("core.config.save_config") as mock_save,
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(cfg) or cfg) as mock_update,
         ):
             persist_anima_icon_path_template()
-        mock_save.assert_not_called()
+        mock_update.assert_called_once()
 
     def test_updates_internal_channel_without_template(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from core.config.models import ImageGenConfig
@@ -450,8 +450,8 @@ class TestPersistGuard:
         )
         with (
             patch("core.config.load_config", return_value=cfg),
-            patch("core.config.save_config") as mock_save,
+            patch("core.config.update_config", side_effect=lambda fn, *args, **kwargs: fn(cfg) or cfg) as mock_update,
         ):
             persist_anima_icon_path_template()
-        mock_save.assert_called_once()
+        mock_update.assert_called_once()
         assert cfg.human_notification.channels[0].config["icon_path_template"] == DEFAULT_INTERNAL_ICON_PATH_TEMPLATE

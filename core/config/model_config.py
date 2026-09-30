@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import fnmatch
 import importlib.util
-import json
 import logging
 import shutil
 from dataclasses import dataclass
@@ -21,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from core.config.model_mode import _match_models_json
 from core.config.schemas import AnimaWorksConfig
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
+from core.platform.status_store import update_status
 
 if TYPE_CHECKING:
     from core.schemas import ModelConfig
@@ -686,22 +685,24 @@ def update_status_model(
     status_path = anima_dir / "status.json"
     if not status_path.is_file():
         raise FileNotFoundError(f"status.json not found: {status_path}")
-    data = json.loads(status_path.read_text(encoding="utf-8"))
-    if model is not None:
-        data["model"] = model
-    if credential is not None:
-        data["credential"] = credential
-    if background_model is not _SENTINEL:
-        if background_model:
-            data["background_model"] = background_model
-        else:
-            data.pop("background_model", None)
-    if background_credential is not _SENTINEL:
-        if background_credential:
-            data["background_credential"] = background_credential
-        else:
-            data.pop("background_credential", None)
-    atomic_write_json(status_path, data)
+
+    def apply_update(data: dict[str, Any]) -> None:
+        if model is not None:
+            data["model"] = model
+        if credential is not None:
+            data["credential"] = credential
+        if background_model is not _SENTINEL:
+            if background_model:
+                data["background_model"] = background_model
+            else:
+                data.pop("background_model", None)
+        if background_credential is not _SENTINEL:
+            if background_credential:
+                data["background_credential"] = background_credential
+            else:
+                data.pop("background_credential", None)
+
+    update_status(anima_dir, apply_update)
 
 
 # ── ModelFamily ──────────────────────────────────────────────────────
@@ -789,73 +790,71 @@ def smart_update_model(
     status_path = anima_dir / "status.json"
     if not status_path.is_file():
         raise FileNotFoundError(f"status.json not found: {status_path}")
-    data: dict[str, Any] = json.loads(status_path.read_text(encoding="utf-8"))
 
     if config is None:
         from core.config.io import load_config
 
         config = load_config()
 
-    old_model = data.get("model", "")
-    old_family = _model_family(old_model)
-    new_family = _model_family(model)
-    family_changed = old_family != new_family
-
-    data["model"] = model
-
     from core.config.model_mode import resolve_execution_mode
 
+    new_family = _model_family(model)
     next_mode = resolve_execution_mode(config, model)
-    data["execution_mode"] = next_mode
+    result: dict[str, Any] = {}
 
-    # -- credential resolution --
-    if credential is not None:
-        old_cred = data.get("credential", "")
-        data["credential"] = credential
-    elif family_changed:
-        old_cred = data.get("credential", "")
-        mapped = _FAMILY_CREDENTIAL_MAP.get(new_family)
-        if mapped and mapped in config.credentials:
-            data["credential"] = mapped
-            logger.info(t("model_config.credential_auto_switch", old=old_cred, new=mapped))
-        else:
-            default_cred = getattr(config.anima_defaults, "credential", None)
-            if default_cred:
-                data["credential"] = default_cred
-                logger.info(t("model_config.credential_fallback_defaults", family=new_family, default=default_cred))
+    def apply_update(data: dict[str, Any]) -> None:
+        old_model = data.get("model", "")
+        family_changed = _model_family(old_model) != new_family
+        data["model"] = model
+        data["execution_mode"] = next_mode
+
+        # -- credential resolution --
+        if credential is not None:
+            old_cred = data.get("credential", "")
+            data["credential"] = credential
+        elif family_changed:
+            old_cred = data.get("credential", "")
+            mapped = _FAMILY_CREDENTIAL_MAP.get(new_family)
+            if mapped and mapped in config.credentials:
+                data["credential"] = mapped
+                logger.info(t("model_config.credential_auto_switch", old=old_cred, new=mapped))
             else:
-                logger.warning(t("model_config.credential_keep_current", current=old_cred))
+                default_cred = getattr(config.anima_defaults, "credential", None)
+                if default_cred:
+                    data["credential"] = default_cred
+                    logger.info(t("model_config.credential_fallback_defaults", family=new_family, default=default_cred))
+                else:
+                    logger.warning(t("model_config.credential_keep_current", current=old_cred))
 
-    # -- mode_s_auth resolution --
-    next_credential = data.get("credential", "")
-    if next_mode == "S" and next_credential:
-        inferred_auth = infer_mode_s_auth(mode=next_mode, credential_name=next_credential, config=config)
-        if inferred_auth:
-            data["mode_s_auth"] = inferred_auth
+        # -- mode_s_auth resolution --
+        next_credential = data.get("credential", "")
+        if next_mode == "S" and next_credential:
+            inferred_auth = infer_mode_s_auth(mode=next_mode, credential_name=next_credential, config=config)
+            if inferred_auth:
+                data["mode_s_auth"] = inferred_auth
+            else:
+                data.pop("mode_s_auth", None)
         else:
             data.pop("mode_s_auth", None)
-    else:
-        data.pop("mode_s_auth", None)
 
-    # -- clear stale overrides on family change --
-    cleared: list[str] = []
-    if family_changed and credential is None:
-        for field in ("thinking", "max_tokens"):
-            if field in data:
-                data.pop(field)
-                cleared.append(field)
+        # -- clear stale overrides on family change --
+        cleared: list[str] = []
+        if family_changed and credential is None:
+            for field in ("thinking", "max_tokens"):
+                if field in data:
+                    data.pop(field)
+                    cleared.append(field)
+        result.update(
+            model=model,
+            credential=data.get("credential", ""),
+            execution_mode=next_mode,
+            mode_s_auth=data.get("mode_s_auth"),
+            family_changed=family_changed,
+            cleared_fields=cleared,
+        )
 
-    # -- atomic write --
-    atomic_write_json(status_path, data)
-
-    return {
-        "model": model,
-        "credential": data.get("credential", ""),
-        "execution_mode": next_mode,
-        "mode_s_auth": data.get("mode_s_auth"),
-        "family_changed": family_changed,
-        "cleared_fields": cleared,
-    }
+    update_status(anima_dir, apply_update)
+    return result
 
 
 __all__ = [

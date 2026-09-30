@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from core.config.models import ActivityScheduleEntry, load_config, save_config
+from core.config.io import update_config
+from core.config.models import ActivityScheduleEntry, load_config
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
 from core.platform.tasks import spawn
@@ -352,21 +353,27 @@ class SchedulerManager:
 
     def _apply_current_schedule_level(self) -> None:
         """Apply the correct activity level for the current time at startup."""
-        app_config = load_config()
-        if not app_config.activity_schedule:
-            return
-
         now_hhmm = now_local().strftime("%H:%M")
-        target = self.resolve_scheduled_level(app_config.activity_schedule, now_hhmm)
-        if target is not None and target != app_config.activity_level:
-            app_config.activity_level = target
-            save_config(app_config)
-            self._last_schedule_level = target
+        target_level: int | None = None
+        level_changed = False
+
+        def apply_schedule(config) -> None:
+            nonlocal target_level, level_changed
+            if not config.activity_schedule:
+                return
+            target_level = self.resolve_scheduled_level(config.activity_schedule, now_hhmm)
+            if target_level is not None:
+                level_changed = target_level != config.activity_level
+                config.activity_level = target_level
+
+        app_config = update_config(apply_schedule)
+        if target_level is not None and level_changed:
+            self._last_schedule_level = target_level
             self.reschedule_heartbeat()
             logger.info(
                 "Activity schedule startup: %s set level to %d%% (time=%s)",
                 self._anima_name,
-                target,
+                target_level,
                 now_hhmm,
             )
         else:
@@ -374,24 +381,23 @@ class SchedulerManager:
 
     async def _activity_schedule_tick(self) -> None:
         """Check current time against activity_schedule and switch level if needed."""
-        app_config = load_config()
-        if not app_config.activity_schedule:
-            return
-
         now_hhmm = now_local().strftime("%H:%M")
-        target = self.resolve_scheduled_level(app_config.activity_schedule, now_hhmm)
-        if target is None:
-            return
+        target_level: int | None = None
 
-        if target != self._last_schedule_level:
-            app_config.activity_level = target
-            save_config(app_config)
-            self._last_schedule_level = target
+        def apply_schedule(config) -> None:
+            nonlocal target_level
+            target_level = self.resolve_scheduled_level(config.activity_schedule, now_hhmm)
+            if target_level is not None:
+                config.activity_level = target_level
+
+        update_config(apply_schedule)
+        if target_level is not None and target_level != self._last_schedule_level:
+            self._last_schedule_level = target_level
             self.reschedule_heartbeat()
             logger.info(
                 "Activity schedule switch: %s → %d%% (time=%s)",
                 self._anima_name,
-                target,
+                target_level,
                 now_hhmm,
             )
 

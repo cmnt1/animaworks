@@ -153,15 +153,9 @@ def resolve_default_workspace(anima_dir: Path) -> tuple[Path | None, str]:
         (None, alias) if set but resolution fails.
         (None, "") if not set.
     """
-    import json
+    from core.platform.status_store import read_status
 
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return None, ""
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None, ""
+    data = read_status(anima_dir)
     alias = (data.get("default_workspace") or "").strip()
     if not alias:
         return None, ""
@@ -182,15 +176,13 @@ def register_workspace(alias: str, path: str) -> str:
     Raises:
         ValueError: If *path* does not exist as a directory.
     """
-    from core.config.models import load_config, save_config
+    from core.config.io import update_config
 
     p = Path(path).expanduser().resolve()
     if not p.is_dir():
         raise ValueError(t("workspace.dir_not_found", path=path))
 
-    cfg = load_config()
-    cfg.workspaces[alias] = str(p)
-    save_config(cfg)
+    update_config(lambda config: config.workspaces.__setitem__(alias, str(p)))
 
     qa = qualified_alias(alias, str(p))
     logger.info("Registered workspace: %s → %s", qa, p)
@@ -207,15 +199,21 @@ def list_workspaces() -> dict[str, str]:
 
 def remove_workspace(alias: str) -> bool:
     """Remove a workspace by *alias*.  Returns True if found and removed."""
-    from core.config.models import load_config, save_config
+    from core.config.io import update_config
 
-    cfg = load_config()
-    if alias in cfg.workspaces:
-        del cfg.workspaces[alias]
-        save_config(cfg)
+    removed = False
+
+    def remove(config):
+        nonlocal removed
+        if alias in config.workspaces:
+            del config.workspaces[alias]
+            removed = True
+        return config
+
+    update_config(remove)
+    if removed:
         logger.info("Removed workspace alias: %s", alias)
-        return True
-    return False
+    return removed
 
 
 def workspace_info(alias: str) -> dict[str, Any] | None:

@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -64,14 +63,9 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
     Returns a dict with field names matching AnimaDefaults fields.
     Missing or invalid files return an empty dict.
     """
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return {}
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        logger.debug("Failed to read status.json from %s", anima_dir)
-        return {}
+    from core.platform.status_store import read_status
+
+    data = read_status(anima_dir)
 
     # Map status.json fields to AnimaModelConfig field names
     result: dict[str, Any] = {}
@@ -89,13 +83,9 @@ def _load_status_role(anima_dir: Path | None) -> str:
     """Read the role from status.json, defaulting to ``general``."""
     if anima_dir is None:
         return "general"
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return "general"
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return "general"
+    from core.platform.status_store import read_status
+
+    data = read_status(anima_dir)
     role = data.get("role")
     return role if isinstance(role, str) and role.strip() else "general"
 

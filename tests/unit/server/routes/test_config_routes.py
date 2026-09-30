@@ -174,12 +174,14 @@ class TestAnthropicAuthSettings:
         app = _make_test_app()
         transport = ASGITransport(app=app)
 
-        def _save_config(updated):
-            saved["config"] = updated
+        def _update_config(fn, *args, **kwargs):
+            fn(config)
+            saved["config"] = config
+            return config
 
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.save_config", side_effect=_save_config),
+            patch("server.routes.config_routes.update_config", side_effect=_update_config),
             patch("server.routes.config_routes.is_claude_code_available", return_value=False),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -243,12 +245,14 @@ class TestOpenAIAuthSettings:
         app = _make_test_app()
         transport = ASGITransport(app=app)
 
-        def _save_config(updated):
-            saved["config"] = updated
+        def _update_config(fn, *args, **kwargs):
+            fn(config)
+            saved["config"] = config
+            return config
 
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.save_config", side_effect=_save_config),
+            patch("server.routes.config_routes.update_config", side_effect=_update_config),
             patch("server.routes.config_routes.is_codex_cli_available", return_value=True),
             patch("server.routes.config_routes.is_codex_login_available", return_value=False),
         ):

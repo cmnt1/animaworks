@@ -476,14 +476,15 @@ class SlackChannelSync:
     def _update_config_mapping(self) -> None:
         """Write board_mapping back to the in-memory config."""
         try:
-            from core.config.models import load_config, save_config
+            from core.config.io import update_config
 
-            cfg = load_config()
             new_mapping = dict(self.board_mapping)
-            if cfg.external_messaging.slack.board_mapping == new_mapping:
-                return
-            cfg.external_messaging.slack.board_mapping = new_mapping
-            save_config(cfg)
+
+            def persist_mapping(cfg) -> None:
+                if cfg.external_messaging.slack.board_mapping != new_mapping:
+                    cfg.external_messaging.slack.board_mapping = new_mapping
+
+            update_config(persist_mapping)
         except Exception:
             logger.warning("Failed to persist board_mapping to config", exc_info=True)
 

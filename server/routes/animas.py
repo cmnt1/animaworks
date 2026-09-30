@@ -13,7 +13,6 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.config.models import load_config, resolve_anima_config
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.routes.animas")
 
@@ -415,14 +414,16 @@ def create_animas_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="aliases must be a list")
         new_aliases = [str(a).strip() for a in new_aliases if str(a).strip()]
 
-        from core.config.io import save_config
+        from core.config.io import update_config
         from core.config.schemas import AnimaModelConfig
 
-        config = load_config()
-        if name not in config.animas:
-            config.animas[name] = AnimaModelConfig()
-        config.animas[name].aliases = new_aliases
-        await asyncio.to_thread(save_config, config)
+        def update_aliases(config):
+            if name not in config.animas:
+                config.animas[name] = AnimaModelConfig()
+            config.animas[name].aliases = new_aliases
+            return config
+
+        await asyncio.to_thread(update_config, update_aliases)
         logger.info("Updated aliases for anima '%s': %s", name, new_aliases)
         return {"status": "ok", "name": name, "aliases": new_aliases}
 
@@ -436,17 +437,15 @@ def create_animas_router() -> APIRouter:
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
             raise HTTPException(status_code=404, detail=f"Anima '{name}' not found")
 
-        status_file = anima_dir / "status.json"
-        existing = {}
-        if status_file.exists():
-            try:
-                existing = json.loads(status_file.read_text(encoding="utf-8"))
-                if not isinstance(existing, dict):
-                    raise ValueError("status.json must contain an object")
-            except (ValueError, OSError) as exc:
-                raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
-        existing["enabled"] = True
-        atomic_write_json(status_file, existing)
+        from core.platform.status_store import update_status
+
+        def enable_status(existing: dict[str, Any]) -> None:
+            existing["enabled"] = True
+
+        try:
+            update_status(anima_dir, enable_status)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
 
         # Start immediately (don't wait for reconciliation)
         supervisor = request.app.state.supervisor
@@ -465,17 +464,15 @@ def create_animas_router() -> APIRouter:
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
             raise HTTPException(status_code=404, detail=f"Anima '{name}' not found")
 
-        status_file = anima_dir / "status.json"
-        existing = {}
-        if status_file.exists():
-            try:
-                existing = json.loads(status_file.read_text(encoding="utf-8"))
-                if not isinstance(existing, dict):
-                    raise ValueError("status.json must contain an object")
-            except (ValueError, OSError) as exc:
-                raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
-        existing["enabled"] = False
-        atomic_write_json(status_file, existing)
+        from core.platform.status_store import update_status
+
+        def disable_status(existing: dict[str, Any]) -> None:
+            existing["enabled"] = False
+
+        try:
+            update_status(anima_dir, disable_status)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
 
         # Always call stop_anima (no-op if not running). Under lifecycle lock
         # this waits for an in-flight start, then stops the new process.

@@ -141,16 +141,9 @@ def _save_global_index_meta(base_dir: Path, model_name: str) -> None:
 
 def _is_anima_enabled(anima_dir: Path) -> bool:
     """Check whether an anima is enabled via its status.json."""
-    import json
+    from core.platform.status_store import read_status
 
-    status_file = anima_dir / "status.json"
-    if not status_file.is_file():
-        return True
-    try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        return data.get("enabled", True)
-    except (json.JSONDecodeError, OSError):
-        return True
+    return read_status(anima_dir).get("enabled", True)
 
 
 def _index_shared_for_anima(

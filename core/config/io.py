@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from core.config.schemas import AnimaWorksConfig
 from core.config.vault import resolve_vault_references
 from core.exceptions import ConfigError
-from core.platform.atomic_io import atomic_write_json
+from core.platform.atomic_io import update_json
 
 logger = logging.getLogger("animaworks.config")
 
@@ -119,38 +120,86 @@ def load_config(path: Path | None = None) -> AnimaWorksConfig:
 
 
 def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
-    """Persist *config* to disk as pretty-printed JSON (mode 0o600).
+    """Persist *config* under an inter-process lock (mode 0o600).
 
-    Updates the module-level singleton cache so subsequent :func:`load_config`
-    calls return the freshly saved config.
+    Callers that derive a change from the current config should prefer
+    :func:`update_config` so their read-modify-write cycle also happens under
+    the lock.
     """
-    global _config, _config_path, _config_mtime, _config_vault_values
-
     if path is None:
         path = get_config_path()
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-
     payload = config.model_dump(mode="json")
-    # Loading resolves vault references for runtime use.  Preserve references
-    # already present on disk when saving so a routine config update cannot
-    # accidentally write the resolved secret back as plaintext.
-    if path.is_file():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            payload, vault_updates = _preserve_vault_references(
-                payload,
-                existing,
-                loaded_values=_config_vault_values if _config_path == path else {},
-            )
-            if vault_updates:
-                _apply_vault_updates(path.parent, vault_updates)
-        except (json.JSONDecodeError, OSError):
-            pass
-    atomic_write_json(path, payload, mode=0o600)
 
+    def replace_config(existing: dict[str, Any]) -> dict[str, Any]:
+        disk_payload, vault_updates = _preserve_vault_references(
+            payload,
+            existing,
+            loaded_values=_config_vault_values if _config_path == path else {},
+        )
+        if vault_updates:
+            _apply_vault_updates(path.parent, vault_updates)
+        return disk_payload
+
+    update_json(
+        path,
+        replace_config,
+        mode=0o600,
+        always_write=True,
+        after_update=lambda saved: _refresh_config_cache(config, path, saved),
+    )
     logger.debug("Config saved to %s", path)
 
+
+def update_config(
+    fn: Callable[[AnimaWorksConfig], AnimaWorksConfig | None],
+    path: Path | None = None,
+) -> AnimaWorksConfig:
+    """Lock, load, modify, and persist config.json as one transaction.
+
+    The callback receives the latest validated config while the sibling lock
+    is held. It may mutate that instance and return ``None``, or return a
+    replacement config. Vault references and the in-process mtime cache are
+    kept in sync with :func:`save_config`.
+    """
+    if path is None:
+        path = get_config_path()
+
+    updated_config: AnimaWorksConfig | None = None
+
+    def apply_update(existing: dict[str, Any]) -> dict[str, Any]:
+        nonlocal updated_config
+        raw_data: dict[str, Any] = existing or AnimaWorksConfig().model_dump(mode="json")
+        resolved = resolve_vault_references(raw_data, path.parent)
+        current_config = AnimaWorksConfig.model_validate(resolved)
+        loaded_values = _collect_vault_reference_values(raw_data, resolved)
+        result = fn(current_config)
+        updated_config = result if result is not None else current_config
+        payload = updated_config.model_dump(mode="json")
+        disk_payload, vault_updates = _preserve_vault_references(
+            payload,
+            raw_data,
+            loaded_values=loaded_values,
+        )
+        if vault_updates:
+            _apply_vault_updates(path.parent, vault_updates)
+        if not existing and not vault_updates and payload == AnimaWorksConfig().model_dump(mode="json"):
+            return existing
+        return disk_payload
+
+    def refresh_cache(saved: dict[str, Any]) -> None:
+        assert updated_config is not None
+        _refresh_config_cache(updated_config, path, saved)
+
+    update_json(path, apply_update, mode=0o600, write_if_missing=False, after_update=refresh_cache)
+    assert updated_config is not None
+    logger.debug("Config updated transactionally at %s", path)
+    return updated_config
+
+
+def _refresh_config_cache(config: AnimaWorksConfig, path: Path, payload: dict[str, Any]) -> None:
+    """Refresh the singleton cache after a successful disk write."""
+    global _config, _config_path, _config_mtime, _config_vault_values
     _config = config
     _config_path = path
     try:
@@ -250,4 +299,5 @@ __all__ = [
     "invalidate_cache",
     "load_config",
     "save_config",
+    "update_config",
 ]

@@ -237,17 +237,17 @@ class TestRegisterAnimaInConfig:
             encoding="utf-8",
         )
 
-        with (
-            patch("core.config.models.load_config") as mock_load,
-            patch("core.config.models.save_config") as mock_save,
-        ):
-            mock_config = MagicMock()
-            mock_config.animas = {}
-            mock_load.return_value = mock_config
+        mock_config = MagicMock()
+        mock_config.animas = {}
 
+        def update_config(callback, _path):
+            return callback(mock_config) or mock_config
+
+        with patch("core.config.io.update_config", side_effect=update_config) as mock_update:
             register_anima_in_config(tmp_path, "alice")
 
-            mock_save.assert_called_once()
+        assert "alice" in mock_config.animas
+        mock_update.assert_called_once()
 
     def test_register_no_config_file(self, tmp_path):
         from core.config import register_anima_in_config
