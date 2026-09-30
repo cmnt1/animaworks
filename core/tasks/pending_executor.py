@@ -1790,7 +1790,7 @@ class PendingTaskExecutor:
 
         Caller is responsible for exclusion locks and worker-slot leasing.
         """
-        from core.supervisor.task_runner_supervisor import TaskRunnerError
+        from core.supervisor.task_runner_supervisor import TaskRunnerCancelled, TaskRunnerError
 
         assert self._task_runner_supervisor is not None
         task_id = str(task_desc.get("task_id") or "unknown")
@@ -1828,6 +1828,11 @@ class PendingTaskExecutor:
                 display_lane=display_lane,
                 on_spawned=_on_spawned,
             )
+        except TaskRunnerCancelled as exc:
+            # The queue entry was cancelled on purpose (e.g. superseded); the
+            # runner was stopped deliberately, so this is not a crash.
+            logger.info("[%s] Isolated TaskExec stopped by queue cancel: id=%s", self._anima_name, task_id)
+            raise RuntimeError(f"CANCELLED: the task was cancelled in the queue ({exc}).") from exc
         except TaskRunnerError as exc:
             logger.warning(
                 "[%s] Isolated TaskExec child failed: id=%s err=%s",

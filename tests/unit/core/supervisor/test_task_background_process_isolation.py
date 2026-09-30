@@ -212,6 +212,32 @@ async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: 
 
 
 @pytest.mark.asyncio
+async def test_queue_cancelled_child_is_reported_as_cancel_not_crash(tmp_path: Path, caplog) -> None:
+    from core.supervisor.task_runner_supervisor import TaskRunnerCancelled
+
+    executor, anima, _anima_dir = _executor(tmp_path, with_supervisor=True)
+    assert executor._task_runner_supervisor is not None
+    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
+
+    executor._task_runner_supervisor.run_task = AsyncMock(
+        side_effect=TaskRunnerCancelled("task runner stopped because the task was cancelled (exit=-15)")
+    )
+    task_desc = {"task_id": "t-cancel", "title": "cancel", "description": "work", "task_type": "llm"}
+    with (
+        patch.object(executor, "_save_task_result"),
+        patch.object(executor, "_record_run_ended") as record_end,
+        patch.object(executor, "_sync_task_queue"),
+        caplog.at_level("INFO", logger="core.tasks.pending_executor"),
+    ):
+        await executor._execute_llm_task(task_desc)
+
+    assert not any("Isolated TaskExec child failed" in r.getMessage() for r in caplog.records)
+    assert any("stopped by queue cancel" in r.getMessage() for r in caplog.records)
+    note = str(record_end.call_args.kwargs.get("note", "")) if record_end.call_args else ""
+    assert "PARTIALLY EXECUTED" not in note
+
+
+@pytest.mark.asyncio
 async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
     from core.tasks.board.tasks import process_identity
     from core.tasks.dispatch import publish_tasks
