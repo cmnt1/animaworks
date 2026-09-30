@@ -212,7 +212,9 @@ async def test_queue_contains_review_failures_without_blocking_caller(
 
 
 def test_review_delay_enforces_interval_and_daily_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    current = now_local()
+    # Fixed at noon: the daily-cap delay runs until local midnight, so a wall-clock
+    # "now" after 23:00 would make the > 1h assertion flaky.
+    current = now_local().replace(hour=12, minute=0, second=0, microsecond=0)
     monkeypatch.setattr(review, "now_local", lambda: current)
     monkeypatch.setattr(review, "today_local", lambda: current.date())
     settings = _settings(min_interval_minutes=10, max_per_day=1)
