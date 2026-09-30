@@ -22,7 +22,7 @@ mechanism with thread IDs persisted to the shortterm directory.
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +51,16 @@ __all__ = ["CodexSDKExecutor", "clear_codex_thread_id"]
 RESUME_TIMEOUT_SEC = 15.0
 _RESUME_PROMPT_SIZE_LIMIT = 50_000
 _FATAL_STDERR_PATTERNS = ("error: stream closed",)
+_TOOL_ITEM_TYPES = frozenset(
+    {
+        "command_execution",
+        "file_change",
+        "mcp_tool_call",
+        "web_search",
+        "dynamic_tool_call",
+        "collab_agent_tool_call",
+    }
+)
 
 # ── Session (thread) ID persistence ──────────────────────────
 
@@ -376,6 +386,145 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     return {"type": "usage", "usage": delta.to_dict()}
                 return None
 
+            def _handle_agent_message_item(item: Any, phase: str) -> list[dict[str, Any]]:
+                item_id = events._item_id(item)
+                text = events._extract_item_text(item)
+                if not text:
+                    if phase == "completed":
+                        logger.debug(
+                            "Codex item/completed agent_message with empty text: %s",
+                            repr(item)[:300],
+                        )
+                    return []
+
+                if phase in ("started", "updated"):
+                    previous_length = item_text_len.get(item_id, 0)
+                    if len(text) <= previous_length:
+                        return []
+                    delta = text[previous_length:]
+                    item_text_len[item_id] = len(text)
+                    agent_delta_seen.add(item_id)
+                    _remember_agent_delta(item_id, delta)
+                    return [{"type": "text_delta", "text": delta}]
+
+                _set_agent_text(item_id, text)
+                item_text_len[item_id] = len(text)
+                return [] if item_id in agent_delta_seen else [{"type": "text_delta", "text": text}]
+
+            def _handle_reasoning_item(item: Any, phase: str) -> list[dict[str, Any]]:
+                item_id = events._item_id(item)
+                text = events._extract_item_text(item)
+                if not text:
+                    return []
+                previous_length = item_text_len.get(item_id, 0)
+                if len(text) <= previous_length:
+                    if phase == "completed":
+                        item_text_len[item_id] = len(text)
+                    return []
+                delta = text[previous_length:]
+                item_text_len[item_id] = len(text)
+                return _thinking_delta_chunks(delta)
+
+            def _record_command_completion(
+                item: Any,
+                item_id: str,
+                _tool_name: str,
+            ) -> list[dict[str, Any]]:
+                unwrapped = events._unwrap_thread_item(item)
+                command = events._get_str(unwrapped, "command")
+                output = events._get_str(unwrapped, "aggregated_output", "aggregatedOutput")
+                exit_code = events._get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
+                tool_evidence.record_tool_call(
+                    "Bash",
+                    {"command": command},
+                    item_id,
+                    output,
+                    is_error=exit_code is not None and exit_code != 0,
+                    extra_meta={"exit_code": exit_code} if exit_code is not None else None,
+                )
+                return []
+
+            def _record_file_change_completion(
+                item: Any,
+                item_id: str,
+                tool_name: str,
+            ) -> list[dict[str, Any]]:
+                unwrapped = events._unwrap_thread_item(item)
+                detail = events._format_file_changes(events._get_list(unwrapped, "changes"))
+                detail_chunk = _tool_detail_chunk(item_id, tool_name, detail)
+                chunks = [detail_chunk] if detail_chunk else []
+                status = events._get_str(unwrapped, "status")
+                tool_evidence.record_tool_call("Edit", {"file_path": detail}, item_id, status or detail)
+                return chunks
+
+            def _handle_tool_item(
+                item: Any,
+                phase: str,
+                completion_handler: Callable[[Any, str, str], list[dict[str, Any]]] | None = None,
+            ) -> list[dict[str, Any]]:
+                item_type = events._item_type(item)
+                item_id = events._item_id(item)
+                tool_name = events._codex_item_tool_name(item, item_type)
+                chunks: list[dict[str, Any]] = []
+                start = _tool_start_chunk(item_id, tool_name)
+                if start:
+                    chunks.append(start)
+                if phase != "completed":
+                    return chunks
+
+                if completion_handler is not None:
+                    chunks.extend(completion_handler(item, item_id, tool_name))
+                record = events._item_to_tool_record(item)
+                if record:
+                    all_tool_records.append(record)
+                    tool_evidence.merge([record])
+                if item_id not in tool_ended:
+                    tool_ended.add(item_id)
+                    chunks.append({"type": "tool_end", "tool_id": item_id, "tool_name": tool_name})
+                return chunks
+
+            def _handle_command_execution_item(item: Any, phase: str) -> list[dict[str, Any]]:
+                return _handle_tool_item(item, phase, _record_command_completion)
+
+            def _handle_file_change_item(item: Any, phase: str) -> list[dict[str, Any]]:
+                return _handle_tool_item(item, phase, _record_file_change_completion)
+
+            def _handle_generic_tool_item(item: Any, phase: str) -> list[dict[str, Any]]:
+                return _handle_tool_item(item, phase)
+
+            def _handle_unmapped_item(item: Any, phase: str) -> list[dict[str, Any]]:
+                if phase != "completed":
+                    return []
+                item_type = events._item_type(item)
+                item_id = events._item_id(item)
+                text = events._extract_item_text(item)
+                if not text:
+                    logger.debug(
+                        "Codex item/completed type=%s: %s",
+                        item_type,
+                        repr(item)[:300],
+                    )
+                    return []
+                logger.info(
+                    "Codex item/completed type=%s has text (%d chars); emitting",
+                    item_type,
+                    len(text),
+                )
+                _set_agent_text(item_id, text)
+                return [{"type": "text_delta", "text": text}]
+
+            item_handlers = {
+                "agent_message": _handle_agent_message_item,
+                "reasoning": _handle_reasoning_item,
+                "plan": _handle_reasoning_item,
+                "command_execution": _handle_command_execution_item,
+                "file_change": _handle_file_change_item,
+                "mcp_tool_call": _handle_generic_tool_item,
+                "web_search": _handle_generic_tool_item,
+                "dynamic_tool_call": _handle_generic_tool_item,
+                "collab_agent_tool_call": _handle_generic_tool_item,
+            }
+
             try:
                 while True:
                     try:
@@ -394,14 +543,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     if method in ("item/started", "item/updated", "item/completed"):
                         received_item = events._get_attr(payload, "item", None)
                         received_type = events._item_type(received_item)
-                        if received_type in (
-                            "command_execution",
-                            "mcp_tool_call",
-                            "file_change",
-                            "web_search",
-                            "dynamic_tool_call",
-                            "collab_agent_tool_call",
-                        ):
+                        if received_type in _TOOL_ITEM_TYPES:
                             tool_evidence.started(
                                 events._item_id(received_item),
                                 events._codex_item_tool_name(received_item, received_type),
@@ -503,146 +645,15 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             yield detail_chunk
                         continue
 
-                    if method in ("item/started", "item/updated"):
+                    if method in ("item/started", "item/updated", "item/completed"):
                         item = events._get_attr(payload, "item", None)
                         if item is None:
                             continue
+                        phase = method.rsplit("/", 1)[-1]
                         item_type = events._item_type(item)
-                        item_id = events._item_id(item)
-
-                        if item_type == "agent_message":
-                            text = events._extract_item_text(item)
-                            if text:
-                                prev_len = item_text_len.get(item_id, 0)
-                                if len(text) > prev_len:
-                                    delta = text[prev_len:]
-                                    item_text_len[item_id] = len(text)
-                                    agent_delta_seen.add(item_id)
-                                    _remember_agent_delta(item_id, delta)
-                                    yield {"type": "text_delta", "text": delta}
-
-                        elif item_type in ("reasoning", "plan"):
-                            text = events._extract_item_text(item)
-                            if text:
-                                prev_len = item_text_len.get(item_id, 0)
-                                if len(text) > prev_len:
-                                    delta = text[prev_len:]
-                                    item_text_len[item_id] = len(text)
-                                    for chunk in _thinking_delta_chunks(delta):
-                                        yield chunk
-
-                        elif item_type in (
-                            "command_execution",
-                            "mcp_tool_call",
-                            "file_change",
-                            "web_search",
-                            "dynamic_tool_call",
-                            "collab_agent_tool_call",
-                        ):
-                            start = _tool_start_chunk(item_id, events._codex_item_tool_name(item, item_type))
-                            if start:
-                                yield start
-                        continue
-
-                    if method == "item/completed":
-                        item = events._get_attr(payload, "item", None)
-                        if item is None:
-                            continue
-                        item_type = events._item_type(item)
-                        item_id = events._item_id(item)
-
-                        if item_type == "agent_message":
-                            text = events._extract_item_text(item)
-                            if text:
-                                if item_id in agent_delta_seen:
-                                    _set_agent_text(item_id, text)
-                                else:
-                                    _set_agent_text(item_id, text)
-                                    yield {"type": "text_delta", "text": text}
-                                item_text_len[item_id] = len(text)
-                            else:
-                                logger.debug(
-                                    "Codex item/completed agent_message with empty text: %s",
-                                    repr(item)[:300],
-                                )
-
-                        elif item_type in ("reasoning", "plan"):
-                            text = events._extract_item_text(item)
-                            if text:
-                                prev_len = item_text_len.get(item_id, 0)
-                                if len(text) > prev_len:
-                                    for chunk in _thinking_delta_chunks(text[prev_len:]):
-                                        yield chunk
-                                item_text_len[item_id] = len(text)
-
-                        elif item_type in (
-                            "command_execution",
-                            "mcp_tool_call",
-                            "file_change",
-                            "web_search",
-                            "dynamic_tool_call",
-                            "collab_agent_tool_call",
-                        ):
-                            tool_name = events._codex_item_tool_name(item, item_type)
-                            start = _tool_start_chunk(item_id, tool_name)
-                            if start:
-                                yield start
-                            if item_type == "file_change":
-                                detail = events._format_file_changes(
-                                    events._get_list(events._unwrap_thread_item(item), "changes")
-                                )
-                                detail_chunk = _tool_detail_chunk(item_id, tool_name, detail)
-                                if detail_chunk:
-                                    yield detail_chunk
-                            if item_type == "command_execution":
-                                unwrapped = events._unwrap_thread_item(item)
-                                command = events._get_str(unwrapped, "command")
-                                output = events._get_str(unwrapped, "aggregated_output", "aggregatedOutput")
-                                exit_code = events._get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
-                                tool_evidence.record_tool_call(
-                                    "Bash",
-                                    {"command": command},
-                                    item_id,
-                                    output,
-                                    is_error=exit_code is not None and exit_code != 0,
-                                    extra_meta={"exit_code": exit_code} if exit_code is not None else None,
-                                )
-                            elif item_type == "file_change":
-                                status = events._get_str(events._unwrap_thread_item(item), "status")
-                                tool_evidence.record_tool_call(
-                                    "Edit",
-                                    {"file_path": detail},
-                                    item_id,
-                                    status or detail,
-                                )
-                            rec = events._item_to_tool_record(item)
-                            if rec:
-                                all_tool_records.append(rec)
-                                tool_evidence.merge([rec])
-                            if item_id not in tool_ended:
-                                tool_ended.add(item_id)
-                                yield {
-                                    "type": "tool_end",
-                                    "tool_id": item_id,
-                                    "tool_name": tool_name,
-                                }
-
-                        else:
-                            text = events._extract_item_text(item)
-                            if text:
-                                logger.info(
-                                    "Codex item/completed type=%s has text (%d chars); emitting",
-                                    item_type,
-                                    len(text),
-                                )
-                                _set_agent_text(item_id, text)
-                                yield {"type": "text_delta", "text": text}
-                            else:
-                                logger.debug(
-                                    "Codex item/completed type=%s: %s",
-                                    item_type,
-                                    repr(item)[:300],
-                                )
+                        handler = item_handlers.get(item_type, _handle_unmapped_item)
+                        for chunk in handler(item, phase):
+                            yield chunk
                         continue
 
                     if method == "thread/tokenUsage/updated":

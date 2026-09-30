@@ -1632,6 +1632,59 @@ class TestStreamingExecution:
         assert "web_search" in tool_start["tool_name"]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sdk_type", "name"),
+        [
+            ("dynamicToolCall", "dynamic-operation"),
+            ("collabAgentToolCall", "collaboration-agent"),
+        ],
+    )
+    async def test_dynamic_and_collaboration_items_emit_tool_lifecycle(self, executor, sdk_type, name):
+        started_item = SimpleNamespace(type=sdk_type, id="tool-1", name=name, status="inProgress")
+        completed_item = SimpleNamespace(
+            type=sdk_type,
+            id="tool-1",
+            name=name,
+            input={"query": "test"},
+            output="result",
+            status="completed",
+        )
+        events = [
+            SimpleNamespace(
+                method="item/started",
+                payload=SimpleNamespace(item=started_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="item/completed",
+                payload=SimpleNamespace(item=completed_item, turn_id="turn-1", thread_id="thread-1"),
+            ),
+            SimpleNamespace(
+                method="turn/completed",
+                payload=SimpleNamespace(turn=SimpleNamespace(id="turn-1", error=None), thread_id="thread-1"),
+            ),
+        ]
+        mock_thread = _mock_stream_thread("special-tool-thread", events)
+        mock_codex = _mock_codex(mock_thread)
+
+        chunks = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for event in executor.execute_streaming(
+                system_prompt="test",
+                prompt="run a tool",
+                tracker=tracker,
+            ):
+                chunks.append(event)
+
+        starts = [event for event in chunks if event["type"] == "tool_start"]
+        ends = [event for event in chunks if event["type"] == "tool_end"]
+        assert starts == [{"type": "tool_start", "tool_name": name, "tool_id": "tool-1"}]
+        assert ends == [{"type": "tool_end", "tool_id": "tool-1", "tool_name": name}]
+        done = next(event for event in chunks if event["type"] == "done")
+        assert done["tool_call_records"][0]["tool_name"] == name
+        assert done["tool_call_records"][0]["result_summary"] == "result"
+
+    @pytest.mark.asyncio
     async def test_stream_command_execution_logs_bash_activity(self, executor, anima_dir):
         cmd_item = SimpleNamespace(
             type="command_execution",
