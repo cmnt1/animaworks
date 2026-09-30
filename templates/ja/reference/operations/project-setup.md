@@ -172,7 +172,6 @@ AnimaWorks の統合設定ファイルは `~/.animaworks/config.json` に配置�
 | `activity_log` |  |
 | `logging` |  |
 | `heartbeat` |  |
-| `cron_guard` |  |
 | `voice` |  |
 | `housekeeping` |  |
 | `inbox` |  |

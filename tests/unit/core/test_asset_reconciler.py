@@ -13,13 +13,13 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _clear_failure_cooldowns():
-    """Isolate the module-level cooldown registry between tests."""
-    from core.anima.asset_reconciler import _failure_cooldowns
+def _clear_asset_failure_records():
+    """Isolate the module-level failure registry between tests."""
+    from core.anima.asset_reconciler import _asset_failure_records
 
-    _failure_cooldowns.clear()
+    _asset_failure_records.clear()
     yield
-    _failure_cooldowns.clear()
+    _asset_failure_records.clear()
 
 
 # ── check_anima_assets ──────────────────────────────────────────
@@ -429,8 +429,12 @@ class TestReconcileAnimaAssets:
         assert result["reason"] == "complete"
 
     @pytest.mark.asyncio
-    async def test_skips_no_prompt(self, tmp_path: Path) -> None:
-        """Skips generation if no prompt can be extracted."""
+    async def test_no_prompt_is_logged_once_and_not_retried(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A missing prompt is informational and unchanged inputs are not retried."""
+        import logging
+
         from core.anima.asset_reconciler import reconcile_anima_assets
 
         anima_dir = tmp_path / "anima"
@@ -439,11 +443,24 @@ class TestReconcileAnimaAssets:
             "# Test\nNo prompt here.",
             encoding="utf-8",
         )
+        caplog.set_level(logging.INFO, logger="animaworks.asset_reconciler")
 
-        with patch("core.anima.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
-            result = await reconcile_anima_assets(anima_dir)
-        assert result["skipped"] is True
-        assert result["reason"] == "no_prompt"
+        with patch(
+            "core.anima.asset_reconciler._synthesize_prompt_via_llm",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as synthesize:
+            first_result = await reconcile_anima_assets(anima_dir)
+            second_result = await reconcile_anima_assets(anima_dir)
+
+        assert first_result["skipped"] is True
+        assert first_result["reason"] == "no_prompt"
+        assert second_result["skipped"] is True
+        assert second_result["reason"] == "previous_failure"
+        synthesize.assert_awaited_once()
+        messages = [record.message for record in caplog.records if "No prompt available" in record.message]
+        assert len(messages) == 1
+        assert not any(record.levelno >= logging.WARNING for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_uses_provided_prompt(self, tmp_path: Path) -> None:
@@ -502,6 +519,31 @@ class TestReconcileAnimaAssets:
         assert result["skipped"] is False
         assert "error" in result
         assert "API down" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_generation_failure_is_not_retried_for_unchanged_inputs(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        from core.anima.asset_reconciler import reconcile_anima_assets
+
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("# Test\nimage_prompt: 1girl\n", encoding="utf-8")
+        caplog.set_level(logging.WARNING, logger="animaworks.asset_reconciler")
+
+        with patch("core.integrations.image_gen.ImageGenPipeline", side_effect=RuntimeError("API down")) as pipeline:
+            first_result = await reconcile_anima_assets(anima_dir)
+            second_result = await reconcile_anima_assets(anima_dir)
+
+        assert first_result["skipped"] is False
+        assert "API down" in first_result["error"]
+        assert second_result["skipped"] is True
+        assert second_result["reason"] == "previous_failure"
+        pipeline.assert_called_once()
+        failures = [record for record in caplog.records if "Asset generation failed" in record.message]
+        assert len(failures) == 1
 
     @pytest.mark.asyncio
     async def test_lock_prevents_concurrent(self, tmp_path: Path) -> None:
@@ -649,8 +691,8 @@ class TestExtractAppearanceField:
         assert _extract_appearance_field("性格: 優しい\n") is None
 
 
-async def test_first_profile_wait_does_not_start_image_failure_cooldown(tmp_path):
-    from core.anima.asset_reconciler import _failure_cooldowns, reconcile_anima_assets
+async def test_first_profile_wait_does_not_record_asset_failure(tmp_path):
+    from core.anima.asset_reconciler import _asset_failure_records, reconcile_anima_assets
     from core.anima.bootstrap_state import get_bootstrap_status
 
     anima_dir = tmp_path / "newcomer"
@@ -663,7 +705,7 @@ async def test_first_profile_wait_does_not_start_image_failure_cooldown(tmp_path
         result = await reconcile_anima_assets(anima_dir)
         assert result["reason"] == "awaiting_profile"
         extract.assert_not_awaited()
-    assert "newcomer" not in _failure_cooldowns
+    assert _asset_failure_records == {}
 
 
 def test_unconfigured_ollama_does_not_override_codex_image_prompt_model(tmp_path, monkeypatch):

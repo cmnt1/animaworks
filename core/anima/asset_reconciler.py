@@ -7,16 +7,17 @@ from __future__ import annotations
 """Asset reconciliation — detect and generate missing Anima assets.
 
 Primary mechanism: Anima bootstraps generate their own assets.
-This module provides a fallback that runs at server startup and
-periodically via the reconciliation loop, generating any missing
-assets using the ImageGenPipeline with ``skip_existing=True``.
+This module provides a fallback scan once at server startup and keeps
+explicit per-anima reconciliation available for creation and repair paths.
+Missing assets are generated with the ImageGenPipeline and
+``skip_existing=True``.
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
-import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -46,57 +47,99 @@ REALISTIC_REQUIRED_ASSETS: dict[str, str] = {
 
 _3D_ASSET_KEYS = frozenset({"model_chibi", "model_rigged"})
 
-# ── Failure cooldown ──────────────────────────────────────────────
-# Tracks per-anima asset generation failures to avoid retrying
-# non-transient errors (e.g. Meshy 402 Payment Required) every 30s.
-
-_COOLDOWN_SECONDS = 3600.0  # 1 hour cooldown after non-transient failure
-
-# {anima_name: (failure_time, error_message)}
-_failure_cooldowns: dict[str, tuple[float, str]] = {}
+# Failure records are scoped to the exact missing asset and generation inputs.
+# This process-local registry prevents repeated startup/explicit scans from
+# retrying an unchanged failure condition; changed inputs produce a new key.
+_AssetFailureKey = tuple[str, str, bool, str, str, str]
+_asset_failure_records: dict[_AssetFailureKey, str] = {}
 
 
-def _is_in_cooldown(anima_name: str) -> tuple[bool, str]:
-    """Check if an anima is in failure cooldown.
+def _prompt_source_fingerprint(anima_dir: Path, prompt: str | None = None) -> str:
+    """Fingerprint prompt inputs without retaining their contents in logs/state."""
+    digest = hashlib.sha256()
+    if prompt is not None:
+        digest.update(b"resolved-prompt\0")
+        digest.update(prompt.encode("utf-8"))
+        return digest.hexdigest()
 
-    Returns (is_cooled_down, reason_message).
-    """
-    entry = _failure_cooldowns.get(anima_name)
-    if entry is None:
-        return False, ""
-    fail_time, error_msg = entry
-    elapsed = time.monotonic() - fail_time
-    if elapsed >= _COOLDOWN_SECONDS:
-        del _failure_cooldowns[anima_name]
-        return False, ""
-    remaining = int(_COOLDOWN_SECONDS - elapsed)
-    return True, f"cooldown ({remaining}s remaining): {error_msg}"
-
-
-def _record_failure(anima_name: str, error: str) -> None:
-    """Record a non-transient failure for cooldown tracking."""
-    _failure_cooldowns[anima_name] = (time.monotonic(), error)
-    logger.warning(
-        "Asset generation for %s entered cooldown (%ds): %s",
-        anima_name,
-        int(_COOLDOWN_SECONDS),
-        error,
-    )
+    for relative_path in (
+        "identity.md",
+        "character_sheet.md",
+        "assets/prompt.txt",
+        "assets/prompt_realistic.txt",
+    ):
+        try:
+            source = (anima_dir / relative_path).stat()
+            signature = f"{relative_path}:{source.st_mtime_ns}:{source.st_size}"
+        except OSError:
+            signature = f"{relative_path}:missing"
+        digest.update(signature.encode("utf-8"))
+    return digest.hexdigest()
 
 
-def _is_non_transient_error(error_str: str) -> bool:
-    """Detect non-transient errors that should trigger cooldown."""
-    non_transient_patterns = [
-        "402",  # Payment Required (Meshy credits)
-        "401",  # Unauthorized (bad API key)
-        "403",  # Forbidden
-        "ToolConfigError",  # Missing API key
-        "No image generation API key",
-        "MESHY_API_KEY",
-        "NOVELAI_TOKEN",
-        "FAL_KEY",
+def _failure_key(
+    anima_dir: Path,
+    image_style: str,
+    enable_3d: bool,
+    asset_key: str,
+    stage: str,
+    fingerprint: str,
+) -> _AssetFailureKey:
+    return (str(anima_dir.resolve()), image_style, enable_3d, asset_key, stage, fingerprint)
+
+
+def _previously_failed_assets(
+    anima_dir: Path,
+    missing: list[str],
+    *,
+    image_style: str,
+    enable_3d: bool,
+    stage: str,
+    fingerprint: str,
+) -> list[str]:
+    return [
+        asset_key
+        for asset_key in missing
+        if _failure_key(anima_dir, image_style, enable_3d, asset_key, stage, fingerprint) in _asset_failure_records
     ]
-    return any(p in error_str for p in non_transient_patterns)
+
+
+def _record_failure(
+    anima_dir: Path,
+    missing: list[str],
+    *,
+    image_style: str,
+    enable_3d: bool,
+    stage: str,
+    fingerprint: str,
+    error: str,
+    no_prompt: bool = False,
+) -> None:
+    """Record each failed asset and emit one concise log for a new condition."""
+    newly_recorded: list[str] = []
+    for asset_key in missing:
+        key = _failure_key(anima_dir, image_style, enable_3d, asset_key, stage, fingerprint)
+        if key not in _asset_failure_records:
+            _asset_failure_records[key] = error
+            newly_recorded.append(asset_key)
+    if not newly_recorded:
+        return
+
+    missing_text = ", ".join(newly_recorded)
+    if no_prompt:
+        logger.info(
+            "No prompt available for %s (missing assets: %s) — cannot generate assets",
+            anima_dir.name,
+            missing_text,
+        )
+        return
+    one_line_error = error.replace("\r", " ").replace("\n", " ")[:300]
+    logger.warning(
+        "Asset generation failed for %s (missing assets: %s): %s",
+        anima_dir.name,
+        missing_text,
+        one_line_error,
+    )
 
 
 def _get_lock(anima_name: str) -> asyncio.Lock:
@@ -222,23 +265,13 @@ async def reconcile_anima_assets(
     """
     anima_name = anima_dir.name
     # A blank first-run Anima has no appearance yet. This is waiting for
-    # user input, not an image-generation failure worth an hour-long cooldown.
+    # user input, not an asset-generation failure.
     if prompt is None:
         from core.anima.bootstrap_state import get_bootstrap_status
 
         if get_bootstrap_status(anima_dir).get("needs_user_input"):
             return {"anima": anima_name, "skipped": True, "reason": "awaiting_profile"}
     lock = _get_lock(anima_name)
-
-    # Check failure cooldown before acquiring lock
-    in_cooldown, cooldown_reason = _is_in_cooldown(anima_name)
-    if in_cooldown:
-        logger.debug(
-            "Skipping asset generation for %s: %s",
-            anima_name,
-            cooldown_reason,
-        )
-        return {"anima": anima_name, "skipped": True, "reason": cooldown_reason}
 
     if lock.locked():
         logger.info(
@@ -269,26 +302,85 @@ async def reconcile_anima_assets(
             logger.debug("Assets complete for %s (post-lock check)", anima_name)
             return {"anima": anima_name, "skipped": True, "reason": "complete"}
 
-        logger.info(
-            "Generating missing %s assets for %s (missing: %s)",
-            image_style,
-            anima_name,
-            check["missing"],
-        )
-
-        resolved_prompt = prompt or await _extract_prompt(anima_dir, style=image_style)
-        if not resolved_prompt:
-            logger.warning(
-                "No prompt available for %s — cannot generate assets",
-                anima_name,
+        missing = list(check["missing"])
+        source_fingerprint = _prompt_source_fingerprint(anima_dir)
+        if not prompt:
+            previous_no_prompt = _previously_failed_assets(
+                anima_dir,
+                missing,
+                image_style=image_style,
+                enable_3d=enable_3d,
+                stage="no_prompt",
+                fingerprint=source_fingerprint,
             )
-            # Without cooldown this retries every reconcile tick (~30s) forever
-            _record_failure(anima_name, "no prompt available")
+            if previous_no_prompt:
+                return {
+                    "anima": anima_name,
+                    "skipped": True,
+                    "reason": "previous_failure",
+                    "failed_assets": previous_no_prompt,
+                }
+
+        try:
+            resolved_prompt = prompt or await _extract_prompt(anima_dir, style=image_style)
+        except Exception as exc:
+            _record_failure(
+                anima_dir,
+                missing,
+                image_style=image_style,
+                enable_3d=enable_3d,
+                stage="no_prompt",
+                fingerprint=source_fingerprint,
+                error=str(exc),
+                no_prompt=True,
+            )
+            return {
+                "anima": anima_name,
+                "skipped": True,
+                "reason": "no_prompt",
+                "error": str(exc),
+            }
+
+        if not resolved_prompt:
+            _record_failure(
+                anima_dir,
+                missing,
+                image_style=image_style,
+                enable_3d=enable_3d,
+                stage="no_prompt",
+                fingerprint=source_fingerprint,
+                error="no prompt available",
+                no_prompt=True,
+            )
             return {
                 "anima": anima_name,
                 "skipped": True,
                 "reason": "no_prompt",
             }
+
+        prompt_fingerprint = _prompt_source_fingerprint(anima_dir, resolved_prompt)
+        previous_generation_failures = _previously_failed_assets(
+            anima_dir,
+            missing,
+            image_style=image_style,
+            enable_3d=enable_3d,
+            stage="generation",
+            fingerprint=prompt_fingerprint,
+        )
+        if previous_generation_failures:
+            return {
+                "anima": anima_name,
+                "skipped": True,
+                "reason": "previous_failure",
+                "failed_assets": previous_generation_failures,
+            }
+
+        logger.info(
+            "Generating missing %s assets for %s (missing: %s)",
+            image_style,
+            anima_name,
+            missing,
+        )
 
         steps: list[str] | None = None
         if image_style == "anime" and not enable_3d:
@@ -315,34 +407,57 @@ async def reconcile_anima_assets(
                 ),
             )
             generated = _summarise_result(result)
-            logger.info(
-                "Asset generation complete for %s: %s",
-                anima_name,
-                generated,
-            )
-
-            # Check for non-transient errors and enter cooldown
-            for err in result.errors:
-                if _is_non_transient_error(err):
-                    _record_failure(anima_name, err)
-                    break
+            errors = list(result.errors or [])
+            remaining = check_anima_assets(
+                anima_dir,
+                enable_3d=enable_3d,
+                image_style=image_style,
+            )["missing"]
+            if remaining:
+                reason = "; ".join(str(error) for error in errors) or "required assets remain missing"
+                _record_failure(
+                    anima_dir,
+                    list(remaining),
+                    image_style=image_style,
+                    enable_3d=enable_3d,
+                    stage="generation",
+                    fingerprint=prompt_fingerprint,
+                    error=reason,
+                )
+            else:
+                logger.info(
+                    "Asset generation complete for %s: %s",
+                    anima_name,
+                    generated,
+                )
 
             return {
                 "anima": anima_name,
                 "skipped": False,
                 "generated": generated,
-                "errors": result.errors,
+                "errors": errors,
             }
         except Exception as exc:
             error_str = str(exc)
-            if _is_non_transient_error(error_str):
-                _record_failure(anima_name, error_str)
-            else:
-                logger.exception("Asset generation failed for %s", anima_name)
+            remaining = check_anima_assets(
+                anima_dir,
+                enable_3d=enable_3d,
+                image_style=image_style,
+            )["missing"]
+            _record_failure(
+                anima_dir,
+                list(remaining),
+                image_style=image_style,
+                enable_3d=enable_3d,
+                stage="generation",
+                fingerprint=prompt_fingerprint,
+                error=error_str,
+            )
             return {
                 "anima": anima_name,
                 "skipped": False,
                 "error": error_str,
+                "failed_assets": list(remaining),
             }
 
 
@@ -591,7 +706,7 @@ async def _synthesize_prompt_via_llm(
             or ""
         ).strip()
     except Exception as exc:
-        logger.warning(
+        logger.debug(
             "LLM prompt synthesis failed for %s (%s): %s",
             anima_name,
             style,

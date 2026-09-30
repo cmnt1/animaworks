@@ -15,7 +15,7 @@ import logging
 import re
 import zlib
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,24 +39,15 @@ _FENCED_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 
 
 def _strip_cron_documentation(content: str) -> str:
-    """Remove non-configuration documentation before health checks.
+    """Remove non-configuration documentation before cron parse diagnostics.
 
-    ``parse_cron_md`` strips HTML comments before parsing, so the health check
+    ``parse_cron_md`` strips HTML comments before parsing, so the diagnostic
     must inspect the same effective document. Fenced examples are also prose
     and must not be treated as indented configuration directives.
     """
     content = _HTML_COMMENT_RE.sub("", content)
     return _FENCED_CODE_BLOCK_RE.sub("", content)
 
-
-# Cron health check:
-# - interval: how often the health job runs (kept short for timely detection)
-# - window: lookback window for "no executions" detection
-#   (widened to avoid false positives for low-frequency crons)
-_HEALTH_CHECK_INTERVAL_HOURS = 3
-_HEALTH_CHECK_WINDOW_HOURS = 24
-_CRON_RUN_HISTORY_LIMIT = 10
-_CRON_WARNING_SUPPRESS_HOURS = 24
 
 if TYPE_CHECKING:
     from core.anima.digital_anima import DigitalAnima
@@ -159,7 +150,6 @@ class SchedulerManager:
             self.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
             self._setup_heartbeat()
             self._setup_cron_tasks()
-            self._setup_cron_health_check()
             self._setup_activity_schedule()
             self._setup_background_review_drain()
             self.scheduler.start()
@@ -424,39 +414,10 @@ class SchedulerManager:
             return
 
         tasks = parse_cron_md(config)
-        disabled_tasks = self._read_cron_state(self._anima_dir / "state" / "cron_disabled.json")
         registered_tasks: list[dict[str, str]] = []
         rejected_tasks: list[dict[str, str]] = []
         registered = 0
-        skipped_disabled = 0
         for i, task in enumerate(tasks):
-            if task.name in disabled_tasks:
-                skipped_disabled += 1
-                rejected_tasks.append(
-                    {
-                        "name": task.name,
-                        "reason": (
-                            "Auto-disabled by cron guard; fix the failure, then run "
-                            f"animaworks cron-guard enable {self._anima_name} {task.name}"
-                        ),
-                    }
-                )
-                logger.info(
-                    "Cron registration skipped (auto-disabled): %s -> %s",
-                    self._anima_name,
-                    task.name,
-                )
-                try:
-                    self._anima._activity.log(
-                        "cron_guard_skipped",
-                        summary=f"Auto-disabled cron skipped: {task.name}",
-                        meta={"task_name": task.name},
-                        safe=True,
-                    )
-                except Exception:
-                    logger.debug("Failed to record cron guard skip", exc_info=True)
-                continue
-
             trigger = parse_schedule(task.schedule)
             if not trigger:
                 # A section with no schedule *and* no action is prose (notes,
@@ -494,7 +455,7 @@ class SchedulerManager:
             )
 
         self._write_cron_registration(registered_tasks, rejected_tasks)
-        self._check_cron_parse_health(config, tasks, registered + skipped_disabled)
+        self._check_cron_parse_health(config, tasks, registered)
 
     def _write_cron_registration(
         self,
@@ -503,13 +464,14 @@ class SchedulerManager:
     ) -> None:
         """Persist the outcome of one cron registration cycle."""
         try:
-            self._write_cron_state(
+            atomic_write_json(
                 self._anima_dir / "state" / "cron_registration.json",
                 {
                     "parsed_at": now_local().isoformat(),
                     "registered": registered,
                     "rejected": rejected,
                 },
+                sort_keys=True,
             )
         except OSError:
             logger.warning("Failed to persist cron registration for %s", self._anima_name, exc_info=True)
@@ -526,188 +488,7 @@ class SchedulerManager:
         except Exception:
             logger.debug("Failed to record cron audit event", exc_info=True)
 
-    # ── Cron Guard ───────────────────────────────────────────────
-
-    @staticmethod
-    def _read_cron_state(path: Path) -> dict[str, Any]:
-        """Read a cron guard JSON object, returning empty state on corruption."""
-        try:
-            if not path.is_file():
-                return {}
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            logger.debug("Ignoring unreadable cron guard state: %s", path, exc_info=True)
-            return {}
-
-    @staticmethod
-    def _write_cron_state(path: Path, data: dict[str, Any]) -> None:
-        """Atomically persist cron guard state."""
-        atomic_write_json(path, data, sort_keys=True)
-
-    @staticmethod
-    def _parse_cron_guard_timestamp(value: object, now: datetime) -> datetime | None:
-        if not isinstance(value, str):
-            return None
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError:
-            return None
-        if parsed.tzinfo is None and now.tzinfo is not None:
-            parsed = parsed.replace(tzinfo=now.tzinfo)
-        return parsed
-
-    def _record_cron_result(
-        self,
-        task_name: str,
-        *,
-        success: bool,
-        usage: dict[str, int] | None = None,
-    ) -> None:
-        """Persist one completion and apply cron guard policy without raising."""
-        try:
-            guard = load_config().cron_guard
-            now = now_local()
-            now_iso = now.isoformat()
-            stats_path = self._anima_dir / "state" / "cron_stats.json"
-            all_stats = self._read_cron_state(stats_path)
-            raw_task_stats = all_stats.get(task_name)
-            task_stats = raw_task_stats if isinstance(raw_task_stats, dict) else {}
-
-            cutoff = now - timedelta(minutes=guard.window_minutes)
-            fire_timestamps: list[str] = []
-            raw_fires = task_stats.get("fire_timestamps", [])
-            if isinstance(raw_fires, list):
-                for value in raw_fires:
-                    parsed = self._parse_cron_guard_timestamp(value, now)
-                    if parsed is not None and parsed >= cutoff:
-                        fire_timestamps.append(parsed.isoformat())
-            fire_timestamps.append(now_iso)
-
-            previous_failures = task_stats.get("consecutive_failures", 0)
-            if not isinstance(previous_failures, int) or isinstance(previous_failures, bool):
-                previous_failures = 0
-            consecutive_failures = 0 if success else previous_failures + 1
-
-            recent_runs = task_stats.get("recent_runs", [])
-            if not isinstance(recent_runs, list):
-                recent_runs = []
-            run: dict[str, Any] = {"timestamp": now_iso, "success": success}
-            if usage:
-                run["usage"] = usage
-            recent_runs = [item for item in recent_runs if isinstance(item, dict)]
-            recent_runs.append(run)
-            recent_runs = recent_runs[-_CRON_RUN_HISTORY_LIMIT:]
-
-            task_stats = {
-                "fire_timestamps": fire_timestamps,
-                "consecutive_failures": consecutive_failures,
-                "recent_runs": recent_runs,
-                **(
-                    {"last_warning_at": task_stats["last_warning_at"]}
-                    if isinstance(task_stats.get("last_warning_at"), str)
-                    else {}
-                ),
-            }
-            all_stats[task_name] = task_stats
-            self._write_cron_state(stats_path, all_stats)
-
-            if guard.mode == "off":
-                return
-
-            reasons: list[str] = []
-            if len(fire_timestamps) > guard.max_fires_per_window:
-                reasons.append(
-                    f"{len(fire_timestamps)} fires in {guard.window_minutes} minutes "
-                    f"(maximum {guard.max_fires_per_window})"
-                )
-            if consecutive_failures >= guard.max_consecutive_failures:
-                reasons.append(
-                    f"{consecutive_failures} consecutive failures (threshold {guard.max_consecutive_failures})"
-                )
-            if not reasons:
-                return
-
-            reason = "; ".join(reasons)
-            snapshot = {
-                "fire_timestamps": list(fire_timestamps),
-                "consecutive_failures": consecutive_failures,
-                "recent_runs": list(recent_runs),
-            }
-            if guard.mode == "warn":
-                last_warning = self._parse_cron_guard_timestamp(task_stats.get("last_warning_at"), now)
-                if last_warning is not None and now - last_warning < timedelta(hours=_CRON_WARNING_SUPPRESS_HOURS):
-                    return
-                task_stats["last_warning_at"] = now_iso
-                self._write_cron_state(stats_path, all_stats)
-                self._log_cron_guard_event("cron_guard_warning", task_name, reason, snapshot)
-                self._write_cron_guard_notification(task_name, reason, disabled=False)
-                return
-
-            disabled_path = self._anima_dir / "state" / "cron_disabled.json"
-            disabled_tasks = self._read_cron_state(disabled_path)
-            disabled_tasks[task_name] = {
-                "reason": reason,
-                "stats": snapshot,
-                "disabled_at": now_iso,
-            }
-            self._write_cron_state(disabled_path, disabled_tasks)
-            self._remove_cron_job(task_name)
-            self._log_cron_guard_event("cron_auto_disabled", task_name, reason, snapshot)
-            self._write_cron_guard_notification(task_name, reason, disabled=True)
-        except Exception:
-            logger.debug(
-                "Cron guard failed open for %s -> %s",
-                self._anima_name,
-                task_name,
-                exc_info=True,
-            )
-
-    def _log_cron_guard_event(
-        self,
-        event_type: str,
-        task_name: str,
-        reason: str,
-        stats: dict[str, Any],
-    ) -> None:
-        self._anima._activity.log(
-            event_type,
-            summary=f"Cron guard: {task_name}: {reason}",
-            meta={"task_name": task_name, "reason": reason, "stats": stats},
-            safe=True,
-        )
-
-    def _write_cron_guard_notification(self, task_name: str, reason: str, *, disabled: bool) -> None:
-        notif_dir = self._anima_dir / "state" / "background_notifications"
-        notif_dir.mkdir(parents=True, exist_ok=True)
-        ts = now_local().strftime("%Y%m%d_%H%M%S")
-        suffix = zlib.crc32(task_name.encode("utf-8")) & 0xFFFFFFFF
-        notif_path = notif_dir / f"cron_guard_{ts}_{suffix:08x}.md"
-        action = "automatically disabled" if disabled else "warning only"
-        notif_path.write_text(
-            f"# Cron guard alert\n\n- Task: {task_name}\n- Action: {action}\n- Reason: {reason}\n",
-            encoding="utf-8",
-        )
-        logger.warning("[%s] Cron guard alert for %s: %s", self._anima_name, task_name, reason)
-
-    def _remove_cron_job(self, task_name: str) -> None:
-        if not self.scheduler:
-            return
-        prefix = f"{self._anima_name}_cron_"
-        for job in self.scheduler.get_jobs():
-            args = getattr(job, "args", ())
-            scheduled_task = args[0] if isinstance(args, (list, tuple)) and args else None
-            if (
-                getattr(job, "id", "").startswith(prefix)
-                and isinstance(scheduled_task, CronTask)
-                and scheduled_task.name == task_name
-            ):
-                try:
-                    self.scheduler.remove_job(job.id)
-                except Exception:
-                    logger.debug("Failed to remove auto-disabled cron job %s", job.id, exc_info=True)
-
-    # ── Cron Health Check ──────────────────────────────────────────
+    # ── Cron parse diagnostics ────────────────────────────────────
 
     def _check_cron_parse_health(
         self,
@@ -735,94 +516,6 @@ class SchedulerManager:
 
         if messages:
             self._write_cron_health_notification("\n\n".join(messages))
-
-    def _setup_cron_health_check(self) -> None:
-        """Register a periodic job that checks cron execution health."""
-        if not self.scheduler or not self._anima:
-            return
-
-        self.scheduler.add_job(
-            self._cron_health_tick,
-            CronTrigger(minute=0, hour=f"*/{_HEALTH_CHECK_INTERVAL_HOURS}"),
-            id=f"{self._anima_name}_cron_health",
-            name=f"{self._anima_name} cron health check",
-            replace_existing=True,
-            misfire_grace_time=600,
-            max_instances=1,
-        )
-
-    @staticmethod
-    def _any_cron_expected_in_window(
-        cron_jobs: list[Any],
-        window_start: datetime,
-        now: datetime,
-    ) -> bool:
-        """Whether any cron job was scheduled to fire within (window_start, now].
-
-        Long-period cron (e.g. ``0 10 * * 1,4``) produces no execution during
-        the health window by design.  Using the APScheduler trigger to find the
-        next fire at-or-after *window_start* lets us distinguish "nothing was
-        supposed to run" from "something was supposed to run but didn't".
-        """
-        for job in cron_jobs:
-            try:
-                trigger = getattr(job, "trigger", None)
-                if trigger is None:
-                    continue
-                next_fire = trigger.get_next_fire_time(None, window_start)
-                if next_fire is not None and next_fire <= now:
-                    return True
-            except Exception:
-                logger.debug(
-                    "Failed to compute expected fire time for job %s",
-                    getattr(job, "id", "?"),
-                    exc_info=True,
-                )
-                # Conservative: preserve legacy behavior (warn if no execution).
-                return True
-        return False
-
-    async def _cron_health_tick(self) -> None:
-        """Compare registered cron jobs against actual execution count."""
-        if not self._anima or not self.scheduler:
-            return
-
-        try:
-            cron_job_prefix = f"{self._anima_name}_cron_"
-            cron_jobs = [
-                j
-                for j in self.scheduler.get_jobs()
-                if j.id.startswith(cron_job_prefix) and not j.id.endswith("_health")
-            ]
-            if not cron_jobs:
-                return
-
-            # Only treat a missing execution as unhealthy when at least one
-            # cron was actually expected to fire inside the no-execution window.
-            now = now_local()
-            window_start = now - timedelta(hours=_HEALTH_CHECK_WINDOW_HOURS)
-            if not self._any_cron_expected_in_window(cron_jobs, window_start, now):
-                return
-
-            entries = self._anima._activity._load_entries(
-                hours=_HEALTH_CHECK_WINDOW_HOURS,
-                types=["cron_executed"],
-            )
-
-            if len(entries) == 0:
-                self._write_cron_health_notification(
-                    t(
-                        "scheduler.cron_health_no_execution",
-                        job_count=len(cron_jobs),
-                        hours=_HEALTH_CHECK_WINDOW_HOURS,
-                    )
-                )
-        except Exception:
-            logger.debug(
-                "Cron health tick failed for %s",
-                self._anima_name,
-                exc_info=True,
-            )
 
     def _write_cron_health_notification(self, message: str) -> None:
         """Write a cron health warning to ``background_notifications/``."""
@@ -1008,12 +701,9 @@ class SchedulerManager:
             return
         self._cron_running.add(task.name)
         success = False
-        usage: dict[str, int] | None = None
         try:
             isolated = await self._task_runner_supervisor.run_cron(task)
             success = bool(isolated.get("success"))
-            isolated_usage = isolated.get("usage")
-            usage = isolated_usage if isinstance(isolated_usage, dict) else None
             result = isolated.get("result")
             if not isinstance(result, dict):
                 raise ValueError("isolated cron result must be an object")
@@ -1034,7 +724,6 @@ class SchedulerManager:
         except Exception:
             logger.exception("Cron task failed: %s -> %s", self._anima_name, task.name)
         finally:
-            self._record_cron_result(task.name, success=success, usage=usage)
             if not success:
                 self._log_cron_event(task, "failed", "execution failed")
             self._cron_running.discard(task.name)
@@ -1060,7 +749,6 @@ class SchedulerManager:
         # Re-setup from current files
         self._setup_heartbeat()
         self._setup_cron_tasks()
-        self._setup_cron_health_check()
         self._setup_activity_schedule()
         self._setup_background_review_drain()
         self._record_schedule_mtimes()

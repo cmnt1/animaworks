@@ -430,37 +430,6 @@ cli.cost_help
 | --today | flag | false | — | Show today only |
 | --json | flag | false | — | Output as JSON |
 
-## `cron-guard`
-
-Inspect and re-enable auto-disabled cron tasks
-
-`usage: animaworks cron-guard [-h] {list,enable} ...`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `cron-guard enable`
-
-Re-enable an auto-disabled cron task
-
-`usage: animaworks cron-guard enable [-h] anima task`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
-| task | positional | — | — | Cron task name |
-
-## `cron-guard list`
-
-List auto-disabled cron tasks
-
-`usage: animaworks cron-guard list [-h] anima`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
-
 ## `demo`
 
 Run the 3-agent demo team (no API key needed if Claude Code or Codex is logged in)

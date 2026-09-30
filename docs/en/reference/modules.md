@@ -15,7 +15,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 76 | — |
 | `cli.demo` | 392 | Native ``animaworks demo`` command. |
-| `cli.parser` | 883 | — |
+| `cli.parser` | 878 | — |
 | `cli.tool_dispatch` | 91 | — |
 
 ## `cli.commands`
@@ -30,7 +30,6 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.commands.board` | 192 | — |
 | `cli.commands.company_cmd` | 226 | — |
 | `cli.commands.cost_cmd` | 232 | — |
-| `cli.commands.cron_guard` | 93 | CLI commands for inspecting and re-enabling cron guard tasks. |
 | `cli.commands.import_cmd` | 88 | — |
 | `cli.commands.index_cmd` | 387 | — |
 | `cli.commands.init_cmd` | 136 | — |
@@ -121,7 +120,7 @@ Digital Anima lifecycle and runtime objects.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.anima` | 23 | — |
-| `core.anima.asset_reconciler` | 675 | — |
+| `core.anima.asset_reconciler` | 790 | — |
 | `core.anima.bootstrap_state` | 574 | — |
 | `core.anima.digital_anima` | 674 | — |
 | `core.anima.emotion_tag` | 84 | Shared emotion-tag extraction for LLM responses. |
@@ -167,7 +166,7 @@ Application configuration schemas, loading, validation, and migration.
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 96 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 172 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1400 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1389 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -284,7 +283,7 @@ Translation catalogs and language selection.
 | `core.i18n` | 135 | Lightweight i18n support for runtime strings. |
 | `core.i18n.strings.communication` | 53 | Domain-specific i18n strings. |
 | `core.i18n.strings.company` | 14 | Localized strings for company management. |
-| `core.i18n.strings.config` | 310 | Domain-specific i18n strings. |
+| `core.i18n.strings.config` | 297 | Domain-specific i18n strings. |
 | `core.i18n.strings.discord` | 28 | — |
 | `core.i18n.strings.execution` | 205 | Domain-specific i18n strings. |
 | `core.i18n.strings.handler` | 388 | Domain-specific i18n strings (handler part 1). |
@@ -765,7 +764,7 @@ Anima supervision, delegation, and execution coordination.
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1249 | Child process entry point for Anima subprocess. |
 | `core.supervisor.schedule_parser` | 484 | — |
-| `core.supervisor.scheduler_manager` | 1141 | APScheduler management for heartbeat and cron tasks. |
+| `core.supervisor.scheduler_manager` | 835 | APScheduler management for heartbeat and cron tasks. |
 | `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
 | `core.supervisor.task_runner` | 953 | Disposable task runner entry point. |
 | `core.supervisor.task_runner_supervisor` | 1109 | Root-side lifecycle manager for disposable task runner processes. |
@@ -910,7 +909,7 @@ Audio input/output and voice conversations.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1397 | — |
+| `server.app` | 1372 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |

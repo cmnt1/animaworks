@@ -256,11 +256,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_skills_command(sub)
 
-    # ── Cron Guard ────────────────────────────────────────
-    from cli.commands.cron_guard import register_cron_guard_command
-
-    register_cron_guard_command(sub)
-
     # ── External Agent Import ─────────────────────────────
     from cli.commands.import_cmd import register_import_command
 

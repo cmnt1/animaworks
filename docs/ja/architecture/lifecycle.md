@@ -21,7 +21,7 @@ Anima は server からの要求だけでなく、メッセージやスケジュ
 
 heartbeat の基本間隔は全体設定で 30 分が既定であり、`status.json` の `heartbeat_interval_minutes` で Anima ごとに上書きできる。有効な範囲は 1〜1440 分である。全体の `activity_level` は既定 100%、許容範囲 10〜400% で、値が高いほど実効間隔が短くなる。`activity_schedule` を使うと時刻帯ごとに活動度を切り替えられる。`heartbeat.md` からは活動時間帯を設定する。
 
-`cron.md` は見出し単位の定義で、`schedule` に標準の5フィールド cron 式を記す。`type`、説明、必要に応じて command/tool と引数を設定し、`core/supervisor/schedule_parser.py` が解析する。繰り返し失敗した cron task は cron guard によって自動無効化され、`animaworks cron-guard` で確認・再有効化できる。
+`cron.md` は見出し単位の定義で、`schedule` に標準の5フィールド cron 式を記す。`type`、説明、必要に応じて command/tool と引数を設定し、`core/supervisor/schedule_parser.py` が解析する。セットアップや hot-reload 時には、解析・登録できなかったスケジュールだけを `cron_health_*.md` として通知する。登録済み cron の実行頻度や失敗を定期監視する機能はない。
 
 ## 初回起動と1サイクル
 

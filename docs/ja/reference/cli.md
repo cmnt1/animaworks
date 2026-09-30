@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: 5a8420fdf514480f2d4f495ff5686f7547cdf7385499334bf514ca56636251f0 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: 23d104d8172984932ac70c4afd0180a64300bb8f1f5e6861096249b73a071ed8 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -429,37 +429,6 @@ cli.cost_help
 | --days | option | 30 | — | Number of days to aggregate (default: 30) |
 | --today | flag | false | — | Show today only |
 | --json | flag | false | — | Output as JSON |
-
-## `cron-guard`
-
-Inspect and re-enable auto-disabled cron tasks
-
-`usage: animaworks cron-guard [-h] {list,enable} ...`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| — | — | — | — | — |
-
-## `cron-guard enable`
-
-Re-enable an auto-disabled cron task
-
-`usage: animaworks cron-guard enable [-h] anima task`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
-| task | positional | — | — | Cron task name |
-
-## `cron-guard list`
-
-List auto-disabled cron tasks
-
-`usage: animaworks cron-guard list [-h] anima`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
 
 ## `demo`
 

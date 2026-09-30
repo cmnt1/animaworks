@@ -115,7 +115,7 @@ Do something
 
         mgr.setup()
         initial_jobs = mgr.scheduler.get_jobs()
-        # heartbeat + system jobs (activity_schedule, cron_health)
+        # heartbeat + system jobs (activity_schedule, background review drain)
         assert any("heartbeat" in j.id for j in initial_jobs)
 
         # Now add cron config for reload
@@ -173,7 +173,7 @@ New task description
 
         result = await runner._handle_get_status({})
         assert result["scheduler_running"] is True
-        # heartbeat + system jobs (activity_schedule, cron_health)
+        # heartbeat + system jobs (activity_schedule, background review drain)
         assert result["scheduler_jobs"] >= 1
 
         runner._scheduler_mgr.shutdown()
