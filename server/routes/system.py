@@ -13,8 +13,6 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
-from core.tasks.board.tasks import TaskStore
-from core.tasks.board.view import summarize_board
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.routes.system")
@@ -482,22 +480,6 @@ def create_system_router() -> APIRouter:
             "system_jobs": system_jobs,
             "anima_jobs": jobs,
         }
-
-    # ── Tasks ───────────────────────────────────────────
-
-    @router.get("/tasks/summary")
-    async def get_tasks_summary(request: Request):
-        """Aggregate active task counts across all animas from TaskBoard projection."""
-        import asyncio
-
-        shared_dir = request.app.state.shared_dir
-        anima_names = request.app.state.anima_names
-
-        store = TaskStore(shared_dir / "taskboard.sqlite3")
-        summary = await asyncio.to_thread(summarize_board, store, anima_names)
-        pending = summary["pending"]
-        in_progress = summary["in_progress"]
-        return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
 
     # ── Activity ───────────────────────────────────────────
 
@@ -1012,36 +994,6 @@ def create_system_router() -> APIRouter:
             "activity_schedule": [e.model_dump() for e in entries],
         }
 
-    # ── Token Usage / Cost ────────────────────────────────────
-
-    @router.get("/system/cost")
-    async def get_token_cost(
-        request: Request,
-        anima: str | None = None,
-        days: int = 30,
-    ):
-        """Return token usage summary and estimated cost."""
-        from core.paths import get_data_dir
-        from core.usage.token_usage import TokenUsageLogger
-
-        animas_dir = get_data_dir() / "animas"
-        if anima:
-            anima_dir = animas_dir / anima
-            if not anima_dir.is_dir():
-                return {"error": f"Anima '{anima}' not found"}
-            tul = TokenUsageLogger(anima_dir)
-            return {anima: tul.summarize(days)}
-
-        result: dict = {}
-        if animas_dir.is_dir():
-            for ad in sorted(animas_dir.iterdir()):
-                if ad.is_dir() and (ad / "token_usage").is_dir():
-                    tul = TokenUsageLogger(ad)
-                    s = tul.summarize(days)
-                    if s["total_sessions"] > 0:
-                        result[ad.name] = s
-        return result
-
     @router.get("/system/token-budget")
     async def get_token_budget(
         request: Request,
@@ -1080,17 +1032,6 @@ def create_system_router() -> APIRouter:
 
     # ── Hot Reload ─────────────────────────────────────────
 
-    @router.post("/system/hot-reload")
-    async def hot_reload_all(request: Request):
-        """Hot-reload all configuration and connections."""
-        manager = getattr(request.app.state, "reload_manager", None)
-        if manager is None:
-            return JSONResponse(
-                {"error": "Reload manager not initialized"},
-                status_code=503,
-            )
-        return await manager.reload_all()
-
     @router.post("/system/hot-reload/slack")
     async def hot_reload_slack(request: Request):
         """Hot-reload Slack Socket Mode connections only."""
@@ -1112,17 +1053,6 @@ def create_system_router() -> APIRouter:
                 status_code=503,
             )
         return await manager.reload_credentials()
-
-    @router.post("/system/hot-reload/animas")
-    async def hot_reload_animas(request: Request):
-        """Sync Anima processes with disk state."""
-        manager = getattr(request.app.state, "reload_manager", None)
-        if manager is None:
-            return JSONResponse(
-                {"error": "Reload manager not initialized"},
-                status_code=503,
-            )
-        return await manager.reload_animas()
 
     @router.post("/system/rewrite-runtime-refs")
     async def rewrite_runtime_refs(request: Request):

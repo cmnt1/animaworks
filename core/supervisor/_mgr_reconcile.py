@@ -296,7 +296,7 @@ class ReconcileMixin:
         """Detect config.json changes and refresh the singleton cache.
 
         This is a supplementary auto-detection mechanism.  The primary
-        trigger is the ``POST /api/system/hot-reload`` API endpoint.
+        trigger is the ``POST /api/system/reload`` API endpoint.
         """
         try:
             import hashlib

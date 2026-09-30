@@ -18,7 +18,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from tests.evaluation.framework import (
+from benchmarks.evaluation.framework import (
     DatasetGenerator,
     GroundTruthManager,
 )
@@ -33,7 +33,7 @@ def main():
     print()
 
     # Setup paths
-    output_root = project_root / "tests" / "evaluation"
+    output_root = project_root / "benchmarks" / "evaluation"
     dataset_dir = output_root / "datasets"
     scenario_dir = output_root / "scenarios"
     gt_dir = output_root / "ground_truth"

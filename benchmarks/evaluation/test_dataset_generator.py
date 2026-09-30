@@ -9,7 +9,7 @@ Tests the generation of memory bases and scenarios without requiring LLM calls.
 from __future__ import annotations
 
 import pytest
-from tests.evaluation.framework import (
+from benchmarks.evaluation.framework import (
     DatasetGenerator,
     MemoryBase,
     SizeConfig,

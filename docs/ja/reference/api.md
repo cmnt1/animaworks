@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: 67ac2523566a090d644914d29b1e579b2295321bc67ad2fe1f00571bbaf15c15 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: c79070aa02f4271957f2c29745fe58aed9717aaaec787c77e34e7f36c35fbd41 -->
 
 # API リファレンス
 
@@ -113,9 +113,6 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/discord/channels` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List Discord guild channels with membership info. | `server/routes/config_routes.py:get_discord_channels` |
 | GET | `/api/settings/anthropic-auth` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return current Anthropic auth mode and runtime availability. | `server/routes/config_routes.py:get_anthropic_auth` |
 | PUT | `/api/settings/anthropic-auth` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist Anthropic auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_anthropic_auth` |
-| GET | `/api/settings/local-llm` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return local Ollama-backed model settings and runtime availability. | `server/routes/config_routes.py:get_local_llm` |
-| PUT | `/api/settings/local-llm` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist local LLM settings and make Ollama the default execution target. | `server/routes/config_routes.py:update_local_llm` |
-| POST | `/api/settings/local-llm/apply-role-presets` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Apply the configured role-based local LLM presets to existing animas. | `server/routes/config_routes.py:apply_local_llm_role_presets` |
 | GET | `/api/settings/openai-auth` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return current OpenAI auth mode and runtime availability. | `server/routes/config_routes.py:get_openai_auth` |
 | PUT | `/api/settings/openai-auth` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Persist OpenAI auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_openai_auth` |
 | GET | `/api/system/available-models` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
@@ -222,12 +219,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/settings/display-mode` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update display mode and sync config.image_gen.image_style. | `server/routes/system.py:set_display_mode` |
 | GET | `/api/shared/users` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List registered user names from shared/users/. | `server/routes/system.py:list_shared_users` |
 | GET | `/api/system/connections` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return WebSocket and process connection info. | `server/routes/system.py:system_connections` |
-| GET | `/api/system/cost` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return token usage summary and estimated cost. | `server/routes/system.py:get_token_cost` |
 | GET | `/api/system/frontend-logs` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Read frontend logs from JSONL files with optional filters. | `server/routes/system.py:view_frontend_logs` |
 | POST | `/api/system/frontend-logs` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Receive a batch of frontend log entries and write to daily JSONL. | `server/routes/system.py:receive_frontend_logs` |
 | GET | `/api/system/health` | 不要（除外一覧） | Simple health check endpoint. | `server/routes/system.py:health_check` |
-| POST | `/api/system/hot-reload` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Hot-reload all configuration and connections. | `server/routes/system.py:hot_reload_all` |
-| POST | `/api/system/hot-reload/animas` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Sync Anima processes with disk state. | `server/routes/system.py:hot_reload_animas` |
 | POST | `/api/system/hot-reload/credentials` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Hot-reload credentials and dependent connections. | `server/routes/system.py:hot_reload_credentials` |
 | POST | `/api/system/hot-reload/slack` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Hot-reload Slack Socket Mode connections only. | `server/routes/system.py:hot_reload_slack` |
 | GET | `/api/system/log-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the current root log level. | `server/routes/system.py:get_log_level` |
@@ -237,7 +231,6 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/system/scheduler` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return scheduler status and job information. | `server/routes/system.py:system_scheduler` |
 | GET | `/api/system/status` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/system.py:system_status` |
 | GET | `/api/system/token-budget` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return current-month token budget status for each Anima. | `server/routes/system.py:get_token_budget` |
-| GET | `/api/tasks/summary` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Aggregate active task counts across all animas from TaskBoard projection. | `server/routes/system.py:get_tasks_summary` |
 
 ## `server/routes/taskboard.py`
 

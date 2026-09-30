@@ -15,7 +15,7 @@ Each condition: N=30 trials, 50 scenarios per trial.
 Generates datasets, runs searches, collects metrics, produces figures.
 
 Usage:
-    python tests/evaluation/scripts/run_experiment.py
+    python benchmarks/evaluation/scripts/run_experiment.py
 """
 
 from __future__ import annotations
@@ -47,11 +47,11 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Set ANIMAWORKS_DATA_DIR to a temporary location for experiments
-EXPERIMENT_DATA_DIR = PROJECT_ROOT / "tests" / "evaluation" / "_experiment_data"
+EXPERIMENT_DATA_DIR = PROJECT_ROOT / "benchmarks" / "evaluation" / "_experiment_data"
 os.environ["ANIMAWORKS_DATA_DIR"] = str(EXPERIMENT_DATA_DIR)
 
-from tests.evaluation.framework.dataset_generator import DatasetGenerator
-from tests.evaluation.framework.schemas import MemoryBase, MemoryFile, Scenario
+from benchmarks.evaluation.framework.dataset_generator import DatasetGenerator
+from benchmarks.evaluation.framework.schemas import MemoryBase, MemoryFile, Scenario
 
 # ── Logging configuration ────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ N_TRIALS = 30
 N_SCENARIOS = 50
 TOP_K = 3
 
-RESULTS_DIR = PROJECT_ROOT / "tests" / "evaluation" / "results"
+RESULTS_DIR = PROJECT_ROOT / "benchmarks" / "evaluation" / "results"
 RAW_DIR = RESULTS_DIR / "raw"
 PROCESSED_DIR = RESULTS_DIR / "processed"
 FIGURES_DIR = RESULTS_DIR / "figures"
@@ -915,7 +915,7 @@ def _run_h3_consolidation_experiment(
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
-    h3_base_dir = PROJECT_ROOT / "tests" / "evaluation" / "_h3_experiment"
+    h3_base_dir = PROJECT_ROOT / "benchmarks" / "evaluation" / "_h3_experiment"
 
     # Clean previous run
     import shutil
@@ -1123,7 +1123,7 @@ def generate_processed_results(
     logger.info("Summary statistics saved")
 
     # ── Hypothesis H1: Spreading activation effect on precision (A vs B) ──
-    from tests.evaluation.framework.analysis import StatisticalAnalyzer
+    from benchmarks.evaluation.framework.analysis import StatisticalAnalyzer
 
     analyzer = StatisticalAnalyzer(alpha=0.05)
 
@@ -1647,7 +1647,7 @@ async def main() -> None:
     # ── Step 1: Generate datasets ─────────────────────────────────────
     logger.info("")
     logger.info("Step 1: Generating datasets...")
-    dataset_dir = PROJECT_ROOT / "tests" / "evaluation" / "_datasets"
+    dataset_dir = PROJECT_ROOT / "benchmarks" / "evaluation" / "_datasets"
 
     all_memory_bases: dict[str, MemoryBase] = {}
     all_scenarios: dict[str, list[Scenario]] = {}

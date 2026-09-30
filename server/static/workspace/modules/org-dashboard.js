@@ -761,7 +761,7 @@ async function _loadKpiStats() {
     }
   } catch { /* ignore */ }
   try {
-    const resp = await fetch(`${basePath}/api/tasks/summary`);
+    const resp = await fetch(`${basePath}/api/task-board/summary`);
     if (resp.ok) {
       const data = await resp.json();
       _kpiTasks = String(data.total_active || 0);

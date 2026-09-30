@@ -250,7 +250,7 @@
   "chat.bootstrap_complete": "Ready!",
   "chat.bootstrap_failed": "Setup failed. Retrying automatically...",
   "chat.bootstrap_max_retries": "Setup could not be completed",
-  "chat.bootstrap_needs_repair": "Setup is stuck in a partial state. Check it with repair-bootstrap.",
+  "chat.bootstrap_needs_repair": "Setup is stuck in a partial state. Ask an administrator to inspect the setup state.",
   "chat.bootstrap_step_avatar": "Generating avatar...",
   "chat.bootstrap_step_finish": "Finishing setup...",
   "chat.bootstrap_step_identity": "Reading identity...",

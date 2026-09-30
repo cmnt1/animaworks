@@ -127,7 +127,7 @@ async def _measure_priming(self, agent, message):
 **Test Execution**:
 ```bash
 source .venv/bin/activate
-pytest tests/evaluation/test_framework.py -v
+pytest benchmarks/evaluation/test_framework.py -v
 ```
 
 ### Example Usage

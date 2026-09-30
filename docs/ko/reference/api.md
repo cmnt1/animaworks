@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=8dfafb774697bcfebed1629917b28172f870c16d4c6445eee1a618b53cb61db7 generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=6d159be9b1cb266211d34e4ad5933a40ed1afe326c89fb302b903881b3ba8763 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # API 참조
 
@@ -108,19 +108,16 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/config_routes.py`
 
-| GET | `/api/discord/channel-members` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 모든 Discord 채널 멤버십 매핑을 반환합니다. | `server/routes/config_routes.py:get_discord_channel_members` |
-| PUT | `/api/discord/channel-members/{channel_id}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Discord 채널의 Anima 멤버를 업데이트합니다. | `server/routes/config_routes.py:put_discord_channel_members` |
-| GET | `/api/discord/channels` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 멤버십 정보가 포함된 Discord 길드 채널을 나열합니다. | `server/routes/config_routes.py:get_discord_channels` |
-| GET | `/api/settings/anthropic-auth` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 Anthropic 인증 모드와 런타임 가용성을 반환합니다. | `server/routes/config_routes.py:get_anthropic_auth` |
-| PUT | `/api/settings/anthropic-auth` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 설정 UI를 위해 config.json에 Anthropic 인증 모드를 저장합니다. | `server/routes/config_routes.py:update_anthropic_auth` |
-| GET | `/api/settings/local-llm` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 로컬 Ollama 기반 모델 설정과 런타임 가용성을 반환합니다. | `server/routes/config_routes.py:get_local_llm` |
-| PUT | `/api/settings/local-llm` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 로컬 LLM 설정을 저장하고 Ollama를 기본 실행 대상으로 설정합니다. | `server/routes/config_routes.py:update_local_llm` |
-| POST | `/api/settings/local-llm/apply-role-presets` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 구성된 역할 기반 로컬 LLM 프리셋을 기존 아니마에 적용합니다. | `server/routes/config_routes.py:apply_local_llm_role_presets` |
-| GET | `/api/settings/openai-auth` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 OpenAI 인증 모드와 런타임 가용성을 반환합니다. | `server/routes/config_routes.py:get_openai_auth` |
-| PUT | `/api/settings/openai-auth` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 설정 UI를 위해 config.json에 OpenAI 인증 모드를 저장합니다. | `server/routes/config_routes.py:update_openai_auth` |
-| GET | `/api/system/available-models` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | UI 드롭다운용 모든 사용 가능한 모델(클라우드 + 로컬)을 반환합니다. | `server/routes/config_routes.py:get_available_models` |
-| GET | `/api/system/available-tools` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 외부 도구 모듈 이름을 반환합니다(비활성화된 서비스 제외). | `server/routes/config_routes.py:get_available_tools` |
-| GET | `/api/system/config` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 마스킹된 비밀값이 포함된 AnimaWorks 구성을 읽어 반환합니다. | `server/routes/config_routes.py:get_config` |
+| GET | `/api/discord/channel-members` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 모든 Discord 채널 멤버십 매핑을 반환합니다. | `server/routes/config_routes.py:get_discord_channel_members` |
+| PUT | `/api/discord/channel-members/{channel_id}` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Discord 채널의 Anima 멤버를 업데이트합니다. | `server/routes/config_routes.py:put_discord_channel_members` |
+| GET | `/api/discord/channels` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 멤버십 정보가 포함된 Discord 길드 채널 목록을 반환합니다. | `server/routes/config_routes.py:get_discord_channels` |
+| GET | `/api/settings/anthropic-auth` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 Anthropic 인증 모드와 런타임 가용성을 반환합니다. | `server/routes/config_routes.py:get_anthropic_auth` |
+| PUT | `/api/settings/anthropic-auth` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 설정 UI를 위해 config.json에 Anthropic 인증 모드를 저장합니다. | `server/routes/config_routes.py:update_anthropic_auth` |
+| GET | `/api/settings/openai-auth` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 OpenAI 인증 모드와 런타임 가용성을 반환합니다. | `server/routes/config_routes.py:get_openai_auth` |
+| PUT | `/api/settings/openai-auth` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 설정 UI를 위해 config.json에 OpenAI 인증 모드를 저장합니다. | `server/routes/config_routes.py:update_openai_auth` |
+| GET | `/api/system/available-models` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | UI 드롭다운용 모든 사용 가능한 모델(클라우드 + 로컬)을 반환합니다. | `server/routes/config_routes.py:get_available_models` |
+| GET | `/api/system/available-tools` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 외부 도구 모듈 이름(비활성화된 서비스 제외)을 반환합니다. | `server/routes/config_routes.py:get_available_tools` |
+| GET | `/api/system/config` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 마스킹된 비밀값이 포함된 AnimaWorks 구성을 읽어 반환합니다. | `server/routes/config_routes.py:get_config` |
 
 ## `server/routes/external_tasks.py`
 
@@ -213,31 +210,27 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 ## `server/routes/system.py`
 
-| GET | `/api/activity/group` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 안정적인 ID로 완전한 트리거 기반 활동 그룹 하나를 반환합니다. | `server/routes/system.py:get_activity_group` |
-| GET | `/api/activity/recent` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 통합 ActivityLogger에서 최근 활동 이벤트를 반환합니다. | `server/routes/system.py:get_recent_activity` |
+| GET | `/api/activity/group` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 안정적인 ID로 하나의 완전한 트리거 기반 활동 그룹을 반환합니다. | `server/routes/system.py:get_activity_group` |
+| GET | `/api/activity/recent` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 통합 ActivityLogger의 최근 활동 이벤트를 반환합니다. | `server/routes/system.py:get_recent_activity` |
 | GET | `/api/activity/running-tasks` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Anima별로 그룹화된 활성 백그라운드 TaskExec 워커를 반환합니다. | `server/routes/system.py:get_running_activity_tasks` |
 | GET | `/api/settings/activity-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 전역 활동 수준과 일정을 반환합니다. | `server/routes/system.py:get_activity_level` |
-| PUT | `/api/settings/activity-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전역 활동 수준을 업데이트하고 모든 하트비트를 다시 예약합니다. | `server/routes/system.py:set_activity_level` |
+| PUT | `/api/settings/activity-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전역 활동 수준을 업데이트하고 모든 하트비트를 재예약합니다. | `server/routes/system.py:set_activity_level` |
 | PUT | `/api/settings/activity-schedule` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 시간 기반 활동 일정(야간 모드)을 업데이트합니다. | `server/routes/system.py:set_activity_schedule` |
 | POST | `/api/settings/display-mode` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 표시 모드를 업데이트하고 config.image_gen.image_style을 동기화합니다. | `server/routes/system.py:set_display_mode` |
-| GET | `/api/shared/users` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | shared/users/.에서 등록된 사용자 이름을 나열합니다. | `server/routes/system.py:list_shared_users` |
-| POST | `/api/system/rewrite-runtime-refs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | REWRITE_REFS가 디스크 상태를 업데이트한 후 라이브 캐시를 동기화합니다. | `server/routes/system.py:rewrite_runtime_refs` |
+| GET | `/api/shared/users` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | shared/users/.에서 등록된 사용자 이름 목록을 반환합니다. | `server/routes/system.py:list_shared_users` |
 | GET | `/api/system/connections` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | WebSocket 및 프로세스 연결 정보를 반환합니다. | `server/routes/system.py:system_connections` |
-| GET | `/api/system/cost` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 토큰 사용 요약과 예상 비용을 반환합니다. | `server/routes/system.py:get_token_cost` |
-| GET | `/api/system/frontend-logs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 선택적 필터로 JSONL 파일에서 프론트엔드 로그를 읽습니다. | `server/routes/system.py:view_frontend_logs` |
+| GET | `/api/system/frontend-logs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 선택적 필터를 사용하여 JSONL 파일에서 프론트엔드 로그를 읽습니다. | `server/routes/system.py:view_frontend_logs` |
 | POST | `/api/system/frontend-logs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 프론트엔드 로그 항목 배치를 수신하고 일별 JSONL에 기록합니다. | `server/routes/system.py:receive_frontend_logs` |
 | GET | `/api/system/health` | 불필요 (제외 목록) | 간단한 상태 확인 엔드포인트. | `server/routes/system.py:health_check` |
-| POST | `/api/system/hot-reload` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 모든 구성과 연결을 핫 리로드합니다. | `server/routes/system.py:hot_reload_all` |
-| POST | `/api/system/hot-reload/animas` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Anima 프로세스를 디스크 상태와 동기화합니다. | `server/routes/system.py:hot_reload_animas` |
-| POST | `/api/system/hot-reload/credentials` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 자격 증명과 종속 연결을 핫 리로드합니다. | `server/routes/system.py:hot_reload_credentials` |
+| POST | `/api/system/hot-reload/credentials` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 자격 증명 및 종속 연결을 핫 리로드합니다. | `server/routes/system.py:hot_reload_credentials` |
 | POST | `/api/system/hot-reload/slack` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | Slack Socket Mode 연결만 핫 리로드합니다. | `server/routes/system.py:hot_reload_slack` |
 | GET | `/api/system/log-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 현재 루트 로그 수준을 반환합니다. | `server/routes/system.py:get_log_level` |
 | POST | `/api/system/log-level` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 런타임에 로그 수준을 변경합니다 (재시작 불필요). | `server/routes/system.py:set_log_level` |
 | POST | `/api/system/reload` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 전체 동기화: 새 animas 추가, 기존 항목 새로고침, 삭제된 항목 제거. | `server/routes/system.py:reload_animas` |
-| GET | `/api/system/scheduler` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 스케줄러 상태와 작업 정보를 반환합니다. | `server/routes/system.py:system_scheduler` |
+| POST | `/api/system/rewrite-runtime-refs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | REWRITE_REFS가 디스크 상태를 업데이트한 후 라이브 캐시를 동기화합니다. | `server/routes/system.py:rewrite_runtime_refs` |
+| GET | `/api/system/scheduler` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 스케줄러 상태 및 작업 정보를 반환합니다. | `server/routes/system.py:system_scheduler` |
 | GET | `/api/system/status` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/system.py:system_status` |
 | GET | `/api/system/token-budget` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 각 Anima의 이번 달 토큰 예산 상태를 반환합니다. | `server/routes/system.py:get_token_budget` |
-| GET | `/api/tasks/summary` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | TaskBoard 프로젝션에서 모든 animas의 활성 작업 수를 집계합니다. | `server/routes/system.py:get_tasks_summary` |
 
 ## `server/routes/taskboard.py`
 

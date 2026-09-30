@@ -30,7 +30,6 @@
     "core/anima/factory.py",
     "core/config/anima_registry.py",
     "core/config/cli.py",
-    "core/config/local_llm.py",
     "core/config/migrate.py",
     "core/config/model_config.py",
     "core/config/resolver.py",

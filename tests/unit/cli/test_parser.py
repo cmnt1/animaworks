@@ -24,6 +24,20 @@ class TestParserCommands:
             assert exc_info.value.code == 2
             assert "invalid choice" in capsys.readouterr().err
 
+    def test_removed_anima_commands_are_invalid_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from cli.parser import build_parser
+
+        parser = build_parser()
+        for command in ("codex-yolo", "repair-bootstrap"):
+            with pytest.raises(SystemExit) as exc_info:
+                parser.parse_args(["anima", command])
+            assert exc_info.value.code == 2
+            assert "invalid choice" in capsys.readouterr().err
+
+        choices = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction)).choices
+        assert "profile" in choices
+        assert "tmp" in choices
+
     def _parse(self, *args: str) -> argparse.Namespace:
         """Parse args by calling cli_main internals directly."""
         # We can't call cli_main() directly because it calls args.func().

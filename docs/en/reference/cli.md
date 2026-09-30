@@ -1,11 +1,11 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=92b56543103c512cc42f576f51d3e9dc48a56d9fd976fa97bbe6d048019e75ba generated=2026-09-28 engine=luna model=gpt-6-luna translator=2 -->
+<!-- i18n: source-sha256=4b0815db2f25e4f65706a582e915e27083e7fb318a5b36a8bf77b7bb41dfb7a1 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
-# CLI Reference: `animaworks`
+# CLI reference: `animaworks`
 
 Generated from the argparse definition of the `animaworks` command.
 
-## Global Options
+## Global options
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
@@ -17,7 +17,7 @@ Generated from the argparse definition of the `animaworks` command.
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
+                        {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
                         ...`
 
 | Name | Type | Default | Choices | Description |
@@ -39,18 +39,6 @@ Audit a subordinate anima's recent activity
 | --days | option | 1 | — | Number of days to audit (default: 1, max: 30) |
 | --since | option | — | — | Start time in HH:MM format (today, JST). Overrides --days when specified |
 | --date | option | — | — | Specific date (YYYY-MM-DD, 'today', or 'yesterday'). Shows only that day's activity |
-
-## `anima codex-yolo`
-
-Set Codex-mode Animas to YOLO sandbox defaults
-
-`usage: animaworks anima codex-yolo [-h] [--all] [--restart] [anima]`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name (not required with --all) |
-| --all | flag | false | — | Apply to all enabled Codex-mode animas |
-| --restart | flag | false | — | Restart updated animas when the server is running |
 
 ## `anima create`
 
@@ -123,7 +111,7 @@ List all animas with status
 
 ## `anima permissions`
 
-Display an Anima's permission configuration
+Display Anima permission configuration
 
 `usage: animaworks anima permissions [-h] anima`
 
@@ -153,22 +141,6 @@ Rename an anima
 | old_name | positional | — | — | Current anima name |
 | new_name | positional | — | — | New anima name |
 | --force | flag | false | — | Skip confirmation prompt |
-
-## `anima repair-bootstrap`
-
-Inspect or repair first-run bootstrap state
-
-`usage: animaworks anima repair-bootstrap [-h]
-                                         (--status | --retry | --complete | --fresh)
-                                         anima`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| anima | positional | — | — | Anima name |
-| --status | flag | false | — | Show bootstrap state and validation errors without changing files |
-| --retry | flag | false | — | Restore bootstrap artifacts and prepare another bootstrap attempt |
-| --complete | flag | false | — | Archive stale bootstrap artifacts and mark a fully defined Anima as completed |
-| --fresh | flag | false | — | Archive runtime data and recreate a blank Anima while preserving model settings |
 
 ## `anima restart`
 
@@ -692,9 +664,29 @@ Run a stdio MCP server for an anima
 | --project | option | — | — | Default project archive |
 | --tools | option | "search_memory,read_memory_file,write_memory_file" | — | Comma-separated exposed tools |
 
+## `memory`
+
+Check and maintain memory
+
+`usage: animaworks memory [-h] {forgetting-dry-run} ...`
+
+| Name | Type | Default | Choices | Description |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `memory forgetting-dry-run`
+
+Show the number of targets for low activation and complete forgetting without updating
+
+`usage: animaworks memory forgetting-dry-run [-h] --anima ANIMA`
+
+| Name | Type | Default | Choices | Description |
+|---|---|---|---|---|
+| --anima | option | — | — | Anima name to check |
+
 ## `migrate`
 
-Run required migrations on runtime data.
+Run necessary migrations on runtime data.
 
 `usage: animaworks migrate [-h] [--dry-run] [--verbose] [--list] [--force]`
 
@@ -1332,7 +1324,7 @@ Update task status
 
 ## `task-store`
 
-Maintain and migrate per-assignee task source of truth
+Maintain and migrate the authoritative task store per assignee
 
 `usage: animaworks task-store [-h]
                              {status,quiesce,resume,migrate,backup,export} ...`
@@ -1355,7 +1347,7 @@ Create a new DB backup including WAL
 
 ## `task-store export`
 
-Write the current shutdown state to a new directory
+Write the current quiesced state to a new directory
 
 `usage: animaworks task-store export [-h] --anima ANIMA --destination
                                     DESTINATION`
@@ -1367,7 +1359,7 @@ Write the current shutdown state to a new directory
 
 ## `task-store migrate`
 
-Import a shutdown old ledger (backup required)
+Import a quiesced old ledger (backup required)
 
 `usage: animaworks task-store migrate [-h] --anima ANIMA --backup BACKUP`
 
@@ -1388,23 +1380,23 @@ Permanently stop acquiring new executions
 
 ## `task-store resume`
 
-Resume fetching new runs
+Resume acquiring new executions
 
 `usage: animaworks task-store resume [-h] --anima ANIMA`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
-| --anima | option | — | — | Name of the target assignee |
+| --anima | option | — | — | Target assignee name |
 
 ## `task-store status`
 
-Show shutdown gate and run count
+Show the quiesce gate and execution count
 
 `usage: animaworks task-store status [-h] --anima ANIMA`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
-| --anima | option | — | — | Name of the target assignee |
+| --anima | option | — | — | Target assignee name |
 
 ## `tmp`
 

@@ -30,13 +30,13 @@ def main():
         import sys
         from pathlib import Path
 
-        # Add the tests directory to the Python path
-        tests_dir = Path(__file__).parent.parent.parent
-        if str(tests_dir) not in sys.path:
-            sys.path.insert(0, str(tests_dir))
+        # Add the project root to the Python path
+        project_root = Path(__file__).resolve().parents[3]
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
 
-        from evaluation.framework.analysis import StatisticalAnalyzer
-        from evaluation.framework.visualization import ExperimentVisualizer
+        from benchmarks.evaluation.framework.analysis import StatisticalAnalyzer
+        from benchmarks.evaluation.framework.visualization import ExperimentVisualizer
     except ImportError as e:
         logger.error(f"Missing dependencies: {e}")
         logger.error("Install with: pip install -e '.[evaluation]'")
@@ -46,7 +46,7 @@ def main():
         return
 
     # Create output directory
-    output_dir = Path("tests/evaluation/demo_output")
+    output_dir = Path("benchmarks/evaluation/demo_output")
     output_dir.mkdir(exist_ok=True, parents=True)
     logger.info(f"Output directory: {output_dir}")
 
