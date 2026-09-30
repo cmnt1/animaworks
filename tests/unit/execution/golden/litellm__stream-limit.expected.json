@@ -125,11 +125,6 @@
       }
     },
     {
-      "type": "tool_start",
-      "tool_name": "search_memory",
-      "tool_id": "call_limit_5"
-    },
-    {
       "type": "context_update",
       "context_usage_ratio": 7.8125e-05,
       "input_tokens": 10,

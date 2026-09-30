@@ -195,6 +195,8 @@ class TestExecuteSimple:
         with patch("litellm.acompletion", mock):
             result = await executor.execute("test prompt", system_prompt="sys")
         assert "Hello world" in result.text
+        assert "stream" not in mock.call_args.kwargs
+        assert mock.call_args.kwargs["num_retries"] == 0
 
     async def test_no_result_message(self, executor):
         resp = make_litellm_response(content="text")

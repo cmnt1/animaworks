@@ -135,7 +135,7 @@ class TestInLoopRetry:
         _mock_rate_guard.report_block.assert_called_once_with("openai:api", 1800, "auth", reset_in_s=None)
 
     async def test_streaming_reporter_blocks_quota_and_auth(self):
-        from core.execution.engines.litellm._litellm_streaming import _make_rate_guard_reporter
+        from core.execution.engines.litellm.litellm_loop import _make_rate_guard_reporter
         from core.execution.error_classifier import classify_llm_error_message
 
         guard = MagicMock()
@@ -185,6 +185,7 @@ class TestInLoopRetry:
         with patch("litellm.acompletion", mock):
             result = await executor.execute("test", system_prompt="sys")
         assert result.text == "[Session interrupted by user]"
+        assert result.truncated is True
         assert mock.call_count == 1
 
 
@@ -322,7 +323,7 @@ class TestStreamingRetry:
         mock = AsyncMock(side_effect=[_RateLimitError("too many requests"), final])
         with (
             patch("litellm.acompletion", mock),
-            patch("core.execution.engines.litellm._litellm_streaming.decorrelated_jitter", return_value=0.0),
+            patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0),
         ):
             events = await self._collect(
                 ollama_executor.execute_streaming(
@@ -345,7 +346,7 @@ class TestStreamingRetry:
         mock = AsyncMock(side_effect=[resp_tool, err, err, err, err])
         with (
             patch("litellm.acompletion", mock),
-            patch("core.execution.engines.litellm._litellm_streaming.decorrelated_jitter", return_value=0.0),
+            patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0),
             pytest.raises(StreamDisconnectedError),
         ):
             await self._collect(

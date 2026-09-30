@@ -681,7 +681,7 @@ class TestA2StreamingRunawayGuard:
             patch("litellm.acompletion", mock_acompletion),
             patch.object(ollama_executor, "_preflight_clamp", return_value={}),
             patch.object(ollama_executor, "_process_streaming_tool_calls", mock_process),
-            patch("core.execution.engines.litellm._litellm_streaming.RunawayGuard", SmallWindowGuard),
+            patch("core.execution.engines.litellm.litellm_loop.RunawayGuard", SmallWindowGuard),
         ):
             events = await _collect_events(
                 ollama_executor.execute_streaming(
@@ -797,7 +797,7 @@ class TestA2TokenLevelErrorRaisesStreamDisconnected:
         with (
             pytest.raises(StreamDisconnectedError) as exc_info,
             patch("litellm.acompletion", mock_acompletion),
-            patch("core.execution.engines.litellm._litellm_streaming.decorrelated_jitter", return_value=0.0),
+            patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0),
             patch.object(litellm_executor, "_preflight_clamp", return_value={}),
         ):
             await _collect_events(
@@ -961,71 +961,43 @@ class TestA2IterationLevelWithToolCall:
         assert done[0]["full_text"] == "Found it!"
 
 
-class TestA2DispatchToTokenLevel:
-    """Non-Ollama model routes to token-level streaming."""
+class TestA2CallAdapterDispatch:
+    """The public stream entry selects transport behavior from the model."""
 
-    async def test_non_ollama_uses_token_level(self, litellm_executor) -> None:
-        tracker = MagicMock(spec=ContextTracker)
-
-        # Spy on _stream_token_level
-        token_called = False
-        original_token = litellm_executor._stream_token_level
-
-        async def spy_token(*args, **kwargs):
-            nonlocal token_called
-            token_called = True
-            async for event in original_token(*args, **kwargs):
-                yield event
-
-        chunks = [
-            FakeStreamChunk(text="test"),
-            FakeStreamChunk(finish_reason="stop"),
-        ]
+    async def test_non_ollama_uses_token_streaming(self, litellm_executor) -> None:
+        chunks = [FakeStreamChunk(text="test"), FakeStreamChunk(finish_reason="stop")]
+        mock_completion = AsyncMock(return_value=_fake_async_stream(chunks))
 
         with (
-            patch("litellm.acompletion", AsyncMock(return_value=_fake_async_stream(chunks))),
+            patch("litellm.acompletion", mock_completion),
             patch.object(litellm_executor, "_preflight_clamp", return_value={}),
-            patch.object(litellm_executor, "_stream_token_level", spy_token),
         ):
             await _collect_events(
                 litellm_executor.execute_streaming(
                     system_prompt="sys",
                     prompt="test",
-                    tracker=tracker,
+                    tracker=MagicMock(spec=ContextTracker),
                 )
             )
 
-        assert token_called is True
+        assert mock_completion.call_args.kwargs["stream"] is True
+        assert mock_completion.call_args.kwargs["stream_options"] == {"include_usage": True}
 
-
-class TestA2DispatchToIterationLevel:
-    """Ollama model routes to iteration-level streaming."""
-
-    async def test_ollama_uses_iteration_level(self, ollama_executor) -> None:
-        tracker = MagicMock(spec=ContextTracker)
-
-        iteration_called = False
-        original_iter = ollama_executor._stream_iteration_level
-
-        async def spy_iter(*args, **kwargs):
-            nonlocal iteration_called
-            iteration_called = True
-            async for event in original_iter(*args, **kwargs):
-                yield event
-
-        resp = _make_litellm_a2_response(content="ok", tool_calls=None)
+    async def test_ollama_uses_iteration_response(self, ollama_executor) -> None:
+        response = _make_litellm_a2_response(content="ok", tool_calls=None)
+        mock_completion = AsyncMock(return_value=response)
 
         with (
-            patch("litellm.acompletion", AsyncMock(return_value=resp)),
+            patch("litellm.acompletion", mock_completion),
             patch.object(ollama_executor, "_preflight_clamp", return_value={}),
-            patch.object(ollama_executor, "_stream_iteration_level", spy_iter),
         ):
             await _collect_events(
                 ollama_executor.execute_streaming(
                     system_prompt="sys",
                     prompt="test",
-                    tracker=tracker,
+                    tracker=MagicMock(spec=ContextTracker),
                 )
             )
 
-        assert iteration_called is True
+        assert "stream" not in mock_completion.call_args.kwargs
+        assert mock_completion.call_args.kwargs["num_retries"] == 0
