@@ -51,6 +51,24 @@ class TestIsAdaptiveModel:
     def test_old_sonnet(self):
         assert is_adaptive_model("claude-sonnet-4-5-20250929") is False
 
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-sonnet-5",
+            "claude-fable-5-1",
+            "claude-opus-4-7",
+            "bedrock/jp.anthropic.claude-opus-5-5",
+        ],
+    )
+    def test_claude_4_7_and_later_are_adaptive(self, model):
+        assert is_adaptive_model(model) is True
+
+    @pytest.mark.parametrize("model", ["claude-haiku-4-5", "claude-opus-4-5-20251101", "claude-3-7-sonnet-20250219"])
+    def test_older_claude_not_adaptive(self, model):
+        assert is_adaptive_model(model) is False
+
     def test_non_claude(self):
         assert is_adaptive_model("openai/gpt-4o") is False
 
@@ -371,7 +389,24 @@ class TestLiteLLMAdaptiveThinking:
         kwargs = ex._build_llm_kwargs()
         assert kwargs["thinking"] == {"type": "adaptive"}
         assert kwargs["reasoning_effort"] == "medium"
-        assert kwargs["temperature"] == 1
+        # Adaptive models take the default temperature; 4.7+ reject it outright.
+        assert "temperature" not in kwargs
+
+    def test_claude_5_gets_adaptive_not_budget(self, anima_dir, tool_handler, memory):
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+
+        cfg = ModelConfig(model="anthropic/claude-opus-5-5", thinking=True, thinking_effort="max", api_key="k")
+        ex = LiteLLMExecutor(
+            model_config=cfg,
+            anima_dir=anima_dir,
+            tool_handler=tool_handler,
+            tool_registry=[],
+            memory=memory,
+        )
+        kwargs = ex._build_llm_kwargs()
+        assert kwargs["thinking"] == {"type": "adaptive"}
+        assert kwargs["reasoning_effort"] == "max"
+        assert "temperature" not in kwargs
 
     def test_old_claude_gets_manual_thinking(self, anima_dir, tool_handler, memory):
         from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
