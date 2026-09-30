@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=180823a8c7bc50385b74c0144a1d8f1884784e5889a68c8865182ca7636498e1 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # CLI 참조: `animaworks`
 
@@ -14,7 +14,7 @@
 
 ## `anima`
 
-anima 프로세스 관리
+애니마 프로세스 관리
 
 `usage: animaworks anima [-h]
                         {restart,status,create,delete,disable,enable,list,info,permissions,set-model,set-background-model,reload,set-role,rename,audit}
@@ -26,7 +26,7 @@ anima 프로세스 관리
 
 ## `anima audit`
 
-하위 anima의 최근 활동 감사
+하위 애니마의 최근 활동 감사
 
 `usage: animaworks anima audit [-h] [--all] [--days DAYS] [--since SINCE]
                               [--date DATE]
@@ -34,15 +34,15 @@ anima 프로세스 관리
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | 대상 anima 이름 (--all 사용 시 생략 가능) |
-| --all | flag | false | — | 모든 anima 감사 |
+| anima | positional | — | — | 대상 애니마 이름 (--all 사용 시 생략) |
+| --all | flag | false | — | 모든 애니마 감사 |
 | --days | option | 1 | — | 감사할 일수 (기본값: 1, 최대: 30) |
-| --since | option | — | — | 시작 시간 (HH:MM 형식, 오늘, JST). 지정 시 --days를 재정의 |
+| --since | option | — | — | HH:MM 형식의 시작 시간 (오늘, JST). 지정 시 --days를 재정의 |
 | --date | option | — | — | 특정 날짜 (YYYY-MM-DD, 'today', 또는 'yesterday'). 해당 날짜의 활동만 표시 |
 
 ## `anima create`
 
-새 anima 생성
+새 애니마 생성
 
 `usage: animaworks anima create [-h] [--name NAME] [--template TEMPLATE]
                                [--from-md PATH] [--supervisor SUPERVISOR]
@@ -50,58 +50,58 @@ anima 프로세스 관리
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --name | option | — | — | Anima 이름 (빈칸일 때 필수, template/md일 때 선택) |
+| --name | option | — | — | 애니마 이름 (빈칸일 때 필수, template/md일 때 선택) |
 | --template | option | — | — | 이름이 있는 템플릿에서 생성 |
 | --from-md | option | — | — | MD 파일에서 생성 |
-| --supervisor | option | — | — | 상위 anima 이름 (캐릭터 시트 재정의) |
+| --supervisor | option | — | — | 상위 애니마 이름 (캐릭터 시트 재정의) |
 | --role | option | — | engineer, researcher, manager, writer, ops, general | 적용할 역할 템플릿 (기본값: general) |
 
 ## `anima delete`
 
-anima 삭제 (선택적 아카이브 포함)
+애니마 삭제 (선택적 아카이브 포함)
 
 `usage: animaworks anima delete [-h] [--no-archive] [--force] anima`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | 삭제할 anima 이름 |
+| anima | positional | — | — | 삭제할 애니마 이름 |
 | --no-archive | flag | false | — | 삭제 전 ZIP 아카이브 생성 건너뛰기 |
 | --force | flag | false | — | 확인 프롬프트 건너뛰기 |
 
 ## `anima disable`
 
-anima 비활성화 (休養)
+애니마 비활성화 (휴양)
 
 `usage: animaworks anima disable [-h] anima`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | 비활성화할 anima 이름 |
+| anima | positional | — | — | 비활성화할 애니마 이름 |
 
 ## `anima enable`
 
-anima 활성화 (復帰)
+애니마 활성화 (복귀)
 
 `usage: animaworks anima enable [-h] anima`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | 활성화할 anima 이름 |
+| anima | positional | — | — | 활성화할 애니마 이름 |
 
 ## `anima info`
 
-anima의 상세 설정 표시
+애니마의 상세 설정 표시
 
 `usage: animaworks anima info [-h] [--json] anima`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 |
+| anima | positional | — | — | 애니마 이름 |
 | --json | flag | false | — | JSON으로 출력 |
 
 ## `anima list`
 
-상태와 함께 모든 anima 나열
+모든 애니마를 상태와 함께 나열
 
 `usage: animaworks anima list [-h] [--local]`
 
@@ -111,46 +111,46 @@ anima의 상세 설정 표시
 
 ## `anima permissions`
 
-Anima의 권한 설정 표시
+애니마의 권한 설정 표시
 
 `usage: animaworks anima permissions [-h] anima`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 |
+| anima | positional | — | — | 애니마 이름 |
 
 ## `anima reload`
 
-status.json에서 anima 설정 핫 리로드
+status.json에서 애니마 설정 핫 리로드
 
 `usage: animaworks anima reload [-h] [--all] [anima]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 (--all 사용 시 필수 아님) |
-| --all | flag | false | — | 실행 중인 모든 anima의 설정 리로드 |
+| anima | positional | — | — | 애니마 이름 (--all 사용 시 불필요) |
+| --all | flag | false | — | 실행 중인 모든 애니마의 설정 리로드 |
 
 ## `anima rename`
 
-anima 이름 변경
+애니마 이름 변경
 
 `usage: animaworks anima rename [-h] [--force] old_name new_name`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| old_name | positional | — | — | 현재 anima 이름 |
-| new_name | positional | — | — | 새 anima 이름 |
+| old_name | positional | — | — | 현재 애니마 이름 |
+| new_name | positional | — | — | 새 애니마 이름 |
 | --force | flag | false | — | 확인 프롬프트 건너뛰기 |
 
 ## `anima restart`
 
-anima 프로세스 재시작
+애니마 프로세스 재시작
 
 `usage: animaworks anima restart [-h] anima`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 |
+| anima | positional | — | — | 애니마 이름 |
 
 ## `anima set-background-model`
 
@@ -162,25 +162,25 @@ heartbeat/cron 모델 설정
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 |
+| anima | positional | — | — | 애니마 이름 |
 | model | positional | — | — | 배경 모델 이름 |
 | --credential | option | — | — | 자격 증명 이름 |
-| --all | flag | false | — | 모든 활성 anima에 적용 |
+| --all | flag | false | — | 활성화된 모든 애니마에 적용 |
 | --clear | flag | false | — | 배경 모델 재정의 제거 |
 
 ## `anima set-model`
 
-지정된 anima의 주 모델을 변경합니다.
+지정된 애니마의 주 모델을 변경합니다.
 
 `usage: animaworks anima set-model [-h] [--credential CREDENTIAL] [--all]
                                   [anima] [model]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | Anima 이름 (--all 사용 시 필수 아님) |
+| anima | positional | — | — | 애니마 이름 (--all 사용 시 불필요) |
 | model | positional | — | — | 모델 이름 (예: azure/gpt-4.1-mini) |
 | --credential | option | — | — | 자격 증명 이름 |
-| --all | flag | false | — | 모든 활성 anima에 적용 |
+| --all | flag | false | — | 활성화된 모든 애니마에 적용 |
 
 ## `anima set-role`
 
@@ -192,10 +192,10 @@ heartbeat/cron 모델 설정
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | 애니마 이름 |
-| role | 위치 인자 | — | engineer, researcher, manager, writer, ops, general | 새로 부여할 역할 |
-| --status-only | 플래그 | false | — | status.json 역할 필드만 업데이트하고 템플릿 파일 재적용은 건너뜀 |
-| --no-restart | 플래그 | false | — | 역할 변경 후 자동 재시작 건너뜀 |
+| anima | positional | — | — | 애니마 이름 |
+| role | positional | — | engineer, researcher, manager, writer, ops, general | 할당할 새 역할 |
+| --status-only | flag | false | — | status.json 역할 필드만 업데이트; 템플릿 파일 재적용 건너뛰기 |
+| --no-restart | flag | false | — | 역할 변경 후 자동 재시작 건너뛰기 |
 
 ## `anima status`
 
@@ -205,7 +205,7 @@ heartbeat/cron 모델 설정
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | 애니마 이름 (모든 애니마를 보려면 생략) |
+| anima | positional | — | — | 애니마 이름 (모든 애니마는 생략) |
 
 ## `board`
 
@@ -219,15 +219,15 @@ heartbeat/cron 모델 설정
 
 ## `board dm-history`
 
-상대방과의 DM 기록 읽기
+피어와의 DM 기록 읽기
 
 `usage: animaworks board dm-history [-h] [--limit LIMIT] from_anima peer`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| from_anima | 위치 인자 | — | — | 보내는 애니마 이름 |
-| peer | 위치 인자 | — | — | 상대 애니마 이름 |
-| --limit | 옵션 | 20 | — | 최대 메시지 수 |
+| from_anima | positional | — | — | 자기 애니마 이름 |
+| peer | positional | — | — | 피어 애니마 이름 |
+| --limit | option | 20 | — | 최대 메시지 수 |
 
 ## `board post`
 
@@ -266,20 +266,20 @@ heartbeat/cron 모델 설정
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | anima | 위치 인자 | — | — | 애니마 이름 |
-| message | 위치 인자 | — | — | 보낼 메시지 (생략하면 대화형 TUI 열림) |
-| --local | 플래그 | false | — | (사용 중단) 직접 모드 (게이트웨이 없음) |
+| message | 위치 인자 | — | — | 보낼 메시지 (생략하면 대화형 TUI가 열림) |
+| --local | 플래그 | false | — | (더 이상 사용되지 않음) 직접 모드 (게이트웨이 없음) |
 | --from, --as | 옵션 | "human" | — | 보내는 사람 이름 (기본값: human) |
 | --thread | 옵션 | "default" | — | 스레드 ID (기본값: default) |
 | --no-tui | 플래그 | false | — | 메시지가 없을 때 TUI를 열지 않고 stdin을 읽음 |
 | --resume | 옵션 | — | — | 이전 TUI 세션 재개 (선택적 SESSION_ID; 기본값은 최신) |
-| --sessions | 플래그 | false | — | 저장된 TUI 세션 목록 표시 후 종료 |
+| --sessions | 플래그 | false | — | 저장된 TUI 세션 목록을 표시하고 종료 |
 | --user | 옵션 | — | — | 인증된 게이트웨이용 사용자 이름 |
 | --password | 옵션 | — | — | 인증된 게이트웨이용 비밀번호 (프로세스 목록에 표시됨) |
 | --no-reattach | 플래그 | false | — | 시작 시 진행 중인 스트림에 다시 연결하지 않음 |
 
 ## `company`
 
-회사 워크스페이스, 애니마 소속, 회사 소유 자산 관리.
+회사 워크스페이스, 애니마 소속, 회사 소유 자산을 관리합니다.
 
 `usage: animaworks company [-h] {create,list,assign,adopt,split,export} ...`
 
@@ -289,14 +289,14 @@ heartbeat/cron 모델 설정
 
 ## `company adopt`
 
-데이터 디렉터리 자산을 회사로 이동하고, 먼저 백업한 후 일반적으로 이전 경로에 상대 심볼릭 링크를 남깁니다.
+데이터 디렉터리 자산을 회사 아래로 이동하고, 먼저 백업한 후 일반적으로 이전 경로에 상대 심볼릭 링크를 남깁니다.
 
 `usage: animaworks company adopt [-h] --to NAME [--dest SUBDIR] [--no-symlink]
                                 path [path ...]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| path | 위치 인자 | — | — | 데이터 디렉터리 기준 또는 절대 자산 경로 |
+| path | 위치 인자 | — | — | 데이터 디렉터리 상대 또는 절대 자산 경로 |
 | --to | 옵션 | — | — | 대상 회사 |
 | --dest | 옵션 | — | shared, knowledge, skills, credentials, . | 대상 하위 디렉터리 (기본값: 각 소스에서 추론) |
 | --no-symlink | 플래그 | false | — | 이전 경로에 심볼릭 링크를 남기지 않음 |
@@ -310,7 +310,7 @@ heartbeat/cron 모델 설정
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | 애니마 이름(들) |
+| anima | 위치 인자 | — | — | 애니마 이름 |
 | --to | 옵션 | — | — | 대상 회사 |
 | --unassign | 플래그 | false | — | 회사 배정 해제 |
 
@@ -327,7 +327,7 @@ heartbeat/cron 모델 설정
 
 ## `company export`
 
-회사의 구성원과 자산을 비밀값을 가리고 남은 마이그레이션 작업을 문서화하여 휴대용 마이그레이션 번들로 수집합니다.
+회사의 구성원과 자산을 휴대용 마이그레이션 번들로 수집하며, 비밀값은 삭제되고 남은 마이그레이션 작업은 문서화됩니다.
 
 `usage: animaworks company export [-h] --out DIR name`
 
@@ -359,7 +359,7 @@ heartbeat/cron 모델 설정
 
 ## `config`
 
-설정 관리
+구성 관리
 
 `usage: animaworks config [-h] [--interactive] {get,set,list} ...`
 
@@ -369,7 +369,7 @@ heartbeat/cron 모델 설정
 
 ## `config get`
 
-설정 값 가져오기
+구성 값 가져오기
 
 `usage: animaworks config get [-h] [--show-secrets] key`
 
@@ -380,7 +380,7 @@ heartbeat/cron 모델 설정
 
 ## `config list`
 
-모든 설정 값 나열
+모든 구성 값 나열
 
 `usage: animaworks config list [-h] [--section SECTION] [--show-secrets]`
 
@@ -391,7 +391,7 @@ heartbeat/cron 모델 설정
 
 ## `config set`
 
-설정 값을 설정합니다
+구성 값 설정
 
 `usage: animaworks config set [-h] key value`
 
@@ -408,7 +408,7 @@ cli.cost_help
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | Anima 이름 (모든 anima 생략 가능) |
+| anima | 위치 인자 | — | — | 애니마 이름 (생략하면 모든 애니마) |
 | --days | 옵션 | 30 | — | 집계할 일 수 (기본값: 30) |
 | --today | 플래그 | false | — | 오늘만 표시 |
 | --json | 플래그 | false | — | JSON으로 출력 |
@@ -453,7 +453,7 @@ Hermes 또는 OpenClaw 데이터를 AnimaWorks로 가져오기
 
 ## `import hermes`
 
-Hermes 에이전트 데이터 가져오기
+Hermes Agent 데이터 가져오기
 
 `usage: animaworks import hermes [-h] --path PATH [--dry-run | --apply]
                                 [--replace] [--json] [--common-skills]
@@ -467,7 +467,7 @@ Hermes 에이전트 데이터 가져오기
 | --replace | 플래그 | false | — | 백업 매니페스트 후 기존 생성 대상 교체 |
 | --json | 플래그 | false | — | Markdown 대신 JSON 출력 |
 | --common-skills | 플래그 | false | — | 스킬을 common_skills/community로 가져오기 |
-| --target-anima | 옵션 | — | — | 개인 스킬, 사용 기록, 작업, 초안의 대상 anima |
+| --target-anima | 옵션 | — | — | 개인 스킬, 사용법, 작업, 초안의 대상 anima |
 
 ## `import openclaw`
 
@@ -488,7 +488,7 @@ OpenClaw 데이터 가져오기
 
 ## `index`
 
-하이브리드 검색을 위해 메모리 파일을 벡터 데이터베이스로 인덱싱합니다.
+하이브리드 검색을 위해 메모리 파일을 벡터 데이터베이스에 인덱싱합니다.
 
 `usage: animaworks index [-h] [--anima ANIMA] [--full] [--shared] [--dry-run]`
 
@@ -497,11 +497,11 @@ OpenClaw 데이터 가져오기
 | --anima | 옵션 | — | — | 이 anima의 메모리만 인덱싱 (기본값: 모든 anima) |
 | --full | 플래그 | false | — | 전체 재인덱싱 강제 (기존 인덱스 삭제 후 재구축) |
 | --shared | 플래그 | false | — | 공유 컬렉션(common_knowledge + common_skills)을 각 활성 anima의 DB에 인덱싱 |
-| --dry-run | 플래그 | false | — | 실제 인덱싱 없이 인덱싱될 항목 표시 |
+| --dry-run | 플래그 | false | — | 실제 인덱싱 없이 인덱싱될 항목만 표시 |
 
 ## `init`
 
-runtime 디렉터리를 초기화하고 필요에 따라 anima를 생성합니다.
+런타임 디렉터리를 초기화하고, 필요에 따라 anima를 생성합니다.
 
 `usage: animaworks init [-h]
                        [--force | --template NAME | --from-md PATH | --blank NAME | --skip-anima]
@@ -509,11 +509,11 @@ runtime 디렉터리를 초기화하고 필요에 따라 anima를 생성합니�
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --force | 플래그 | false | — | 기존 runtime에 누락된 템플릿 파일 병합 |
+| --force | 플래그 | false | — | 기존 런타임에 누락된 템플릿 파일 병합 |
 | --template | 옵션 | — | — | 비대화형: 이름이 지정된 템플릿에서 anima 생성 |
 | --from-md | 옵션 | — | — | 비대화형: MD 파일에서 anima 생성 |
 | --blank | 옵션 | — | — | 비대화형: 지정된 이름으로 빈 anima 생성 |
-| --skip-anima | 플래그 | false | — | 인프라만 초기화, anima 생성 건너뛰기 |
+| --skip-anima | 플래그 | false | — | 인프라만 초기화하고 anima 생성 건너뛰기 |
 | --name | 옵션 | — | — | anima 이름 재정의 (--from-md와 함께 사용) |
 
 ## `internal`
@@ -593,24 +593,24 @@ Anima 사용을 위한 내부 도구
 
 ## `logs`
 
-아니마 로그 보기
+anima 로그 보기
 
 `usage: animaworks logs [-h] [--all] [--lines LINES] [--date DATE] [anima]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | 위치 인자 | — | — | Anima 이름 (--all 사용 시 필수 아님) |
-| --all | 플래그 | false | — | 모든 로그 표시 (서버 + 모든 아니마) |
+| anima | 위치 인자 | — | — | Anima 이름 (--all이 아니면 필수) |
+| --all | 플래그 | false | — | 모든 로그 표시 (서버 + 모든 anima) |
 | --lines | 옵션 | 50 | — | 표시할 줄 수 (기본값: 50) |
 | --date | 옵션 | — | — | 특정 날짜 (YYYYMMDD 형식) |
 
 ## `mcp`
 
-아니마용 stdio MCP 서버 실행
+anima용 stdio MCP 서버 실행
 
 `usage: animaworks mcp [-h] --anima ANIMA [--project PROJECT] [--tools TOOLS]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --anima | 옵션 | — | — | Anima 이름 |
 | --project | 옵션 | — | — | 기본 프로젝트 아카이브 |
@@ -622,17 +622,17 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks memory [-h] {forgetting-dry-run} ...`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
 ## `memory forgetting-dry-run`
 
-업데이트 없이 저활성화 및 완전 망각 대상 건수 표시
+업데이트 없이 저활성화 및 완전 망각 대상 건수를 표시합니다
 
 `usage: animaworks memory forgetting-dry-run [-h] --anima ANIMA`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --anima | 옵션 | — | — | 확인할 Anima 이름 |
 
@@ -642,9 +642,9 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks migrate [-h] [--dry-run] [--verbose] [--list] [--force]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --dry-run | 플래그 | false | — | 아무것도 수정하지 않고 변경 사항 미리 보기 |
+| --dry-run | 플래그 | false | — | 아무것도 수정하지 않고 변경 사항 미리보기 |
 | --verbose | 플래그 | false | — | 파일 수준의 상세 변경 사항 표시 |
 | --list | 플래그 | false | — | 모든 마이그레이션 단계와 상태 나열 |
 | --force | 플래그 | false | — | 상태와 관계없이 모든 마이그레이션 재적용 |
@@ -655,27 +655,27 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks models [-h] {list,info,show} ...`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
 ## `models info`
 
-모델의 해석 모드와 컨텍스트 표시
+모델의 해석된 모드와 컨텍스트 표시
 
 `usage: animaworks models info [-h] model`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | model | 위치 인자 | — | — | 모델 이름 (예: claude-sonnet-4-6) |
 
 ## `models list`
 
-알려진 모델 목록
+알려진 모델 목록 표시
 
 `usage: animaworks models list [-h] [--mode {A,C,D,G,S,X,a,c,d,g,s,x}] [--json]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --mode | 옵션 | — | A, C, D, G, S, X, a, c, d, g, s, x | 실행 모드로 필터링 |
 | --json | 플래그 | false | — | JSON으로 출력 |
@@ -686,7 +686,7 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks models show [-h] [--json]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --json | 플래그 | false | — | 원시 JSON 출력 |
 
@@ -699,10 +699,10 @@ Anima 사용을 위한 내부 도구
                                   [--texture-resize RES] [--all]
                                   [--skip-backup]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --anima, -a | 옵션 | — | — | 특정 아니마의 에셋만 최적화 |
-| --dry-run | 플래그 | false | — | 변경 없이 수행될 작업 표시 |
+| --anima, -a | 옵션 | — | — | 특정 anima의 에셋만 최적화 |
+| --dry-run | 플래그 | false | — | 변경 없이 수행될 작업만 표시 |
 | --simplify | 옵션 | — | — | 메시 단순화 (기본 비율: 0.27 ≈ 30K→8K 폴리곤) |
 | --texture-compress | 플래그 | false | — | 텍스처를 WebP 형식으로 변환 |
 | --texture-resize | 옵션 | — | — | 텍스처를 RES×RES로 크기 조정 (기본값: --texture-compress 설정 시 1024) |
@@ -716,7 +716,7 @@ Anima 사용을 위한 내부 도구
 `usage: animaworks profile [-h]
                           {list,add,remove,start,stop,start-all,stop-all} ...`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -726,19 +726,19 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks profile add [-h] [--data-dir DATA_DIR] [--port PORT] name`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | name | 위치 인자 | — | — | 프로필 이름 |
 | --data-dir | 옵션 | — | — | 데이터 디렉터리 (기본값: ~/.animaworks/<name>) |
-| --port | 옵션 | — | — | 포트 (기본값: 18500부터 자동 할당, 10씩 증가) |
+| --port | 옵션 | — | — | 포트 (기본값: 18500부터 자동 할당, 간격 10) |
 
 ## `profile list`
 
-상태와 함께 모든 프로필 나열
+상태와 함께 모든 프로필 목록 표시
 
 `usage: animaworks profile list [-h]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -748,17 +748,17 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks profile remove [-h] name`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | name | 위치 인자 | — | — | 프로필 이름 |
 
 ## `profile start`
 
-프로필용 서버 시작
+프로필에 대한 서버 시작
 
 `usage: animaworks profile start [-h] [--host HOST] name`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | name | 위치 인자 | — | — | 프로필 이름 |
 | --host | 옵션 | — | — | 호스트 (기본값: 0.0.0.0) |
@@ -769,20 +769,20 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks profile start-all [-h] [--host HOST]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --host | 옵션 | — | — | 호스트 (기본값: 0.0.0.0) |
 
 ## `profile stop`
 
-프로필용 서버 중지
+프로필에 대한 서버 중지
 
 `usage: animaworks profile stop [-h] [--force] name`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | name | 위치 인자 | — | — | 프로필 이름 |
-| --force | 플래그 | false | — | 강제 중지 (시간 초과 후 SIGKILL) |
+| --force | 플래그 | false | — | 강제 중지 (타임아웃 후 SIGKILL) |
 
 ## `profile stop-all`
 
@@ -790,23 +790,23 @@ Anima 사용을 위한 내부 도구
 
 `usage: animaworks profile stop-all [-h] [--force]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --force | 플래그 | false | — | 강제 중지 (시간 초과 후 SIGKILL) |
+| --force | 플래그 | false | — | 강제 중지 (타임아웃 후 SIGKILL) |
 
 ## `rag-repair-status`
 
-모든 아니마의 RAG 복구 상태 표시
+모든 anima의 RAG 복구 상태 표시
 
 `usage: animaworks rag-repair-status [-h] [--json]`
 
-| 이름 | 종류 | 기본값 | 선택지 | 설명 |
+| 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --json | 플래그 | false | — | 구조화된 JSON 출력 |
 
 ## `remake-assets`
 
-Vibe Transfer를 사용하여 참조 애니마의 아트 스타일에 맞게 캐릭터 에셋을 재생성합니다. 선택적 단계 실행과 자동 백업을 지원합니다.
+참조 anima의 아트 스타일에 맞게 Vibe Transfer를 사용하여 캐릭터 에셋 재생성. 선택적 단계 실행 및 자동 백업 지원.
 
 `usage: animaworks remake-assets [-h] --style-from STYLE_FROM [--steps STEPS]
                                 [--prompt PROMPT]
@@ -819,16 +819,16 @@ Vibe Transfer를 사용하여 참조 애니마의 아트 스타일에 맞게 캐
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| anima | positional | — | — | 에셋을 재생성할 애니마 이름 |
-| --style-from | option | — | — | 스타일 참조로 사용할 애니마 이름 (전신 이미지) |
-| --steps | option | — | — | 실행할 단계 목록 (쉼표로 구분, 선택지: fullbody, bustup, icon, chibi, 3d, rigging, animations). 기본값: 모든 단계 |
-| --prompt | option | — | — | 캐릭터 프롬프트 재정의 (기본값: prompt.txt에서 읽기) |
-| --vibe-strength | option | 0.6 | — | Vibe Transfer 강도 0.0-1.0 (기본값: 0.6) |
-| --vibe-info-extracted | option | 0.8 | — | Vibe Transfer 정보 추출 0.0-1.0 (기본값: 0.8) |
-| --seed | option | — | — | 재현을 위한 시드 (전신 생성 전용) |
-| --image-style | option | — | anime, realistic | 이미지 스타일 (기본값: config.json image_gen.image_style에서) |
-| --no-backup | flag | false | — | 기존 에셋의 자동 백업 건너뛰기 |
-| --dry-run | flag | false | — | API 호출 없이 수행될 작업만 표시 |
+| anima | 위치 인자 | — | — | 에셋을 재생성할 anima의 이름 |
+| --style-from | 옵션 | — | — | 스타일 참조로 사용할 anima 이름 (해당 전신 이미지) |
+| --steps | 옵션 | — | — | 실행할 단계의 쉼표 구분 목록 (선택지: fullbody, bustup, icon, chibi, 3d, rigging, animations). 기본값: 모든 단계 |
+| --prompt | 옵션 | — | — | 캐릭터 프롬프트 재정의 (기본값: prompt.txt에서 읽기) |
+| --vibe-strength | 옵션 | 0.6 | — | Vibe Transfer 강도 0.0-1.0 (기본값: 0.6) |
+| --vibe-info-extracted | 옵션 | 0.8 | — | Vibe Transfer 정보 추출 0.0-1.0 (기본값: 0.8) |
+| --seed | 옵션 | — | — | 재현을 위한 시드 (전신 생성 전용) |
+| --image-style | 옵션 | — | anime, realistic | 이미지 스타일 (기본값: config.json image_gen.image_style에서) |
+| --no-backup | 플래그 | false | — | 기존 에셋의 자동 백업 건너뛰기 |
+| --dry-run | 플래그 | false | — | API 호출 없이 수행될 작업만 표시 |
 
 ## `repair-rag`
 
@@ -841,18 +841,18 @@ Vibe Transfer를 사용하여 참조 애니마의 아트 스타일에 맞게 캐
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --anima | option | — | — | 복구할 애니마 이름 |
-| --all | flag | false | — | 모든 활성화된 애니마 복구 |
-| --suspect-only | flag | false | — | 최근 RAG 손상 증거가 있는 애니마만 복구 |
-| --list-suspects | flag | false | — | 복구 없이 손상 의심 RAG DB 목록만 표시 |
+| --anima | option | — | — | 복구할 Anima 이름 |
+| --all | flag | false | — | 활성화된 모든 anima 복구 |
+| --suspect-only | flag | false | — | 최근 RAG 손상 증거가 있는 anima만 복구 |
+| --list-suspects | flag | false | — | 복구하지 않고 의심되는 RAG DB 목록만 표시 |
 | --full | flag | false | — | 파괴적 격리 및 전체 재구축에 대한 확인 필요 |
-| --shared | flag | false | — | 호환성을 위해 허용; phase3는 항상 공유 컬렉션도 재구축 |
+| --shared | flag | false | — | 호환성을 위해 허용됨; phase3는 공유 컬렉션도 항상 재구축함 |
 | --window-minutes | option | — | — | --suspect-only/--list-suspects 조회 기간 (기본값: 복구 설정 창) |
 | --reason | option | "manual_repair_rag_cli" | — | ==SUPPRESS== |
 
 ## `reset`
 
-서버를 중지하고 런타임 디렉터리를 삭제한 후 다시 초기화합니다
+서버를 중지하고, 런타임 디렉터리를 삭제한 후 다시 초기화합니다
 
 `usage: animaworks reset [-h] [--restart]`
 
@@ -862,7 +862,7 @@ Vibe Transfer를 사용하여 참조 애니마의 아트 스타일에 맞게 캐
 
 ## `restart`
 
-서버 재시작 (중지 후 시작)
+서버를 재시작합니다 (중지 후 시작)
 
 `usage: animaworks restart [-h] [--host HOST] [--port PORT] [--foreground]
                           [--force]`
@@ -876,7 +876,7 @@ Vibe Transfer를 사용하여 참조 애니마의 아트 스타일에 맞게 캐
 
 ## `send`
 
-애니마에게 메시지 전송 (발신자는 애니마 또는 인간 사용자일 수 있음)
+anima에게 메시지 전송 (발신자는 anima 또는 인간 사용자일 수 있음)
 
 `usage: animaworks send [-h] [--thread-id THREAD_ID] [--reply-to REPLY_TO]
                        [--intent INTENT]
@@ -884,7 +884,7 @@ Vibe Transfer를 사용하여 참조 애니마의 아트 스타일에 맞게 캐
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| from_person | positional | — | — | 발신자 이름 (애니마가 아닌 이름은 인간으로 전송) |
+| from_person | positional | — | — | 발신자 이름 (anima가 아닌 이름은 인간으로 전송) |
 | to_person | positional | — | — | 수신자 이름 |
 | message | positional | — | — | 메시지 내용 |
 | --thread-id | option | — | — | 스레드 ID |
@@ -927,7 +927,7 @@ Skill Hub 가져오기 설치 및 관리
 |---|---|---|---|---|
 | skill_name | positional | — | — | 스킬 이름 |
 | --target | option | "personal" | personal, common | 설치 대상 |
-| --anima | option | — | — | personal 대상의 애니마 이름 |
+| --anima | option | — | — | personal 대상의 Anima 이름 |
 
 ## `skills install`
 
@@ -944,15 +944,15 @@ Skill Hub 가져오기 설치 및 관리
 | source | positional | — | — | 로컬 경로, 직접 URL 또는 github:owner/repo/path |
 | --target | option | "personal" | personal, common | 설치 대상 |
 | --anima | option | — | — | personal 대상의 Anima 이름 |
-| --dry-run | flag | false | — | 설치 없이 스테이징 및 검사만 수행 |
+| --dry-run | flag | false | — | 설치 없이 스테이징 및 스캔만 수행 |
 | --replace | flag | false | — | 백업 생성 후 기존 스킬 교체 |
 | --force | flag | false | — | 호환성을 위해 허용됨; 가져오기 정책은 여전히 적용됨 |
-| --quarantine | flag | false | — | 활성 카탈로그 대신 격리소에 설치 |
+| --quarantine | flag | false | — | 활성 카탈로그 대신 격리 상태로 설치 |
 | --trust-level | option | "community" | community, untrusted | 활성 설치에 적용할 신뢰 수준 |
 
 ## `skills ledger`
 
-스킬 콘텐츠 변경 목록 표시
+스킬 콘텐츠 변경 내역 표시
 
 `usage: animaworks skills ledger [-h] [--anima ANIMA] [skill_name]`
 
@@ -972,7 +972,7 @@ Skill Hub 가져오기 설치 및 관리
 |---|---|---|---|---|
 | --target | option | "personal" | personal, common | 설치 대상 |
 | --anima | option | — | — | personal 대상의 Anima 이름 |
-| --quarantine | flag | false | — | 격리 항목 목록 표시 |
+| --quarantine | flag | false | — | 격리 항목 표시 |
 
 ## `skills quarantine`
 
@@ -1009,16 +1009,16 @@ Skill Hub 가져오기 설치 및 관리
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| skill_name | positional | — | — | 스킬 이름 |
-| --approval-id | option | — | — | 인간 승인 식별자 |
-| --replace | flag | false | — | 백업으로 기존 활성 스킬 교체 |
-| --trust-level | option | "community" | community, untrusted | 승격 후 적용할 신뢰 수준 |
-| --target | option | "personal" | personal, common | 설치 대상 |
-| --anima | option | — | — | personal 대상의 Anima 이름 |
+| skill_name | 위치 인자 | — | — | 스킬 이름 |
+| --approval-id | 옵션 | — | — | 인간 승인 식별자 |
+| --replace | 플래그 | false | — | 기존 활성 스킬을 백업으로 대체 |
+| --trust-level | 옵션 | "community" | community, untrusted | 승격 후 적용할 신뢰 수준 |
+| --target | 옵션 | "personal" | personal, common | 설치 대상 |
+| --anima | 옵션 | — | — | 개인 대상용 Anima 이름 |
 
 ## `skills remove`
 
-설치되거나 격리된 스킬 제거
+설치되었거나 격리된 스킬 제거
 
 `usage: animaworks skills remove [-h] [--target {personal,common}]
                                 [--anima ANIMA]
@@ -1026,20 +1026,20 @@ Skill Hub 가져오기 설치 및 관리
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| skill_name | positional | — | — | 스킬 이름 |
-| --target | option | "personal" | personal, common | 설치 대상 |
-| --anima | option | — | — | personal 대상의 Anima 이름 |
+| skill_name | 위치 인자 | — | — | 스킬 이름 |
+| --target | 옵션 | "personal" | personal, common | 설치 대상 |
+| --anima | 옵션 | — | — | 개인 대상용 Anima 이름 |
 
 ## `skills rollback`
 
-원장 ID로 스킬 콘텐츠 변경 하나 롤백
+원장 ID로 스킬 내용 변경 하나를 롤백
 
 `usage: animaworks skills rollback [-h] --anima ANIMA id`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| id | positional | — | — | 원장 항목 ID |
-| --anima | option | — | — | 롤백을 위한 Anima context/owner |
+| id | 위치 인자 | — | — | 원장 항목 ID |
+| --anima | 옵션 | — | — | 롤백 대상 Anima context/owner |
 
 ## `start`
 
@@ -1049,9 +1049,9 @@ AnimaWorks 서버 시작
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --host | option | "0.0.0.0" | — | — |
-| --port | option | 18500 | — | — |
-| --foreground, -f | flag | false | — | 로그 출력과 함께 포그라운드로 실행 (기본값: 데몬화) |
+| --host | 옵션 | "0.0.0.0" | — | — |
+| --port | 옵션 | 18500 | — | — |
+| --foreground, -f | 플래그 | false | — | 로그 출력과 함께 포그라운드로 실행 (기본값: 데몬화) |
 
 ## `status`
 
@@ -1071,7 +1071,7 @@ AnimaWorks 서버 시작
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --force | flag | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
+| --force | 플래그 | false | — | 강제 중지: SIGTERM 시간 초과 후 SIGKILL, 고아 러너도 종료 |
 
 ## `supervisor`
 
@@ -1102,7 +1102,7 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --name | option | — | — | 특정 Anima 이름 (모든 하위 항목은 생략) |
+| --name | 옵션 | — | — | 특정 Anima 이름 (생략 시 모든 하위 대상) |
 
 ## `supervisor read-state`
 
@@ -1112,7 +1112,7 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| name | positional | — | — | 대상 Anima 이름 |
+| name | 위치 인자 | — | — | 대상 Anima 이름 |
 
 ## `supervisor task-tracker`
 
@@ -1122,7 +1122,7 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --status | option | "delegated" | — | 상태별 필터링 (기본값: delegated) |
+| --status | 옵션 | "delegated" | — | 상태별 필터 (기본값: delegated) |
 
 ## `task`
 
@@ -1146,27 +1146,27 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --source | option | "anima" | human, anima | — |
-| --instruction | option | — | — | 원본 지시문 텍스트 |
-| --assignee | option | — | — | 담당 애니마 이름 |
-| --summary | option | — | — | 한 줄 요약 (기본값: instruction[:100]) |
-| --relay-chain | option | — | — | 쉼표로 구분된 릴레이 체인 |
-| --workspace | option | — | — | 작업의 working_directory에 대한 워크스페이스 별칭 또는 경로 |
+| --source | 옵션 | "anima" | human, anima | — |
+| --instruction | 옵션 | — | — | 원본 지시문 텍스트 |
+| --assignee | 옵션 | — | — | 담당자 Anima 이름 |
+| --summary | 옵션 | — | — | 한 줄 요약 (기본값: instruction[:100]) |
+| --relay-chain | 옵션 | — | — | 쉼표로 구분된 릴레이 체인 |
+| --workspace | 옵션 | — | — | 작업의 working_directory용 작업공간 별칭 또는 경로 |
 
 ## `task board`
 
-작업 보드의 항목을 확인하고 조작합니다.
+작업 보드 항목을 확인하고 조작합니다.
 
 `usage: animaworks task board [-h] [--anima ANIMA | --all] [--stale STALE]
                              [--limit LIMIT] [--json]`
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --anima | option | — | — | 소유자의 작업 및 위임된 작업 표시 |
-| --all | flag | false | — | 모든 소유자 표시 |
-| --stale | option | — | — | DAYS보다 오래된 작업만 표시 |
-| --limit | option | 50 | — | 최대 행 수 (기본값: 50) |
-| --json | flag | false | — | JSON 출력 |
+| --anima | 옵션 | — | — | 소유자의 작업과 위임된 작업 표시 |
+| --all | 플래그 | false | — | 모든 소유자 표시 |
+| --stale | 옵션 | — | — | DAYS보다 오래된 작업만 표시 |
+| --limit | 옵션 | 50 | — | 최대 행 수 (기본값: 50) |
+| --json | 플래그 | false | — | JSON 출력 |
 
 ## `task cancel`
 
@@ -1176,9 +1176,9 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| task_id | positional | — | — | — |
-| --reason | option | — | — | — |
-| --json | flag | false | — | JSON 출력 |
+| task_id | 위치 인자 | — | — | — |
+| --reason | 옵션 | — | — | — |
+| --json | 플래그 | false | — | JSON 출력 |
 
 ## `task claim`
 
@@ -1188,9 +1188,9 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| task_id | positional | — | — | — |
-| --ttl | option | "30m" | — | 최대 4시간 임대 기간 (기본값: 30m) |
-| --json | flag | false | — | JSON 출력 |
+| task_id | 위치 인자 | — | — | — |
+| --ttl | 옵션 | "30m" | — | 최대 4시간 임대 기간 (기본값: 30m) |
+| --json | 플래그 | false | — | JSON 출력 |
 
 ## `task done`
 
@@ -1200,9 +1200,9 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| task_id | positional | — | — | — |
-| --note | option | — | — | — |
-| --json | flag | false | — | JSON 출력 |
+| task_id | 위치 인자 | — | — | — |
+| --note | 옵션 | — | — | — |
+| --json | 플래그 | false | — | JSON 출력 |
 
 ## `task list`
 
@@ -1213,7 +1213,7 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --status | option | — | pending, in_progress, delegated, done, cancelled | — |
+| --status | 옵션 | — | pending, in_progress, delegated, done, cancelled | — |
 
 ## `task note`
 
@@ -1223,9 +1223,9 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| task_id | positional | — | — | — |
-| text | positional | — | — | — |
-| --json | flag | false | — | JSON 출력 |
+| task_id | 위치 인자 | — | — | — |
+| text | 위치 인자 | — | — | — |
+| --json | 플래그 | false | — | JSON 출력 |
 
 ## `task release`
 
@@ -1235,12 +1235,12 @@ Anima용 슈퍼바이저 도구
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| task_id | positional | — | — | — |
-| --json | flag | false | — | JSON 출력 |
+| task_id | 위치 인자 | — | — | — |
+| --json | 플래그 | false | — | JSON 출력 |
 
 ## `task resume`
 
-저장된 실행 입력으로 작업 재대기
+저장된 실행 입력으로 작업을 다시 대기열에 넣기
 
 `usage: animaworks task resume [-h] --task-id TASK_ID`
 
@@ -1257,7 +1257,7 @@ Anima용 슈퍼바이저 도구
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | task_id | positional | — | — | 작업 ID 또는 위임자 별칭 |
-| --anima | option | — | — | 작업 소유자로 모호성 해소 |
+| --anima | option | — | — | 작업 소유자로 구분 |
 | --json | flag | false | — | JSON 출력 |
 
 ## `task update`
@@ -1276,7 +1276,7 @@ Anima용 슈퍼바이저 도구
 
 ## `task-store`
 
-담당자 단위 작업 원본의 유지보수 및 마이그레이션
+담당자 단위 작업 원본의 유지보수 및 이관
 
 `usage: animaworks task-store [-h]
                              {status,quiesce,resume,migrate,backup,export} ...`
@@ -1322,7 +1322,7 @@ WAL 포함 DB 백업 새로 생성
 
 ## `task-store quiesce`
 
-새 실행 획득 영구 종료
+새 실행 가져오기를 영구 종료
 
 `usage: animaworks task-store quiesce [-h] --anima ANIMA`
 
@@ -1332,7 +1332,7 @@ WAL 포함 DB 백업 새로 생성
 
 ## `task-store resume`
 
-새 실행 획득 재개
+새 실행 가져오기 재개
 
 `usage: animaworks task-store resume [-h] --anima ANIMA`
 
@@ -1370,11 +1370,11 @@ AnimaWorks 임시 디렉터리 검사 및 정리
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
 | --older-than | option | 7 | — | DAYS보다 오래된 항목 제거 (기본값: 7) |
-| --min-size | option | — | — | SIZE 이상의 항목도 제거 (예: 100M, 1G) |
+| --min-size | option | — | — | SIZE 이상 항목도 제거 (예: 100M, 1G) |
 | --all | flag | false | — | tmp 아래 모든 항목 제거 (--force 필요) |
-| --force | flag | false | — | --all과 함께 전체 정리를 위해 필요 |
+| --force | flag | false | — | 전체 정리를 위해 --all과 함께 필요 |
 | --project | flag | false | — | 저장소 tmp/도 정리 |
-| --dry-run | flag | false | — | 삭제하지 않고 제거될 항목 표시 |
+| --dry-run | flag | false | — | 삭제하지 않고 제거될 항목만 표시 |
 
 ## `tmp list`
 
@@ -1405,8 +1405,8 @@ tmp 사용량 요약 표시
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| key | 위치 인자 | — | — | 제거할 키 |
-| --shared | 플래그 | false | — | Anima 네임스페이스 대신 공유 섹션에서 삭제 (절대 캐스케이드되지 않음) |
+| key | positional | — | — | 제거할 키 |
+| --shared | flag | false | — | Anima 네임스페이스 대신 공유 섹션에서 삭제 (절대 연쇄되지 않음) |
 
 ## `vault get`
 
@@ -1416,8 +1416,8 @@ tmp 사용량 요약 표시
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| key | 위치 인자 | — | — | 검색할 키 |
-| --shared | 플래그 | false | — | 공유 섹션에서만 검색 (기본값: Anima 네임스페이스, 그 다음 공유) |
+| key | positional | — | — | 검색할 키 |
+| --shared | flag | false | — | 공유 섹션에서만 검색 (기본값: Anima 네임스페이스, 그 다음 공유) |
 
 ## `vault init`
 
@@ -1437,11 +1437,11 @@ anima 네임스페이스와 공유 섹션의 키 목록 표시
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| --shared | 플래그 | false | — | 공유 섹션만 나열 (ANIMAWORKS_ANIMA_DIR 필요 없음) |
+| --shared | flag | false | — | 공유 섹션만 표시 (ANIMAWORKS_ANIMA_DIR 필요 없음) |
 
 ## `vault status`
 
-값 없이 키 및 암호화 상태 표시
+값 없이 키와 암호화 상태 표시
 
 `usage: animaworks vault status [-h]`
 
@@ -1457,6 +1457,6 @@ anima 네임스페이스와 공유 섹션의 키 목록 표시
 
 | 이름 | 유형 | 기본값 | 선택지 | 설명 |
 |---|---|---|---|---|
-| key | 위치 인자 | — | — | 저장할 키 |
-| value | 위치 인자 | — | — | 저장할 값 (Anima 범위 호환 모드 전용) |
-| --shared | 플래그 | false | — | 공유 섹션에 저장, 값은 stdin 또는 숨김 프롬프트에서 읽음 |
+| key | positional | — | — | 저장할 키 |
+| value | positional | — | — | 저장할 값 (Anima 범위 호환 모드 전용) |
+| --shared | flag | false | — | stdin 또는 숨김 프롬프트에서 값을 읽어 공유 섹션에 저장 |

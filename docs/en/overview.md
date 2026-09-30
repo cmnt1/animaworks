@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/overview.md -->
-<!-- i18n: source-sha256=83b674d9d55c88172f6b70638b086b91f3f0e7394f67f0690f11bc78e9819a2c generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=f595d1acb48049d421a5181d012ee14ad061f4d04e7ba9d4f5697e84f26d48ea generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -25,7 +25,7 @@ Anima has a company, role, and supervisor, delegates work within the organizatio
 
 ## Messaging
 
-Handles DMs between Anima, shared Boards, and contact via external services. Send limits, intent, and receive-time controls are described in [messaging](architecture/messaging.md).
+Handles DMs between Anima, shared Boards, and contact via external services. The Inbox starts on file change notifications, and message aggregation and deduplication are described in [Messaging](architecture/messaging.md).
 
 ## Task Management
 

@@ -184,12 +184,12 @@ Permissions and denials are referenced from the external tool configuration in *
 animaworks-tool <ツール名> <サブコマンド> [引数…]
 ```
 
-- **`animaworks-tool submit <tool> [args…]`** — Registers long-running work in TaskStore as `task_type="command"`; PendingTaskExecutor claims an attempt and runs it. Results remain available through `state/background_tasks/{task_id}.json` and the completion notification. If the target subcommand is not `background_eligible` in `EXECUTION_PROFILE`, only a warning is issued (the submission still occurs).
-- Available names are the union of **core modules of `core/integrations`** + **`~/.animaworks/common_tools/`** + **`tools/` under `ANIMAWORKS_ANIMA_DIR`**. They are listed with `--help`.
+- **`animaworks-tool submit <ツール名> [引数…]`** — Registers long-running processes as `task_type="command"` in TaskStore, and PendingTaskExecutor retrieves and executes attempts. Results can be checked as usual via `state/background_tasks/{task_id}.json` and completion notifications. If the target subcommand is `EXECUTION_PROFILE` and not `background_eligible`, only a warning is issued (submission still occurs).
+- Available names are the union of **`core/integrations` core modules** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` under `tools/`**. They are listed via `--help`.
 - When `ANIMAWORKS_ANIMA_DIR` is configured, subcommands may be rejected with **`load_permissions` + `is_action_gated`** (e.g., Discord's `channel_post`).
 - An undefined first argument may fall back to main CLI subcommands (`anima`, `vault`, etc.).
 
-For specific subcommands, check each module's `cli_main` or `animaworks-tool <name> --help`. If the **skill body** contains procedures, specify the skill path with `read_memory_file` to load it.
+For specific subcommands, check each module's `cli_main` or `animaworks-tool <name> --help`. If the **skill body** contains procedures, specify the skill path via `read_memory_file` to load it.
 
 ## Trust Levels (Labels for Tool Results)
 

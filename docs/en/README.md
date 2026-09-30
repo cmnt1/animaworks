@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/README.md -->
-<!-- i18n: source-sha256=5fdde200f6db42bbc3c5361f88331d892647ac956649d3ff821a0e79dd60e818 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=a5297c2ff72c9be7aec9d207d2f8113a17146031ef722919d65bce4bf015b42f generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: 193a5e72
 
@@ -12,25 +12,25 @@
 | Document | Content |
 |---|---|
 | [Design Philosophy](vision.md) | The design principles and values that AnimaWorks aims for. |
-| [Feature Overview](overview.md) | The overall picture of features and an entry point to detailed chapters. |
-| [Correspondence with Neuroscience](brain-mapping.md) | The correspondence between memory, attention, and autonomous mechanisms and neuroscience, along with the design rationale. |
-| [Overall Architecture](architecture/index.md) | System composition and a guide to each architecture chapter. |
+| [Feature Overview](overview.md) | Overall picture of features and entry points to detailed chapters. |
+| [Correspondence with Neuroscience](brain-mapping.md) | Correspondence between memory, attention, autonomous mechanisms and neuroscience, along with design rationale. |
+| [Overall Architecture](architecture/index.md) | System configuration and guidance for each architecture chapter. |
 | [Anima Files](architecture/anima-files.md) | Definition files, configuration, and status files for each Anima. |
-| [Process Structure](architecture/process.md) | server, root, task runner, IPC, and restart. |
-| [Execution Modes](architecture/execution.md) | Execution engine, model resolution, fallback, and context management. |
+| [Process Structure](architecture/process.md) | server, root, task runner, IPC, restart. |
+| [Execution Modes](architecture/execution.md) | Execution engine, model resolution, fallback, context management. |
 | [Lifecycle](architecture/lifecycle.md) | Startup paths and locks for chat, inbox, heartbeat, cron, and task. |
 | [Prompt Construction](architecture/prompt.md) | Composition of system prompts and runtime context. |
-| [Task Management](architecture/tasks.md) | Task Board, delegation, and background tasks. |
-| [Messaging](architecture/messaging.md) | DM, Board, notifications to humans, Inbox wake and message processing, and external integration. |
-| [Memory System](memory/index.md) | Memory design, directories, and frontmatter. |
-| [Automatic Recall](memory/priming.md) | How memories are brought into context at runtime. |
-| [Intentional Recall and Search](memory/retrieval.md) | `search_memory`, search processing, RAG, and repair. |
-| [Integration and Forgetting](memory/consolidation.md) | Daily and weekly processing, memory review, and procedural memory. |
+| [Task Management](architecture/tasks.md) | Task Board, delegation, background tasks. |
+| [Messaging](architecture/messaging.md) | DM, Board, notifications to humans, Inbox wake and message processing, external integration. |
+| [Memory System](memory/index.md) | Memory design, directories, frontmatter. |
+| [Automatic Recall](memory/priming.md) | Method for incorporating memories into context at runtime. |
+| [Intentional Recall and Search](memory/retrieval.md) | `search_memory`, search processing, RAG, repair. |
+| [Integration and Forgetting](memory/consolidation.md) | Daily and weekly processing, memory review, procedural memory. |
 | [Activity Log](memory/activity-log.md) | JSONL activity records and recovery records during streaming. |
-| [Security](security.md) | Permission boundaries, protection, and security operations. |
-| [Configuration](operations/configuration.md) | Global configuration and per-Anima configuration methods. |
+| [Security](security.md) | Permission boundaries, protection, security operations. |
+| [Configuration](operations/configuration.md) | How to configure global settings and per-Anima settings. |
 | [Company Management](operations/company.md) | Management of organization and company information. |
-| [GPU Operations](operations/gpu.md) | Operations for components that use the GPU. |
+| [GPU Operations](operations/gpu.md) | Operations for components that use GPU. |
 | [Development Team](operations/dev-team.md) | Development environment and team operations. |
 | [Slim Runtime Migration](operations/slim-runtime-migration.md) | Migration procedure for Slim Runtime. |
 | [Slack Integration](integrations/slack.md) | Configuration and operations for Slack connection. |

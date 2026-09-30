@@ -5,53 +5,54 @@
 상급자에게 보고하는 것은 조직 운영의 생명선이다.
 적절한 시기와 형식으로 보고함으로써 문제의 조기 발견과 신속한 의사결정을 지원한다.
 
-## 도구 사용 구분
+## 도구의 구분
 
-보고에는 `send_message` 도구를 사용한다. 다음 제약을 준수한다.
+보고에는 `send_message` 도구를 사용한다. 다음 제약을 지킬 것.
 
 | 도구 | 용도 | 비고 |
 |--------|------|------|
-| `send_message` | 상급자·동료에게 일대일 보고·질문 | 보고·진행 상황·판단 요청은 `intent="report"`, 질문은 `intent="question"`. Anima 이름·별칭·`slack:`/`chatwork:` 등(아래 참조) |
-| `post_channel` | 팀 전체에 공지(Board) | 확인 응답·감사 인사·FYI는 Board를 사용한다. 한 run에서 같은 채널에 한 번 게시하며, run 간 쿨다운은 없다 |
-| `call_human` | 사람에게 긴급 알림 | 서비스 종료·보안 사고 등 |
+| `send_message` | 상급자·동료에게 1:1 보고·질문 | 보고·진행 상황·판단 요청은 `intent="report"`, 질문은 `intent="question"`. Anima 이름·별칭·`slack:`/`chatwork:` 등(아래 참조) |
+| `post_channel` | 팀 전체 공지(Board) | acknowledgments·감사·FYI는 Board 사용. 동일 채널 1 run 1회. run 간 cooldown 없음 |
+| `call_human` | 인간에게 긴급 알림 | 서비스 종료·보안 인시던트 등 |
 
 **send_message 제약**:
-- `intent`는 필수이며, 값은 **`report` 또는 `question`만 가능**(보고·진행 상황은 `report`, 질문은 `question`). **`delegation`는 `send_message`에서 사용할 수 없다**(도구가 거부함). 작업 위임에는 `delegate_task`을 사용한다
-- 한 run에서 같은 수신처에 DM을 한 번만 보낼 수 있다. 수신처 수 상한은 없다
-- 추가 연락에는 Board(post_channel)를 사용한다
-- **수신자**는 아래의 ‘수신자 확인’을 참조한다(Anima 이름·사람 별칭·`slack:` / `chatwork:` 직접 지정 등)
-- **참고**: 채팅 세션 중에는 사람에게 send_message를 사용할 수 없다. 직접 텍스트로 답변한다.
+- `intent`는 필수이며, 값은 **`report` 또는 `question`만** (보고·진행 상황은 `report`, 질문은 `question`). **`delegation`는 `send_message`에서는 사용할 수 없음**(도구가 거부함). 작업 위임은 `delegate_task` 사용
+- 동일 run에서 동일 수신자에게 보낼 수 있는 DM은 1통까지. 수신자 수의 상한은 없음
+- 추가 연락은 Board(post_channel) 사용
+- **수신자**는 아래 「수신자 해결」 참조(Anima 이름·인간 별칭·`slack:` / `chatwork:` 직접 지정 등)
+- **주의**: 채팅 세션 중에는 인간에게 send_message를 사용할 수 없음. 직접 텍스트로 답변할 것
 
-### 수신처 해결과 외부 배송(`core/messaging/outbound.py`)
+### 수신자 해결과 외부 배송(`core/messaging/outbound.py`)
 
 `send_message`의 `to`는 다음 **우선순위**로 내부 inbox 또는 외부(Slack / Chatwork)로 해결된다. 빈 문자열은 해결할 수 없어 오류가 된다.
 
-1. **알려진 Anima 이름과 완전 일치** (대소문자 구분) → 내부 inbox. 알려진 목록은 `~/.animaworks/animas/` 바로 아래 디렉터리 이름
-2. **`config.json`의 `external_messaging.user_aliases` 키와 일치** (별칭은 **대소문자 무시**) → 외부 배송. `external_messaging.preferred_channel`(`slack` / `chatwork`)이 `slack`일 때 `slack_user_id`이 있으면 Slack, 없으면 `chatwork_room_id`이 있으면 Chatwork. `preferred_channel`가 `chatwork`일 때는 `chatwork_room_id`를 우선하고, 없으면 `slack_user_id`가 있으면 Slack. **어느 ID도 없는** 별칭은 오류 (`external_messaging.user_aliases`에 연락처를 설정할 것)
-3. **`slack:USERID`** (시작이 `slack:`, 이어서 Slack 사용자 ID) → Slack DM으로 직접 (USERID는 구현상 **대문자로 정규화**)
-4. **`chatwork:ROOMID`** (시작이 `chatwork:`, ROOMID 부분은 앞뒤 공백만 제거) → Chatwork 룸으로 직접
-5. **Slack 사용자 ID 단독** (`U` + 영숫자 **8자 이상**, 대소문자는 매칭 시 허용. 예 `U0123456789`) → Slack DM으로 직접
-6. **알려진 Anima 이름과 대소문자 무시 일치** → 내부 (디스크상의 공식 이름으로 정규화)
-7. 어디에도 해당하지 않음 → 알 수 없는 수신처 오류 (도구 계층에서는 채팅 실행 중과 그 외에서 힌트 문구가 달라질 수 있음)
+1. **알려진 Anima 이름과 완전 일치**(대소문자 구분) → 내부 inbox. 알려진 목록은 `~/.animaworks/animas/` 바로 아래의 디렉터리 이름
+2. **`config.json`의 `external_messaging.user_aliases`의 키와 일치**(별칭은 **대소문자 무시**) → 외부 배송. `external_messaging.preferred_channel`(`slack` / `chatwork`)이 `slack`일 때는 `slack_user_id`이 있으면 Slack, 없으면 `chatwork_room_id`이 있으면 Chatwork. `preferred_channel`가 `chatwork`일 때는 `chatwork_room_id`를 우선하고, 없으면 `slack_user_id`가 있으면 Slack. **어느 ID도 없는** 별칭은 오류(`external_messaging.user_aliases`에 연락처를 설정할 것)
+3. **`slack:USERID`**(시작이 `slack:`, 이어서 Slack 사용자 ID) → Slack DM으로 직접(USERID는 구현상 **대문자로 정규화**)
+4. **`chatwork:ROOMID`**(시작이 `chatwork:`, ROOMID 부분은 앞뒤 공백만 제거) → Chatwork 룸으로 직접
+5. **Slack 사용자 ID 단독**(`U` + 영숫자 **8자 이상**, 대소문자는 매칭 시 허용. 예 `U0123456789`) → Slack DM으로 직접
+6. **알려진 Anima 이름과 대소문자 무시 일치** → 내부(디스크상의 공식 이름으로 정규화)
+7. 어디에도 해당하지 않음 → 알 수 없는 수신자 오류(도구 계층에서는 채팅 실행 중과 그 외에서 힌트 문구가 달라질 수 있음)
 
-**외부용 설정** (`config.json`의 `external_messaging`):
+**외부용 설정**(`config.json`의 `external_messaging`):
 
 | 필드 | 역할 |
 |-----------|------|
-| `preferred_channel` | 별칭 수신의 기본 채널 (`slack` / `chatwork`) |
-| `user_aliases` | 별칭 이름 → `{ "slack_user_id": "...", "chatwork_room_id": "..." }` (**적어도 하나** 필요) |
+| `preferred_channel` | 별칭 수신자의 기본 채널(`slack` / `chatwork`) |
+| `user_aliases` | 별칭 이름 → `{ "slack_user_id": "...", "chatwork_room_id": "..." }`(**최소한 하나**가 필요) |
 
-**외부 전송 동작** (`send_external`):
+**외부 전송 동작**(`send_external`):
 
-- 시도 순서는 **해결된 채널을 먼저** 보내고, 실패하면 **다른 채널**을 시도 (별칭 등으로 Slack·Chatwork 양쪽 수신처 ID가 모두 있는 경우에만 두 번째가 있음. `slack:` / `chatwork:` 직접 지정은 보통 해당 채널만)
-- 외부 채널이 구성되지 않은 등의 이유로 보낼 수 없으면 도구 결과에 JSON으로 `NoChannelConfigured`나 `DeliveryFailed`가 반환될 수 있음
+- 시도 순서는 **해결된 채널을 먼저** 보내고, 실패하면 **다른 채널**을 시도함(별칭 등으로 Slack·Chatwork 양쪽의 수신자 ID가 모두 있는 경우에만 두 번째가 있음. `slack:` / `chatwork:` 직접 지정은 보통 해당 채널만)
+- 외부 채널이 구성되지 않은 등의 이유로 보낼 수 없는 경우, 도구 결과에 JSON으로 `NoChannelConfigured`이나 `DeliveryFailed`가 반환될 수 있음
 - 본문은 **Markdown → Slack mrkdwn / Chatwork용**으로 변환됨
-- **Slack**: Anima 이름에 연결된 `SLACK_BOT_TOKEN__{anima名}`(Vault 또는 공유 credentials)가 있으면 Bot 토큰으로 전송하고, 표시 이름(Anima 이름)과 **아이콘 URL**(Anima 에셋 유래)을 부여. **Bot 토큰이 없으면** 본문 앞에 `[送信者Anima名] `을 붙여 전송
-- **Chatwork**: 전송 Anima 자신의 identity 토큰(`CHATWORK_API_TOKEN__<Anima名>`) 사용. `send_message` 경유 시 본문 앞에 `[Anima名] ` 프리픽스가 붙음
+- **Slack**: Anima 이름에 연결된 `SLACK_BOT_TOKEN__{anima名}`(Vault 또는 공유 credentials)가 있으면 Bot 토큰으로 전송하고, 표시 이름(Anima 이름)과 **아이콘 URL**(Anima 에셋 유래)을 부여. **Bot 토큰이 없는** 경우는 본문 앞에 `[送信者Anima名] `을 붙여서 전송
+- **Chatwork**: 전송 Anima 자신의 identity 토큰(`CHATWORK_API_TOKEN__<Anima名>`) 사용. `send_message` 경유에서는 본문 앞에 `[Anima名] ` 프리픽스가 붙음
 
-**전송 제한 (구현 기반)**:
+**전송상의 동작**:
 
-- 시간·일 단위 발신 예산이나 대화 깊이에 따른 발신 차단은 없다. 내부 Anima 간 깊이는 진단용으로 기록될 수 있지만 메시지는 계속 전달된다.
+- 시간·일별 전송 예산이나, 대화 깊이에 따른 전송 거부는 없음.
+- 내부 Anima 간의 깊이는 진단 목적으로 기록될 수 있지만, 메시지는 그대로 배송됨.
 
 ## 보고 시기
 
@@ -382,8 +383,8 @@ send_message(
 
 ### 피해야 할 것
 
-- 결론을 뒤로 미루고 경위부터 길게 쓰는 것 (결론을 먼저 쓸 것)
-- '문제가 발생했습니다'만 있고 구체적인 정보가 없는 보고
-- 여러 다른 토픽을 하나의 메시지에 모으는 것 (토픽별로 나눌 것)
-- 문제를 숨기거나 가볍게 보이려는 것 (정확한 상황을 전달할 것)
-- 같은 run에서 같은 수신처에 `send_message`를 두 번 이상 보내는 것 (수신처당 1통이며 수신처 수 상한은 없음)
+- 결론을 뒤로 미루고 경위부터 길게 쓰는 것(결론을 먼저 쓸 것)
+- 「문제가 발생했습니다」만 있고 구체적인 정보가 없는 보고
+- 여러 다른 토픽을 하나의 메시지에 모으는 것(토픽별로 나눌 것)
+- 문제를 숨기거나 가볍게 보이게 하려는 것(정확한 상황을 전할 것)
+- 동일 run에서 같은 수신자에게 여러 건의 `send_message`을 보내는 것(같은 수신자에게는 1통까지. 수신자 수의 상한은 없음)

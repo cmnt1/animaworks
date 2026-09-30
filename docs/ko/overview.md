@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/overview.md -->
-<!-- i18n: source-sha256=83b674d9d55c88172f6b70638b086b91f3f0e7394f67f0690f11bc78e9819a2c generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=f595d1acb48049d421a5181d012ee14ad061f4d04e7ba9d4f5697e84f26d48ea generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 
@@ -25,7 +25,7 @@ Anima는 회사, role, supervisor를 가지며, 조직 내에서 작업을 위�
 
 ## 메시징
 
-Anima 간 DM, 공유 Board, 외부 서비스 경유 연락을 다룬다. 전송 상한, intent, 수신 시 제어는 [메시징](architecture/messaging.md)에 기재한다.
+Anima 간의 DM, 공유 Board, 외부 서비스를 통한 연락을 처리한다. Inbox는 파일 변경 알림으로 시작되며, 메시지의 집계 및 중복 방지는 [메시징](architecture/messaging.md)에 기술한다.
 
 ## 작업 관리
 

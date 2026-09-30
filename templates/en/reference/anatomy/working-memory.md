@@ -93,11 +93,11 @@ If `state/current_task.md` is specified in `read_memory_file` / `write_memory_fi
 
 ## Task Execution and Results
 
-The host stores the original instruction and tasks in bulk, retrieves executable work, and records each attempt. `in_progress` is host-managed. The agent declares `done` / `pending` / `cancelled` via `update_task`. Dependencies and reasons for action are confirmed via `list_tasks(detail=true)`. Pending does not mean retry. After resolving the cause, explicitly resume the same task via `submit_tasks(..., tasks=[{"task_id": "ID", "resume": true}])`.
+The host saves the original instructions and tasks in bulk, retrieves executable work, and records each attempt. `in_progress` is managed by the host. The agent declares `done` / `pending` / `cancelled` via `update_task`. Dependencies and reasons requiring action are confirmed via `list_tasks(detail=true)`. Pending does not mean retry. After the cause is resolved, explicitly resume the same task via `submit_tasks(..., tasks=[{"task_id": "ID", "resume": true}])`.
 
-Accepted result summaries are saved to `state/task_results/{task_id}/{attempt_token}.md` (up to 2000 characters). Subsequent steps receive the accepted result chosen by the host. Do not judge completion based solely on the existence of old files. Preserve the original record, write the result, and do not pretend an attempt succeeded.
+Accepted result summaries are stored in `state/task_results/{task_id}/{attempt_token}.md` (up to 2000 characters). For subsequent steps, the host passes the accepted result it has selected. Do not judge completion based solely on the existence of old files. Save the original records, write the results, and do not pretend an attempt succeeded.
 
-Long-running command tools are also registered in TaskStore as `task_type="command"`. PendingTaskExecutor claims an attempt and BackgroundTaskManager runs it. The attempt is recorded in TaskStore, while `state/background_tasks/{task_id}.json` and the completion notification remain available for compatibility. See `operations/background-tasks.md` and `operations/task-management.md` for details.
+Long-running command tools are also registered in TaskStore as `task_type="command"`. PendingTaskExecutor retrieves attempts, and BackgroundTaskManager executes them. Attempts are recorded in TaskStore, and for compatibility, `state/background_tasks/{task_id}.json` and completion notifications are also maintained. For details, see `operations/background-tasks.md` and `operations/task-management.md`.
 
 ## read_subordinate_state
 

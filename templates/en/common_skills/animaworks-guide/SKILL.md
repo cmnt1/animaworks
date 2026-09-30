@@ -2,7 +2,7 @@
 name: animaworks-guide
 description: >-
   Complete reference for the animaworks command. Summarizes CLI formats for server operations, Anima management, models, tasks, configuration, RAG, assets, and external tools.
-  Use when: Use when: checking subcommand formats, server startup/shutdown, creating Anima, changing models, adding tasks, logs, configuration, or index operations are needed.
+  Use when: Use when: checking subcommand formats, server startup and shutdown, creating Anima, changing models, adding tasks, logs, configuration, or index operations are needed.
 ---
 
 
@@ -11,7 +11,7 @@ description: >-
 All AnimaWorks operations are performed using the `animaworks` command.
 This skill is a reference summarizing the formats, arguments, and concrete examples of all subcommands.
 
-For operational concepts and rules, refer to `common_knowledge/` and `reference/`:
+For operational principles and rules, refer to `common_knowledge/` and `reference/`:
 - Messaging rules → `communication/messaging-guide.md`
 - Task management → `operations/task-management.md`
 - Tool system → `operations/tool-usage-overview.md`
@@ -28,9 +28,9 @@ animaworks chat {名前} "..." --local
 animaworks heartbeat {名前} --local
 ```
 
-Recommended: start the server with `animaworks start` (or `serve`), and use `chat` / `heartbeat` without adding `--local`.
+Recommended: Start the server with `animaworks start` (or `serve`), and use `chat` / `heartbeat` without adding `--local`.
 
-`gateway` / `worker` subcommands are hidden compatibility aliases (do not use after the distributed architecture is removed).
+`gateway` / `worker` subcommands are hidden compatibility options (do not use after the distributed architecture is discontinued).
 
 ---
 
@@ -67,10 +67,10 @@ animaworks anima info {名前} --json      # JSON出力
 animaworks anima permissions {名前}      # ツール許可を表示（load_permissions: JSON 優先、レガシーは permissions.md）
 ```
 
-Output fields of `anima info`:
+Output items of `anima info`:
 - Anima name, Enabled, Role, Model, Execution Mode (built-in labels are S/C/D/G/X/A）
 - Credential, Fallback Model, Context Threshold, Max Tokens, Thinking / Thinking Effort, Supervisor, Mode S Auth
-- Voice settings (tts_provider, voice_id, speed, pitch, etc., enumerating the voice dictionary of status.json)
+- Voice settings (tts_provider, voice_id, speed, pitch, etc., listing the voice dictionary of status.json)
 
 ### Creation
 
@@ -229,7 +229,7 @@ animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
 ```
 
-**Note**: `status.json` is the SSoT for Anima's models, credentials, and so on. Direct configuration of `animas.{名前}.model` and similar items is deprecated. Use `animaworks anima set-model`.
+**Note**: `status.json` is the SSoT for Anima models, credentials, etc. Direct configuration of `animas.{名前}.model` etc. is deprecated. Use `animaworks anima set-model` instead.
 
 ---
 
@@ -277,7 +277,7 @@ animaworks cost --json                   # JSON出力
 
 ## Task Management (task subcommand)
 
-**Prerequisite**: Before execution, set `ANIMAWORKS_ANIMA_DIR` to the target Anima's directory (e.g., `~/.animaworks/animas/{名前}`). If not set, an error occurs (the intended usage is `animaworks-tool task` inside the Anima child process, or `animaworks task` with variables assigned in the shell).
+**Prerequisite**: Before execution, set `ANIMAWORKS_ANIMA_DIR` to the target Anima's directory (e.g., `~/.animaworks/animas/{名前}`). If not set, an error occurs (intended usage includes `animaworks-tool task` within the Anima child process, or `animaworks task` with variables assigned in the shell).
 
 ```bash
 animaworks task list                     # タスク一覧（JSON）
@@ -308,7 +308,7 @@ animaworks index --dry-run               # 確認のみ
 - **conversation_summary**: Includes the `compressed_summary` of `state/conversation.json` in the indexing target (if the relevant file exists).
 - **Existing collections with L2 distance**: When directly accessing local Chroma while the server is not running, a cosine migration warning may appear without `--full` (follow the message and execute `--full`).
 - **While the server is running**: When `server.pid` is detected, the CLI sets `ANIMAWORKS_VECTOR_URL` / `ANIMAWORKS_EMBED_URL` and performs indexing and embedding via HTTP, avoiding concurrent access conflicts with Chroma.
-- **Embedding model**: If the record in `index_meta.json` differs from the configuration, the command exits with an error without `--full`.
+- **Embedding model**: If the record in `index_meta.json` differs from the configuration, the command exits with an error unless `--full` is used.
 
 ---
 
@@ -322,7 +322,7 @@ animaworks migrate --list                # ステップ一覧と適用済みフ�
 animaworks migrate --force               # 状態に関わらず再適用
 ```
 
-A warning appears if a server is running. Fails if `~/.animaworks/config.json` does not exist.
+A warning appears if a server is currently running. Fails if `~/.animaworks/config.json` is absent.
 
 ---
 
@@ -362,7 +362,7 @@ animaworks remake-assets {名前} --style-from {参照} --no-backup
 
 ## External Tool Execution (animaworks-tool)
 
-Commands used when Anima uses external services (Slack, Gmail, GitHub, etc.).
+Command used when Anima uses external services (Slack, Gmail, GitHub, etc.).
 
 When the first argument is a registered tool name or `submit`, `animaworks` is internally replaced with `animaworks-tool` (e.g., `animaworks web_search query "..."`).
 
@@ -386,16 +386,16 @@ animaworks-tool github issues --repo owner/repo
 animaworks-tool submit image_gen pipeline "1girl, ..." --anima-dir $ANIMAWORKS_ANIMA_DIR
 ```
 
-For details on submit → `common_knowledge/operations/background-tasks.md`
+For submit details → `common_knowledge/operations/background-tasks.md`
 
 **Directory Organization**
 
-- **`state/background_tasks/`** — result JSON files saved by BackgroundTaskManager (`running` / `completed` / `failed`). `animaworks-tool submit` inputs and attempts are stored in TaskStore; `internal list-background-tasks` / `check-background-task` read the result JSON files here.
-- **`state/background_notifications/`** — used by heartbeat to collect tool completion notifications, etc. (there is a path where MCP, schedulers, etc. write here). Separate from the CLI's `list-background-tasks`.
+- **`state/background_tasks/`** — Execution result JSON saved by BackgroundTaskManager (`running` / `completed` / `failed`). The submitted content and attempts of `animaworks-tool submit` are stored in TaskStore, and `internal list-background-tasks` / `check-background-task` read this result JSON.
+- **`state/background_notifications/`** — Used by heartbeat to pick up tool completion notifications, etc. (there are paths written by MCP, schedulers, etc.). Separate from the CLI's `list-background-tasks`.
 
 ### Subcommands for Child Processes (internal / vault / supervisor)
 
-All require **`ANIMAWORKS_ANIMA_DIR`** (same as `task`). Subcommands with the same names are also registered at the top level `animaworks`.
+All require **`ANIMAWORKS_ANIMA_DIR`** (same as `task`). The top-level `animaworks` also has subcommands with the same names registered.
 
 **internal**
 
@@ -411,7 +411,7 @@ animaworks-tool internal check-background-task {task_id}
 
 **vault** (KV with Anima namespace)
 
-Storage destinations are two: "your own Anima namespace" and the "`shared` section." `shared` is the location read by tool credential resolution (`get_credential`), and is written with `--shared` attached. `get` / `list`, when unspecified, look at both in the order of your own namespace → `shared`.
+Storage destinations are two: "your own Anima namespace" and the "`shared` section". `shared` is the location read by tool credential resolution (`get_credential`), and is written with `--shared` attached. `get` / `list` look at both in the order of your own namespace → `shared` when unspecified.
 
 ```bash
 animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
@@ -424,7 +424,7 @@ animaworks-tool vault delete {キー}           # 自分の名前空間から削
 animaworks-tool vault delete {キー} --shared  # shared から削除
 ```
 
-Only `delete` does not cascade (to avoid pulling in shared credentials without `--shared`). For values where only one valid copy can exist at a time, such as single-use tokens, decide on a single storage location and do not distribute them.
+Only `delete` does not cascade (to avoid involving shared credentials without `--shared`). For values where only one valid copy can exist at a time, such as single-use tokens, decide on a single storage location and do not distribute them.
 
 **supervisor** (starting from the Anima name of `ANIMAWORKS_ANIMA_DIR`, resolves subordinates via the supervisor relationship of status.json)
 

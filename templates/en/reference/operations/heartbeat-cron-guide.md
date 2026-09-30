@@ -24,9 +24,9 @@ TaskExec retrieves executable persistent tasks from the authoritative TaskStore.
 Heartbeat and human conversations are managed under **separate locks**, so they can run simultaneously.
 Even while Heartbeat is running, immediate responses to human messages are possible.
 
-### Submitting Tasks via submit_tasks
+### Submitting tasks via submit_tasks
 
-When Heartbeat discovers a task that should be executed, submit it using the `submit_tasks` tool:
+When a task to be executed is discovered in the heartbeat, submit the task using the `submit_tasks` tool:
 
 ```
 submit_tasks(batch_id="hb-20260301-api-test", tasks=[
@@ -35,29 +35,29 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 ])
 ```
 
-After validation, `submit_tasks` saves the task and complete execution input in bulk to a single authoritative TaskStore.
-Execution right acquisition and attempt history are managed by the host. `in_progress` is for viewing; the agent declares `done` / `pending` / `cancelled` via `update_task`. To resume an interrupted pending task, explicitly specify `resume: true` with the same ID; do not replace it with a different task.
+After validation, `submit_tasks` saves the task and its complete execution input in bulk to a single authoritative TaskStore.
+The host manages execution rights and attempt history. `in_progress` is for viewing; the agent declares `done` / `pending` / `cancelled` via `update_task`. To resume an interrupted pending task, explicitly specify `resume: true` with the same ID; do not replace it with a different task.
 
-**Long-running CLI tools** (`animaworks-tool submit …`) are registered in TaskStore as `task_type="command"`. PendingTaskExecutor claims an attempt and runs the tool in the background; the result remains available in `state/background_tasks/{task_id}.json` with the existing completion notification. See `operations/background-tasks.md` for details.
+**Long-running CLI tools** (`animaworks-tool submit …`) are registered in the TaskStore as `task_type="command"`, and the PendingTaskExecutor retrieves attempts and runs them in the background. Check completion results via `state/background_tasks/{task_id}.json` and notifications. See `operations/background-tasks.md` for details.
 
-**Note**: Do not edit the storage location directly. The legacy `state/task_queue.jsonl` and `state/pending/` are kept as evidence for migration and export, not as active submission targets.
+**Note**: Do not edit the storage location directly. The old `state/task_queue.jsonl` and `state/pending/` are kept as audit trails for migration and export; do not use them as active submission targets.
 
-Use `submit_tasks` (a tasks array with one item) even for a single task.
-Multiple independent tasks can be run in parallel with `parallel: true`; if there are dependencies, specify `depends_on`.
+Even for a single task, use `submit_tasks` (one item in the tasks array).
+Run multiple independent tasks in parallel with `parallel: true`; if there are dependencies, specify `depends_on`.
 See task-management for details.
 
-### Heartbeat Trigger Types
+### Heartbeat trigger types
 
-There are two types of Heartbeat triggers:
+There are two types of heartbeat triggers:
 
 | Trigger | Description |
 |---------|------|
-| Periodic Heartbeat | APScheduler starts periodically according to `heartbeat.interval_minutes` in `config.json` |
-| Message Trigger | Starts immediately when an unread message arrives in the Inbox (processed as the Inbox path) |
+| Scheduled heartbeat | Started periodically by APScheduler according to `heartbeat.interval_minutes` in `config.json` |
+| Message trigger | Started immediately when an unread message arrives in the Inbox (processed as an Inbox pass) |
 
-The message trigger wakes on Inbox JSON file-change notifications. A 45-second safety rescan catches missed notifications.
-Only one Inbox job runs at a time; messages arriving during a run are combined into the next run. Provider failures wait for `rate_guard` recovery while leaving messages unread.
-There is no intent-based wake filter or message-triggered cooldown / cascade suppression. The Inbox prompt instructs the Anima not to reply to acknowledgements or thanks alone.
+The message trigger is activated by a change notification for the Inbox JSON file. As a safeguard against missed notifications, unread messages are rechecked every 45 seconds.
+Only one Inbox process runs at a time; messages that arrive during execution are batched into the next single pass. On a Provider error, wait for the recovery time in `rate_guard` and leave unread messages.
+There is no startup filter based on received intent, nor message-originated cooldown or cascade suppression. The behavior rule of not replying to messages that only acknowledge or thank is instructed in the Inbox prompt.
 
 ## heartbeat.md Configuration
 
@@ -142,14 +142,14 @@ Chat (conversations with humans) and TaskExec (actual work) keep the main model.
 Configuration method: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
 See the "Background Model" section of `reference/operations/model-guide.md` for details.
 
-### Heartbeat Internal Behavior
+### Heartbeat internal behavior
 
-- **Crash recovery**: If the previous Heartbeat failed, error information is saved to `state/recovery_note.md`. It is injected into the prompt at the next startup, and the file is deleted after recovery.
-- **Reflection record**: If the Heartbeat output contains a `[REFLECTION]...[/REFLECTION]` block, it is recorded as `heartbeat_reflection` in activity_log and included in subsequent Heartbeat contexts.
-- **Subordinate check**: For Anima with subordinates, subordinate status check instructions are automatically injected into the Heartbeat and Cron prompts.
-- **Session time limit** (`heartbeat` in `config.json`): A wrap-up reminder is injected after `soft_timeout_seconds` (default 300 seconds), and the session is forcibly terminated at `hard_timeout_seconds` (default 600 seconds).
-- **Idle auto-compact**: `heartbeat.idle_compaction_minutes` (default 10 minutes) — idle auto-compaction runs this time after the stream ends (execution engine side setting).
-- **Board posts**: A run can post once to a given channel. There is no cross-run posting interval limit.
+- **Crash recovery**: If the previous heartbeat failed, error information is saved in `state/recovery_note.md`. It is injected into the prompt at the next startup, and the file is deleted after recovery.
+- **Reflection record**: If the heartbeat output contains a `[REFLECTION]...[/REFLECTION]` block, it is recorded as `heartbeat_reflection` in the activity_log and included in subsequent heartbeat contexts.
+- **Subordinate check**: For Anima instances with subordinates, a subordinate status check instruction is automatically injected into the heartbeat and Cron prompts.
+- **Session time limit** (`heartbeat` in `config.json`): After `soft_timeout_seconds` (default 300 seconds) elapses, a wrap-up reminder is injected; the session is forcibly terminated after `hard_timeout_seconds` (default 600 seconds).
+- **Idle auto-compaction**: `heartbeat.idle_compaction_minutes` (default 10 minutes) — idle auto-compaction runs after this time has elapsed since stream end (execution engine setting).
+- **Board posts**: Limited to once per channel within the same run. There is no restriction on the interval between posts across runs.
 
 ### Periodic Heartbeat Scheduling Method
 

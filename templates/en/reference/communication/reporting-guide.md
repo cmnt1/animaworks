@@ -5,54 +5,54 @@
 Reporting to your supervisor is the lifeline of organizational operations.
 Reporting at the right time and in the right format supports early problem detection and rapid decision-making.
 
-## Choosing the Right Tool
+## Tool Selection
 
-Use the `send_message` tool for reports. Observe the following constraints.
+Use the `send_message` tool for reporting. Follow the constraints below.
 
 | Tool | Purpose | Notes |
 |--------|------|------|
-| `send_message` | One-on-one reports or questions to a supervisor or colleague | Use `intent="report"` for reports, progress updates, and requests for decisions; use `intent="question"` for questions. Anima names, aliases, `slack:`/`chatwork:`, etc. (see below) |
-| `post_channel` | Announcements to the whole team (Board) | Use Board for acknowledgements, thanks, and FYI messages. One post per channel per run; there is no cross-run cooldown |
-| `call_human` | Urgent notifications to humans | For service shutdowns, security incidents, etc. |
+| `send_message` | One-on-one reports and questions to supervisors and colleagues | Reports, progress, and decision requests go to `intent="report"`; questions go to `intent="question"`. Anima names, aliases, `slack:`/`chatwork:`, etc. (see below) |
+| `post_channel` | Team-wide announcements (Board) | Use Board for acknowledgments, thanks, and FYI. One per channel per run. No cooldown between runs |
+| `call_human` | Urgent notifications to humans | Service shutdown, security incidents, etc. |
 
 **send_message constraints**:
-- `intent` is required, and its value must be **`report` or `question` only** (`report` for reports and progress updates; `question` for questions). **`delegation` cannot be used with `send_message`** (the tool will reject it). Use `delegate_task` to delegate tasks.
-- A run can send only one DM to the same recipient. There is no recipient-count cap.
-- Use Board (post_channel) for additional communication.
-- For **recipients**, see “Resolving recipients” below (directly specifying Anima names, human aliases, `slack:` / `chatwork:`, etc.).
-- **Note**: You cannot use send_message to message humans during a chat session. Reply directly with text.
+- `intent` is required, and the value must be **only `report` or `question`** (reports and progress use `report`, questions use `question`). **`delegation` cannot be used with `send_message`** (the tool will reject it). Use `delegate_task` for task delegation
+- Only one DM can be sent to the same recipient per run. There is no limit on the number of recipients
+- Additional communication uses Board (post_channel)
+- **Recipients** follow the "Recipient Resolution" section below (Anima names, human aliases, `slack:` / `chatwork:` direct specification, etc.)
+- **Note**: During a chat session, send_message cannot be used for human recipients. Respond directly with text instead
 
 ### Recipient Resolution and External Delivery (`core/messaging/outbound.py`)
 
-The `to` of `send_message` is resolved to an internal inbox or external (Slack / Chatwork) using the following **priority order**. An empty string cannot be resolved and results in an error.
+The `to` of `send_message` is resolved to either the internal inbox or an external service (Slack / Chatwork) using the following **priority order**. An empty string cannot be resolved and results in an error.
 
-1. **Exact match with a known Anima name** (case-sensitive) → internal inbox. Known names are listed as directory names directly under `~/.animaworks/animas/`
-2. **Match with a key in `external_messaging.user_aliases` of `config.json`** (aliases are **case-insensitive**) → external delivery. If `slack` is set for `external_messaging.preferred_channel` (`slack` / `chatwork`), use Slack if `slack_user_id` exists, otherwise Chatwork if `chatwork_room_id` exists. If `chatwork` is set for `preferred_channel`, prioritize `chatwork_room_id`; if absent, use Slack if `slack_user_id` exists. Aliases with **neither ID** result in an error (set contact information in `external_messaging.user_aliases`)
-3. **`slack:USERID`** (starts with `slack:`, followed by a Slack user ID) → direct Slack DM (USERID is **normalized to uppercase** in implementation)
-4. **`chatwork:ROOMID`** (starts with `chatwork:`, ROOMID portion has only leading/trailing whitespace removed) → direct Chatwork room
-5. **Slack user ID alone** (`U` + alphanumeric **8 or more characters**, case-insensitive matching allowed. Example: `U0123456789`) → direct Slack DM
+1. **Exact match with a known Anima name** (case-sensitive) → internal inbox. Known names are the directory names directly under `~/.animaworks/animas/`
+2. **Match with a key in `external_messaging.user_aliases` of `config.json`** (aliases are **case-insensitive**) → external delivery. When `slack` is `external_messaging.preferred_channel` (`slack` / `chatwork`), if `slack_user_id` exists, use Slack; otherwise, if `chatwork_room_id` exists, use Chatwork. When `preferred_channel` is `chatwork`, prefer `chatwork_room_id`; if absent, use Slack if `slack_user_id` exists. **Aliases with neither ID** result in an error (set contact information in `external_messaging.user_aliases`)
+3. **`slack:USERID`** (starts with `slack:`, followed by a Slack user ID) → direct Slack DM (USERID is **normalized to uppercase** in the implementation)
+4. **`chatwork:ROOMID`** (starts with `chatwork:`, ROOMID part has only leading and trailing whitespace removed) → direct Chatwork room
+5. **A bare Slack user ID** (`U` + alphanumeric **8 or more characters**, case is tolerated during matching. Example `U0123456789`) → direct Slack DM
 6. **Case-insensitive match with a known Anima name** → internal (normalized to the canonical name on disk)
-7. If none apply → unknown recipient error (the tool layer may switch hint wording depending on whether a chat is running)
+7. **No match** → unknown recipient error (the tool layer may switch the hint text depending on whether a chat is running)
 
 **External configuration** (`external_messaging` of `config.json`):
 
 | Field | Role |
 |-----------|------|
-| `preferred_channel` | Default channel for alias delivery (`slack` / `chatwork`) |
+| `preferred_channel` | Default channel for alias recipients (`slack` / `chatwork`) |
 | `user_aliases` | Alias name → `{ "slack_user_id": "...", "chatwork_room_id": "..." }` (**at least one** is required) |
 
 **External send behavior** (`send_external`):
 
-- Attempt order: **send to the resolved channel first**, then try **the other channel** on failure (the second attempt only exists when both Slack and Chatwork destination IDs are available, such as with aliases. Direct specification of `slack:` / `chatwork:` typically targets only that channel)
-- If sending to an external channel fails (e.g., the channel is not configured), the tool result may return `NoChannelConfigured` or `DeliveryFailed` as JSON
+- The send order is **resolved channel first**, then if that fails, **the other channel** is tried (the second option only exists when both Slack and Chatwork destination IDs are available, such as with aliases. `slack:` / `chatwork:` direct specification usually targets only that channel)
+- If sending fails because the external channel is not configured, the tool result may return `NoChannelConfigured` or `DeliveryFailed` as JSON
 - The body is converted from **Markdown to Slack mrkdwn / Chatwork format**
-- **Slack**: If a `SLACK_BOT_TOKEN__{anima名}` associated with the Anima name (from Vault or shared credentials) exists, send with the Bot token, attaching the display name (Anima name) and **icon URL** (derived from Anima assets). **If no Bot token exists**, prepend `[送信者Anima名] ` to the message body
-- **Chatwork**: Uses the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). When sent via `send_message`, a `[Anima名] ` prefix is added to the message body
+- **Slack**: If a `SLACK_BOT_TOKEN__{anima名}` (from Vault or shared credentials) linked to the Anima name exists, send with the Bot token, attaching the display name (Anima name) and **icon URL** (derived from Anima assets). **If no Bot token exists**, prepend `[送信者Anima名] ` to the body before sending
+- **Chatwork**: Uses the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). When sent via `send_message`, a `[Anima名] ` prefix is added to the body
 
 **Send behavior**:
 
-- There are no hourly/daily send budgets or conversation-depth send blocks.
-- Conversation depth between internal Animas may be logged for diagnostics, but messages are still delivered.
+- There are no time- or daily-based send budgets, and no send rejection based on conversation depth.
+- Depth between internal Animas may be recorded for diagnostic purposes, but messages are delivered as-is.
 
 ## Reporting Timing
 
@@ -383,8 +383,8 @@ Procedure for deciding whether a report should be escalated:
 
 ### Things to Avoid
 
-- Writing a long background before getting to the conclusion (write the conclusion first)
+- Writing a long background before getting to the conclusion (put the conclusion first)
 - Reporting "a problem occurred" without any specific information
 - Combining multiple different topics into one message (separate by topic)
-- Hiding problems or making them seem minor (convey the accurate situation)
-- Sending more than one `send_message` DM to the same recipient in one run (one message per recipient; there is no recipient-count cap)
+- Hiding a problem or making it seem minor (convey the accurate situation)
+- Sending multiple `send_message` messages to the same recipient in the same run (only one send per recipient; there is no limit on the number of recipients)

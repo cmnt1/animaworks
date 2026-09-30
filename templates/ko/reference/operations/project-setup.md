@@ -103,7 +103,7 @@ AnimaWorks 통합 설정 파일은 `~/.animaworks/config.json`에 배치된다.
 
 #### 기본값 (anima_defaults)
 
-| 필드 | 타입 | 기본값 | 설명 |
+| 필드 | 유형 | 기본값 | 설명 |
 |-----------|-----|----------|------|
 | `model` | `str` | `"claude-sonnet-4-6"` |  |
 | `fallback_model` | `str | None` | None |  |

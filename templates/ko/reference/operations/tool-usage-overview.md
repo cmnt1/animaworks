@@ -178,18 +178,18 @@ Mode A의 스키마에서는 **PascalCase 이름**입니다. `ToolHandler` 내�
 
 허가・거부는 **`permissions.json`**（구 `permissions.md`에서 이전 가능）의 외부 도구 설정이 참조됩니다（`core.config.models.load_permissions`).
 
-## CLI 경유（Bash + `animaworks-tool`）
+## CLI 경유 (Bash + `animaworks-tool`)
 
 ```
 animaworks-tool <ツール名> <サブコマンド> [引数…]
 ```
 
-- **`animaworks-tool submit <tool> [args…]`** — 장시간 작업을 `task_type="command"`로 TaskStore에 등록하고, PendingTaskExecutor가 실행 시도를 가져와 실행합니다. 결과는 기존처럼 `state/background_tasks/{task_id}.json`과 완료 알림에서 확인할 수 있습니다. 대상 서브커맨드가 `EXECUTION_PROFILE`에서 `background_eligible`가 아니면 경고만 출력합니다(투입은 진행됨).
-- 사용 가능한 이름은 **`core/integrations`의 코어 모듈** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` 아래의 `tools/`**의 합집합. `--help`에서 목록 표시됩니다.
-- `ANIMAWORKS_ANIMA_DIR`이 설정되어 있을 때, 서브커맨드는 **`load_permissions` + `is_action_gated`**로 거부될 수 있습니다（예: Discord의 `channel_post`).
-- 정의되지 않은 첫 번째 인자는 메인 CLI의 서브커맨드（`anima`, `vault` 등）로 폴백될 수 있습니다.
+- **`animaworks-tool submit <ツール名> [引数…]`** — 장시간 처리를 `task_type="command"`로 TaskStore에 등록하고, PendingTaskExecutor가 시도를 가져와 실행합니다. 실행 결과는 기존대로 `state/background_tasks/{task_id}.json`와 완료 알림에서 확인할 수 있습니다. 대상 하위 명령이 `EXECUTION_PROFILE`이고 `background_eligible`가 아닌 경우 경고만 표시됩니다(투입은 이루어짐).
+- 사용 가능한 이름은 **`core/integrations`의 코어 모듈** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` 아래의 `tools/`**의 합집합입니다. `--help`에서 목록으로 표시됩니다.
+- `ANIMAWORKS_ANIMA_DIR`가 설정되어 있을 때, 하위 명령은 **`load_permissions` + `is_action_gated`**로 거부될 수 있습니다(예: Discord의 `channel_post`).
+- 정의되지 않은 첫 번째 인자는 메인 CLI의 하위 명령(`anima`, `vault` 등)으로 폴백될 수 있습니다.
 
-구체적인 서브커맨드는 각 모듈의 `cli_main` 또는 `animaworks-tool <name> --help`에서 확인하세요. **스킬 본문**에 절차가 있으면 `read_memory_file`에서 스킬 경로를 지정하여 읽습니다.
+구체적인 하위 명령은 각 모듈의 `cli_main` 또는 `animaworks-tool <name> --help`에서 확인하세요. **스킬 본문**에 절차가 있으면 `read_memory_file`에서 스킬 경로를 지정하여 로드합니다.
 
 ## 신뢰 수준（도구 결과의 라벨）
 

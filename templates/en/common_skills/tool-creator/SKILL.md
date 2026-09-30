@@ -259,8 +259,8 @@ The Markdown "Tool Creation" section (`個人ツール` / `共有ツール` line
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` registers a TaskStore input with `task_type="command"`; `PendingTaskExecutor` claims the attempt and runs it (`_handle_submit` in `core/integrations/__init__.py`). The result is also saved to `state/background_tasks/{task_id}.json`. Profile checks are performed only for **importable core modules** (file tools are less likely to be warning targets at submit time).
-- **`gated: True`**: For the corresponding core tool action, explicit permission for `tool_action` is required in permissions.
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` registers the input of `task_type="command"` into the TaskStore, and `PendingTaskExecutor` retrieves and executes the attempt (`_handle_submit` of `core/integrations/__init__.py`). Execution results are also saved to `state/background_tasks/{task_id}.json`. Profile references are only applied to **importable core modules** (file tools are less likely to be flagged as warnings at submission time).
+- **`gated: True`**: For the corresponding actions of core tools, explicit permission for `tool_action` is required in permissions.
 
 ```python
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {

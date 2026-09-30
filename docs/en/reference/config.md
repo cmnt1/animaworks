@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/config.md -->
-<!-- i18n: source-sha256=ee2aef29009e2c98144ea857dcfaf50a9d4b32094b89f40c39fbf4ba7a760178 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=7a3d377a1ffbd3d18bf5f4291d6c807e1fe92401a5c33b0812d55d233bb6c89c generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Configuration Reference
 
@@ -9,9 +9,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `version` | `int` | `1` | Configuration file format version. |
-| `setup_complete` | `bool` | `false` | Whether initial setup has been completed. |
-| `locale` | `str` | `"ja"` | Default language used across the entire system. |
+| `version` | `int` | `1` | Version of the configuration file format. |
+| `setup_complete` | `bool` | `false` | Whether the initial setup has been completed. |
+| `locale` | `str` | `"ja"` | Default language used across the system. |
 | `system` | `SystemConfig` | `{SystemConfig}` | Settings for the runtime environment, timezone, and basic behavior. |
 | `system.mode` | `str` | `"server"` | — |
 | `system.timezone` | `str` | `""` | IANA TZ name; empty = auto-detect from system |
@@ -21,7 +21,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `credentials.keys` | `dict[str, str]` | `{}` | — |
 | `credentials.base_url` | `str \| None` | `null` | — |
 | `model_modes` | `dict[str, str]` | `{}` | Mapping of model name patterns to execution modes. |
-| `model_context_windows` | `dict[str, int]` | `{}` | Per-model context length compatibility settings. models.json usage recommended. |
+| `model_context_windows` | `dict[str, int]` | `{}` | Compatibility settings for context length per model. models.json is recommended. |
 | `model_max_tokens` | `dict[str, int]` | `{}` | Default output token count for each model name pattern. |
 | `anima_defaults` | `AnimaDefaults` | `{AnimaDefaults}` | Default model and execution settings applied to each anima. |
 | `anima_defaults.model` | `str` | `"claude-sonnet-4-6"` | — |
@@ -48,9 +48,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `anima_defaults.mode_s_auth` | `str \| None` | `null` | Mode S auth: "max"\|"api"\|"bedrock"\|"vertex"\|None(=max) |
 | `anima_defaults.default_workspace` | `str` | `""` | — |
 | `anima_defaults.consolidation_enabled` | `bool` | `true` | — |
-| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. Set false to disable only the periodic heartbeat. Message-triggered HB and cron are unaffected. |
+| `anima_defaults.heartbeat_enabled` | `bool` | `true` | Default true. If false, only disables periodic heartbeat. Message-triggered HB and cron are unaffected. |
 | `anima_defaults.token_budget_monthly` | `int \| None` | `null` | None = monthly token usage is unlimited |
-| `animas` | `dict[str, AnimaModelConfig]` | `{}` | Per-anima model configuration overrides. |
+| `animas` | `dict[str, AnimaModelConfig]` | `{}` | Model configuration overrides per anima. |
 | `animas.supervisor` | `str \| None` | `null` | — |
 | `animas.company` | `str \| None` | `null` | — |
 | `animas.speciality` | `str \| None` | `null` | — |
@@ -59,7 +59,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `animas.background_review_enabled` | `bool \| None` | `null` | — |
 | `animas.token_budget_monthly` | `int \| None` | `null` | — |
 | `animas.aliases` | `list[str]` | `[]` | — |
-| `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | Consolidation behavior and schedule. |
+| `consolidation` | `ConsolidationConfig` | `{ConsolidationConfig}` | Behavior and schedule of consolidation. |
 | `consolidation.daily_enabled` | `bool` | `true` | — |
 | `consolidation.weekly_distillation_enabled` | `bool` | `true` | — |
 | `consolidation.synaptic_downscaling_enabled` | `bool` | `true` | — |
@@ -128,7 +128,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `rag.facts_reconcile_similarity_threshold` | `float` | `0.82` | Minimum facts vector similarity before strict LLM duplicate/contradiction/complement labeling. |
 | `rag.facts_reconcile_top_k` | `int` | `5` | Maximum similar active facts considered during legacy fact reconciliation. |
 | `rag.entity_registry_enabled` | `bool` | `true` | — |
-| `gpu` | `GPUConfig` | `{GPUConfig}` | GPU usage and device selection settings. |
+| `gpu` | `GPUConfig` | `{GPUConfig}` | Settings for GPU usage and device selection. |
 | `gpu.embedding_device` | `Literal['auto', 'cuda', 'cpu']` | `"auto"` | — |
 | `gpu.reranker_device` | `Literal['auto', 'cuda', 'cpu']` | `"cpu"` | — |
 | `gpu.embedding_batch_size` | `int` | `32` | — |
@@ -154,9 +154,9 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `skills.external_roots.engine` | `str` | `"—"` | matches ^[a-z][a-z0-9-]*$ |
 | `skills.external_roots.trust_level` | `str` | `"trusted"` | — |
 | `skills.external_roots.enabled` | `bool` | `true` | — |
-| `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Chatwork tool permission settings. |
+| `chatwork_tool` | `ChatworkToolConfig` | `{ChatworkToolConfig}` | Permission settings for Chatwork tools. |
 | `chatwork_tool.grants` | `dict[str, dict[str, str]]` | `{}` | — |
-| `prompt` | `PromptConfig` | `{PromptConfig}` | Settings for system prompt and prompt construction. |
+| `prompt` | `PromptConfig` | `{PromptConfig}` | Settings for system prompts and prompt construction. |
 | `prompt.injection_size_warning_chars` | `int` | `2000` | — |
 | `prompt.identity_business_exclude_headings` | `list[str]` | `["外見","基本プロフィール","Appearance","Basic Profile"]` | — |
 | `prompt.system_prompt_target_tokens` | `int` | `6000` | — |
@@ -182,7 +182,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen` | `ImageGenConfig` | `{ImageGenConfig}` | Image generation providers and default parameters. |
 | `image_gen.backend` | `Literal['api', 'diffusers', 'atlascloud']` | `"api"` | — |
 | `image_gen.image_style` | `Literal['anime', 'realistic']` | `"realistic"` | — |
-| `image_gen.prefer_codex` | `bool` | `true` | Use codex CLI with top priority for image generation if available |
+| `image_gen.prefer_codex` | `bool` | `true` | If codex CLI is available, use it with top priority for image generation |
 | `image_gen.style_reference` | `str \| None` | `null` | Path to organization-wide style reference image |
 | `image_gen.style_prefix` | `str` | `""` | Common style tags prepended to character prompt |
 | `image_gen.style_suffix` | `str` | `""` | Common style tags appended to character prompt |
@@ -201,7 +201,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `image_gen.diffusers_img2img_strength` | `float` | `0.55` | — |
 | `image_gen.ip_adapter_model` | `str` | `"h94/IP-Adapter"` | — |
 | `image_gen.ip_adapter_scale` | `float` | `0.6` | IP-Adapter face reference blend weight (0.0-1.0) |
-| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Human notification methods and destinations. |
+| `human_notification` | `HumanNotificationConfig` | `{HumanNotificationConfig}` | Methods and destinations for notifying humans. |
 | `human_notification.enabled` | `bool` | `false` | — |
 | `human_notification.channels` | `list[NotificationChannelConfig]` | `[]` | — |
 | `human_notification.channels.type` | `str` | `"—"` | "slack", "line", "telegram", "chatwork", "ntfy" |
@@ -210,7 +210,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `interaction` | `InteractionConfig` | `{InteractionConfig}` | Inter-anima dialogue and message processing. |
 | `interaction.default_approver_ids` | `list[str]` | `[]` | Default Slack user IDs merged with per-call call_human allowed_users. |
 | `interaction.web_base_url` | `str` | `""` | — |
-| `server` | `ServerConfig` | `{ServerConfig}` | HTTP server, authentication, and usage control settings. |
+| `server` | `ServerConfig` | `{ServerConfig}` | Settings for the HTTP server, authentication, and usage control. |
 | `server.session_ttl_days` | `int \| None` | `90` | None = unlimited |
 | `server.ipc_stream_timeout` | `int` | `60` | per-chunk timeout in seconds |
 | `server.keepalive_interval` | `int` | `30` | keep-alive emission interval in seconds |
@@ -246,7 +246,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `llm_rate_guard.max_block_seconds` | `int` | `600` | — |
 | `llm_rate_guard.quota_block_seconds` | `int` | `1800` | — |
 | `llm_rate_guard.max_quota_block_seconds` | `int` | `14400` | — |
-| `mcp` | `MCPConfig` | `{MCPConfig}` | MCP server connection and tool exposure settings. |
+| `mcp` | `MCPConfig` | `{MCPConfig}` | Settings for MCP server connections and tool exposure. |
 | `mcp.trigger_scoped_tools` | `bool` | `true` | — |
 | `external_messaging` | `ExternalMessagingConfig` | `{ExternalMessagingConfig}` | External messaging integration such as Slack. |
 | `external_messaging.preferred_channel` | `str` | `"slack"` | "slack" \| "chatwork" \| "discord" |
@@ -309,7 +309,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `external_tasks.sources.slack` | `bool` | `true` | — |
 | `external_tasks.sources.chatwork` | `bool` | `true` | — |
 | `external_tasks.sources.gmail` | `bool` | `true` | — |
-| `github_webhook` | `GitHubWebhookConfig` | `{GitHubWebhookConfig}` | GitHub webhook reception and validation. |
+| `github_webhook` | `GitHubWebhookConfig` | `{GitHubWebhookConfig}` | Receiving and validation of GitHub webhooks. |
 | `github_webhook.enabled` | `bool` | `false` | — |
 | `github_webhook.repos` | `list[str]` | `[]` | — |
 | `github_webhook.dispatcher_anima` | `str` | `"rin"` | — |
@@ -317,7 +317,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `github_webhook.reviewer_login` | `str` | `""` | — |
 | `github_webhook.quiet_seconds` | `float` | `180` | — |
 | `github_webhook.drop_bot_noise` | `bool` | `true` | — |
-| `event_export` | `EventExportConfig` | `{EventExportConfig}` | Event data export. |
+| `event_export` | `EventExportConfig` | `{EventExportConfig}` | Export of event data. |
 | `event_export.url` | `str \| None` | `null` | — |
 | `event_export.headers` | `dict[str, str]` | `{}` | — |
 | `event_export.event_types` | `list[str] \| None` | `null` | — |
@@ -325,7 +325,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `event_export.max_retries` | `int` | `8` | — |
 | `event_export.backoff_base_seconds` | `float` | `2.0` | — |
 | `event_export.spool_max_mb` | `int` | `64` | — |
-| `background_task` | `BackgroundTaskConfig` | `{BackgroundTaskConfig}` | Settings for tools eligible for background execution. |
+| `background_task` | `BackgroundTaskConfig` | `{BackgroundTaskConfig}` | Settings for tools targeted for background execution. |
 | `background_task.enabled` | `bool` | `true` | — |
 | `background_task.shutdown_drain_seconds` | `float` | `600.0` | — |
 | `background_task.eligible_tools` | `dict[str, BackgroundToolConfig]` | `…` | — |
@@ -333,7 +333,7 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `background_task.result_memory_retention_minutes` | `int` | `60` | in-process result cache |
 | `background_task.max_completed_tasks_in_memory` | `int` | `200` | — |
 | `background_task.worker_pool_size` | `int` | `1` | — |
-| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for saving operation and activity logs. |
+| `activity_log` | `ActivityLogConfig` | `{ActivityLogConfig}` | Settings for storing operation and activity logs. |
 | `activity_log.rotation_enabled` | `bool` | `true` | — |
 | `activity_log.rotation_mode` | `Literal['size', 'time', 'both']` | `"size"` | — |
 | `activity_log.max_size_mb` | `int` | `1024` | per-anima total, default 1GB |
@@ -398,7 +398,6 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `housekeeping.facts_lock_stale_hours` | `int` | `24` | — |
 | `housekeeping.curator_report_retention_days` | `int` | `30` | — |
 | `housekeeping.task_results_retention_days` | `int` | `7` | — |
-| `housekeeping.pending_failed_retention_days` | `int` | `14` | — |
 | `housekeeping.corrupt_vectordb_keep_generations` | `int` | `2` | — |
 | `housekeeping.tmp_retention_days` | `int` | `14` | — |
 | `housekeeping.backup_retention_days` | `int` | `90` | — |
@@ -434,13 +433,13 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `activity_schedule.end` | `str` | `"—"` | End time in HH:MM format (may wrap past midnight) |
 | `activity_schedule.level` | `int` | `"—"` | Activity level percentage for this period |
 | `icon_url_template` | `str` | `""` | Template for anima icon URLs. |
-| `ui` | `UIConfig` | `{UIConfig}` | Web UI display settings. |
+| `ui` | `UIConfig` | `{UIConfig}` | Display settings for the Web UI. |
 | `ui.theme` | `str` | `"default"` | — |
 | `ui.demo_mode` | `bool` | `false` | — |
 
 ## Per-anima `status.json`
 
-| Key | ModelConfig type | Default value | Description |
+| Key | ModelConfig Type | Default | Description |
 |---|---|---|---|
 | `background_credential` | `str \| None` | `null` | — |
 | `background_model` | `str \| None` | `null` | Model override used for heartbeat and cron. |
@@ -449,17 +448,17 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `context_absolute_ceiling` | `float` | `0.75` | — |
 | `context_threshold` | `float` | `0.5` | — |
 | `conversation_history_threshold` | `float` | `0.3` | — |
-| `credential` | `str \| None` | `null` | Name of the authentication credentials associated with the anima. |
+| `credential` | `str \| None` | `null` | Name of the authentication credential associated with the anima. |
 | `default_workspace` | `—` | `—` | — |
-| `execution_mode` | `str \| None` | `null` | The anima's execution mode. |
+| `execution_mode` | `str \| None` | `null` | Execution mode of the anima. |
 | `extra_mcp_servers` | `dict[str, dict]` | `{}` | — |
 | `fallback_model` | `str \| None` | `null` | Fallback model used when the primary model fails. |
 | `fallback_models` | `list[str]` | `[]` | — |
-| `heartbeat_enabled` | `bool` | `true` | Enables or disables periodic heartbeats. |
+| `heartbeat_enabled` | `bool` | `true` | Enables or disables the periodic heartbeat. |
 | `max_session_age_hours` | `float` | `24.0` | — |
 | `max_tokens` | `int` | `8192` | Maximum number of output tokens for the model. |
 | `mode_s_auth` | `str \| None` | `null` | — |
-| `model` | `str` | `"claude-sonnet-4-6"` | The anima's primary model. |
+| `model` | `str` | `"claude-sonnet-4-6"` | Primary model of the anima. |
 | `supervisor` | `str \| None` | `null` | Name of the parent supervisor anima. |
 | `task_compaction_max` | `int` | `6` | — |
 | `task_compaction_tokens` | `int` | `0` | — |
@@ -467,12 +466,12 @@ Generated from the definitions of `AnimaWorksConfig`, per-anima `ModelConfig`, a
 | `thinking_effort` | `str \| None` | `null` | — |
 | `token_budget_monthly` | `int \| None` | `null` | — |
 | `voice_thinking_effort` | `str \| None` | `null` | — |
-| `bootstrap_state` | `—` | `—` | Initialization status. |
+| `bootstrap_state` | `—` | `—` | Status of the initialization process. |
 | `company` | `—` | `—` | Company the anima belongs to. |
 | `department` | `—` | `—` | Department the anima belongs to. |
 | `enabled` | `—` | `—` | Enables or disables the anima. |
 | `needs_user_input` | `—` | `—` | Whether user input is required. |
-| `role` | `—` | `—` | The anima's role template. |
+| `role` | `—` | `—` | Role template of the anima. |
 
 ## `models.json`
 

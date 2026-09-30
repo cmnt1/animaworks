@@ -24,7 +24,7 @@ TaskExec는 정본 TaskStore에서 실행 가능한 영속 작업을 획득한�
 하트비트와 인간과의 대화는 **별도 락**으로 관리되므로 동시에 동작할 수 있다.
 하트비트 실행 중에도 인간의 메시지에는 즉시 응답 가능.
 
-### submit_tasks에 의한 작업 투입
+### submit_tasks를 통한 작업 투입
 
 하트비트에서 실행해야 할 작업을 발견한 경우, `submit_tasks` 도구로 작업을 투입한다:
 
@@ -36,28 +36,28 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 ```
 
 `submit_tasks`는 검증 후, 작업과 완전한 실행 입력을 하나의 정본 TaskStore에 일괄 저장한다.
-실행 권한의 획득과 시도 이력은 호스트가 관리한다. `in_progress`는 열람용이며, 에이전트는 `update_task`로 `done` / `pending` / `cancelled`을 선언한다. 중단된 pending 작업은 같은 ID에 `resume: true`을 지정하여 명시적으로 재개하고, 다른 작업으로 대체하지 않는다.
+실행 권한 획득과 시도 이력은 호스트가 관리한다. `in_progress`는 열람용이며, 에이전트는 `update_task`로 `done` / `pending` / `cancelled`을 선언한다. 중단된 pending 작업은 동일한 ID에 `resume: true`을 지정하여 명시적으로 재개하고, 다른 작업으로 대체하지 않는다.
 
-**장시간 CLI 도구**(`animaworks-tool submit …`)는 `task_type="command"`로 TaskStore에 등록된다. PendingTaskExecutor가 실행 시도를 가져와 백그라운드에서 실행하며 결과는 기존 완료 알림과 `state/background_tasks/{task_id}.json`에서 확인할 수 있다. 자세한 내용은 `operations/background-tasks.md`를 참조.
+**장시간 CLI 도구**(`animaworks-tool submit …`)는 `task_type="command"`으로 TaskStore에 등록되며, PendingTaskExecutor가 시도를 가져와 백그라운드로 실행한다. 완료 결과는 `state/background_tasks/{task_id}.json`과 알림으로 확인한다. 자세한 내용은 `operations/background-tasks.md`를 참조한다.
 
-**주의**: 저장 위치를 직접 편집하지 않는다. 구 `state/task_queue.jsonl`와 `state/pending/`는 마이그레이션·내보내기용 증적으로 보존하고, 가동 중 투입처로 사용하지 않는다.
+**주의**: 저장 위치를 직접 편집하지 않는다. 기존 `state/task_queue.jsonl`과 `state/pending/`는 마이그레이션·내보내기용 증적으로 보존하며, 운영 중 투입 대상으로 사용하지 않는다.
 
-단일 작업이라도 `submit_tasks`(tasks 배열 1건)을 사용한다.
-복수의 독립 작업은 `parallel: true`으로 병렬 실행, 의존 관계가 있는 경우는 `depends_on`을 지정한다.
-상세는 task-management를 참조.
+단일 작업이라도 `submit_tasks`(tasks 배열 1건)를 사용한다.
+여러 독립 작업은 `parallel: true`으로 병렬 실행하고, 의존 관계가 있는 경우 `depends_on`을 지정한다.
+자세한 내용은 task-management를 참조한다.
 
-### 하트비트의 트리거 종류
+### 하트비트 트리거 유형
 
-하트비트에는 2종류의 트리거가 있다:
+하트비트에는 두 가지 유형의 트리거가 있다:
 
 | 트리거 | 설명 |
 |---------|------|
-| 정기 하트비트 | `config.json`의 `heartbeat.interval_minutes`에 따라 APScheduler가 정기적으로 시작 |
+| 정기 하트비트 | `config.json`의 `heartbeat.interval_minutes`에 따라 APScheduler가 주기적으로 시작 |
 | 메시지 트리거 | Inbox에 읽지 않은 메시지가 도착했을 때 즉시 시작(Inbox 경로로 처리) |
 
-메시지 트리거는 Inbox JSON 파일 변경 알림으로 시작한다. 알림을 놓친 경우를 대비해 45초마다 읽지 않은 메시지를 다시 확인한다.
-Inbox 작업은 동시에 하나만 실행하며, 실행 중 도착한 메시지는 다음 한 번의 처리로 모은다. Provider 오류가 나면 `rate_guard` 복구 시간을 기다리고 읽지 않은 메시지는 남겨 둔다.
-intent에 따른 시작 필터나 메시지 트리거 쿨다운 / 캐스케이드 억제는 없다. 확인·감사 인사만 있는 메시지에는 답장하지 않도록 Inbox 프롬프트에서 지시한다.
+메시지 트리거는 Inbox의 JSON 파일 변경 알림으로 시작한다. 알림을 놓칠 경우에 대비해 45초마다 읽지 않은 메시지를 다시 확인한다.
+동시에 실행되는 Inbox 처리는 1개뿐이며, 실행 중 도착한 메시지는 다음 1회에 모아서 처리한다. Provider 오류 시 `rate_guard`의 복구 시간을 기다리고, 읽지 않은 메시지를 남긴다.
+수신 intent에 의한 시작 필터나 메시지 기반 cooldown / cascade 억제는 없다. 이해·감사만 있는 메시지에 답장하지 않는 행동 규칙은 Inbox 프롬프트에서 지시한다.
 
 ## heartbeat.md의 설정
 
@@ -142,14 +142,14 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 설정 방법: `animaworks anima set-background-model {名前} claude-sonnet-4-6`
 상세는 `reference/operations/model-guide.md`의 "백그라운드 모델" 섹션을 참조.
 
-### 하트비트의 내부 동작
+### 하트비트 내부 동작
 
-- **크래시 복구**: 이전 하트비트가 실패한 경우, `state/recovery_note.md`에 오류 정보가 저장된다. 다음 시작 시 프롬프트에 주입되고, 복구 후 파일은 삭제된다.
-- **회고 기록**: 하트비트 출력에 `[REFLECTION]...[/REFLECTION]` 블록이 있으면 activity_log에 `heartbeat_reflection`로 기록되고, 이후 하트비트 컨텍스트에 포함된다.
-- **부하 체크**: 부하를 가진 Anima에는 하트비트·Cron의 프롬프트에 부하의 상태 확인 지침이 자동 주입된다.
-- **세션 시간 제한**(`config.json`의 `heartbeat`): `soft_timeout_seconds`(기본 300초) 경과 시 랩업용 리마인더를 주입, `hard_timeout_seconds`(기본 600초)에서 세션을 강제 종료한다.
-- **아이들 시 자동 컴팩트**: `heartbeat.idle_compaction_minutes`(기본 10분) — 스트림 종료부터 이 시간 경과 후 아이들 자동 컴팩션이 실행된다(실행 엔진 측 설정).
-- **Board 게시**: 한 run에서 같은 채널에는 한 번만 게시할 수 있다. run 간 게시 간격 제한은 없다.
+- **크래시 복구**: 이전 하트비트가 실패한 경우, `state/recovery_note.md`에 오류 정보가 저장된다. 다음 시작 시 프롬프트에 주입되며, 복구 후 파일은 삭제된다.
+- **회고 기록**: 하트비트 출력에 `[REFLECTION]...[/REFLECTION]` 블록이 있으면 activity_log에 `heartbeat_reflection`로 기록되며, 이후 하트비트 컨텍스트에 포함된다.
+- **부하 확인**: 부하를 가진 Anima에는 하트비트·Cron 프롬프트에 부하의 상태 확인 지침이 자동 주입된다.
+- **세션 시간 제한**(`config.json`의 `heartbeat`): `soft_timeout_seconds`(기본 300초) 경과 시 랩업용 리마인더를 주입하고, `hard_timeout_seconds`(기본 600초)에서 세션을 강제 종료한다.
+- **유휴 시 자동 컴팩트**: `heartbeat.idle_compaction_minutes`(기본 10분) — 스트림 종료 후 이 시간이 지나면 유휴 자동 컴팩션이 실행된다(실행 엔진 측 설정).
+- **Board 게시**: 동일 run에서는 같은 채널에 1회까지. run을 넘는 게시 간격 제한은 없다.
 
 ### 정기 하트비트의 스케줄 방식
 

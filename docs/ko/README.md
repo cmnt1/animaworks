@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/README.md -->
-<!-- i18n: source-sha256=5fdde200f6db42bbc3c5361f88331d892647ac956649d3ff821a0e79dd60e818 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=a5297c2ff72c9be7aec9d207d2f8113a17146031ef722919d65bce4bf015b42f generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: 193a5e72
 
@@ -12,7 +12,7 @@
 | 문서 | 내용 |
 |---|---|
 | [설계 이념](vision.md) | AnimaWorks가 지향하는 설계 사상과 가치관. |
-| [기능 개요](overview.md) | 기능의 전체 모습과 상세 장으로의 입구. |
+| [기능 개관](overview.md) | 기능의 전체 모습과 상세 장으로 가는 입구. |
 | [뇌과학과의 대응](brain-mapping.md) | 기억·주의·자율 기구와 뇌과학의 대응 및 설계 근거. |
 | [아키텍처 전체](architecture/index.md) | 시스템 구성과 각 아키텍처 장의 안내. |
 | [Anima의 파일](architecture/anima-files.md) | Anima별 정의 파일, 설정, 상태 파일. |
@@ -21,7 +21,7 @@
 | [라이프사이클](architecture/lifecycle.md) | chat, inbox, heartbeat, cron, task의 시작 경로와 잠금. |
 | [프롬프트 구축](architecture/prompt.md) | 시스템 프롬프트와 런타임 컨텍스트의 구성. |
 | [작업 관리](architecture/tasks.md) | Task Board, 위임, background task. |
-| [메시징](architecture/messaging.md) | DM, Board, 인간 알림, Inbox wake와 메시지 처리, 외부 연계. |
+| [메시징](architecture/messaging.md) | DM, Board, 인간에게의 알림, Inbox wake와 메시지 처리, 외부 연계. |
 | [기억 시스템](memory/index.md) | 기억의 설계, 디렉터리, frontmatter. |
 | [자동 회상](memory/priming.md) | 실행 시 기억을 컨텍스트로 가져오는 방식. |
 | [의도적 회상과 검색](memory/retrieval.md) | `search_memory`, 검색 처리, RAG, 복구. |
@@ -32,7 +32,7 @@
 | [회사 관리](operations/company.md) | 조직·회사 정보의 관리. |
 | [GPU 운영](operations/gpu.md) | GPU를 사용하는 컴포넌트의 운영. |
 | [개발 팀](operations/dev-team.md) | 개발 환경과 팀 운영. |
-| [Slim Runtime 이전](operations/slim-runtime-migration.md) | Slim Runtime의 이전 절차. |
+| [Slim Runtime 이행](operations/slim-runtime-migration.md) | Slim Runtime의 이행 절차. |
 | [Slack 연계](integrations/slack.md) | Slack 연결의 설정과 운영. |
 | [Zoom 연계](integrations/zoom.md) | Zoom RTMS 연결의 설정과 운영. |
 | [CLI 참조](reference/cli.md) | `animaworks` 명령의 자동 생성 참조. |

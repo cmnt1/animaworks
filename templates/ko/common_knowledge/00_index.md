@@ -26,15 +26,15 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 
 ### 커뮤니케이션
 
-| 문제 상황 | 참조 대상 |
+| 문제 상황 | 참조처 |
 |---------|--------|
-| 메시지 전송 방법을 모르겠다 | `reference/communication/messaging-guide.md` |
-| Board(공유 채널) 사용법을 모르겠다 | `communication/board-guide.md` |
-| 지침 전달 방법・보고 방법을 모르겠다 | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
-| 위임・완료 보고・에스컬레이션의 필수 항목을 확인하고 싶다 | `communication/message-quality-protocol.md` |
-| Inbox 시작이나 메시지 전송 동작을 확인하고 싶다 | `communication/sending-limits.md` |
-| 인간에게 알림하는 방법을 모르겠다 | `communication/call-human-guide.md` |
-| Slack 봇 토큰 설정을 모르겠다 | `reference/communication/slack-bot-token-guide.md` ※기술 참조 |
+| 메시지 보내는 방법을 모르겠음 | `reference/communication/messaging-guide.md` |
+| Board(공유 채널) 사용법을 모르겠음 | `communication/board-guide.md` |
+| 지침 전달 방법・보고 방법을 모르겠음 | `reference/communication/instruction-patterns.md` / `reference/communication/reporting-guide.md` |
+| 위임・완료 보고・에스컬레이션의 필수 항목을 확인하고 싶음 | `communication/message-quality-protocol.md` |
+| Inbox 시작이나 메시지 전송 동작을 확인하고 싶음 | `communication/sending-limits.md` |
+| 사람에게 알림하는 방법을 모르겠음 | `communication/call-human-guide.md` |
+| Slack 봇 토큰 설정을 모르겠음 | `reference/communication/slack-bot-token-guide.md` ※기술 참조 |
 
 ### 조직・계층
 
@@ -121,13 +121,13 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 
 | 파일 | 개요 |
 |---------|------|
-| `messaging-guide.md` | 메시지 송수신 가이드(send_message 파라미터, 스레드 관리, 답장 방침) |
-| `board-guide.md` | Board(공유 채널) 가이드(post_channel / read_channel의 구분 사용, 게시 규칙) |
+| `messaging-guide.md` | 메시지 송수신 가이드(send_message 파라미터, 스레드 관리, 답변 방침) |
+| `board-guide.md` | Board(공유 채널) 가이드(post_channel / read_channel 사용 구분, 게시 규칙) |
 | `instruction-patterns.md` | 지침 전달 방법 패턴 모음(명확한 지침 작성법, 위임 패턴, 진행 상황 확인) |
 | `reporting-guide.md` | 보고・에스컬레이션 방법(보고 시점, 형식, 긴급 vs 정기) |
-| `message-quality-protocol.md` | 메시지 품질 프로토콜(위임 4항목・완료 보고 3항목・에스컬레이션 4항목의 필수 확인) |
-| `sending-limits.md` | Inbox 파일 wake, 메시지 묶음 처리, run 내 중복 방지, 대화 루프 방지 |
-| `call-human-guide.md` | 인간에게 알림 가이드(call_human 사용법, 답변 수신, 알림 채널 설정) |
+| `message-quality-protocol.md` | 메시지 품질 프로토콜(위임 4항목・완료 보고 3항목・에스컬레이션 4항목 필수 체크) |
+| `sending-limits.md` | Inbox 파일 wake・메시지 집약・run 내 중복 방지・루프 회피 |
+| `call-human-guide.md` | 사람에게 알림 가이드(call_human 사용법, 답변 수신, 알림 채널 설정) |
 | `slack-bot-token-guide.md` | → `reference/communication/slack-bot-token-guide.md`로 이동. Slack 봇 토큰 설정 가이드 |
 
 ### operations/ — 운영・작업 관리
@@ -179,15 +179,15 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 
 | 키워드 | 참조처 |
 |-----------|--------|
-| 기초, 입문, 전체상, 에센셜, 시작 방법, 개요 | `anatomy/essentials.md` |
-| 메시지, send_message, 전송, 답장, 스레드, inbox | `reference/communication/messaging-guide.md` |
+| 기초, 입문, 전체 구조, 필수, 시작 방법, 개요 | `anatomy/essentials.md` |
+| 메시지, send_message, 전송, 답변, 스레드, inbox | `reference/communication/messaging-guide.md` |
 | Board, 채널, post_channel, read_channel | `communication/board-guide.md` |
 | DM 이력, read_dm_history, 과거 대화 | `communication/board-guide.md` |
 | 지침, 위임, 작업 요청, 위임 | `reference/communication/instruction-patterns.md` |
-| 보고, 일보, 요약, 완료 보고, 에스컬레이션 | `reference/communication/reporting-guide.md` |
+| 보고, 일일 보고, 요약, 완료 보고, 에스컬레이션 | `reference/communication/reporting-guide.md` |
 | 품질 프로토콜, 필수 항목, 검증 근거, 완료 조건, 위임 체크 | `communication/message-quality-protocol.md` |
-| Inbox wake, 메시지 묶음 처리, 중복 발신 방지, 확인 답장, 대화 루프 | `communication/sending-limits.md` |
-| call_human, 인간 알림, 인간에게 연락, 알림 채널 | `communication/call-human-guide.md` |
+| Inbox wake, 메시지 집약, 중복 전송 방지, 수신 확인 답변, 대화 루프 | `communication/sending-limits.md` |
+| call_human, 사람 알림, 사람에게 연락, 알림 채널 | `communication/call-human-guide.md` |
 | Slack, 봇 토큰, SLACK_BOT_TOKEN, not_in_channel | `reference/communication/slack-bot-token-guide.md` |
 | 조직, supervisor, 상급자, 부하, 동료 | `reference/organization/structure.md` |
 | 역할, 책임, speciality, 전문 | `reference/organization/roles.md` |
@@ -195,10 +195,10 @@ Heartbeat / Cron / 팀 설계 / 기억 / 비용 최적화의 핵심이 한 장�
 | delegate_task, 작업 위임, task_tracker | `organization/hierarchy-rules.md`, `reference/operations/task-management.md` |
 | 작업, current_state, pending, 진행 상황, 우선순위 | `reference/operations/task-management.md` |
 | 작업 큐, submit_tasks, update_task, TaskExec, animaworks-tool task list | `reference/operations/task-management.md` |
-| 작업 보드, 대시보드, 인간용 | `operations/task-board-guide.md` |
+| 작업 보드, 대시보드, 사람용 | `operations/task-board-guide.md` |
 | 설정, config, status.json, SSoT, reload | `reference/operations/project-setup.md` |
 | 하트비트, heartbeat, 정기 체크 | `reference/operations/heartbeat-cron-guide.md` |
-| cron, 스케줄, 정시 작업 | `reference/operations/heartbeat-cron-guide.md` |
+| cron, 스케줄, 정기 작업 | `reference/operations/heartbeat-cron-guide.md` |
 | 도구, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
 | 실행 모드, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
 | 백그라운드, submit, 장시간 도구 | `operations/background-tasks.md` |

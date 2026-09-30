@@ -11,16 +11,16 @@ Use the `send_message` tool to send messages (recommended).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `to` | string | MUST | Destination. Resolution rules are described in "Destination `to` Resolution" below. Anima names, human aliases in `config.json`, `slack:USERID` / `chatwork:ROOMID`, and Slack user IDs alone (`U` + 8 or more alphanumeric characters) are supported |
+| `to` | string | MUST | Destination. Resolution rules are described below under "Destination `to` Resolution." Accepts Anima names, human aliases in `config.json`, `slack:USERID` / `chatwork:ROOMID`, and Slack user IDs alone (`U` + 8 or more alphanumeric characters) |
 | `content` | string | MUST | Message body |
-| `intent` | string | MUST | Message intent. Allowed values: `report` (progress/result report), `question` (question or inquiry requiring a response) only. Use the `delegate_task` tool for task delegation. Use Board (post_channel) for acknowledgments, thanks, and FYI |
+| `intent` | string | MUST | Message intent. Allowed values: `report` (progress or result reporting), `question` (questions or inquiries requiring a response) only. Use the `delegate_task` tool for task delegation. Use Board (post_channel) for acknowledgments, thanks, and FYI |
 | `reply_to` | string | MAY | ID of the message being replied to (e.g., `20260215_093000_123456`) |
 | `thread_id` | string | MAY | Thread ID. Specify when joining an existing thread |
 
-### Per-run DM rule
+### DM Rules Within a Run
 
-- A run can send **one DM per recipient**. This prevents duplicates; there is no recipient-count cap.
-- For additional information to the same recipient, use Board where appropriate or send in a later run.
+- Send at most **one** DM to the same destination per run. This rule prevents duplicate sends; there is no limit on the number of destinations
+- To share additional information with the same destination, use Board or send it in the next run depending on the content
 
 ### Destination `to` Resolution (Unified Outbound)
 
@@ -31,27 +31,27 @@ Destinations in `send_message` are resolved by `core/outbound.resolve_recipient`
 | Priority | Condition | Result |
 |----------|-----------|--------|
 | 1 | **Exact match** with an existing Anima directory name (case-sensitive) | Internal Inbox |
-| 2 | **Match** with a key in `config.json`'s `external_messaging.user_aliases` (case-insensitive) | External (Slack or Chatwork). Prefers `preferred_channel`; if no contact there, falls back to the other configured channel |
-| 3 | Starts with `slack:` (case-insensitive; e.g., `slack:U0123456789`, `Slack:u06…`) | Trim after the colon, normalize the user ID to **uppercase**, then send via Slack DM |
-| 4 | Starts with `chatwork:` (prefix is case-insensitive) | Post to Chatwork with the room ID after trimming the colon (room ID case is preserved) |
-| 5 | **Slack user ID format** alone: starts with `U` followed by **8 or more** alphanumeric characters (matches regex `^U[A-Z0-9]{8,}$` overall) | Slack DM (for specifying only the ID without a prefix). **Strings that are too short** (e.g., `U12345`) do not match at this stage and proceed to lower rules |
+| 2 | **Match** with a key in `config.json`'s `external_messaging.user_aliases` (case-insensitive) | External (Slack or Chatwork). Prefers `preferred_channel`; if no contact exists there, falls back to the other configured channel |
+| 3 | Starts with `slack:` (case-insensitive; e.g., `slack:U0123456789`, `Slack:u06…`) | Trims everything after the colon, normalizes the user ID to **uppercase**, then sends a Slack DM |
+| 4 | Starts with `chatwork:` (prefix is case-insensitive) | Posts to Chatwork with the room ID obtained by trimming after the colon (room ID case is preserved) |
+| 5 | **Slack user ID format** alone: starts with `U` followed by **8 or more** alphanumeric characters (the entire string matches the regular expression `^U[A-Z0-9]{8,}$`) | Slack DM (for specifying only the ID without a prefix). **Strings that are too short** (e.g., `U12345`) do not match at this stage and proceed to lower-priority rules |
 | 6 | **Case-insensitive match** with an existing Anima name | Internal Inbox (delivered under the official name on disk) |
 | 7 | None of the above | Unknown destination (`RecipientNotFoundError`. At the low level, known Anima names or alias names may be included in the message) |
 
-**Conflict between Anima names and aliases**: If a string is the same as a key in `user_aliases` but **exactly matches an existing Anima directory name**, priority **1** always takes precedence and it is delivered to the internal Inbox (the alias is not used).
+**Conflict between Anima names and aliases**: Even if a string matches a key in `user_aliases`, if it **exactly matches an existing Anima directory name**, priority **1** always takes precedence and the message is delivered to the internal Inbox (the alias is not used).
 
 #### When the `send_message` Tool Fails to Resolve a Destination
 
-Even if `resolve_recipient` fails, the full exception text is not returned directly in the tool result. Instead, **guidance** is returned according to the session type (`core/tooling/handler_comms.py`).
+Even if `resolve_recipient` fails, the tool result does not return the full exception text. Instead, **guidance** is returned according to the session type (`core/tooling/handler_comms.py`).
 
 - **During a chat with a human** (`chat`): Indicates that `send_message` cannot be sent to that destination, that **replying directly in text will reach the human user**, and that `send_message` should be used for other Anima.
-- **Outside a chat** (heartbeat, cron, etc.): Indicates that **`call_human`** should be used to contact a human, and that `send_message` should be used for other Anima.
+- **Outside a chat** (heartbeat, cron, etc.): Indicates that contact with humans should use **`call_human`**, and that `send_message` should be used for other Anima.
 
-Therefore, low-level wording like "Known animas: …" often does not appear to tool users. To fix configuration or aliases, check `external_messaging` in `config.json`.
+Therefore, low-level wording such as "Known animas: …" often does not appear to tool users. To fix configuration or aliases, check `config.json`'s `external_messaging`.
 
 #### Human Aliases and `preferred_channel`
 
-Each entry in `external_messaging.user_aliases` can have `slack_user_id` and/or `chatwork_room_id` configured. When `external_messaging.preferred_channel` is `slack`, Slack is chosen if a Slack ID exists. If the Slack ID is empty and only Chatwork exists, it falls back to Chatwork (and vice versa when `preferred_channel` is `chatwork`). An alias with **neither ID** results in an error during resolution.
+Each entry in `external_messaging.user_aliases` can have `slack_user_id` and/or `chatwork_room_id` configured. When `external_messaging.preferred_channel` is `slack`, Slack is chosen if a Slack ID exists. If the Slack ID is empty and only Chatwork exists, it falls back to Chatwork (and vice versa when `preferred_channel` is `chatwork`). Aliases with **neither ID** result in an error during resolution.
 
 #### Delivery After Reaching an External Channel (Overview)
 
@@ -59,8 +59,8 @@ When resolved to an external route, `send_message` is sent via API from `core/ou
 
 - **Attempt order**: First send via the resolved `channel` (`slack` or `chatwork`); on exception, follow `_build_channel_order` and, if the recipient has **both** a Slack ID and a Chatwork room ID, also try the other channel in sequence.
 - **Slack**: The token used by `core/outbound._send_via_slack` is **`SLACK_BOT_TOKEN__{送信元Anima名}`** from Vault/shared credentials (if available). The body is formatted for Slack by `md_to_slack_mrkdwn`. If an icon URL can be resolved via `core/integrations._anima_icon_url`, it is passed to `post_message`.
-  - **`[送信者名]` prefix at the start of the body**: Only when **no Anima-specific bot token exists**, `[{送信元Anima名}] ` is prepended to the body (to indicate in the DM who the message is from). **When a token exists**, no prefix is added; the sender is represented by `username` (Anima name) and `icon_url`.
-- **Chatwork**: Posts to the room via the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). If the sending Anima name exists, `[送信者名] ` is prepended to the body, and it is formatted by `md_to_chatwork`.
+  - **`[送信者名]` prefix at the start of the body**: Only when **no Anima-dedicated bot token exists**, `[{送信元Anima名}] ` is prepended to the body (to indicate in the DM who the message is from). **When a token exists**, no prefix is added; the sender is represented by `username` (Anima name) and `icon_url`.
+- **Chatwork**: Posts to the room via the sending Anima's own identity token (`CHATWORK_API_TOKEN__<Anima名>`). If the sending Anima name exists, `[送信者名] ` is prepended to the body, and the message is formatted by `md_to_chatwork`.
 
 ### Basic Send Example
 
@@ -70,7 +70,7 @@ send_message(to="alice", content="レビュー完了しました。修正点は3
 
 ### Reply Send Example
 
-Use the received message's `id` and `thread_id` to link the reply:
+Use the received message's `id` and `thread_id` to associate the reply:
 
 ```
 send_message(
@@ -88,24 +88,24 @@ Aliases registered in `user_aliases` (e.g., `user`) can be sent to via `send_mes
 send_message(to="user", content="対応完了しました。", intent="report")
 ```
 
-### Intent Usage
+### Choosing the Right Intent
 
 | intent | Use | Example |
 |--------|-----|---------|
-| `report` | Progress or result report | Task completion report, status report to supervisor |
-| `question` | Question requiring a response | Clarifying uncertainties, asking for a decision |
+| `report` | Progress or result reporting | Task completion report, status report to supervisor |
+| `question` | Questions requiring a response | Clarifying uncertainties, inquiries seeking a decision |
 
-**Note**: Acknowledgments, thanks, and FYI such as "Understood" or "Thank you" cannot be sent via DM. Use Board (post_channel).
+**Note**: Acknowledgments, thanks, and FYI messages such as "Understood" or "Thank you" cannot be sent via DM. Use Board (post_channel) instead.
 
-### Board vs. DM Usage
+### Board vs. DM
 
 | Use | Tool | Example |
 |-----|------|---------|
-| Progress or result report | send_message (intent=report) | Task completion report to supervisor |
+| Progress or result reporting | send_message (intent=report) | Task completion report to supervisor |
 | Task delegation | delegate_task | Delegate one persistent task to a direct subordinate. Check progress via task_tracker |
-| Question or inquiry | send_message (intent=question) | Clarifying uncertainties |
-| Acknowledgment, thanks, FYI | post_channel (Board) | "Understood" or "Shared" |
-| Team-wide sharing | post_channel (Board) | Announcement to the relevant group |
+| Questions or inquiries | send_message (intent=question) | Clarifying uncertainties |
+| Acknowledgment, thanks, FYI | post_channel (Board) | "Understood," "Shared" |
+| Team-wide sharing | post_channel (Board) | Broadcasting to all relevant parties |
 | Second message to the same destination | post_channel (Board) | Sharing additional information |
 
 ## Thread Management
@@ -143,12 +143,12 @@ send_message(
 
 - MUST: Keep using the same `thread_id` for conversations on the same topic
 - MUST: When replying, set the original message's `id` as `reply_to`
-- SHOULD NOT: Do not mix a different topic into an existing thread. Start a new thread for a new topic
-- MAY: If `thread_id` is unknown, it may be omitted (treated as a new thread)
+- SHOULD NOT: Mix a different topic into an existing thread. Start a new thread for a new topic
+- MAY: If `thread_id` is unknown, it may be omitted (the message is treated as a new thread)
 
 ## Sending Messages via CLI
 
-Methods for when the tool is unavailable or when sending via Bash.
+A method for when the tool is unavailable or when sending via Bash.
 
 ### Basic Syntax
 
@@ -176,12 +176,12 @@ animaworks send bob alice "了解しました" --intent report --reply-to 202602
 
 ### Automatic Delivery
 
-When a message is received, the system automatically notifies unread messages at heartbeat or conversation start.
+When a message is received, the system automatically notifies you of unread messages at heartbeat or conversation start.
 Manual checking is usually unnecessary.
 
 ### Structure of Received Messages
 
-Received messages include the following information:
+Received messages contain the following information:
 
 | Field | Description | Example |
 |-------|-------------|---------|
@@ -189,17 +189,17 @@ Received messages include the following information:
 | `thread_id` | Thread identifier | `20260215_090000_000000` |
 | `reply_to` | Reply-to message ID | `20260215_085500_789012` |
 | `from_person` | Sender name | `alice` |
-| `to_person` | Recipient name (self) | `bob` |
+| `to_person` | Recipient name (you) | `bob` |
 | `type` | Message type | `message` (normal), `board_mention` (Board mention), `ack` (read receipt) |
 | `content` | Message body | `レビューお願いします` |
 | `intent` | Sender's intent | `report`, `question` |
 | `timestamp` | Send timestamp | `2026-02-15T09:30:00` |
 
-### Reply Guidance
+### Reply Policy
 
-- MUST: Respond to unread messages that contain a question, request, or action requiring a response
-- MUST NOT: Continue an exchange by replying to a message that is only an acknowledgement, thanks, or praise
-- SHOULD: If an acknowledgement is useful, include the next action rather than only saying "Understood"
+- MUST: Respond to unread messages that contain questions, requests, or require action
+- MUST NOT: Continue replying to mere acknowledgments, thanks, or praise
+- SHOULD: If an acknowledgment is needed, include not just "Understood" but also the next action
 
 ## Receiving Messages from External Platforms
 
@@ -207,12 +207,12 @@ Received messages include the following information:
 
 Messages from external platforms such as Slack or Chatwork are **continuously received by the AnimaWorks server and automatically delivered to the target Anima's Inbox**. The Anima itself does not need to maintain a WebSocket connection or poll APIs.
 
-The server receives messages via the following methods (configured by the administrator):
+The server receives messages using the following methods (configured by the administrator):
 
 - **Socket Mode**: Real-time reception via Slack WebSocket
 - **Webhook**: Reception via Slack Events API / Chatwork Webhook
 
-In either method, messages are delivered to the Inbox in the same format.
+Regardless of the method, messages are delivered to the Inbox in the same format.
 
 ### Identifying External Messages
 
@@ -223,42 +223,42 @@ Messages arriving from external platforms differ from normal Anima-to-Anima mess
 | `source` | `"anima"` | `"slack"`, `"chatwork"`, etc. |
 | `from_person` | Anima name (e.g., `alice`) | `"slack:U12345..."` format |
 
-### Cases where external messages arrive
+### Cases Where External Messages Arrive
 
 1. **DM from a human**: When a human sends a message to Anima via Slack/Chatwork
-2. **Reply to call_human**: When a human replies in the Slack thread of a notification sent via `call_human` (details: `communication/call-human-guide.md`)
+2. **Reply to call_human**: When a human replies in the Slack thread of the notification sent via `call_human` (details: `communication/call-human-guide.md`)
 3. **Mention via channel**: When a message addressed to Anima is posted in a Slack channel
 
-### Inbox processing for Slack messages
+### Inbox Processing for Slack Messages
 
-When a Slack message is written to the Inbox, a file-change notification starts Inbox processing. Intent does not filter wakeups, and messages without a mention are not delayed until the periodic heartbeat. A 45-second safety rescan catches missed file notifications.
+When a Slack message is written to the Inbox, a file change notification triggers Inbox processing. There is no intent filter at startup, and processing is not delayed based on whether a mention is present. If a file notification is missed, a re-check every 45 seconds compensates.
 
-| Condition | Inbox processing | Response guidance |
-|------|------------------|-------------------|
-| **With @mention** (Bot is mentioned) | Woken by the file notification | `intent="question"` is attached automatically; respond according to the content |
-| **DM** (direct message to the Bot) | Woken by the file notification | `intent="question"` is attached automatically; respond according to the content |
-| **Channel message without mention** | Woken by the file notification | Treat messages not directed to you as context; a reply or action may not be needed |
+| Condition | Inbox Processing | Response Policy |
+|------|------------|----------|
+| **With @mention** (Bot is mentioned) | Triggered by file notification | `intent="question"` is automatically assigned. Respond according to the content |
+| **DM** (Direct message to the Bot) | Triggered by file notification | `intent="question"` is automatically assigned. Respond according to the content |
+| **Channel message without mention** | Triggered by file notification | For messages not addressed to you, just stay informed; replies or actions may not be necessary |
 
-A wakeup does not mean that a reply is always needed. Do not reply to messages that are only acknowledgements, thanks, or praise; act only when there is an additional question, request, or new information.
+Being triggered does not mean you must always reply. Do not reply to mere acknowledgments, thanks, or praise; only respond when there are additional questions, requests, or new information.
 
-### Responding to external messages
+### Responding to External Messages
 
-When an external message is received:
+When you receive an external message:
 
 - If it is a reply to `call_human`: respond with a chat response or via `call_human`
-- If it is a DM from a human: reply via chat (Web UI), send via `send_message` to a registered human alias, or if the sender's Slack user ID is known, **a reply via `send_message` is possible** using `to="slack:U0123456789"` (or the ID alone, if the implementation accepts that format) (provided the above "resolution of destination `to`" is satisfied)
-- If the sender is unknown: check the message's `source` and `from_person`, and report to the supervisor as needed
+- If it is a DM from a human: reply via chat (Web UI), send `send_message` to a registered human alias, or if the other party's Slack user ID is known, **a reply via `send_message` is possible** using `to="slack:U0123456789"` (or the ID alone, if the implementation accepts that format) (provided the above "Resolution of destination `to`" is satisfied)
+- If the sender is unknown: check the message's `source` and `from_person`, and report to your supervisor as needed
 
-## Best practices for message content
+## Best Practices for Message Content
 
-### How to write good messages
+### How to Write Good Messages
 
 1. **Put the conclusion first**: Make sure the recipient can grasp the key point from the first line
 2. **Be specific**: Avoid vague expressions; clearly state numbers, deadlines, and targets
-3. **State the action clearly**: Make it clear what you want the recipient to do
-4. **Indicate whether a reply is needed**: If a reply is required, write "Please reply"
+3. **Make the action explicit**: Clarify what you want the recipient to do
+4. **State whether a reply is needed**: If a reply is required, write "Please reply"
 
-### Good and bad examples
+### Good and Bad Examples
 
 **Bad example:**
 ```
@@ -274,10 +274,10 @@ When an external message is received:
 結果は返答をお願いします。
 ```
 
-### How to convey long content
+### How to Convey Long Content
 
 - SHOULD: If the message body exceeds 500 characters, write the content to a file and include only the file path and a summary in the message
-- MUST: When referencing a file, place it at a path accessible to the recipient
+- MUST: When referencing a file, place it in a path accessible to the recipient
 
 ```
 デプロイ手順書を作成しました。
@@ -287,15 +287,15 @@ When an external message is received:
 レビューをお願いします。返答をお願いします。
 ```
 
-## Common failures and countermeasures
+## Common Failures and Countermeasures
 
-### Incorrect intent specification
+### Incorrect Intent Specification
 
 **Symptom**: Displays `Error: DMのintentは 'report', 'question' のみ許可されています`
 
 **Cause**: `intent` was omitted, or an acknowledgment, thanks, or FYI was sent via DM
 
-**Countermeasure**: In DMs, always specify `report` or `question` in `intent`. Use `delegate_task` for task delegation. Use the Board (post_channel) for acknowledgments, thanks, and FYI
+**Countermeasure**: In DMs, always specify `report` or `question` in `intent`. Use `delegate_task` for task delegation. Use the Board (post_channel) for acknowledgments, thanks, and FYIs
 
 **Symptom**: Displays something like `intent='delegation' は廃止されました`
 
@@ -303,7 +303,7 @@ When an external message is received:
 
 **Countermeasure**: Use only **`delegate_task`** for task delegation. The `intent` of `send_message` is only for `report` / `question`
 
-### Incorrect destination name
+### Incorrect Destination Name
 
 **Symptom**: A destination-not-found error occurs, or the message reaches an unintended recipient
 
@@ -311,87 +311,87 @@ When an external message is received:
 
 **Countermeasure**:
 
-- Specify the Anima name you want to reach fastest using **the same notation as the directory name** (including capitalization). Even with different notation, if only capitalization differs, it will match internal delivery under rule 6
-- If there is an **alias with the same name as an Anima name**, the internal destination always takes priority when a **fully matching Anima directory name** exists (if the opposite is intended, the Anima name must be renamed or the alias name changed)
+- For the fastest delivery, specify the Anima name **using the same notation as the directory name** (including capitalization). Even with different notation, if only capitalization differs, it will match internal delivery under rule 6
+- If there is an **alias with the same name as an Anima name**, the **exact-match Anima directory name** always takes priority for internal delivery (if the opposite is intended, you need to rename the Anima name or change the alias name)
 - For humans, set the alias and `slack_user_id` / `chatwork_room_id` in `external_messaging.user_aliases`, and check `preferred_channel`
-- If a known Slack user ID is available, use `slack:USERID` or the ID alone (**8 or more alphanumeric characters** after `U`) as `to`. **Short IDs** (e.g., `U12345`) are not recognized as Slack format and may be treated as destination-not-found
-- If the tool only returns hints such as "reply directly in chat" or "use call_human", refer to "when the `send_message` tool fails to resolve the destination" above, and check the `external_messaging` of `config.json` and the session type
+- If a known Slack user ID is available, use `slack:USERID` or the ID alone (alphanumeric characters **8 or more** after `U`) as `to`. **Short IDs** (e.g., `U12345`) are not recognized as Slack format and may be treated as destination-not-found
+- If the tool only returns hints like "reply directly in chat" or "use call_human," refer to "When the `send_message` tool fails to resolve the destination" above, and check the `external_messaging` of `config.json` and the session type
 - If unclear, check organizational information via `search_memory(query="メンバー", scope="knowledge")` or similar
 
-### Broken thread
+### Thread Disconnection
 
-**Symptom**: You replied, but the recipient cannot see the conversation flow
+**Symptom**: You replied, but the other party cannot see the conversation flow
 
 **Cause**: `reply_to` or `thread_id` was not specified
 
 **Countermeasure**: When replying, MUST: set the original message's `id` in `reply_to`, and set `thread_id` as-is in `thread_id`
 
-### Message too long
+### Message Too Long
 
 **Symptom**: The recipient cannot grasp the key points
 
 **Countermeasure**: Put the conclusion at the beginning and separate details into a file. Use a summary plus file reference format for the message body
 
-### Sending a second time to the same destination
+### Second Send to the Same Destination
 
 **Symptom**: Displays `Error: このrunで既に {to} にメッセージを送信済みです`
 
-**Cause**: Called send_message twice to the same destination in a single run
+**Cause**: Called send_message more than once to the same destination in a single run
 
-**Countermeasure**: Use the Board (post_channel) for additional communication, or send in the next run (heartbeat, etc.)
+**Countermeasure**: Use the Board (post_channel) for additional communication, or send in the next run (e.g., via heartbeat)
 
-### Forgetting to reply
+### Forgetting to Reply
 
-**Symptom**: The recipient cannot track the status and sends a follow-up inquiry
+**Symptom**: The other party cannot track the status and sends a follow-up inquiry
 
-**Countermeasure**: Reply when the message needs a response. If you cannot act immediately, give the next action and expected timing; do not reply to a message that is only thanks or acknowledgement.
+**Countermeasure**: Reply to messages that require a response. If you cannot respond immediately, communicate the outlook, e.g., "Confirmed. I will respond by XX o'clock." Do not reply to mere acknowledgments or thanks
 
-## Sending rules
+## Sending Rules
 
-- `send_message` requires the `report` or `question` intent. Use `delegate_task` for task delegation.
-- A run may send at most one DM to the same recipient. There is no recipient-count cap.
-- A run may post once to a given Board channel. There is no cross-run cooldown or shared DM / Board send budget.
-- Conversation depth does not block sends. Depth between internal Animas may be logged for diagnostics, but the message body is never discarded.
+- The intent for `send_message` is `report` or `question`. Use `delegate_task` for task delegation.
+- Only one DM per run to the same destination. There is no limit on the number of destinations.
+- You can post to the same Board channel only once per run. There is no cooldown across runs or a shared send budget between DM and Board.
+- There is no send rejection based on conversation depth per pair. Depth between internal Animas may be logged for diagnostic purposes, but the sent content is not discarded.
 
-## Reply guidance
+## Reply Policy
 
-Reply to messages that need a response. If an acknowledgement is useful, send it once with the next action or expected timing. Do not reply to a message that is only an acknowledgement, thanks, or praise; do not continue the exchange.
+Reply to messages that require a response, and if an acknowledgment is needed, communicate it once with the next action or outlook. Do not reply to mere acknowledgments, thanks, or praise, and do not continue the exchange.
 
-## Keeping communication clear
+## Recommendations for Keeping Conversations Concise
 
-- Include the information needed to resolve one topic without unnecessary follow-up.
-- Consolidate related reports when useful, and use Board for team-wide information.
-- Choose DM or Board based on the content. There is no system rejection based on the number of back-and-forth turns.
+- Consolidate the necessary information for one topic and convey it in a form that does not require additional confirmation.
+- Combine multiple report items into a single message when possible, and use the Board for organization-wide sharing.
+- When the conversation needs to continue, choose DM or Board based on the content. There is no system-level rejection based on the number of exchanges.
 
-## Communication path rules
+## Rules for Communication Paths
 
 Message destinations follow the organizational structure:
 
 | Situation | Destination | Example |
 |------|------|-----|
-| Reporting important progress or problems | Supervisor | `send_message(to="manager", content="タスクA完了", intent="report")` |
+| Reporting important progress or issues | Supervisor | `send_message(to="manager", content="タスクA完了", intent="report")` |
 | Task instructions or delegation | Subordinate | `delegate_task(name="worker", instruction="レポート作成をお願い")` |
 | Coordination with colleagues | Colleague (same supervisor) | `send_message(to="peer", content="レビューお願い", intent="question")` |
-| Contacting other departments | Via your own supervisor | `send_message(to="manager", content="開発部のXさんに確認してほしい件が...", intent="question")` |
+| Contacting another department | Via your own supervisor | `send_message(to="manager", content="開発部のXさんに確認してほしい件が...", intent="question")` |
 
 - MUST: Do not contact members of other departments directly. Go through your own supervisor or the other party's supervisor
-- MAY: You may communicate directly with colleagues (members who share the same supervisor)
+- MAY: You may interact directly with colleagues (members who share the same supervisor)
 
-## Blocker reporting (MUST)
+## Blocker Report (MUST)
 
-If any of the following situations occurs during task execution, immediately report to the requester via `send_message`.
-Do not leave the task in a "waiting" state.
+If any of the following situations occur during task execution, report immediately to the requester via `send_message`.
+Do not leave the task in a "waiting" status.
 
-- A file/directory cannot be found
-- Access is denied due to insufficient permissions
-- Prerequisites are not met
-- Work was interrupted due to a technical issue
-- Instructions are unclear and a decision cannot be made
+- File/directory not found
+- Unable to access due to insufficient permission
+- Prerequisites not met
+- Work interrupted due to technical issues
+- Instructions unclear and cannot be determined
 
 Report to: Requester (send_message)
-For major blockers (when a delay of 30 minutes or more is expected): Also notify a human via `call_human`
+Critical blocker (if a delay of 30 minutes or more is expected): Also notify a human via `call_human`
 
-### Example of a blocker report
+### Example of a Blocker Report
 
 ```
 send_message(
@@ -405,14 +405,14 @@ send_message(
 )
 ```
 
-## Required elements of a request message (MUST)
+## Required Elements of a Request Message (MUST)
 
-When requesting a task from another Anima, always include the following five elements:
+When requesting a task from another Anima, always include the following 5 elements:
 
 1. **Purpose** (why this work is needed)
-2. **Target** (file path, resource)
+2. **Target** (file path, resources)
 3. **Expected outcome** (what constitutes completion)
 4. **Deadline**
 5. **Whether a completion report is required**
 
-Messages lacking these elements require the recipient to reply for confirmation, creating inefficient back-and-forth.
+If these are missing, the receiving side must reply to confirm, resulting in inefficient back-and-forth.

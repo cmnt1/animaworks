@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=5873b79def93ec69c755cedad7be34c37d29039ff2a295189885ef596de8ef3e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=d09a04e124d513e022d5de37910dc515a6d017f625e0e7fd8f66be545afc604e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -367,69 +367,69 @@ Credentials are resolved in this order: `config.json`’s `credentials` → vaul
 | Start Irodori server | TTS (Irodori) | Default: `http://localhost:7861` |
 | `ELEVENLABS_API_KEY` | TTS (ElevenLabs) | Cloud API (environment variable) |
 
-#### External integrations (optional)
+#### External Integrations (Optional)
 
-| Key | Service | Where to get |
+| Key | Service | Source |
 |-----|---------|--------|
-| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack (tools + Socket Mode receive) | [Setup guide](docs/en/integrations/slack.md) |
-| `CHATWORK_API_TOKEN` | Chatwork (tools + Webhook receive) | [chatwork.com](https://www.chatwork.com/) |
-| `DISCORD_BOT_TOKEN` (or per-Anima `DISCORD_BOT_TOKEN__<名前>`) | Discord (tools + Gateway receive + notifications) | [Discord Developer Portal](https://discord.com/developers/applications) |
+| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack (Tool + Socket Mode receive) | [Setup Guide](docs/en/integrations/slack.md) |
+| `CHATWORK_API_TOKEN` | Chatwork (Tool + Webhook receive) | [chatwork.com](https://www.chatwork.com/) |
+| `DISCORD_BOT_TOKEN` (or Anima unit `DISCORD_BOT_TOKEN__<名前>`) | Discord (Tool + Gateway receive + notifications) | [Discord Developer Portal](https://discord.com/developers/applications) |
 | `NOTION_API_TOKEN` (or `NOTION_API_TOKEN__<名前>`) | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
-| `GITHUB_WEBHOOK_SECRET` + `gh auth login` | GitHub Webhook gateway (CI/review/conflicts → tasks) | Repository settings |
+| `GITHUB_WEBHOOK_SECRET` + `gh auth login` | GitHub Webhook gateway (CI/review/conflict → task creation) | Repository configuration |
 
-Gmail / Google Calendar / Google Sheets / Google Tasks / X search / AWS collector / Zoom meeting ingestion (RTMS) / local LLM tools are configured in `credentials` of `config.json` (OAuth or service account). Human notification channels: Slack, Chatwork, Discord, LINE, Telegram, ntfy. See [Architecture](docs/en/architecture/index.md) for details.
+Gmail / Google Calendar / Google Sheets / Google Tasks / X search / AWS collector / Zoom meeting ingestion (RTMS) / local LLM tools are configured via `config.json`'s `credentials` (OAuth or service account). Human notification channels: Slack, Chatwork, Discord, LINE, Telegram, ntfy. See [Architecture](docs/en/architecture/index.md) for details.
 
 </details>
 
 <details>
-<summary><strong>Hierarchy and roles</strong></summary>
+<summary><strong>Hierarchy and Roles</strong></summary>
 
-The `supervisor` field defines the reporting relationship. If unset, it's top-level.
+A single `supervisor` field defines the reporting relationship. If unset, it is top-level.
 
-Role templates automatically apply specialized prompts, permissions, and models according to the position:
+Role templates automatically apply role-specific prompts, permissions, and models:
 
-| Role | Default model | Purpose |
+| Role | Default Model | Purpose |
 |--------|----------------|------|
 | `engineer` | Claude Opus 4.6 | Complex reasoning, code generation |
 | `manager` | Claude Opus 4.6 | Coordination, decision-making |
 | `writer` | Claude Sonnet 4.6 | Content creation |
 | `researcher` | Claude Sonnet 4.6 | Information gathering |
-| `ops` | Ollama (GLM-4.7) | Log monitoring, routine work |
+| `ops` | Ollama (GLM-4.7) | Log monitoring, routine tasks |
 | `general` | Claude Sonnet 4.6 | General purpose |
 
-Managers automatically get **supervisor tools**. Task delegation, progress tracking, restarting/disabling subordinates, organization dashboard, reading subordinate status — the same things a real manager does.
+Managers automatically receive the **supervisor tool**. Task delegation, progress tracking, restarting/disabling subordinates, organization dashboard, reading subordinate status—the same things a real manager does.
 
-Each Anima's ProcessSupervisor runs as an independent process and communicates via local IPC (Unix socket on Unix-like systems, loopback TCP on Windows).
+Each Anima has a ProcessSupervisor running as an independent process, communicating via local IPC (Unix socket on Unix-like systems, loopback TCP on Windows).
 
 </details>
 
 <details>
 <summary><strong>Security</strong></summary>
 
-When you give tools to autonomous agents, you need to take security seriously. Since this is used in real work, there's no room for compromise. AnimaWorks layers its defenses:
+When giving tools to autonomously acting agents, security must be taken seriously. Since this is used for real work, there is no room for compromise. AnimaWorks layers its defenses:
 
 | Layer | Description |
-|---------|------|
-| **Trust boundary labeling** | External data (web search, Slack, email) is tagged by source, and the minimum trust level seen during the session propagates. The model is explicitly told not to follow instructions from untrusted sources |
+|---------|-------------|
+| **Trust boundary labeling** | External data (web search, Slack, email) is tagged by source, and the minimum trust level seen during the session propagates. The model is explicitly instructed not to follow instructions from untrusted sources |
 | **Memory provenance tracking** | Memories derived from external content retain provenance down to RAG metadata, and are distinguished from the Anima's own knowledge during recall |
-| **Command security** | Shell injection detection (default: log, can enforce) → global blocklist (mandatory; server won't start without `permissions.global.json`) → per-agent blocked commands → per-agent allowlist → path traversal detection |
+| **Command security** | Shell injection detection (default: log, enforceable) → global blocklist (mandatory; server will not start without `permissions.global.json`) → per-agent blocked commands → per-agent allowlist → path traversal detection |
 | **File sandbox** | Each agent is confined to its own directory via `permissions.json`. Identity and permission files themselves are write-protected |
-| **Process isolation** | Each agent runs as a separate OS process. Communication via local IPC (Unix socket, loopback TCP on Windows) |
-| **Message handling** | One DM per recipient per run; file-change Inbox wakeups with one job at a time, batching, and provider backoff. Recent sends inform the prompt; no global send budget or depth-based rejection |
-| **Authentication and session management** | Argon2id hashing, 48-byte random tokens, max 10 sessions, configurable TTL |
+| **Process isolation** | Each agent runs as an independent OS process. Communication via local IPC (Unix socket, loopback TCP on Windows) |
+| **Message processing** | Duplicate send prevention to the same destination within the same run, Inbox file change wake, single execution, message aggregation, Provider backoff. Recent send history is injected into the prompt; global budget or depth-based send rejection is not applied |
+| **Authentication and session management** | Argon2id hashing, 48-byte random tokens, maximum 10 sessions, configurable TTL |
 | **Webhook validation** | HMAC signature verification for Slack, Chatwork, Zoom, GitHub (with replay protection) |
 | **SSRF mitigation** | Media proxy blocks private IPs and DNS rebinding, enforces HTTPS, validates Content-Type and magic bytes |
 | **Outbound routing** | Unknown destinations fail closed. No arbitrary external sends without explicit configuration |
-| **Inter-agent message integrity** | Sender name roster verification and origin chain tracking for all relayed messages |
+| **Inter-agent message integrity** | Sender name verification against the roster, and origin chain tracking for all relayed messages |
 
 Details: **[Security](docs/en/security.md)**
 
 </details>
 
 <details>
-<summary><strong>CLI command reference (advanced)</strong></summary>
+<summary><strong>CLI Command Reference (Advanced)</strong></summary>
 
-The CLI is for power users and automation. For daily operations, the Web UI is sufficient.
+The CLI is for power users and automation. The Web UI is sufficient for daily operations.
 
 ### Server and demo
 
@@ -454,11 +454,11 @@ The CLI is for power users and automation. For daily operations, the Web UI is s
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | Create new |
 | `animaworks anima list / info / status / restart / disable / enable` | Inspect and control |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima-specific configuration |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Per-Anima configuration |
 | `animaworks anima reload [--all]` | Hot reload from status.json |
 | `animaworks anima delete / rename` | Lifecycle operations |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | Anima integration script (not maintained as part of the CLI itself) |
-| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | Finalization after integration completion |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | Anima integration script (not maintained by the CLI itself) |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | Finalization after integration completes |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | Diagnostics |
 
 ### Communication

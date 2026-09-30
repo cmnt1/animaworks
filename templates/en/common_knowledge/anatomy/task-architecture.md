@@ -22,10 +22,10 @@ The supervisor's delegation view is an alias to the subordinate's canonical task
 
 The result summary of TaskExec is placed in `state/task_results/{task_id}/{attempt_token}.md`, and TaskStore selects the accepted result. File names or old summaries alone cannot prove completion. Activity logs and original instructions are kept as the audit trail.
 
-## Legacy Storage and Command Tasks
+## Old Storage Destination and Command Tasks
 
-The legacy `state/task_queue.jsonl` and `state/pending/` are retained solely as audit trails for migration and export. Migration is performed explicitly by operators after stopping legacy write operations and taking backups. Do not import live legacy data through arbitrary reads.
+The old `state/task_queue.jsonl` and `state/pending/` are retained solely as evidence for migration and export purposes. Migration is performed explicitly by the operator after the shutdown of the old write process and backup. Do not import running old data through arbitrary reads.
 
-Long-running command tools are also recorded in TaskStore as `task_type="command"`. For compatibility, `animaworks-tool submit` results remain available in `state/background_tasks/{task_id}.json` and through completion notifications. See `reference/operations/task-management.md` and `operations/background-tasks.md`.
+Long-running command tools also record execution attempts as `task_type="command"` in TaskStore. For result confirmation of `animaworks-tool submit`, `state/background_tasks/{task_id}.json` and completion notifications remain available for compatibility. See `reference/operations/task-management.md` and `operations/background-tasks.md` for details.
 
-See `reference/operations/task-management.md` for tool examples and `operations/background-tasks.md` for command execution.
+For tool examples, refer to `reference/operations/task-management.md`; for command execution, refer to `operations/background-tasks.md`.

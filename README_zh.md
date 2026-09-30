@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=5873b79def93ec69c755cedad7be34c37d29039ff2a295189885ef596de8ef3e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=d09a04e124d513e022d5de37910dc515a6d017f625e0e7fd8f66be545afc604e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -369,24 +369,24 @@ authentication 信息按 `config.json` 的 `credentials` → vault → 共享 cr
 
 #### 外部集成（可选）
 
-| 密钥 | 服务 | 获取地址 |
+| 键 | 服务 | 获取位置 |
 |-----|---------|--------|
-| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack（工具＋Socket Mode 接收） | [设置指南](docs/zh/integrations/slack.md) |
-| `CHATWORK_API_TOKEN` | Chatwork（工具＋Webhook 接收） | [chatwork.com](https://www.chatwork.com/) |
-| `DISCORD_BOT_TOKEN`（或按 Anima 单独配置 `DISCORD_BOT_TOKEN__<名前>`） | Discord（工具＋Gateway 接收＋通知） | [Discord Developer Portal](https://discord.com/developers/applications) |
+| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack（工具＋Socket Mode接收） | [设置指南](docs/zh/integrations/slack.md) |
+| `CHATWORK_API_TOKEN` | Chatwork（工具＋Webhook接收） | [chatwork.com](https://www.chatwork.com/) |
+| `DISCORD_BOT_TOKEN`（或 Anima 单位 `DISCORD_BOT_TOKEN__<名前>`） | Discord（工具＋Gateway接收＋通知） | [Discord Developer Portal](https://discord.com/developers/applications) |
 | `NOTION_API_TOKEN`（或 `NOTION_API_TOKEN__<名前>`） | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
-| `GITHUB_WEBHOOK_SECRET` ＋ `gh auth login` | GitHub Webhook 网关（CI/审查/冲突→创建任务） | 仓库配置 |
+| `GITHUB_WEBHOOK_SECRET` ＋ `gh auth login` | GitHub Webhook网关（CI/审查/冲突→任务化） | 仓库设置 |
 
-Gmail / Google Calendar / Google Sheets / Google Tasks / X 搜索 / AWS 收集器 / Zoom 会议导入（RTMS）/ 本地 LLM 工具，可在 `config.json` 的 `credentials`（OAuth 或服务账号）中配置。面向人类的通知渠道：Slack、Chatwork、Discord、LINE、Telegram、ntfy。详情请参阅[架构](docs/zh/architecture/index.md)。
+Gmail / Google Calendar / Google Sheets / Google Tasks / X搜索 / AWS收集器 / Zoom会议导入（RTMS）/ 本地LLM工具通过 `config.json` 的 `credentials`（OAuth 或服务账户）进行配置。人工通知渠道：Slack、Chatwork、Discord、LINE、Telegram、ntfy。详情请参阅 [架构](docs/zh/architecture/index.md)。
 
 </details>
 
 <details>
 <summary><strong>层级与角色</strong></summary>
 
-只需一个 `supervisor` 字段即可定义上下级关系。未设置时默认为顶层。
+通过 `supervisor` 字段即可定义上下级关系。未设置则为顶层。
 
-角色模板会根据职位自动应用专用提示词、权限和模型：
+通过角色模板，根据职位自动应用相应的专业提示词、权限和模型：
 
 | 角色 | 默认模型 | 用途 |
 |--------|----------------|------|
@@ -394,42 +394,42 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X 搜索 / AWS 收集�
 | `manager` | Claude Opus 4.6 | 协调、决策 |
 | `writer` | Claude Sonnet 4.6 | 内容创作 |
 | `researcher` | Claude Sonnet 4.6 | 信息收集 |
-| `ops` | Ollama (GLM-4.7) | 日志监控、常规工作 |
+| `ops` | Ollama (GLM-4.7) | 日志监控、常规业务 |
 | `general` | Claude Sonnet 4.6 | 通用 |
 
-经理会自动获得**主管工具**。委派任务、跟踪进度、重新启动/停用下属、查看组织仪表板、读取下属状态——做的都是现实中的管理者会做的事。
+管理者会自动获得**主管工具**。任务委派、进度跟踪、下属的重启/停用、组织仪表盘、下属状态读取——与现实中的管理职责相同。
 
-每个 Anima 都由 ProcessSupervisor 作为独立进程启动，并通过本地 IPC 通信（Unix 系统使用 Unix socket，Windows 使用 loopback TCP）。
+每个Anima的ProcessSupervisor作为独立进程启动，通过本地IPC通信（Unix系使用Unix socket，Windows使用loopback TCP）。
 
 </details>
 
 <details>
 <summary><strong>安全</strong></summary>
 
-既然要把工具交给自主运行的智能体，就必须认真对待安全问题。因为它会实际用于工作，绝不能妥协。AnimaWorks 采用多层防御：
+既然要给自主运行的代理提供工具，安全就必须认真对待。既然要实际用于工作，就不能妥协。AnimaWorks采用多层防御：
 
-| 层级 | 内容 |
+| 层 | 内容 |
 |---------|------|
-| **信任边界标记** | 外部数据（网页搜索、Slack、邮件）会根据来源添加标签，并传播会话中观察到的最低信任级别。明确告知模型不要遵从来自不可信来源的指示 |
-| **记忆来源追踪** | 来自外部内容的记忆会将来源信息保留至 RAG 元数据，并在回忆时与 Anima 自身的知识区分开来 |
-| **命令安全** | Shell 注入检测（默认仅记录，可启用强制模式） → 全局禁止列表（强制执行。没有 `permissions.global.json` 时服务器无法启动） → 单个智能体的禁止命令 → 单个智能体的允许列表 → 路径遍历检测 |
-| **文件沙箱** | 每个智能体都通过 `permissions.json` 被限制在自己的目录中。identity 和权限文件本身受到写入保护 |
-| **进程隔离** | 每个智能体使用独立的 OS 进程。通过本地 IPC 通信（Unix socket；Windows 使用 loopback TCP） |
-| **消息处理** | 同一运行中防止向同一收件人重复发送；通过 Inbox 文件变更唤醒、单任务执行和消息合并处理；Provider 错误时退避重试。近期发送记录注入提示词；不设全局预算或基于深度的发送拒绝 |
-| **认证与会话管理** | Argon2id 哈希、48 字节随机令牌、最多 10 个会话，TTL 可配置 |
-| **Webhook 验证** | Slack、Chatwork、Zoom、GitHub 的 HMAC 签名验证（带重放防护） |
-| **SSRF 缓解** | 媒体代理会拦截私有 IP 和 DNS 重绑定，强制使用 HTTPS，并验证 Content-Type 和魔数 |
-| **出站路由** | 未知目标采用 fail-closed。未明确配置时不允许向任意外部地址发送内容 |
-| **智能体间消息完整性** | 将发送者名称与名册核对，并追踪所有转发消息的 origin chain |
+| **信任边界标记** | 外部数据（网络搜索、Slack、邮件）按来源进行标签，并在会话中传播所见的最小信任度。明确指示模型不要遵循来自不可信来源的指令 |
+| **记忆来源追踪** | 来自外部内容的记忆会保留到RAG元数据的来源，在回忆时也能与Anima自身的知识区分开 |
+| **命令安全** | 检测shell注入（默认记录，可强制执行） → 全局禁止列表（强制，无 `permissions.global.json` 服务器无法启动） → 单个代理禁止命令 → 单个代理允许列表 → 路径遍历检测 |
+| **文件沙箱** | 每个代理通过 `permissions.json` 限制在自己的目录中。identity和权限文件本身受写保护 |
+| **进程隔离** | 每个代理独立OS进程。通过本地IPC通信（Unix socket，Windows为loopback TCP） |
+| **消息处理** | 同一run中同一目标的重复发送防护、Inbox文件变更唤醒、单次执行、消息聚合、Provider退避。最近的发送历史会注入到提示词中，不因全局预算或深度而拒绝发送 |
+| **认证与会话管理** | Argon2id哈希、48字节随机令牌、最多10个会话、TTL可配置 |
+| **Webhook验证** | Slack、Chatwork、Zoom、GitHub的HMAC签名验证（带防重放） |
+| **SSRF缓解** | 媒体代理阻止私有IP和DNS重绑定，强制HTTPS，验证Content-Type和魔数 |
+| **出站路由** | 未知目标采用fail-closed。没有明确配置时，不允许任意外部发送 |
+| **代理间消息完整性** | 发送者名单核对，以及所有中继消息的origin chain追踪 |
 
 详情：**[安全](docs/zh/security.md)**
 
 </details>
 
 <details>
-<summary><strong>CLI 命令参考（高级用户）</strong></summary>
+<summary><strong>CLI命令参考（高级用户）</strong></summary>
 
-CLI 面向高级用户和自动化场景。日常操作使用 Web UI 即可。
+CLI面向高级用户和自动化。日常操作使用Web UI即可。
 
 ### 服务器与演示
 
@@ -453,11 +453,11 @@ CLI 面向高级用户和自动化场景。日常操作使用 Web UI 即可。
 | 命令 | 说明 |
 |---|---|
 | `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 新建 |
-| `animaworks anima list / info / status / restart / disable / enable` | 查看・控制 |
-| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | 按 Anima 配置 |
-| `animaworks anima reload [--all]` | 从 status.json 热重载 |
+| `animaworks anima list / info / status / restart / disable / enable` | 确认与控制 |
+| `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima单位配置 |
+| `animaworks anima reload [--all]` | 从status.json热重载 |
 | `animaworks anima delete / rename` | 生命周期操作 |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 集成脚本（不属于 CLI 本体的维护范围） |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 集成脚本（不属于CLI本体的维护范围） |
 | `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 集成完成后的最终处理 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 诊断 |
 

@@ -28,9 +28,9 @@ call_human(
 
 자세한 판단 기준은 `troubleshooting/escalation-flowchart.md`을 참조.
 
-### 사용 구분
+### 용도 구분
 
-- `call_human`은 `send_message`와 별개의 사람 알림 경로다. 실제 긴급 대응이 필요한 경우에 사용한다
+- `call_human`은 `send_message`과는 별개의 인간 알림 경로입니다. 실제로 긴급 대응이 필요한 경우에 사용합니다.
 
 ## 답장 수신
 

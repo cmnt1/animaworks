@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/security.md -->
-<!-- i18n: source-sha256=9efcb666c04a3459cbe0b3f825deff0bd2f4bcf9f165216c31a6af574c8ca609 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=34c34a676a45cd171ae5f13268b722e6309e16be7ca5692e7d681c63756cba30 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Verified commit: 581e20f1
 
@@ -57,9 +57,9 @@ Each Anima runs in a separate child process managed by the supervisor. Inter-pro
 
 When authentication configuration is required, `auth_guard` of `server/app.py` checks the session cookie. For exception conditions such as secure localhost connections and the list of paths that do not require authentication, see the [authentication categories in the API Reference](reference/api.md). Webhooks use signature validation per service rather than session cookies.
 
-## External Send and Receive
+## External Sending and Receiving
 
-External sending checks destination resolution, operation permissions, and external-service delivery results. Within a run, a second DM to the same recipient is prevented; there is no recipient-count cap, hourly/daily budget, or conversation-depth send block. On the receive side, Inbox file-change notifications wake processing, with only one job running at a time. `rate_guard` controls provider-error recovery waits. Credentials are not written into code or documents, and only approved integrations are enabled. For details, see [Messaging](architecture/messaging.md).
+External sending verifies recipient resolution, operation permissions, and delivery results from external services. Within the same run, a second message to the same destination is prevented, but there is no rejection based on the number of destinations, time-based or daily sending budgets, or conversation depth. On the receiving side, startup is triggered by Inbox file change notifications, and only one message is processed at a time. In the event of a Provider error, `rate_guard` adjusts the wait time before retry. Do not include authentication information in code or documentation, and enable only permitted integrations. For details, refer to [Messaging](architecture/messaging.md).
 
 ## Adversarial Threat Analysis
 
@@ -70,17 +70,17 @@ External sending checks destination resolution, operation permissions, and exter
 | Access to other Anima or company data | Validate canonical paths, company affiliation, and caller identity. An Anima without company configuration is not isolated by company boundaries. |
 | Broken permission configuration or credentials | Treat failures in JSON loading, permission checks, and internal caller validation as denials. Threats where the host administrator can modify configuration or the execution environment itself require separate management. |
 
-## Defense in Depth
+## Applying Defense in Depth
 
-The layers include boundary tags for input provenance, per-Anima tool permissions, common command evaluation, file path and company affiliation checks, internal API caller validation, HTTP authentication, and per-run duplicate-recipient prevention. Each layer protects a different operation point, so no single layer is designed to provide safety on its own. Operate in combination with configuration management, execution environment protection, and least privilege for external services.
+This combines input origin display via boundary tags, per-Anima tool permissions, common command evaluation, file path and company affiliation checks, caller validation for internal APIs, HTTP authentication, and prevention of duplicate destinations within the same run. Each layer protects a different operation point, so safety is not achieved by any single layer alone. Operate in conjunction with configuration management, runtime environment protection, and least-privilege access to external services.
 
 ## Residual Risks and Operations
 
-- Trust tags do not completely prevent model misinterpretation. For requests contained in externally sourced content, confirm the content's origin before executing.
+- Trust tags cannot completely prevent model misinterpretation. For requests contained in externally sourced content, confirm the origin of the content before executing them.
 - `permissions.json` and `permissions.global.json` are permission boundaries. Take a backup before editing, and validate the JSON and schema after changes. If a read error occurs, do not loosen permissions; fix the cause instead.
-- When enabling localhost trust, correctly restrict the reverse proxy's forwarded headers and exposure scope. When exposing the server to the internet, configure authentication and TLS.
-- The internal API's log mode is for migration verification and differs from operations that enforce caller validation. Check the production configuration.
-- Per-run duplicate prevention is only a safeguard against accidental repeats; it does not replace human review of destinations and content or least privilege on the external service side.
+- When enabling localhost trust, correctly restrict the reverse proxy's forwarding headers and public exposure. When exposing the server to the internet, configure authentication and TLS.
+- The log mode of the internal API is for migration verification and differs from operations that enforce caller validation. Check the production environment configuration.
+- Prevention of duplicate destinations within the same run is an aid to reduce the impact of misdirected messages; it does not replace human review of destinations and content or least-privilege settings on the external service side.
 
 ## Related Documents
 

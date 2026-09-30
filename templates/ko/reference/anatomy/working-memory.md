@@ -91,13 +91,13 @@ Anima의 작업 메모리. "지금 막 무엇을 하고 있는지" "무엇을 �
 
 `state/task_queue.jsonl`과 `state/pending/`은 마이그레이션·내보내기용 증적으로만 유지한다. 가동 중인 큐가 아니다. 운영자가 이전 쓰기 처리를 중지하고, 백업과 함께 명시적으로 가져온 후 원본 런타임을 시작한다. 재개를 위해 파일을 삭제·재투입·조작하지 않는다.
 
-## 작업 실행과 결과
+## 작업 실행 및 결과
 
-호스트가 원지시와 작업을 일괄 저장하고, 실행 가능한 작업을 획득하여 각 시도를 기록한다. `in_progress`은 호스트 관리. 에이전트는 `update_task`에서 `done` / `pending` / `cancelled`를 선언한다. `list_tasks(detail=true)`에서 의존 관계와 대응 필요 이유를 확인한다. pending은 재시도를 의미하지 않는다. 원인 해소 후, `submit_tasks(..., tasks=[{"task_id": "ID", "resume": true}])`에서 같은 작업을 명시적으로 재개한다.
+호스트가 원래 지침과 작업을 일괄 저장하고, 실행 가능한 작업을 가져와 각 시도를 기록한다. `in_progress` 은 호스트 관리. 에이전트는 `update_task` 에서 `done` / `pending` / `cancelled` 를 선언한다. `list_tasks(detail=true)` 에서 의존 관계와 대응 필요 이유를 확인한다. pending은 재시도를 의미하지 않는다. 원인 해결 후, `submit_tasks(..., tasks=[{"task_id": "ID", "resume": true}])` 에서 동일한 작업을 명시적으로 재개한다.
 
-수락된 결과 요약은 `state/task_results/{task_id}/{attempt_token}.md`(최대 2000자)에 저장된다. 후속에는 호스트가 선택한 수락된 결과를 전달한다. 오래된 파일의 존재만으로 완료로 판단하지 않는다. 원기록을 보존하고, 결과를 써서 성공한 시도를 가장하지 않는다.
+수락된 결과 요약은 `state/task_results/{task_id}/{attempt_token}.md` (최대 2000자)에 저장된다. 후속에는 호스트가 선택한 수락된 결과를 전달한다. 오래된 파일의 존재만으로 완료로 판단하지 않는다. 원본 기록을 저장하고, 결과를 작성하여 성공한 시도를 가장하지 않는다.
 
-장시간 명령 도구도 `task_type="command"`로 TaskStore에 등록된다. PendingTaskExecutor가 실행 시도를 가져오고 BackgroundTaskManager가 실행한다. 시도는 TaskStore에 기록되며, 호환성을 위해 `state/background_tasks/{task_id}.json`과 완료 알림도 유지된다. 자세한 내용은 `operations/background-tasks.md`와 `operations/task-management.md`를 참조.
+장시간 명령 도구도 TaskStore에 `task_type="command"` 로 등록한다. PendingTaskExecutor가 시도를 가져오고, BackgroundTaskManager가 실행한다. 시도는 TaskStore에 기록되며, 호환성을 위해 `state/background_tasks/{task_id}.json` 와 완료 알림도 유지된다. 자세한 내용은 `operations/background-tasks.md` 와 `operations/task-management.md`.
 
 ## read_subordinate_state
 

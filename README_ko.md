@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: README_ja.md -->
-<!-- i18n: source-sha256=5873b79def93ec69c755cedad7be34c37d29039ff2a295189885ef596de8ef3e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=d09a04e124d513e022d5de37910dc515a6d017f625e0e7fd8f66be545afc604e generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # AnimaWorks — Organization-as-Code
 
@@ -367,17 +367,17 @@ Web UI는 6개의 화면(해시 라우터 `#/…`)과 Workspace 앱으로 구성
 | Irodori 서버 시작 | TTS（Irodori） | 기본값: `http://localhost:7861` |
 | `ELEVENLABS_API_KEY` | TTS（ElevenLabs） | 클라우드 API（환경 변수） |
 
-#### 외부 연동（옵션）
+#### 외부 연동 (선택)
 
 | 키 | 서비스 | 획득처 |
 |-----|---------|--------|
-| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack（도구＋Socket Mode 수신） | [설정 가이드](docs/ko/integrations/slack.md) |
-| `CHATWORK_API_TOKEN` | Chatwork（도구＋Webhook 수신） | [chatwork.com](https://www.chatwork.com/) |
-| `DISCORD_BOT_TOKEN`（또는 Anima 단위 `DISCORD_BOT_TOKEN__<名前>`） | Discord（도구＋Gateway 수신＋알림） | [Discord Developer Portal](https://discord.com/developers/applications) |
-| `NOTION_API_TOKEN`（또는 `NOTION_API_TOKEN__<名前>`） | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
-| `GITHUB_WEBHOOK_SECRET` ＋ `gh auth login` | GitHub Webhook 게이트웨이（CI/리뷰/컨플릭트→작업화） | 리포지토리 설정 |
+| `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Slack (도구 + Socket Mode 수신) | [설정 가이드](docs/ko/integrations/slack.md) |
+| `CHATWORK_API_TOKEN` | Chatwork (도구 + Webhook 수신) | [chatwork.com](https://www.chatwork.com/) |
+| `DISCORD_BOT_TOKEN` (또는 Anima 단위 `DISCORD_BOT_TOKEN__<名前>`) | Discord (도구 + Gateway 수신 + 알림) | [Discord Developer Portal](https://discord.com/developers/applications) |
+| `NOTION_API_TOKEN` (또는 `NOTION_API_TOKEN__<名前>`) | Notion | [Notion integrations](https://www.notion.so/my-integrations) |
+| `GITHUB_WEBHOOK_SECRET` ＋ `gh auth login` | GitHub Webhook 게이트웨이 (CI/리뷰/컨플릭트 → 작업화) | 리포지토리 설정 |
 
-Gmail / Google Calendar / Google Sheets / Google Tasks / X 검색 / AWS 컬렉터 / Zoom 회의 수집（RTMS）/ 로컬 LLM 도구는 `config.json`의 `credentials`（OAuth 또는 서비스 계정）에서 설정합니다. 인간에게 알림 채널: Slack, Chatwork, Discord, LINE, Telegram, ntfy. 자세한 내용은 [아키텍처](docs/ko/architecture/index.md)를 참조하세요.
+Gmail / Google Calendar / Google Sheets / Google Tasks / X 검색 / AWS 수집기 / Zoom 회의 수집 (RTMS) / 로컬 LLM 도구는 `config.json`의 `credentials` (OAuth 또는 서비스 계정)으로 설정합니다. 인간에게 보내는 알림 채널: Slack, Chatwork, Discord, LINE, Telegram, ntfy. 자세한 내용은 [아키텍처](docs/ko/architecture/index.md)를 참조하세요.
 
 </details>
 
@@ -386,38 +386,38 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X 검색 / AWS 컬렉�
 
 `supervisor` 필드 하나로 상하 관계를 정의합니다. 미설정이면 최상위 레벨입니다.
 
-역할 템플릿으로, 직책에 따른 전문 프롬프트·권한·모델이 자동 적용됩니다:
+역할 템플릿에서 직책에 따른 전문 프롬프트·권한·모델이 자동 적용됩니다:
 
 | 역할 | 기본 모델 | 용도 |
 |--------|----------------|------|
 | `engineer` | Claude Opus 4.6 | 복잡한 추론, 코드 생성 |
-| `manager` | Claude Opus 4.6 | 조정, 의사 결정 |
+| `manager` | Claude Opus 4.6 | 조정, 의사결정 |
 | `writer` | Claude Sonnet 4.6 | 콘텐츠 작성 |
 | `researcher` | Claude Sonnet 4.6 | 정보 수집 |
 | `ops` | Ollama (GLM-4.7) | 로그 모니터링, 정형 업무 |
 | `general` | Claude Sonnet 4.6 | 범용 |
 
-매니저에게는 **슈퍼바이저 도구**가 자동으로 붙습니다. 작업 위임, 진행 상황 추적, 부하의 재시작/비활성화, 조직 대시보드, 부하의 상태 읽기 — 현실의 관리자가 하는 일과 같습니다.
+매니저에게는 **슈퍼바이저 도구**가 자동으로 부여됩니다. 작업 위임, 진행 상황 추적, 부하의 재시작/비활성화, 조직 대시보드, 부하의 상태 읽기——실제 관리자가 하는 일과 동일합니다.
 
-각 Anima는 ProcessSupervisor가 독립 프로세스로 시작하여, 로컬 IPC로 통신합니다（Unix 계열은 Unix socket, Windows는 loopback TCP）.
+각 Anima는 ProcessSupervisor가 독립 프로세스로 시작되며, 로컬 IPC로 통신합니다 (Unix 계열은 Unix socket, Windows는 loopback TCP).
 
 </details>
 
 <details>
 <summary><strong>보안</strong></summary>
 
-자율적으로 움직이는 에이전트에 도구를 넘기는 이상, 보안은 진지하게 할 필요가 있습니다. 실제로 업무에 사용하므로 타협할 수 없습니다. AnimaWorks는 방어를 다층으로 겹치고 있습니다:
+자율적으로 움직이는 에이전트에 도구를 넘기는 이상, 보안은 진지하게 다뤄야 합니다. 실제 업무에 사용하므로 타협할 수 없습니다. AnimaWorks는 방어를 다층으로 겹쳐 놓았습니다:
 
 | 레이어 | 내용 |
 |---------|------|
-| **신뢰 경계 라벨링** | 외부 데이터（웹 검색, Slack, 메일）는 출처로 태그가 붙고, 세션 중에 본 최소 신뢰도가 전파됩니다. untrusted 소스의 지침에는 따르지 않도록 모델에 명시 |
-| **기억의 출처 추적** | 외부 콘텐츠 유래의 기억은 출처가 RAG 메타데이터까지 유지되고, 회상 시에도 Anima 자신의 지식과 구분됩니다 |
-| **명령 보안** | 셸 인젝션 감지（기본은 기록·enforce 가능） → 글로벌 금지 목록（강제. `permissions.global.json` 없이는 서버가 시작되지 않음） → 개별 에이전트 금지 명령 → 개별 에이전트 허용 목록 → 경로 탐색 감지 |
-| **파일 샌드박스** | 각 에이전트는 `permissions.json`로 자신의 디렉토리에 격리. identity와 권한 파일 자체는 쓰기 보호 |
-| **프로세스 격리** | 에이전트마다 독립 OS 프로세스. 로컬 IPC로 통신（Unix socket, Windows는 loopback TCP） |
-| **메시지 처리** | 한 run 내 같은 수신처 중복 방지, Inbox 파일 변경 wake·단일 실행·메시지 묶음 처리, Provider backoff. 최근 발신 이력은 프롬프트에 주입하며 전역 예산이나 깊이 기반 발신 차단은 없다 |
+| **신뢰 경계 라벨링** | 외부 데이터 (웹 검색, Slack, 메일)는 출처로 태그가 지정되고, 세션 중에 본 최소 신뢰도가 전파됩니다. untrusted 소스의 지침에는 따르지 않도록 모델에 명시 |
+| **기억의 출처 추적** | 외부 콘텐츠에서 유래한 기억은 출처가 RAG 메타데이터까지 유지되며, 회상 시에도 Anima 자신의 지식과 구분됩니다 |
+| **명령 보안** | 셸 인젝션 탐지 (기본은 기록·enforce 가능) → 전역 금지 목록 (강제. `permissions.global.json` 없이는 서버가 시작되지 않음) → 개별 에이전트 금지 명령 → 개별 에이전트 허용 목록 → 경로 탐색 탐지 |
+| **파일 샌드박스** | 각 에이전트는 `permissions.json`로 자신의 디렉터리에 격리. identity와 권한 파일 자체는 쓰기 보호 |
+| **프로세스 격리** | 에이전트마다 독립 OS 프로세스. 로컬 IPC로 통신 (Unix socket, Windows는 loopback TCP) |
+| **메시지 처리** | 동일 run에서 동일 대상으로의 중복 전송 방지, Inbox 파일 변경 wake·단일 실행·메시지 집계, Provider backoff. 최근 전송 이력은 프롬프트에 주입하며, 글로벌 예산이나 깊이에 따른 전송 거부는 하지 않음 |
 | **인증·세션 관리** | Argon2id 해시, 48바이트 랜덤 토큰, 최대 10세션, TTL은 설정 가능 |
-| **Webhook 검증** | Slack·Chatwork·Zoom·GitHub의 HMAC 서명 검증（리플레이 방지 포함） |
+| **Webhook 검증** | Slack·Chatwork·Zoom·GitHub의 HMAC 서명 검증 (리플레이 방지 포함) |
 | **SSRF 완화** | 미디어 프록시가 프라이빗 IP와 DNS 리바인딩을 차단, HTTPS 강제, Content-Type·매직 바이트 검증 |
 | **아웃바운드 라우팅** | 알 수 없는 대상은 fail-closed. 명시적 설정 없이 임의의 외부 전송은 불가 |
 | **에이전트 간 메시지 무결성** | 발신자 이름의 명부 대조와, 중계 메시지 전체의 origin chain 추적 |
@@ -427,7 +427,7 @@ Gmail / Google Calendar / Google Sheets / Google Tasks / X 검색 / AWS 컬렉�
 </details>
 
 <details>
-<summary><strong>CLI 명령 참조（고급자용）</strong></summary>
+<summary><strong>CLI 명령 참조 (고급 사용자용)</strong></summary>
 
 CLI는 파워 유저와 자동화를 위한 것입니다. 일상적인 조작은 Web UI로 충분합니다.
 
@@ -450,15 +450,15 @@ CLI는 파워 유저와 자동화를 위한 것입니다. 일상적인 조작은
 
 ### Anima 관리
 
-| 명령어 | 설명 |
+| 명령 | 설명 |
 |---|---|
-| `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 새로 만들기 |
+| `animaworks anima create [--from-md PATH] [--template NAME] [--role ROLE] [--supervisor NAME] [--name NAME]` | 새로 생성 |
 | `animaworks anima list / info / status / restart / disable / enable` | 확인·제어 |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role` | Anima 단위 설정 |
 | `animaworks anima reload [--all]` | status.json에서 핫 리로드 |
-| `animaworks anima delete / rename` | 라이프사이클 작업 |
-| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 통합 스크립트(CLI 본체의 유지보수 대상 아님) |
-| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 통합 완료 후 확정 처리 |
+| `animaworks anima delete / rename` | 라이프사이클 조작 |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 통합 스크립트 (CLI 본체의 유지보수 대상 아님) |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 통합 완료 후의 확정 처리 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 진단 |
 
 ### 커뮤니케이션

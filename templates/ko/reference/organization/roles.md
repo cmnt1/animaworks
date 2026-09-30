@@ -206,32 +206,32 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 | `## 基本プロフィール` | `## 基本情報` |
 | `## 性格` / `## 性格・キャラクター` | `## 人格` |
 
-### 템플릿의 디렉터리 구조
+### 템플릿 디렉터리 구조
 
-역할 템플릿은 `templates/_shared`과 로케일별 경로로 나뉘어 배치된다:
+역할 템플릿은 `templates/_shared`와 로케일별 경로로 나뉘어 배치된다:
 
 | 경로 | 내용 | 로케일 |
 |------|------|----------|
-| `templates/_shared/roles/{role}/defaults.json` | 모델·파라미터의 기본값 | 공통 |
-| `templates/{locale}/roles/{role}/permissions.json` | 역할별 도구 허가 | ja / en |
-| `templates/{locale}/roles/{role}/specialty_prompt.md` | 역할 고유의 행동 지침 | ja / en |
+| `templates/_shared/roles/{role}/defaults.json` | 모델·파라미터 기본값 | 공통 |
+| `templates/{locale}/roles/{role}/permissions.json` | 역할별 도구 권한 | ja / en |
+| `templates/{locale}/roles/{role}/specialty_prompt.md` | 역할 고유 행동 지침 | ja / en |
 
-`locale`는 `config.json`의 `locale` 또는 기본 `ja`로 해결된다.
-`_get_roles_dir()`（`core/anima/factory.py`）는 `templates/{locale}/roles`을 찾고,
-**존재하지 않으면 `en`, 그것도 없으면 `ja`**의 순서로 폴백한다.
+`locale`는 `config.json`의 `locale` 또는 기본 `ja`로 해석된다.
+`_get_roles_dir()`(`core/anima/factory.py`)는 `templates/{locale}/roles`을 찾고,
+**존재하지 않으면 `en`, 그것도 없으면 `ja`** 순서로 폴백한다.
 
-`defaults.json`은 `templates/_shared/roles/<role>/defaults.json`에 있으며, 전 로케일 공통. 정의 필드는 다음과 같다:
+`defaults.json`는 `templates/_shared/roles/<role>/defaults.json`에 있으며, 모든 로케일 공통. 정의 필드는 다음과 같다:
 
 | 필드 | 설명 | 비고 |
 |-----------|------|------|
-| `model` | 채팅·작업 실행용 모델 | 전 역할 |
-| `background_model` | 하트비트·cron 등 백그라운드용 모델 | engineer / manager만（다른 역할은 키 없음） |
-| `context_threshold` | 컴팩션 임계값 | 전 역할 |
-| `conversation_history_threshold` | 대화 기록 압축 임계값 | 전 역할（템플릿에서는 0.30〜0.40） |
+| `model` | 채팅·작업 실행용 모델 | 전체 역할 |
+| `background_model` | 하트비트·cron 등 백그라운드용 모델 | engineer / manager만 (다른 역할은 키 없음) |
+| `context_threshold` | 압축 임계값 | 전체 역할 |
+| `conversation_history_threshold` | 대화 기록 압축 임계값 | 전체 역할 (템플릿에서는 0.30~0.40) |
 
-유효한 역할명은 코드상 `VALID_ROLES`（`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`）에 일치해야 한다.
+유효한 역할 이름은 코드상 `VALID_ROLES`(`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`)와 일치해야 한다.
 
-### 이용 가능한 역할（`defaults.json`의 실값）
+### 사용 가능한 역할 (`defaults.json`의 실제 값)
 
 모델·실행 파라미터:
 
@@ -244,15 +244,15 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-`--role` 미지정의 `create_from_md`에서는 `general`가 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿 동봉의 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`이 실행 모드 **A**（LiteLLM + tool 루프）에 매치한다. vLLM 등을 사용하는 경우는 `status.json`의 `model`와 `credential`（예: `openai/glm-4.7-flash`）을 편집한다. engineer / manager는 `background_model`에 의해 하트비트·cron 등의 백그라운드 실행에 경량 모델을 할당할 수 있다.
+`--role` 미지정의 `create_from_md`에서는 `general`가 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿에 포함된 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`가 실행 모드 **A**(LiteLLM + tool 루프)에 매치된다. vLLM 등을 사용하는 경우 `status.json`의 `model`와 `credential`(예: `openai/glm-4.7-flash`)를 편집한다. engineer / manager는 `background_model`에 따라 하트비트·cron 등 백그라운드 실행에 경량 모델을 할당할 수 있다.
 
 ### 적용 흐름
 
-1. **생성 시** (`create_from_md`)의 순서는 다음과 같음:
-   - `_apply_defaults_from_sheet()` … 캐릭터 시트에서 `identity.md` / `injection.md` (/（권한 섹션이 있으면) `permissions.md` → `permissions.json`로 마이그레이션
-   - `_apply_role_defaults()` … 롤의 `permissions.json`와 `specialty_prompt.md`를 **덮어쓰기 복사** (캐릭터 시트에서 온 `permissions.json`는 롤 쪽에서 덮어써짐)
-   - `_create_status_json()` … `SHARED_ROLES_DIR`(`_shared/roles/<role>/defaults.json`)에서 위 표의 모델·컨텍스트 설정을 읽고, 캐릭터 시트의 "모델", "credential"이 있으면 그것으로 덮어써서 `status.json`를 작성함. 캐릭터 시트의 "실행 모드"에 값이 있을 때만 `execution_mode`를 기록함; 미지정이면 키 자체를 생략하고, `models.json` 등의 패턴 해결에 맡김 (`core/anima/factory.py`의 `_create_status_json`).
-2. **롤 변경 시** (`animaworks anima set-role`): `_apply_role_defaults()`에서 `permissions.json`와 `specialty_prompt.md`를 다시 복사. `status.json`에는 `model`, `context_threshold`, `conversation_history_threshold`가 `defaults.json`에서 병합됨. `background_model`은 **set-role에서는 업데이트되지 않음** (필요하면 수동으로 `status.json`를 편집). `--status-only`는 `role`만 업데이트하고 템플릿 파일에는 건드리지 않음. `--no-restart`에서 API를 통한 자동 재시작을 건너뛸 수 있음. CLI의 성공 출력에는 `permissions.json`가 포함됨 (`cli/commands/anima_mgmt.py`의 `cmd_anima_set_role`).
+1. **생성 시**(`create_from_md`) 순서는 다음과 같다:
+   - `_apply_defaults_from_sheet()` … 캐릭터 시트에서 `identity.md` / `injection.md` /（권한 섹션이 있으면)`permissions.md` → `permissions.json`로 마이그레이션
+   - `_apply_role_defaults()` … 역할의 `permissions.json`와 `specialty_prompt.md`를 **덮어쓰기 복사**(캐릭터 시트 유래의 `permissions.json`는 역할 쪽에서 덮어쓰기됨)
+   - `_create_status_json()` … `SHARED_ROLES_DIR`(`_shared/roles/<role>/defaults.json`)에서 위 표의 모델·컨텍스트 설정을 읽고, 캐릭터 시트의 "모델" "credential"이 있으면 그것으로 덮어써서 `status.json`를 작성한다. 캐릭터 시트의 "실행 모드"에 값이 있을 때만 `execution_mode`를 기록한다; 미지정이면 키 자체를 생략하고, `models.json` 등의 패턴 해결에 맡긴다(`core/anima/factory.py`의 `_create_status_json`).
+2. **역할 변경 시**(`animaworks anima set-role`): `_apply_role_defaults()`에서 `permissions.json`와 `specialty_prompt.md`를 다시 복사. `status.json`에는 `model`, `context_threshold`, `conversation_history_threshold`가 `defaults.json`에서 병합된다. `background_model`는 **set-role에서는 업데이트되지 않는다**(필요하면 수동으로 `status.json`를 편집한다). `--status-only`는 `role`만 업데이트하고 템플릿 파일에는 건드리지 않는다. `--no-restart`에서 API 경유 자동 재시작을 건너뛸 수 있다. CLI의 성공 출력에는 `permissions.json`가 포함된다(`cli/commands/anima_mgmt.py`의 `cmd_anima_set_role`).
 
 ### 프롬프트 주입
 

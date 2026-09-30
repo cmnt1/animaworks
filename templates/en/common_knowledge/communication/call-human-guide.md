@@ -28,10 +28,9 @@ call_human(
 
 See `troubleshooting/escalation-flowchart.md` for detailed decision criteria.
 
-### Constraints
+### Usage
 
-- `call_human` uses the separate human-notification route; it is not a `send_message` DM.
-- Use it for urgent situations only when human-notification channels are configured.
+- `call_human` is a separate human notification route from `send_message`. Use when: actual emergency response is required.
 
 ## Receiving Replies
 

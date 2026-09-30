@@ -1,43 +1,42 @@
-# Messaging and Inbox Operations
+# Message Send and Receive Operations Guide
 
-This guide describes message delivery, Inbox triggering, and loop-avoidance behavior.
-The former global send budgets, depth-based send rejection, and Inbox cooldown / cascade / intent filters have been removed.
+This document summarizes the operations for message delivery, Inbox startup, and avoiding conversation loops. The previous send budget, depth rejection, Inbox cooldown / cascade / intent filters have been removed.
 
-## Remaining send rules
+## Remaining Rules for Sending
 
-- `send_message` requires the `report` or `question` intent. Use `delegate_task` for task delegation.
-- A run may send at most one DM to the same recipient. This prevents duplicate messages; there is no recipient-count cap.
-- A run may post once to a given Board channel with `post_channel`. The same channel may be used again in a later run.
-- There are no hourly/daily send budgets or pairwise conversation-depth send blocks.
-- Conversation depth between internal Animas may be logged for diagnostics. This is observation only: it never rejects a send or discards the message body.
+- The intent of `send_message` is `report` or `question`. Use `delegate_task` for task delegation.
+- Only one DM to the same recipient per run. This is a guard to avoid duplicate sends; there is no limit on the number of recipients.
+- Only one `post_channel` to the same Board channel per run. You can post to the same channel again in a different run.
+- There is no hourly or daily send budget, and no send rejection based on conversation depth between pairs.
+- Conversation depth between internal Anima instances may be logged for diagnostic purposes. This is observation only; it does not discard message content or reject sending.
 
-## Responding to acknowledgements and thanks
+## Responses to Acknowledgments, Thanks, and Praise
 
-Do not reply when an incoming message is only an acknowledgement, thanks, or praise. Do not continue the exchange; act only when there is an additional question, request, or new information.
-When acknowledging a work request is useful, do it once and include the next action or expected timing.
+If the received content is only an acknowledgment, thanks, or praise, do not reply. Do not continue the exchange; only take necessary action if there are additional questions, requests, or new information.
+For a work request, send an acknowledgment once, if needed, along with the outlook and next steps.
 
-## Inbox triggering and processing
+## Inbox Startup and Processing
 
-A filesystem notification for a new Inbox JSON file wakes the Inbox watcher, which starts processing when messages are unread.
-Only one Inbox job runs at a time. Messages that arrive while it runs are combined into the next run.
-A 45-second safety rescan catches missed filesystem notifications. Provider failures wait for `rate_guard` recovery while leaving unread messages in place.
+Detect new JSON files in the Inbox via file change notifications, and start Inbox processing if there are unread messages.
+Only one Inbox processing run can be active at a time. Messages that arrive during execution are processed together in the next run.
+To guard against missed file notifications, re-check for unread messages every 45 seconds. On provider-side failures, wait for the recovery time of `rate_guard` and keep unread messages.
 
-When message volume is high, `state/overflow_inbox/` remains as capacity protection. It does not suppress messages by sender or intent; overflowed messages can be reviewed and processed later.
+If there are a large number of messages, offloading to `state/overflow_inbox/` remains as capacity protection. This is not a suppression based on sender or intent; offloaded messages can be reviewed and processed later.
 
-## Recording and troubleshooting
+## Logging and Verification
 
-`Messenger.send` records sent messages in the activity log. A short burst in an internal Anima conversation may produce an additional diagnostic depth log, but delivery is unaffected.
-Recent `message_sent` / `channel_post` events are used by `core/memory/priming/outbound.py` for priming.
+`Messenger.send` records sent messages in the activity log. If conversations continue over a short period, diagnostic logs may be added, but the send result is unchanged.
+The most recent `message_sent` / `channel_post` are used by `core/memory/priming/outbound.py` for priming.
 
-If a message is not delivered, check recipient resolution, permissions, and the actual external-channel delivery error. There is no rate-budget or conversation-depth window to wait out.
+If a message cannot be sent, check the actual delivery errors for destination resolution, permissions, and external channels. There is no need to wait for rate limits or conversation depth limits.
 
-## Implementation locations
+## Implementation Location
 
-| Responsibility | Module |
+| Role | Module |
 |------|------------|
-| Destination resolution and Slack / Chatwork delivery | `core/messaging/outbound.py` |
-| Internal DM delivery, activity logging, and diagnostic depth logging | `core/messaging/messenger.py` |
-| Duplicate DM prevention and per-run Board channel guard | `core/tooling/handler_comms.py` |
-| Inbox file wakeups, single-run coordination, and provider backoff | `core/supervisor/inbox_rate_limiter.py` |
-| Inbox capacity protection via overflow files | `core/anima/inbox_overflow.py` |
+| Destination resolution and external delivery to Slack / Chatwork | `core/messaging/outbound.py` |
+| Internal DM delivery, activity log recording, and depth diagnostic logging | `core/messaging/messenger.py` |
+| DM duplicate prevention and Board duplicate prevention within a run | `core/tooling/handler_comms.py` |
+| Inbox file wake, single execution, and provider backoff | `core/supervisor/inbox_rate_limiter.py` |
+| Inbox capacity protection overflow | `core/anima/inbox_overflow.py` |
 | Prompt injection of recent sends | `core/memory/priming/outbound.py` |

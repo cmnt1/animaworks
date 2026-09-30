@@ -9,9 +9,9 @@ description: >-
 # AnimaWorks CLI 완전 참조
 
 AnimaWorks의 모든 조작은 `animaworks` 명령어로 수행한다.
-이 스킬은 모든 서브커맨드의 형식·인수·구체적인 예를 정리한 참조.
+이 스킬은 모든 서브커맨드의 형식·인자·구체적인 예를 정리한 참조다.
 
-운용의 사고방식이나 규칙은 `common_knowledge/` 및 `reference/`를 참조:
+운영의 개념이나 규칙은 `common_knowledge/` 및 `reference/`를 참조:
 - 메시징 규칙 → `communication/messaging-guide.md`
 - 작업 관리 → `operations/task-management.md`
 - 도구 체계 → `operations/tool-usage-overview.md`
@@ -116,7 +116,7 @@ animaworks anima set-model {名前} {モデル名} --credential {credential名}
 animaworks anima set-model --all {モデル名}   # 全Anima一括変更
 ```
 
-변경 후 서버가 시작 중이면 `anima restart {名前}`이 필요.
+변경 후 서버가 실행 중이면 `anima restart {名前}`이 필요하다.
 
 ### 백그라운드 모델(Heartbeat/Cron용)
 
@@ -151,7 +151,7 @@ animaworks anima set-role {名前} {role} --no-restart
 set-role로 자동 업데이트되는 파일(`--status-only` 외):
 - `status.json` — role 및 역할 `defaults.json` 유래의 model / context_threshold / conversation_history_threshold 등을 병합
 - `specialty_prompt.md` — 역할 템플릿에서 덮어쓰기
-- `permissions.json` — 역할 템플릿에서 덮어쓰기(기존의 `permissions.md`은 로드 시 JSON으로 이관될 수 있음)
+- `permissions.json` — 역할 템플릿에서 덮어쓰기(기존의 `permissions.md`은 읽기 시 JSON으로 이관될 수 있음)
 
 유효한 역할: `engineer`, `researcher`, `manager`, `writer`, `ops`, `general`
 
@@ -216,7 +216,7 @@ animaworks board dm-history {自分} {相手} --limit 50    # 件数指定
 
 ---
 
-## 설정 관리(config 하위 명령)
+## 설정 관리(config 서브커맨드)
 
 ```bash
 animaworks config                        # ヘルプ表示（子コマンドまたは -i が無い場合）
@@ -229,13 +229,13 @@ animaworks config get {キー} --show-secrets
 animaworks config set {キー} {値}        # 設定値を変更
 ```
 
-**주의**: Anima의 모델·credential 등은 `status.json`가 SSoT입니다. `animas.{名前}.model` 등의 직접 설정은 권장하지 않습니다. `animaworks anima set-model`을 사용하세요.
+**주의**: Anima의 모델·credential 등은 `status.json`이 SSoT. `animas.{名前}.model` 등의 직접 설정은 비권장. `animaworks anima set-model`을 사용할 것.
 
 ---
 
 ## 프로필(profile 서브커맨드·멀티테넌트)
 
-복수의 AnimaWorks 인스턴스(별도 데이터 디렉터리)를 관리한다.
+여러 AnimaWorks 인스턴스(별도 데이터 디렉터리)를 관리한다.
 
 ```bash
 animaworks profile list                  # 全プロファイル一覧（data_dir・port・状態）
@@ -307,12 +307,12 @@ animaworks index --dry-run               # 確認のみ
 
 - **conversation_summary**: `state/conversation.json`의 `compressed_summary`을 인덱스 대상에 포함(해당 파일이 있는 경우).
 - **L2 거리의 기존 컬렉션**: 서버 비가동으로 로컬 Chroma에 직접 접근하는 경우, `--full` 없이는 cosine 이행 경고가 나올 수 있음(메시지에 따라 `--full`를 실행).
-- **서버 시작 중**: `server.pid` 감지 시, CLI는 `ANIMAWORKS_VECTOR_URL` / `ANIMAWORKS_EMBED_URL`을 설정하여 HTTP 경유로 인덱스·임베딩을 수행하고, Chroma의 동시 접근 충돌을 피함.
-- **임베딩 모델**: `index_meta.json`의 기록과 설정이 다른 경우, `--full` 없이는 오류로 종료.
+- **서버 실행 중**: `server.pid` 감지 시, CLI는 `ANIMAWORKS_VECTOR_URL` / `ANIMAWORKS_EMBED_URL`을 설정하여 HTTP 경유로 인덱스·임베딩을 수행하고, Chroma의 동시 접근 경합을 피한다.
+- **임베딩 모델**: `index_meta.json`의 기록과 설정이 다른 경우, `--full` 없이는 오류로 종료한다.
 
 ---
 
-## 런타임 마이그레이션(migrate)
+## 런타임 이행(migrate)
 
 ```bash
 animaworks migrate                       # 未適用のマイグレーションを実行
@@ -322,7 +322,7 @@ animaworks migrate --list                # ステップ一覧と適用済みフ�
 animaworks migrate --force               # 状態に関わらず再適用
 ```
 
-실행 중인 서버가 있으면 경고가 나온다. `~/.animaworks/config.json`이 없으면 실패.
+실행 중인 서버가 있으면 경고가 나온다. `~/.animaworks/config.json`이 없으면 실패한다.
 
 ---
 
@@ -364,7 +364,7 @@ animaworks remake-assets {名前} --style-from {参照} --no-backup
 
 Anima가 외부 서비스(Slack, Gmail, GitHub 등)를 사용하는 경우의 명령어.
 
-첫 번째 인수가 등록된 도구 이름 또는 `submit`일 때, `animaworks`는 내부에서 `animaworks-tool`로 대체된다(예: `animaworks web_search query "..."`).
+첫 번째 인자가 등록된 도구 이름 또는 `submit`일 때, `animaworks`는 내부에서 `animaworks-tool`로 대체된다(예: `animaworks web_search query "..."`).
 
 ```bash
 # ヘルプ表示
@@ -390,12 +390,12 @@ submit의 상세 → `common_knowledge/operations/background-tasks.md`
 
 **디렉터리 정리**
 
-- **`state/background_tasks/`** — BackgroundTaskManager가 저장하는 실행 결과 JSON(`running` / `completed` / `failed`). `animaworks-tool submit` 입력과 실행 시도는 TaskStore에 저장되고, `internal list-background-tasks` / `check-background-task`은 이 결과 JSON을 읽는다.
-- **`state/background_notifications/`** — 도구 완료 알림 등을 heartbeat가 흡수하는 용도(MCP·스케줄러 등이 쓰는 경로 있음). CLI의 `list-background-tasks`와는 별개.
+- **`state/background_tasks/`** — BackgroundTaskManager가 저장하는 실행 결과 JSON(`running` / `completed` / `failed`). `animaworks-tool submit`의 투입 내용과 시도는 TaskStore에 저장하고, `internal list-background-tasks` / `check-background-task`은 이 결과 JSON을 읽는다.
+- **`state/background_notifications/`** — 도구 완료 알림 등을 heartbeat가 흡수하는 용도(MCP·스케줄러 등이 쓰는 경로 있음). CLI의 `list-background-tasks`과는 별개.
 
 ### 자식 프로세스용 서브커맨드(internal / vault / supervisor)
 
-모두 **`ANIMAWORKS_ANIMA_DIR` 필수**(`task`와 동일). 최상위 `animaworks`에도 동일 이름의 서브커맨드가 등록되어 있음.
+모두 **`ANIMAWORKS_ANIMA_DIR` 필수**(`task`와 동일). 톱레벨 `animaworks`에도 동일 이름의 서브커맨드가 등록되어 있다.
 
 **internal**
 
@@ -411,7 +411,7 @@ animaworks-tool internal check-background-task {task_id}
 
 **vault**(Anima 네임스페이스가 있는 KV)
 
-저장 위치는 「자신의 Anima 네임스페이스」와 「`shared` 섹션」의 2개. `shared`은 도구의 credential 해석(`get_credential`)이 읽는 곳으로, `--shared`를 붙여 쓴다. `get` / `list`은 미지정 시 자신의 네임스페이스 → `shared` 순서로 둘 다 본다.
+저장 위치는 「자신의 Anima 네임스페이스」와 「`shared` 섹션」의 두 가지. `shared`은 도구의 credential 해결(`get_credential`)이 읽는 곳으로, `--shared`를 붙여 쓴다. `get` / `list`은 미지정 시 자신의 네임스페이스 → `shared` 순서로 둘 다 본다.
 
 ```bash
 animaworks-tool vault get {キー}              # 自分の名前空間 → shared の順に探す
@@ -424,7 +424,7 @@ animaworks-tool vault delete {キー}           # 自分の名前空間から削
 animaworks-tool vault delete {キー} --shared  # shared から削除
 ```
 
-`delete`만은 캐스케이드하지 않음(`--shared` 없이 shared의 credential을 끌어들이지 않기 위해). 단회 사용 토큰처럼 「유효한 복제가 동시에 하나만 존재할 수 있는」 값은, 보관 위치를 한 곳으로 정해 분산시키지 않는다.
+`delete`만은 캐스케이드하지 않는다(`--shared` 없이 shared의 credential을 끌어들이지 않기 위해). 단회 사용 토큰처럼 「유효한 복제가 동시에 하나만 존재할 수 있는」 값은 보관 위치를 한 곳으로 정해 분산시키지 않는다.
 
 **supervisor**(`ANIMAWORKS_ANIMA_DIR`의 Anima 이름을 기준으로, status.json의 supervisor 관계로 하위를 해결)
 
@@ -455,7 +455,7 @@ animaworks init --from-md {PATH} --name {名前}  # 作成時の名前を上書�
 旧形式の cron.md はサーバ起動時と `animaworks migrate` で自動変換される。
 ```
 
-스키마 마이그레이션은 `animaworks migrate`(위)을 참조.
+스키마 이행은 `animaworks migrate`(위)을 참조.
 
 ---
 

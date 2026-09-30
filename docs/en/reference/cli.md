@@ -1,11 +1,11 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=180823a8c7bc50385b74c0144a1d8f1884784e5889a68c8865182ca7636498e1 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
-# CLI Reference: `animaworks`
+# CLI reference: `animaworks`
 
 Generated from the argparse definition of the `animaworks` command.
 
-## Global Options
+## Global options
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
@@ -111,7 +111,7 @@ List all animas with status
 
 ## `anima permissions`
 
-Display Anima permission configuration
+Display an Anima's permission configuration
 
 `usage: animaworks anima permissions [-h] anima`
 
@@ -618,7 +618,7 @@ Run a stdio MCP server for an anima
 
 ## `memory`
 
-Check and maintain memory
+Check and maintain memories
 
 `usage: animaworks memory [-h] {forgetting-dry-run} ...`
 
@@ -628,7 +628,7 @@ Check and maintain memory
 
 ## `memory forgetting-dry-run`
 
-Show the number of targets for low activation and full forgetting without updating
+Show the number of targets for deactivation and full forgetting without updating
 
 `usage: animaworks memory forgetting-dry-run [-h] --anima ANIMA`
 
@@ -638,7 +638,7 @@ Show the number of targets for low activation and full forgetting without updati
 
 ## `migrate`
 
-Run required migrations on runtime data.
+Run necessary migrations on runtime data.
 
 `usage: animaworks migrate [-h] [--dry-run] [--verbose] [--list] [--force]`
 
@@ -1276,7 +1276,7 @@ Update task status
 
 ## `task-store`
 
-Maintenance and migration of per-assignee task source of truth
+Maintenance and migration of the task ledger per assignee
 
 `usage: animaworks task-store [-h]
                              {status,quiesce,resume,migrate,backup,export} ...`
@@ -1287,7 +1287,7 @@ Maintenance and migration of per-assignee task source of truth
 
 ## `task-store backup`
 
-Create a new DB backup including WAL
+Create a new DB backup including the WAL
 
 `usage: animaworks task-store backup [-h] --anima ANIMA --destination
                                     DESTINATION`
@@ -1295,11 +1295,11 @@ Create a new DB backup including WAL
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --anima | option | — | — | Target assignee name |
-| --destination | option | — | — | Unused output path |
+| --destination | option | — | — | Unused output destination path |
 
 ## `task-store export`
 
-Write the current quiesced state to a new directory
+Write the current shutdown state to a new directory
 
 `usage: animaworks task-store export [-h] --anima ANIMA --destination
                                     DESTINATION`
@@ -1307,18 +1307,18 @@ Write the current quiesced state to a new directory
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --anima | option | — | — | Target assignee name |
-| --destination | option | — | — | Unused output path |
+| --destination | option | — | — | Unused output destination path |
 
 ## `task-store migrate`
 
-Import a quiesced old ledger (backup required)
+Import the old ledger while shutdown (backup required)
 
 `usage: animaworks task-store migrate [-h] --anima ANIMA --backup BACKUP`
 
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --anima | option | — | — | Target assignee name |
-| --backup | option | — | — | Create a new DB backup including WAL |
+| --backup | option | — | — | Create a new DB backup including the WAL |
 
 ## `task-store quiesce`
 
@@ -1342,7 +1342,7 @@ Resume fetching new executions
 
 ## `task-store status`
 
-Show quiesce gate and execution count
+Show the shutdown gate and execution count
 
 `usage: animaworks task-store status [-h] --anima ANIMA`
 
@@ -1393,7 +1393,7 @@ Manage encrypted vault values
 
 `usage: animaworks vault [-h] {status,init,get,store,list,delete} ...`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1403,7 +1403,7 @@ Remove a key from one section
 
 `usage: animaworks vault delete [-h] [--shared] key`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | key | positional | — | — | Key to remove |
 | --shared | flag | false | — | Delete from the shared section instead of the Anima namespace (never cascades) |
@@ -1414,7 +1414,7 @@ Get a value by key
 
 `usage: animaworks vault get [-h] [--shared] key`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | key | positional | — | — | Key to retrieve |
 | --shared | flag | false | — | Look only in the shared section (default: Anima namespace, then shared) |
@@ -1425,7 +1425,7 @@ Generate a vault key if one does not exist
 
 `usage: animaworks vault init [-h]`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1435,7 +1435,7 @@ List keys in the anima namespace and the shared section
 
 `usage: animaworks vault list [-h] [--shared]`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --shared | flag | false | — | List only the shared section (does not require ANIMAWORKS_ANIMA_DIR) |
 
@@ -1445,7 +1445,7 @@ Show key and encryption status without values
 
 `usage: animaworks vault status [-h]`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | — | — | — | — | — |
 
@@ -1455,7 +1455,7 @@ Store a key-value pair
 
 `usage: animaworks vault store [-h] [--shared] key [value]`
 
-| Name | Type | Default | Options | Description |
+| Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | key | positional | — | — | Key to store |
 | value | positional | — | — | Value to store (Anima-scoped compatibility mode only) |

@@ -5,24 +5,24 @@
 A collection of patterns for giving clear, actionable instructions to subordinates and team members.
 Vague instructions cause rework and confusion. Follow this guide to give instructions that allow the other party to act without hesitation.
 
-## Tool Selection
+## Tool Selection Guide
 
-| Tool | Use | Notes |
-|--------|------|------|
-| `delegate_task` | Task delegation to direct subordinates | Adds to task queue and sends DM. Progress can be tracked via `task_tracker`. Can only be used with direct subordinates |
-| `send_message` | One-on-one requests, reports, questions | `intent` required: either `report` or `question`. Use `delegate_task` for task delegation to subordinates. Messages to human aliases are delivered to external channels (such as Slack/Chatwork) |
-| `post_channel` | Broadcast to all (announcements, resolution reports) | Use Board for acknowledgments, thanks, and FYI. Can mention users with `@名前` (sends DM notification to mentioned users). See `board-guide.md` for details |
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `delegate_task` | Task delegation to direct subordinates | Adds to task queue + sends DM. Progress can be tracked via `task_tracker`. Only usable with direct subordinates |
+| `send_message` | One-on-one requests, reports, questions | `intent` required: either `report` or `question`. Use `delegate_task` for task delegation to subordinates. Messages to human aliases are delivered to external channels (e.g., Slack/Chatwork) |
+| `post_channel` | Team-wide sharing (announcements, resolution reports) | Use Board for acknowledgments, thanks, and FYI. Mentions possible via `@名前` (sends DM notification to mentioned parties). See `board-guide.md` for details |
 | `manage_channel` | Channel ACL management | Create channels, add/remove members, check information. Used for restricted channel operations. See `board-guide.md` for details |
 
 **send_message constraints**:
 - `intent` is required. Only `report` / `question` are allowed. Use Board (`post_channel`) for acknowledgments, thanks, and FYI. Use `delegate_task` for task delegation to subordinates
-- Only one DM to the same recipient per run. There is no recipient-count cap
-- Options: `thread_id` (thread ID), `reply_to` (reply-to message ID) can maintain conversation threads
+- Only one DM can be sent to the same recipient per run. No limit on the number of recipients
+- Optional: `thread_id` (thread ID), `reply_to` (reply-to message ID) can maintain conversation threads
 
 **post_channel constraints**:
 - Must be a channel member (ACL). For restricted channels, non-members cannot post
-- Can only post once per channel within the same run
-- There is no cross-run repost cooldown or shared DM / Board send budget
+- Only one post per channel per run
+- No cooldown for reposting between runs, and no shared send budget for DM / Board
 
 ## The 5 Elements of Clear Instructions
 

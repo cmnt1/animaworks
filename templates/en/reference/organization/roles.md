@@ -206,21 +206,20 @@ Before loading, `_normalize_sheet_headings()` runs. In Japanese sheets, the foll
 | `## 基本プロフィール` | `## 基本情報` |
 | `## 性格` / `## 性格・キャラクター` | `## 人格` |
 
-### Template Directory Structure
+### Template directory structure
 
 Role templates are organized into `templates/_shared` and locale-specific paths:
 
-| Path | Content | Locale |
-|------|------|----------|
+| Path | Contents | Locale |
+|------|----------|--------|
 | `templates/_shared/roles/{role}/defaults.json` | Model and parameter default values | Common |
 | `templates/{locale}/roles/{role}/permissions.json` | Role-specific tool permissions | ja / en |
-| `templates/{locale}/roles/{role}/specialty_prompt.md` | Role-specific behavior guidelines | ja / en |
+| `templates/{locale}/roles/{role}/specialty_prompt.md` | Role-specific behavioral guidelines | ja / en |
 
-`locale` is resolved via `locale` of `config.json` or the default `ja`.
-`_get_roles_dir()` (`core/anima/factory.py`) looks for `templates/{locale}/roles` and
-**if it does not exist, falls back in the order `en`, then `ja`**.
+`locale` is resolved via `config.json`'s `locale` or the default `ja`.
+`_get_roles_dir()` (`core/anima/factory.py`) looks for `templates/{locale}/roles` and falls back in the order of **`en` if it does not exist, then `ja`**.
 
-`defaults.json` is located in `templates/_shared/roles/<role>/defaults.json` and is common to all locales. The defined fields are as follows:
+`defaults.json` is located in `templates/_shared/roles/<role>/defaults.json` and is common to all locales. The definition fields are as follows:
 
 | Field | Description | Notes |
 |-----------|------|------|
@@ -229,9 +228,9 @@ Role templates are organized into `templates/_shared` and locale-specific paths:
 | `context_threshold` | Compaction threshold | All roles |
 | `conversation_history_threshold` | Conversation history compression threshold | All roles (0.30–0.40 in templates) |
 
-Valid role names must match `VALID_ROLES` (`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`) in code.
+Valid role names must match `VALID_ROLES` (`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`) in the code.
 
-### Available Roles (Actual Values of `defaults.json`)
+### Available roles (actual values of `defaults.json`)
 
 Model and execution parameters:
 
@@ -244,15 +243,15 @@ Model and execution parameters:
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-For `create_from_md` without `--role` specified, `general` is used. The ops default is `ollama/glm-4.7` for local use. In the bundled `templates/_shared/config_defaults/models.json`, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, edit `model` and `credential` in `status.json` (e.g., `openai/glm-4.7-flash`). engineer / manager can assign lightweight models for background execution such as heartbeat and cron via `background_model`.
+For `create_from_md` where `--role` is not specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the `templates/_shared/config_defaults/models.json` bundled with the templates, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, edit `model` and `credential` (e.g., `openai/glm-4.7-flash`) in `status.json`. engineer / manager can assign lightweight models for background execution such as heartbeat and cron via `background_model`.
 
-### Application Flow
+### Application flow
 
-1. **At creation** (`create_from_md`), the order is as follows:
-   - `_apply_defaults_from_sheet()` … Migrate from the character sheet to `identity.md` / `injection.md` (/（ if a permission section exists) `permissions.md` → then to `permissions.json`
-   - `_apply_role_defaults()` … **Overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (character-sheet-derived `permissions.json` is overwritten on the role side)
-   - `_create_status_json()` … Read model and context settings from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), overwrite with the character sheet's "model" and "credential" if present, and write `status.json`. Only write `execution_mode` when the character sheet's "execution mode" has a value; if unspecified, omit the key itself and let pattern resolution handle it (`models.json` etc., per `core/anima/factory.py`'s `_create_status_json`).
-2. **On role change** (`animaworks anima set-role`): Re-copy `permissions.json` and `specialty_prompt.md` via `_apply_role_defaults()`. Into `status.json`, `model`, `context_threshold`, and `conversation_history_threshold` are merged from `defaults.json`. `background_model` is **not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only `role` and does not touch template files. `--no-restart` can skip automatic restart via the API. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).
+1. **At creation time** (`create_from_md`), the order is as follows:
+   - `_apply_defaults_from_sheet()` … Migrate from the character sheet to `identity.md` / `injection.md` (if there is a /（ permission section) `permissions.md` → `permissions.json`
+   - `_apply_role_defaults()` … **Overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (character-sheet-derived `permissions.json` is overwritten by the role side)
+   - `_create_status_json()` … Read the model and context settings from the table above via `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), overwrite with the character sheet's "model" and "credential" if present, and write `status.json`. Only write `execution_mode` when the character sheet's "execution mode" has a value; if unspecified, omit the key itself and leave it to pattern resolution such as `models.json` (`_create_status_json` of `core/anima/factory.py`).
+2. **At role change** (`animaworks anima set-role`): Re-copy `permissions.json` and `specialty_prompt.md` via `_apply_role_defaults()`. `model`, `context_threshold`, and `conversation_history_threshold` are merged into `status.json` from `defaults.json`. `background_model` is **not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only `role` and does not touch template files. `--no-restart` can skip automatic restart via the API. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).
 
 ### Prompt Injection
 
