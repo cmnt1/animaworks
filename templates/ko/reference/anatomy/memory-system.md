@@ -191,7 +191,7 @@ Curator의 승격·퇴역은 기본적으로 제안만 한다. 안전상의 차�
 2. **대화 요약의 별도 컬렉션**: `state/conversation.json` 의 **`compressed_summary`** 을 읽고, `### ` 제목 단위로 청크화하여 **전용 컬렉션** (`memory_type: conversation_summary` / 메타데이터 `source: conversation_gist`)에 올린다. 일반적인 knowledge 인덱스와는 별도로, 장기 채팅의 압축 메모를 검색 대상에 포함할 수 있다.
 3. **`.ragignore`**: 데이터 디렉터리 (`~/.animaworks/`) 바로 아래의 `.ragignore` 에 glob 형식 패턴을 쓰면, 해당 경로는 인덱스 대상에서 제외된다 (주석 줄 `#` 가능).
 4. **Embedding 모델**: `config.json` 의 `rag.embedding_model` (미설정 시 `intfloat/multilingual-e5-small`). 벡터 DB (ChromaDB)는 각 Anima의 root 프로세스가 소유하고, 다른 프로세스는 서버의 내부 API (`/api/internal/vector`)를 통해 root에 전달한다. 임베딩과 rerank는 서버 한 곳에서 계산한다.
-5. **검색**: 쿼리를 벡터화하고, 유사도와 **시간 감쇠**·참조 빈도 등을 결합해 랭킹한다. `config.json` 의 `rag.min_retrieval_score` 로 결과의 하한을 조정할 수 있다. Priming이나 도구를 통한 검색에서도 같은 하한이 적용된다.
+5. **검색**: 벡터 검색과 BM25 키워드 검색을 함께 수행하고, RRF로 순위를 통합한 뒤 상위 후보를 cross-encoder로 다시 정렬한다. `config.json` 의 `rag.min_retrieval_score` 로 결과의 하한을 조정할 수 있다. Priming이나 도구를 통한 검색에서도 같은 하한이 적용된다.
 
 6. **증분 업데이트와 재구축**: 파일 변경에 따른 재인덱스에 더해, 일일·주간·월간 라이프사이클 후에 **인덱스 재구축**이 실행되어 정합성을 맞춘다. RAG 불일치가 감지되면, repair가 `vectordb` 을 격리하고 재구축할 수 있다.
 
