@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=538ea214d652f8dad1c797289ed1f70ff2e2766e155ec9043cc7a0e027ae23df generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=4676fd2d783cb2cfcc7e099ef85bbb3fd9c99d482db44f079021ebbb61e94deb generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -183,9 +183,9 @@ Application configuration schema, loading, validation, and migration.
 
 ## `core.execution`
 
-Tool execution, command execution, and safety controls.
+Tool execution, command execution, safety control.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.execution` | 57 | — |
 | `core.execution._sanitize（非公開）` | 433 | — |
@@ -213,11 +213,11 @@ Tool execution, command execution, and safety controls.
 | `core.execution.engines.gemini.gemini_cli` | 474 | — |
 | `core.execution.engines.grok.grok_cli` | 1089 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 524 | — |
-| `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
-| `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
-| `core.execution.engines.litellm.litellm_loop` | 617 | — |
+| `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
+| `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
+| `core.execution.engines.litellm.litellm_loop` | 1047 | — |
 | `core.execution.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
-| `core.execution.events` | 105 | — |
+| `core.execution.events` | 177 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
 | `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
 | `core.execution.loop_guards` | 411 | In-loop guard mechanisms for the self-hosted execution loops (Mode A/B). |

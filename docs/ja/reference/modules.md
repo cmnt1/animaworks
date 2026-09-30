@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: 846522524bc52d6f87d6038dca096b1b7bf1da0a2a32ac978f842b0f2f4f0b02 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 9fe895e5682a626908a8de46e0098a77c217a91c5e4378235af39c111c7b9bba -->
 
 # モジュール一覧
 
@@ -213,11 +213,11 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.execution.engines.gemini.gemini_cli` | 474 | — |
 | `core.execution.engines.grok.grok_cli` | 1089 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 524 | — |
-| `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
-| `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
-| `core.execution.engines.litellm.litellm_loop` | 617 | — |
+| `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
+| `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
+| `core.execution.engines.litellm.litellm_loop` | 1047 | — |
 | `core.execution.error_classifier` | 805 | Centralized LLM API error classification for coordinated recovery. |
-| `core.execution.events` | 105 | — |
+| `core.execution.events` | 177 | — |
 | `core.execution.fallback_activity` | 290 | Activity-log integration for ephemeral runtime model fallback. |
 | `core.execution.github_identity` | 162 | GitHub identity resolution for executor environments. |
 | `core.execution.loop_guards` | 411 | In-loop guard mechanisms for the self-hosted execution loops (Mode A/B). |

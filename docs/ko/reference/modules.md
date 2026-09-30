@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=538ea214d652f8dad1c797289ed1f70ff2e2766e155ec9043cc7a0e027ae23df generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=4676fd2d783cb2cfcc7e099ef85bbb3fd9c99d482db44f079021ebbb61e94deb generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 # 모듈 목록
 
@@ -194,7 +194,7 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.execution._tool_summary（非公開）` | 102 | — |
 | `core.execution.backoff` | 42 | 조정된 LLM 재시도를 위한 백오프 타이밍 헬퍼. |
 | `core.execution.base` | 902 | — |
-| `core.execution.busy_probe` | 68 | 자체 호스팅 폴백 모델(vLLM ``/metrics``)용 혼잡 프로브. |
+| `core.execution.busy_probe` | 68 | 자체 호스팅 폴백 모델용 혼잡 프로브 (vLLM ``/metrics``). |
 | `core.execution.cli_stream` | 295 | — |
 | `core.execution.engine_base` | 75 | — |
 | `core.execution.engine_session` | 101 | — |
@@ -213,16 +213,16 @@ Slack, Discord, Chatwork의 공통 전송 클라이언트 및 토큰 해석.
 | `core.execution.engines.gemini.gemini_cli` | 474 | — |
 | `core.execution.engines.grok.grok_cli` | 1089 | — |
 | `core.execution.engines.litellm._litellm_context（非公開）` | 524 | — |
-| `core.execution.engines.litellm._litellm_streaming（非公開）` | 1398 | — |
-| `core.execution.engines.litellm._litellm_tools（非公開）` | 399 | — |
-| `core.execution.engines.litellm.litellm_loop` | 617 | — |
+| `core.execution.engines.litellm._litellm_tools（非公開）` | 404 | — |
+| `core.execution.engines.litellm._llm_call（非公開）` | 326 | — |
+| `core.execution.engines.litellm.litellm_loop` | 1047 | — |
 | `core.execution.error_classifier` | 805 | 조정된 복구를 위한 중앙 집중식 LLM API 오류 분류. |
-| `core.execution.events` | 105 | — |
-| `core.execution.fallback_activity` | 290 | 일시적 런타임 모델 폴백을 위한 활동 로그 통합. |
-| `core.execution.github_identity` | 162 | 실행자 환경을 위한 GitHub ID 해석. |
-| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프(모드 A/B)를 위한 루프 내 가드 메커니즘. |
+| `core.execution.events` | 177 | — |
+| `core.execution.fallback_activity` | 290 | 임시 런타임 모델 폴백을 위한 활동 로그 통합. |
+| `core.execution.github_identity` | 162 | 실행자 환경을 위한 GitHub ID 확인. |
+| `core.execution.loop_guards` | 411 | 자체 호스팅 실행 루프용 루프 내 가드 메커니즘 (모드 A/B). |
 | `core.execution.process_runner` | 184 | — |
-| `core.execution.rate_guard` | 339 | 프로세스 간 LLM 속도 가드(플릿 전체 회로 차단기). |
+| `core.execution.rate_guard` | 339 | 프로세스 간 LLM 속도 가드 (플릿 전체 회로 차단기). |
 | `core.execution.reminder` | 128 | — |
 | `core.execution.session_context` | 109 | — |
 | `core.execution.session_store` | 130 | — |
