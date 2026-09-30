@@ -39,7 +39,7 @@ def test_rename_rag_cleanup_queues_rebuild_when_owner_is_busy(tmp_path: Path) ->
     (anima_dir / "vectordb").mkdir(parents=True)
     with (
         patch("core.memory.rag.cli_access.open_vector_access", side_effect=VectorOwnerBusy("busy")),
-        patch("core.memory.rag.repair_state.write_repair_request_state") as write_request,
+        patch("core.memory.rag.repair.state.write_repair_request_state") as write_request,
     ):
         assert _cleanup_rag_collections(anima_dir, "old_name") is True
 

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py config -->
-<!-- generator: gen_reference/1  kind: config  source-sha256: 7b157dac70da947981cf0e39947a011fd7ae76ec31b91026666cdd2ccac35fdf -->
+<!-- generator: gen_reference/1  kind: config  source-sha256: 2ba6155ac26faafb7cf752b84b9522d5855a6f4aebea78175f882a5e3c5b8c15 -->
 
 # 設定リファレンス
 
@@ -427,6 +427,7 @@
 | `housekeeping.current_state_stale_hours` | `int` | `24` | — |
 | `housekeeping.suppressed_messages_max_size_mb` | `int` | `10` | — |
 | `housekeeping.suppressed_messages_keep_generations` | `int` | `5` | — |
+| `housekeeping.sdk_bash_injection_max_size_mb` | `int` | `10` | — |
 | `housekeeping.archive_superseded_retention_days` | `int` | `7` | — |
 | `housekeeping.archive_versions_keep_per_file` | `int` | `5` | — |
 | `inbox` | `InboxConfig` | `{InboxConfig}` | anima の受信箱と通知表示。 |

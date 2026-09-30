@@ -64,7 +64,8 @@ async def test_repeated_transient_query_reopens_service_store_and_recovers(
 
 @pytest.mark.asyncio
 async def test_corruption_error_is_recorded_for_repair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from core.memory.rag import repair, repair_state
+    from core.memory.rag import repair
+    from core.memory.rag.repair import state as repair_state
 
     data_dir = tmp_path / "runtime"
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))

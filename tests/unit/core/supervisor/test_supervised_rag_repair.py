@@ -95,7 +95,7 @@ async def test_supervised_rag_repair_repairs_without_stopping_by_default(tmp_pat
 async def test_requested_repair_waits_until_anima_process_is_running(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_enabled_anima(sup)
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     repair_state.write_repair_request_state(
         "sora",

@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py modules -->
-<!-- generator: gen_reference/1  kind: modules  source-sha256: ee42576dc50df204d9fb8b648cabc611c298d8c883eb4cb1d9bce79537a165b5 -->
+<!-- generator: gen_reference/1  kind: modules  source-sha256: 1cfea2f3f0599d58a29b3cc41ce1566140a6802843365ce76ea6262ce816861a -->
 
 # モジュール一覧
 
@@ -43,7 +43,7 @@
 | `cli.commands.models_cmd` | 219 | CLI commands for model information and management. |
 | `cli.commands.optimize_assets` | 189 | — |
 | `cli.commands.profile` | 332 | — |
-| `cli.commands.rag_repair_status` | 148 | Status reporting for persistent RAG repair state. |
+| `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
 | `cli.commands.server` | 834 | — |
@@ -179,7 +179,7 @@ Slack、Discord、Chatwork の共通送信クライアントとトークン解�
 | `core.config.model_mode` | 446 | Model execution mode resolution for canonical S/C/D/G/X/A modes. |
 | `core.config.models` | 96 | Central configuration module — facade re-exporting split modules. |
 | `core.config.resolver` | 162 | Configuration resolution: status.json merge with anima_defaults. |
-| `core.config.schemas` | 1400 | Pydantic configuration schemas for AnimaWorks. |
+| `core.config.schemas` | 1413 | Pydantic configuration schemas for AnimaWorks. |
 | `core.config.vault` | 409 | Credential vault with PyNaCl SealedBox encryption. |
 
 ## `core.execution`
@@ -468,7 +468,7 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.maintenance.cron_logger` | 159 | — |
 | `core.memory.maintenance.distillation` | 546 | — |
 | `core.memory.maintenance.forgetting` | 588 | — |
-| `core.memory.maintenance.housekeeping` | 1710 | — |
+| `core.memory.maintenance.housekeeping` | 1483 | — |
 | `core.memory.maintenance.hygiene` | 75 | — |
 | `core.memory.maintenance.reconsolidation` | 658 | — |
 | `core.memory.maintenance.resolution_tracker` | 61 | — |
@@ -499,13 +499,11 @@ Model Context Protocol サーバーとクライアント。
 | `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
-| `core.memory.rag.repair` | 33 | — |
-| `core.memory.rag.repair_rebuild` | 253 | — |
-| `core.memory.rag.repair_service` | 621 | — |
-| `core.memory.rag.repair_snapshot` | 152 | Private inputs and metadata publication for the existing RAG rebuild path. |
-| `core.memory.rag.repair_state` | 151 | Persistent repair-state helpers for RAG auto-repair. |
-| `core.memory.rag.repair_types` | 27 | — |
-| `core.memory.rag.repair_utils` | 163 | — |
+| `core.memory.rag.repair.detect` | 741 | — |
+| `core.memory.rag.repair.rebuild` | 396 | — |
+| `core.memory.rag.repair.service` | 246 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.memory.rag.repair.state` | 191 | Persistent repair-state helpers for RAG auto-repair. |
+| `core.memory.rag.repair.types` | 27 | — |
 | `core.memory.rag.retriever` | 809 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
@@ -585,6 +583,14 @@ Model Context Protocol サーバーとクライアント。
 | モジュール | 行数 | docstring 1行目 |
 |---|---:|---|
 | `core.memory.rag` | 23 | — |
+
+## `core.memory.rag.repair`
+
+—
+
+| モジュール | 行数 | docstring 1行目 |
+|---|---:|---|
+| `core.memory.rag.repair` | 31 | — |
 
 ## `core.memory.retrieval`
 
@@ -764,7 +770,7 @@ anima の監督、委任、実行調整。
 |---|---:|---|
 | `core.supervisor` | 20 | — |
 | `core.supervisor._mgr_health（非公開）` | 469 | Health check mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_rag_repair（非公開）` | 245 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_rag_repair（非公開）` | 9 | Supervisor entry point for the RAG repair lifecycle mixin. |
 | `core.supervisor._mgr_reconcile（非公開）` | 321 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
@@ -773,7 +779,7 @@ anima の監督、委任、実行調整。
 | `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
 | `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
 | `core.supervisor.manager` | 1104 | Process Supervisor - Manages lifecycle of Anima child processes. |
-| `core.supervisor.memory_service` | 766 | Root-owned vector memory service. |
+| `core.supervisor.memory_service` | 770 | Root-owned vector memory service. |
 | `core.supervisor.process_handle` | 768 | Process handle for managing child Anima processes. |
 | `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
 | `core.supervisor.runner` | 1249 | Child process entry point for Anima subprocess. |

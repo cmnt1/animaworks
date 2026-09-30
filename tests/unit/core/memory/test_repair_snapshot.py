@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.i18n import t
-from core.memory.rag import repair_rebuild, repair_snapshot
 from core.memory.rag.indexer import MemoryIndexer
+from core.memory.rag.repair import rebuild as repair_rebuild
 from core.supervisor.memory_service import MemoryService
 from core.time_utils import ensure_aware
 
@@ -81,13 +81,13 @@ def test_staging_build_keeps_inputs_metadata_and_live_db_unchanged(sources):
     assert set(metadata) == {"knowledge/note.md"}
     assert hashes["shared_common_knowledge_hash"]
     assert hashes["shared_company_knowledge_hash"]
-    repair_snapshot.validate_rebuild_sources(staging, sources)
+    repair_rebuild.validate_rebuild_sources(staging, sources)
 
 
 def test_snapshot_indexer_preserves_ids_timestamps_and_absolute_exclusions(sources):
     original = sources / "knowledge" / "note.md"
     stat = original.stat()
-    with repair_snapshot.snapshot_inputs(sources, include_shared=True) as snapshot:
+    with repair_rebuild.snapshot_inputs(sources, include_shared=True) as snapshot:
         store = MagicMock()
         store.create_collection.return_value = True
         store.upsert.return_value = True
@@ -165,7 +165,7 @@ async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(so
     ):
         path.write_text("old-" + path.name)
     before = _source_bytes(sources)
-    publish = repair_snapshot.publish_rebuild_metadata
+    publish = repair_rebuild.publish_rebuild_metadata
 
     def fail_after_publish(anima_dir):
         publish(anima_dir)
@@ -173,7 +173,7 @@ async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(so
         (anima_dir / "shared_index_meta.json").write_text('{"shared_common_knowledge_hash":"new"}')
         raise OSError("injected metadata publication failure")
 
-    monkeypatch.setattr(repair_snapshot, "publish_rebuild_metadata", fail_after_publish)
+    monkeypatch.setattr(repair_rebuild, "publish_rebuild_metadata", fail_after_publish)
     staging, chunks, hashes = _build(sources)
     reopened = MagicMock()
     reopened.verify_rebuilt_data.return_value = {"chunks": chunks}
@@ -202,7 +202,7 @@ def test_snapshot_rejects_symlink_inputs(sources, tmp_path):
 
 def test_normal_indexer_never_builds_a_snapshot(sources, monkeypatch):
     snapshot = MagicMock(side_effect=AssertionError("normal indexing must not snapshot"))
-    monkeypatch.setattr(repair_snapshot, "snapshot_inputs", snapshot)
+    monkeypatch.setattr(repair_rebuild, "snapshot_inputs", snapshot)
     store = MagicMock()
     store.get_by_metadata.return_value = []
     indexer = MemoryIndexer(store, "alice", sources)
@@ -211,7 +211,7 @@ def test_normal_indexer_never_builds_a_snapshot(sources, monkeypatch):
 
 
 def test_source_mutation_during_copy_aborts_without_metadata_writes(sources, monkeypatch):
-    copy = repair_snapshot.shutil.copy2
+    copy = repair_rebuild.shutil.copy2
     original = sources / "knowledge" / "note.md"
     metadata = (sources / "index_meta.json").read_bytes()
 
@@ -221,7 +221,7 @@ def test_source_mutation_during_copy_aborts_without_metadata_writes(sources, mon
             original.write_text("A concurrent user's edit must survive.")
         return result
 
-    monkeypatch.setattr(repair_snapshot.shutil, "copy2", racing_copy)
+    monkeypatch.setattr(repair_rebuild.shutil, "copy2", racing_copy)
     with pytest.raises(RuntimeError, match=re.escape(t("rag.rebuild_input_changed"))):
         _build(sources)
     assert original.read_text() == "A concurrent user's edit must survive."

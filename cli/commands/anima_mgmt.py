@@ -1100,9 +1100,9 @@ def _cleanup_rag_collections(anima_dir: Path, old_name: str) -> bool:
     if not vectordb_dir.is_dir():
         return False
 
-    from core.memory.rag import repair_state
     from core.memory.rag.cli_access import open_vector_access
     from core.memory.rag.owner_lock import VectorOwnerBusy
+    from core.memory.rag.repair import state as repair_state
 
     try:
         with open_vector_access(anima_dir.name, anima_dir, purpose="rename") as access:

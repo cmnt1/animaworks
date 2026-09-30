@@ -486,13 +486,12 @@ Model Context Protocol 서버 및 클라이언트.
 | `core.memory.rag.indexer` | 1593 | — |
 | `core.memory.rag.indexer_delete` | 135 | — |
 | `core.memory.rag.owner_lock` | 84 | Anima의 네이티브 벡터 데이터베이스에 대한 독점 소유 잠금. |
-| `core.memory.rag.repair` | 33 | — |
-| `core.memory.rag.repair_rebuild` | 253 | — |
-| `core.memory.rag.repair_service` | 621 | — |
-| `core.memory.rag.repair_snapshot` | 152 | 기존 RAG 재구축 경로를 위한 비공개 입력 및 메타데이터 게시. |
-| `core.memory.rag.repair_state` | 151 | RAG 자동 복구를 위한 영구 복구 상태 도우미. |
-| `core.memory.rag.repair_types` | 27 | — |
-| `core.memory.rag.repair_utils` | 163 | — |
+| `core.memory.rag.repair` | 31 | RAG 자동 복구 공개 API. |
+| `core.memory.rag.repair.detect` | 741 | RAG 손상 분류, 임계값 판정 및 복구 요청. |
+| `core.memory.rag.repair.rebuild` | 396 | 입력 스냅샷, staging 재구축 및 메타데이터 게시. |
+| `core.memory.rag.repair.service` | 246 | Supervisor 폴링 및 요청된 RAG 복구 실행. |
+| `core.memory.rag.repair.state` | 191 | 영구 RAG 복구 상태 및 신호 관리. |
+| `core.memory.rag.repair.types` | 27 | RAG 복구 작업의 결과 타입. |
 | `core.memory.rag.retriever` | 809 | — |
 | `core.memory.rag.shared_check_registry` | 140 | — |
 | `core.memory.rag.shared_meta` | 162 | — |
@@ -750,7 +749,7 @@ Anima 감독, 위임 및 실행 조정.
 |---|---:|---|
 | `core.supervisor` | 20 | — |
 | `core.supervisor._mgr_health（非公開）` | 476 | Health check mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_rag_repair（非公開）` | 245 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `core.supervisor._mgr_rag_repair（非公開）` | 9 | RAG 복구 lifecycle mixin의 supervisor 진입점. |
 | `core.supervisor._mgr_reconcile（非公開）` | 315 | Reconciliation mixin for ProcessSupervisor. |
 | `core.supervisor._mgr_scheduler（非公開）` | 1034 | System scheduler mixin for ProcessSupervisor. |
 | `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |

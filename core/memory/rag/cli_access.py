@@ -78,7 +78,7 @@ def request_repair_and_wait(
     timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Request a server-owned rebuild and wait for its persisted result."""
-    from core.memory.rag import repair_state
+    from core.memory.rag.repair import state as repair_state
 
     if timeout_seconds is None:
         timeout_seconds = _repair_timeout_seconds()

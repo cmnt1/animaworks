@@ -10,7 +10,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> None:
     """Corruption detection records a request that the root memory owner repairs."""
-    from core.memory.rag.repair_service import RAGRepairService, _reset_for_testing
+    from core.memory.rag.repair.detect import RAGRepairService, _reset_for_testing
     from core.supervisor.manager import ProcessSupervisor
 
     _reset_for_testing()

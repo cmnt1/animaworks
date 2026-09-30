@@ -196,7 +196,7 @@ class MemoryService:
         cmd = [
             sys.executable,
             "-m",
-            "core.memory.rag.repair_rebuild",
+            "core.memory.rag.repair.rebuild",
             "--build-staging",
             "--anima",
             self.anima_name,
@@ -289,8 +289,12 @@ class MemoryService:
         chunks: int,
         shared_hashes: dict[str, str],
     ) -> dict[str, Any]:
-        from core.memory.rag.repair_rebuild import _backup_repair_metadata, _restore_repair_metadata
-        from core.memory.rag.repair_snapshot import publish_rebuild_metadata, validate_rebuild_sources
+        from core.memory.rag.repair.rebuild import (
+            _backup_repair_metadata,
+            _restore_repair_metadata,
+            publish_rebuild_metadata,
+            validate_rebuild_sources,
+        )
 
         loop = asyncio.get_running_loop()
         backup_dir: Path | None = None
@@ -423,7 +427,7 @@ class MemoryService:
         invalidate_shared_checks(self.anima_name)
 
     def _request_startup_repair(self, error: Exception) -> None:
-        from core.memory.rag import repair_state
+        from core.memory.rag.repair import state as repair_state
 
         current = repair_state.read_state(self.anima_name, animas_dir=self.anima_dir.parent)
         if current.get("status") in repair_state.ACTIVE_REPAIR_STATUSES:
@@ -461,7 +465,7 @@ class MemoryService:
         try:
             return op(self._store)
         except Exception as error:
-            from core.memory.rag.repair_utils import classify_corruption_error
+            from core.memory.rag.repair.detect import classify_corruption_error
 
             reason = classify_corruption_error(error)
             if reason is None:

@@ -19,7 +19,7 @@ from core.memory.rag.repair import (
     classify_corruption_error,
     collection_owner,
 )
-from core.memory.rag.repair_utils import SINGLE_SHOT_REASONS
+from core.memory.rag.repair.detect import SINGLE_SHOT_REASONS
 from core.memory.rag.sqlite_health import SQLiteHealthResult
 
 
@@ -748,7 +748,7 @@ def test_background_duplicate_request_is_not_started_twice(data_dir: Path):
 
 
 def test_staging_rebuild_rejects_non_staging_direct_chroma_path(tmp_path: Path) -> None:
-    from core.memory.rag.repair_rebuild import build_staging_vectordb
+    from core.memory.rag.repair.rebuild import build_staging_vectordb
 
     anima_dir = tmp_path / "sora"
     anima_dir.mkdir()
@@ -854,7 +854,7 @@ def test_chroma_repair_verification_rejects_wrong_chunk_count() -> None:
 
 
 def test_rag_repair_nonce_env_sets_and_restores(monkeypatch) -> None:
-    from core.memory.rag.repair_utils import rag_repair_nonce_env
+    from core.memory.rag.repair.detect import rag_repair_nonce_env
 
     monkeypatch.delenv("ANIMAWORKS_RAG_REPAIR_NONCE", raising=False)
     with rag_repair_nonce_env() as nonce:

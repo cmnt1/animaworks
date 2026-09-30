@@ -41,4 +41,4 @@ Chroma の永続ストアは Anima ごとの root プロセスの `MemoryService
 
 ## RAG の修復
 
-`core/memory/rag/repair_service.py` は破損の兆候を受けて修復を依頼する。root の `MemoryService` は元の記憶ファイルから staging 索引を作り、検証した後に切り替える。運用時に明示的な修復が必要な場合は、[CLI リファレンスの `repair-rag`](../reference/cli.md)を参照する。
+`core/memory/rag/repair/detect.py` は破損の兆候を受けて修復を依頼する。root の `MemoryService` は元の記憶ファイルから staging 索引を作り、検証した後に切り替える。運用時に明示的な修復が必要な場合は、[CLI リファレンスの `repair-rag`](../reference/cli.md)を参照する。
