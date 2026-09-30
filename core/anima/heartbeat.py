@@ -54,6 +54,14 @@ _RE_PLAN = re.compile(
 _MAX_PLAN_SUMMARY_CHARS = 500
 
 
+def _cleanup_orphaned_heartbeat_journal(anima_dir: Path) -> bool:
+    """Remove a stale heartbeat journal and report whether one was found."""
+    if not StreamingJournal.has_orphan(anima_dir, session_type="heartbeat"):
+        return False
+    StreamingJournal.confirm_recovery(anima_dir, session_type="heartbeat")
+    return True
+
+
 def _extract_plan_summary(text: str) -> str:
     """Extract ## Plan section from heartbeat output.
 
@@ -673,7 +681,13 @@ class HeartbeatMixin:
                 "trigger": "heartbeat",
                 "unread_count": unread_count,
             }
-            atomic_write_json(checkpoint_path, checkpoint_data, indent=None, trailing_newline=False)
+            await asyncio.to_thread(
+                atomic_write_json,
+                checkpoint_path,
+                checkpoint_data,
+                indent=None,
+                trailing_newline=False,
+            )
         except Exception:
             logger.debug("[%s] Failed to write heartbeat checkpoint", self.name, exc_info=True)
 
@@ -687,7 +701,7 @@ class HeartbeatMixin:
 
         # Streaming journal for heartbeat crash recovery
         journal = StreamingJournal(self.anima_dir, session_type="heartbeat")
-        journal.open(trigger="heartbeat")
+        await asyncio.to_thread(journal.open, trigger="heartbeat")
         journal_finalized = False
 
         # ── Background model selection ──
@@ -743,7 +757,7 @@ class HeartbeatMixin:
                         if chunk.get("type") == "text_delta":
                             text = chunk.get("text", "")
                             attempt_text += text
-                            journal.write_text(text)
+                            await asyncio.to_thread(journal.write_text, text)
                         if chunk.get("type") == "cycle_done":
                             attempt_result = CycleResult.model_validate(
                                 {
@@ -786,7 +800,8 @@ class HeartbeatMixin:
             if _hard_exceeded:
                 try:
                     recovery_path = self.anima_dir / "state" / "recovery_note.md"
-                    recovery_path.write_text(
+                    await asyncio.to_thread(
+                        recovery_path.write_text,
                         t("reminder.hb_hard_timeout_recovery", timeout=_hard_timeout),
                         encoding="utf-8",
                     )
@@ -795,7 +810,7 @@ class HeartbeatMixin:
                     logger.debug("[%s] Failed to save hard timeout recovery note", self.name, exc_info=True)
 
             if not journal_finalized:
-                journal.finalize(summary=result.summary[:500])
+                await asyncio.to_thread(journal.finalize, summary=result.summary[:500])
                 journal_finalized = True
 
             self._last_activity = now_local()
@@ -805,7 +820,7 @@ class HeartbeatMixin:
             _hb_meta: dict[str, Any] = {"plan_summary": _plan_summary} if _plan_summary else {}
             if result.action == "error":
                 _hb_meta.update({"status": "failed", "reason": result.reason})
-            self._activity.log("heartbeat_end", summary=result.summary, meta=_hb_meta)
+            await self._activity.alog("heartbeat_end", summary=result.summary, meta=_hb_meta)
 
             # Session boundary finalization moved to run_heartbeat()'s finally block,
             # so a hard timeout / cancellation cannot skip it.
@@ -825,7 +840,7 @@ class HeartbeatMixin:
                 reflection_text = _extract_reflection(accumulated_text)
                 if reflection_text and len(reflection_text) >= _MIN_REFLECTION_LENGTH:
                     episode_entry += f"\n\n[REFLECTION]\n{reflection_text}\n[/REFLECTION]"
-                    self._activity.log(
+                    await self._activity.alog(
                         "heartbeat_reflection",
                         content=reflection_text,
                         summary=reflection_text[:200],
@@ -845,7 +860,7 @@ class HeartbeatMixin:
             # Heartbeat completed successfully — remove checkpoint
             if result.action != "error":
                 try:
-                    checkpoint_path.unlink(missing_ok=True)
+                    await asyncio.to_thread(checkpoint_path.unlink, missing_ok=True)
                 except Exception:
                     logger.debug("[%s] Failed to remove heartbeat checkpoint", self.name, exc_info=True)
 
@@ -877,7 +892,7 @@ class HeartbeatMixin:
         finally:
             if agent.model_config is not original_config:
                 agent.update_model_config(original_config)
-            journal.close()
+            await asyncio.to_thread(journal.close)
 
     async def _handle_heartbeat_failure(
         self,
@@ -892,7 +907,7 @@ class HeartbeatMixin:
         # cadence remains owned by the scheduler/watcher, not a local loop.
 
         # Activity log: heartbeat failure (single event to avoid double-fault)
-        self._activity.log(
+        await self._activity.alog(
             "heartbeat_end",
             summary=f"[ERROR] {type(error).__name__}: {str(error)[:100]}",
             meta={
@@ -913,7 +928,7 @@ class HeartbeatMixin:
                 ts=now_iso(),
                 count=unread_count,
             )
-            recovery_path.write_text(recovery_content, encoding="utf-8")
+            await asyncio.to_thread(recovery_path.write_text, recovery_content, encoding="utf-8")
             logger.info("[%s] Recovery note saved", self.name)
         except Exception:
             logger.debug("[%s] Failed to save recovery note", self.name, exc_info=True)
@@ -921,8 +936,8 @@ class HeartbeatMixin:
         # Clean up orphaned streaming journal in-process so that
         # the next restart does not misreport it as a "crash recovery".
         try:
-            if StreamingJournal.has_orphan(self.anima_dir, session_type="heartbeat"):
-                StreamingJournal.confirm_recovery(self.anima_dir, session_type="heartbeat")
+            cleaned = await asyncio.to_thread(_cleanup_orphaned_heartbeat_journal, self.anima_dir)
+            if cleaned:
                 logger.info("[%s] Cleaned up orphaned streaming journal", self.name)
         except Exception:
             logger.debug(

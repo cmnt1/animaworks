@@ -22,6 +22,7 @@ façade that re-exports every symbol and defines the core
 ``ActivityLogger`` class.
 """
 
+import asyncio
 import json  # noqa: F401  — kept at module level for mock.patch compat
 import logging
 import math
@@ -277,6 +278,10 @@ class ActivityLogger(
             if allowed:
                 self._emit_live_event(entry, dropped=dropped)
         return entry
+
+    async def alog(self, *args: Any, **kwargs: Any) -> ActivityEntry:
+        """Record an activity entry without blocking the calling event loop."""
+        return await asyncio.to_thread(self.log, *args, **kwargs)
 
     def _append(self, entry: ActivityEntry, *, safe: bool = False) -> bool:
         """Append *entry* to today's JSONL file with fsync."""

@@ -47,6 +47,7 @@ class _DummyInbox(InboxMixin):
         self._status_slots = {"inbox": "idle"}
         self._task_slots = {"inbox": ""}
         self._activity = MagicMock()
+        self._activity.alog = AsyncMock()
         self.messenger = MagicMock()
         self._interrupt_event = asyncio.Event()
 
@@ -209,5 +210,5 @@ async def test_budget_blocked_inbox_preprocessing_has_no_persistent_side_effects
     assert result.prompt_parts == []
     overflow.assert_not_called()
     inbox.messenger.archive_paths.assert_not_called()
-    inbox._activity.log.assert_not_called()
+    inbox._activity.alog.assert_not_awaited()
     assert not (tmp_path / "state" / "inbox_read_counts.json").exists()

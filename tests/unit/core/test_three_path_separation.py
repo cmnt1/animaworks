@@ -561,6 +561,7 @@ class TestCronLLMSession:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             dp._activity = MagicMock()
+            dp._activity.alog = AsyncMock()
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
 
             async def mock_run_cycle(prompt, trigger="manual", **kwargs):
@@ -584,7 +585,7 @@ class TestCronLLMSession:
                 "path": "skills/warn-skill/SKILL.md",
             }
         ]
-        assert any(call.args[0] == "cron_skill_warning" for call in dp._activity.log.call_args_list)
+        assert any(call.args[0] == "cron_skill_warning" for call in dp._activity.alog.call_args_list)
 
 
 # ── Heartbeat Plan-Focus ────────────────────────────────────

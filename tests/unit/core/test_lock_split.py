@@ -55,6 +55,7 @@ async def test_taskexec_worker_does_not_hold_scheduled_lock_or_block_heartbeat()
     anima.messenger = MagicMock()
     anima.messenger.has_unread.return_value = False
     anima._activity = MagicMock()
+    anima._activity.alog = AsyncMock()
 
     async def run_agent(_prompt: str, _keepalive) -> CycleResult:
         heartbeat_started.set()

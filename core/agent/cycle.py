@@ -200,7 +200,7 @@ class CycleMixin:
         try:
             from core.memory.activity.logger import ActivityLogger
 
-            ActivityLogger(self.anima_dir).log(
+            await ActivityLogger(self.anima_dir).alog(
                 "session_recycled",
                 summary=f"SDK chat session recycled ({reason})",
                 meta={
@@ -1227,7 +1227,7 @@ class CycleMixin:
                             if chunk["type"] == "context_update" and task_compaction_after_pending is not None:
                                 from core.memory.activity.logger import ActivityLogger
 
-                                ActivityLogger(self.anima_dir).log(
+                                await ActivityLogger(self.anima_dir).alog(
                                     "task_compacted_after",
                                     summary=t("task.compacted_after_activity_summary"),
                                     meta={
@@ -1418,7 +1418,7 @@ class CycleMixin:
                 try:
                     from core.memory.activity.logger import ActivityLogger
 
-                    ActivityLogger(self.anima_dir).log(
+                    await ActivityLogger(self.anima_dir).alog(
                         "task_compacted",
                         summary=t("task.compacted_activity_summary"),
                         meta={

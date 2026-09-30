@@ -1086,7 +1086,8 @@ class TestRunIdleCompaction:
             new_callable=AsyncMock,
         ) as mock_compact:
             mock_compact.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.logger.ActivityLogger"):
+            with patch("core.memory.activity.logger.ActivityLogger") as mock_activity:
+                mock_activity.return_value.alog = AsyncMock()
                 await run_idle_compaction(anima, "thread-1")
 
             mock_compact.assert_awaited_once_with(anima, "thread-1", clear_engine=None)
@@ -1120,8 +1121,9 @@ class TestRunIdleCompaction:
 
         with (
             patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
         ):
+            mock_activity.return_value.alog = AsyncMock()
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
             mock_conv.load.return_value = MagicMock(compressed_summary="", turns=[])
@@ -1168,7 +1170,8 @@ class TestRunIdleCompaction:
             ) as mock_a,
         ):
             mock_a.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.logger.ActivityLogger"):
+            with patch("core.memory.activity.logger.ActivityLogger") as mock_activity:
+                mock_activity.return_value.alog = AsyncMock()
                 await run_idle_compaction(anima, "thread-1")
 
             mock_s.assert_awaited_once()
@@ -1191,8 +1194,9 @@ class TestRunIdleCompaction:
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("compaction failed"),
             ),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
         ):
+            mock_activity.return_value.alog = AsyncMock()
             await run_idle_compaction(anima, "thread-1")
 
         mock_lock.release.assert_called_once()

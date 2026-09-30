@@ -136,10 +136,11 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="Agent SDK timeout"),
         ):
+            activity.return_value.alog = AsyncMock()
             await executor._run_llm_task(task)
 
     @pytest.mark.asyncio
@@ -168,9 +169,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert "recovered" in result
 
@@ -197,9 +199,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert result == "all good"
 
@@ -231,9 +234,10 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
         ):
+            activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task)
             assert result == "401 unauthorized の対処を文書化しました"
 
@@ -265,10 +269,11 @@ class TestRunLlmTaskErrorDetection:
 
         with (
             patch("core.paths.load_prompt", return_value="prompt"),
-            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger") as activity,
             patch("core.memory.conversation.streaming_journal.StreamingJournal"),
             pytest.raises(TaskExecError, match="authentication"),
         ):
+            activity.return_value.alog = AsyncMock()
             await executor._run_llm_task(task)
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -119,7 +119,7 @@ class TestTaskExecLaneIsolation:
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task_desc)
 
         assert result == "background result"
@@ -176,10 +176,11 @@ class TestTaskExecLaneIsolation:
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
         ):
+            mock_activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task({"description": "Synthetic task title\nmore detail"})
 
         assert result == "completed"
-        start_call, end_call = mock_activity.return_value.log.call_args_list
+        start_call, end_call = mock_activity.return_value.alog.call_args_list
         assert start_call.args == ("task_exec_start",)
         assert start_call.kwargs["ctx"] == "task:unknown"
         assert start_call.kwargs["meta"] == {
@@ -327,7 +328,7 @@ class TestStreamErrorSuppression:
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
 
             result = await executor._run_llm_task(task_desc)
@@ -366,7 +367,7 @@ class TestStreamErrorSuppression:
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
 
             with pytest.raises(TaskExecError, match="streaming error"):
@@ -402,7 +403,7 @@ class TestStreamErrorSuppression:
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             mock_tqm.return_value.get_task_by_id.side_effect = OSError("disk error")
 
             with pytest.raises(TaskExecError, match="streaming error"):
@@ -438,7 +439,7 @@ class TestStreamErrorSuppression:
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             mock_tqm.return_value.get_task_by_id.return_value = None
 
             with pytest.raises(TaskExecError, match="streaming error"):
@@ -475,7 +476,7 @@ class TestStreamErrorSuppression:
             patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             result = await executor._run_llm_task(task_desc)
             assert result == "all good"
 
@@ -513,11 +514,11 @@ class TestLlmTaskFailurePropagation:
             patch("core.memory.activity.logger.ActivityLogger") as mock_activity,
             patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
         ):
-            mock_activity.return_value.log = MagicMock()
+            mock_activity.return_value.alog = AsyncMock()
             with pytest.raises(RuntimeError, match="stream retry exhausted"):
                 await executor._run_llm_task(task_desc)
 
-        start_call, end_call = mock_activity.return_value.log.call_args_list
+        start_call, end_call = mock_activity.return_value.alog.call_args_list
         assert start_call.args == ("task_exec_start",)
         assert end_call.args == ("task_exec_end",)
         assert end_call.kwargs["ctx"] == "task:llm-fail-1"

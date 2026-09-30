@@ -408,7 +408,7 @@ async def _inject_chat_message(
         attachments=attachment_paths or None,
     )
     owner._log_human_conversation(content, from_person, thread_id)
-    owner._activity.log(
+    await owner._activity.alog(
         "message_received",
         content=content,
         summary=content[:100],
@@ -892,7 +892,7 @@ class MessagingMixin:
                 self._log_human_conversation(content, from_person, thread_id)
 
                 # Activity log: message received
-                self._activity.log(
+                await self._activity.alog(
                     "message_received",
                     content=content,
                     summary=content[:100],
@@ -951,7 +951,7 @@ class MessagingMixin:
                             self.name,
                             guard_meta,
                         )
-                        self._activity.log(
+                        await self._activity.alog(
                             "session_guard_violation",
                             summary="Blocked non-chat cycle result from chat conversation storage",
                             channel="chat",
@@ -997,7 +997,7 @@ class MessagingMixin:
                     )
 
                     result.summary = display_summary
-                    self._activity.log(
+                    await self._activity.alog(
                         "response_sent",
                         content=display_summary,
                         to_person=from_person,
@@ -1021,7 +1021,7 @@ class MessagingMixin:
                 except Exception as exc:
                     logger.exception("[%s] process_message FAILED", self.name)
                     # Activity log: error (safe=True to prevent double-fault)
-                    self._activity.log(
+                    await self._activity.alog(
                         "error",
                         summary=t("anima.process_message_error", exc=type(exc).__name__),
                         meta={"phase": "process_message", "error": str(exc)[:200], "thread_id": thread_id},
@@ -1231,7 +1231,7 @@ class MessagingMixin:
                 self._log_human_conversation(content, from_person, thread_id)
 
                 # Activity log: message received
-                self._activity.log(
+                await self._activity.alog(
                     "message_received",
                     content=content,
                     summary=content[:100],
@@ -1249,7 +1249,8 @@ class MessagingMixin:
 
                 # Streaming journal: write-ahead log for crash recovery
                 journal = StreamingJournal(self.anima_dir, thread_id=thread_id)
-                journal.open(
+                await asyncio.to_thread(
+                    journal.open,
                     trigger=f"message:{from_person}",
                     from_person=from_person,
                 )
@@ -1280,15 +1281,17 @@ class MessagingMixin:
                         if chunk.get("type") == "text_delta":
                             delta_text = chunk.get("text", "")
                             partial_response += delta_text
-                            journal.write_text(delta_text)
+                            await asyncio.to_thread(journal.write_text, delta_text)
 
                         if chunk.get("type") == "tool_start":
-                            journal.write_tool_start(
+                            await asyncio.to_thread(
+                                journal.write_tool_start,
                                 tool=chunk.get("tool_name", ""),
                                 args_summary="",
                             )
                         if chunk.get("type") == "tool_end":
-                            journal.write_tool_end(
+                            await asyncio.to_thread(
+                                journal.write_tool_end,
                                 tool=chunk.get("tool_name", ""),
                                 result_summary="",
                             )
@@ -1311,7 +1314,7 @@ class MessagingMixin:
                                     self.name,
                                     guard_meta,
                                 )
-                                self._activity.log(
+                                await self._activity.alog(
                                     "session_guard_violation",
                                     summary="Blocked non-chat stream result from chat conversation storage",
                                     channel="chat",
@@ -1319,7 +1322,7 @@ class MessagingMixin:
                                     safe=True,
                                 )
                                 cycle_result["summary"] = ""
-                                journal.finalize(summary="session guard violation")
+                                await asyncio.to_thread(journal.finalize, summary="session guard violation")
                                 yield chunk
                                 continue
                             summary = normalize_user_facing_response_text(cycle_result.get("summary", ""))
@@ -1379,7 +1382,7 @@ class MessagingMixin:
                                 resp_meta["thinking_text"] = thinking_text
                             if response_artifacts:
                                 resp_meta["images"] = response_artifacts
-                            self._activity.log(
+                            await self._activity.alog(
                                 "response_sent",
                                 content=display_summary,
                                 to_person=from_person,
@@ -1392,7 +1395,7 @@ class MessagingMixin:
                                 self._sync_interactive_bootstrap_state()
 
                             # Finalize streaming journal (deletes the file)
-                            journal.finalize(summary=display_summary[:500])
+                            await asyncio.to_thread(journal.finalize, summary=display_summary[:500])
 
                             # Yield pending notification events before cycle_done
                             for notif in self.agent.drain_notifications():
@@ -1435,7 +1438,7 @@ class MessagingMixin:
                     else:
                         error_code = "STREAM_ERROR"
                     # Activity log: error (safe=True to prevent double-fault)
-                    self._activity.log(
+                    await self._activity.alog(
                         "error",
                         summary=t("anima.process_stream_error", exc=type(exc).__name__),
                         meta={
@@ -1472,7 +1475,7 @@ class MessagingMixin:
                         conv_memory.append_turn("assistant", saved_text)
                         conv_memory.save()
                     # Close journal (no-op if already finalized)
-                    journal.close()
+                    await asyncio.to_thread(journal.close)
                     if _meeting_context_token is not None:
                         from core.tooling.handler_base import meeting_context
 
@@ -1574,7 +1577,7 @@ class MessagingMixin:
                 # first-meeting greeting must be recorded there as well or the
                 # page would re-request it on every reload.
                 if is_first_meeting:
-                    self._activity.log(
+                    await self._activity.alog(
                         "response_sent",
                         content=clean_text,
                         to_person=user_id or user_name,

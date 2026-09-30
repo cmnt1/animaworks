@@ -86,6 +86,7 @@ async def test_cron_tasks_use_distinct_sanitized_session_threads() -> None:
         _notify_lock_released=MagicMock(),
         _last_activity=None,
     )
+    owner._activity.alog = AsyncMock()
     owner.memory.read_model_config.return_value = agent.model_config
     owner.memory.append_cron_log = MagicMock()
 
@@ -126,6 +127,7 @@ class TestRunCronCommandZombieReap:
 
         stub.memory = MagicMock()
         stub._activity = MagicMock()
+        stub._activity.alog = AsyncMock()
 
         return stub
 

@@ -544,7 +544,7 @@ class ReconsolidationEngine:
                     )
 
                     # Activity log event
-                    self.activity_logger.log(
+                    await self.activity_logger.alog(
                         "knowledge_reconsolidated",
                         summary=(f"Reconsolidated {know_path.name}: v{version} -> v{version + 1}"),
                         meta={
@@ -647,7 +647,7 @@ class ReconsolidationEngine:
             proc_path: Path to the reconsolidated procedure file.
             old_version: Version number before reconsolidation.
         """
-        self.activity_logger.log(
+        await self.activity_logger.alog(
             "procedure_reconsolidated",
             summary=(f"Reconsolidated {proc_path.name}: v{old_version} -> v{old_version + 1}"),
             meta={

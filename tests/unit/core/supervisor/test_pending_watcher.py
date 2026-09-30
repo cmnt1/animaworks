@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.exceptions import ToolExecutionError
+from core.memory.activity.logger import ActivityLogger
 from core.tasks.pending_executor import PendingTaskExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -132,6 +134,62 @@ class TestPendingTaskWatcherLoop:
 
         assert len(executed_tasks) == 1
         assert executed_tasks[0]["tool_name"] == "local_llm"
+
+    async def test_slow_pending_io_and_activity_log_do_not_block_event_loop(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        executor = _make_executor_with_anima(tmp_path)
+        task_path = _write_pending_task(executor._anima_dir, task_id="slow-poll")
+        activity = ActivityLogger(executor._anima_dir)
+        original_read_text = Path.read_text
+
+        def slow_read_text(path: Path, *args, **kwargs):
+            if path == task_path:
+                time.sleep(0.2)
+            return original_read_text(path, *args, **kwargs)
+
+        def slow_log(*_args, **_kwargs):
+            time.sleep(0.2)
+
+        monkeypatch.setattr(Path, "read_text", slow_read_text)
+        monkeypatch.setattr(activity, "log", slow_log)
+
+        async def execute(task_desc: dict) -> None:
+            assert task_desc["task_id"] == "slow-poll"
+            await activity.alog("task_exec_start")
+            executor._shutdown_event.set()
+            executor.wake()
+
+        executor.execute_pending_task = execute  # type: ignore[assignment]
+
+        loop = asyncio.get_running_loop()
+        previous_debug = loop.get_debug()
+        previous_slow_callback_duration = loop.slow_callback_duration
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.05
+        ticker_running = True
+        ticks = 0
+
+        async def ticker() -> None:
+            nonlocal ticks
+            while ticker_running:
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        ticker_task = asyncio.create_task(ticker())
+        try:
+            await asyncio.sleep(0)
+            await executor.watcher_loop()
+        finally:
+            ticker_running = False
+            await ticker_task
+            loop.slow_callback_duration = previous_slow_callback_duration
+            loop.set_debug(previous_debug)
+
+        assert ticks >= 10
+        assert not task_path.exists()
 
     async def test_handles_corrupt_json_gracefully(self, tmp_path: Path) -> None:
         """Corrupt JSON files are deleted with a warning."""

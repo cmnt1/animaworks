@@ -376,7 +376,7 @@ async def route_thread_reply(
                 "Failed to resolve Slack display name for human_reply log",
                 exc_info=True,
             )
-        ActivityLogger(get_animas_dir() / target).log(
+        await ActivityLogger(get_animas_dir() / target).alog(
             "human_reply",
             content=text,
             from_person=from_person,

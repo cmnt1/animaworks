@@ -9,7 +9,9 @@ task state checking, and rescue pending file regeneration.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -24,6 +26,7 @@ from core.anima.inbox import (
     _handle_delegation_dms,
     _split_delegation_items,
 )
+from core.memory.activity.logger import ActivityLogger
 from core.messaging.messenger import InboxItem
 from core.schemas import Message
 
@@ -182,8 +185,13 @@ class TestCanonicalDelegation:
     async def test_missing_task_dm_is_not_guessed_or_archived(self, tmp_path):
         directory = _setup_anima_dir(tmp_path)
         mixin = SimpleNamespace(
-            anima_dir=directory, name="bob", messenger=MagicMock(), memory=MagicMock(), _activity=MagicMock()
+            anima_dir=directory,
+            name="bob",
+            messenger=MagicMock(),
+            memory=MagicMock(),
+            _activity=MagicMock(),
         )
+        mixin._activity.alog = AsyncMock()
         item = _make_inbox_item(_make_message(intent="delegation", meta={"task_id": "abc123def456"}), tmp_path)
         unresolved = await _handle_delegation_dms(mixin, [item])
         assert unresolved == [item]
@@ -198,13 +206,74 @@ class TestCanonicalDelegation:
         queue = TaskQueueManager(directory)
         queue.submit({"task_id": "abc123def456", "task_type": "llm", "title": "work", "description": "full work"})
         mixin = SimpleNamespace(
-            anima_dir=directory, name="bob", messenger=MagicMock(), memory=MagicMock(), _activity=MagicMock()
+            anima_dir=directory,
+            name="bob",
+            messenger=MagicMock(),
+            memory=MagicMock(),
+            _activity=MagicMock(),
         )
+        mixin._activity.alog = AsyncMock()
         item = _make_inbox_item(_make_message(intent="delegation", meta={"task_id": "abc123def456"}), tmp_path)
         assert await _handle_delegation_dms(mixin, [item]) == []
         mixin.messenger.archive_paths.assert_called_once_with([item])
         mixin.memory.append_episode.assert_called_once()
+        mixin._activity.alog.assert_awaited_once()
         assert len(queue.store.pending("bob")) == 1
+
+    @pytest.mark.asyncio
+    async def test_slow_activity_log_does_not_block_inbox_processing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        directory = _setup_anima_dir(tmp_path)
+        activity = ActivityLogger(directory)
+
+        def slow_log(*_args: object, **_kwargs: object) -> None:
+            time.sleep(0.2)
+
+        monkeypatch.setattr(activity, "log", slow_log)
+        mixin = SimpleNamespace(
+            anima_dir=directory,
+            name="bob",
+            messenger=MagicMock(),
+            memory=MagicMock(),
+            _activity=activity,
+        )
+        item = _make_inbox_item(
+            _make_message(intent="delegation", meta={"task_id": "abc123def456"}),
+            tmp_path,
+        )
+
+        loop = asyncio.get_running_loop()
+        previous_debug = loop.get_debug()
+        previous_slow_callback_duration = loop.slow_callback_duration
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.05
+        ticker_running = True
+        ticks = 0
+
+        async def ticker() -> None:
+            nonlocal ticks
+            while ticker_running:
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        ticker_task = asyncio.create_task(ticker())
+        try:
+            await asyncio.sleep(0)
+            with (
+                patch("core.anima.inbox._check_task_state", return_value="completed"),
+                patch("core.anima.inbox._append_episode_off_loop", new_callable=AsyncMock),
+            ):
+                await _handle_delegation_dms(mixin, [item])
+        finally:
+            ticker_running = False
+            await ticker_task
+            loop.slow_callback_duration = previous_slow_callback_duration
+            loop.set_debug(previous_debug)
+
+        assert ticks >= 10
 
 
 class TestMessageMeta:
