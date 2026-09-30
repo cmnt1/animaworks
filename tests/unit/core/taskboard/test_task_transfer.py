@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from core.lifecycle.anima_merge.task_refs import TaskReferenceRewriter
 from core.tasks.queue import TaskQueueManager
+from scripts.anima_merge.task_refs import TaskReferenceRewriter
 
 
 def _queues(tmp_path: Path):

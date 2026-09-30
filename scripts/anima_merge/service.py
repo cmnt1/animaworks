@@ -1003,7 +1003,7 @@ class AnimaMergeService:
         """Ask a running gateway to update caches that can overwrite disk."""
         import requests
 
-        url = f"{self.gateway_url}/api/system/anima-merge/rewrite-runtime-refs"
+        url = f"{self.gateway_url}/api/system/rewrite-runtime-refs"
         try:
             response = requests.post(
                 url,

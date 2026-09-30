@@ -58,7 +58,7 @@ def _make_test_app(
     return app
 
 
-class TestAnimaMergeRuntimeRefs:
+class TestRuntimeRefs:
     async def test_rewrites_all_live_caches(self):
         app = _make_test_app()
         app.state.supervisor._bootstrap_retry_counts = {"source": 3, "target": 1}
@@ -77,7 +77,7 @@ class TestAnimaMergeRuntimeRefs:
         with patch("core.messaging.discord_webhooks.get_webhook_manager", return_value=webhook_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    "/api/system/anima-merge/rewrite-runtime-refs",
+                    "/api/system/rewrite-runtime-refs",
                     json={"source": "source", "target": "target"},
                 )
 

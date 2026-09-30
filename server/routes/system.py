@@ -1124,8 +1124,8 @@ def create_system_router() -> APIRouter:
             )
         return await manager.reload_animas()
 
-    @router.post("/system/anima-merge/rewrite-runtime-refs")
-    async def rewrite_anima_merge_runtime_refs(request: Request):
+    @router.post("/system/rewrite-runtime-refs")
+    async def rewrite_runtime_refs(request: Request):
         """Synchronize live caches after REWRITE_REFS updates disk state."""
         try:
             payload = await request.json()

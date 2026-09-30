@@ -454,7 +454,9 @@ CLIはパワーユーザーと自動化向けです。日常操作はWeb UIで�
 | `animaworks anima list / info / status / restart / disable / enable` | 確認・制御 |
 | `animaworks anima set-model / set-background-model / set-memory-backend / set-role / set-outbound-limit` | Anima単位の設定 |
 | `animaworks anima reload [--all]` | status.jsonからホットリロード |
-| `animaworks anima delete / rename / merge / merge-finalize` | ライフサイクル操作 |
+| `animaworks anima delete / rename` | ライフサイクル操作 |
+| `python -m scripts.anima_merge SOURCE TARGET [--dry-run | --execute] [--resume] [--force]` | anima 統合スクリプト（CLI本体の保守対象外） |
+| `python -m scripts.anima_merge finalize SOURCE TARGET [--dry-run | --execute] [--resume]` | 統合完了後の確定処理 |
 | `animaworks anima audit [--days N]` / `permissions` / `repair-bootstrap` | 診断 |
 
 ### コミュニケーション

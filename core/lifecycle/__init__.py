@@ -14,5 +14,4 @@ retains the shared lifecycle sub-modules used there:
 
 - ``system_consolidation``: daily/weekly consolidation pipeline helpers
 - ``knowledge_correction``: self-correction helpers used by consolidation
-- ``anima_merge``: used by ``cli/commands/anima_merge``
 """

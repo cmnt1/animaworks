@@ -9,12 +9,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from core.lifecycle.anima_merge import (
+from core.paths import get_data_dir
+from scripts.anima_merge import (
     AnimaMergeError,
     AnimaMergeFinalizeService,
     AnimaMergeService,
 )
-from core.paths import get_data_dir
 
 
 def cmd_anima_merge(args: argparse.Namespace) -> None:

@@ -221,7 +221,7 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 | PUT | `/api/settings/activity-schedule` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 시간 기반 활동 일정(야간 모드)을 업데이트합니다. | `server/routes/system.py:set_activity_schedule` |
 | POST | `/api/settings/display-mode` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 표시 모드를 업데이트하고 config.image_gen.image_style을 동기화합니다. | `server/routes/system.py:set_display_mode` |
 | GET | `/api/shared/users` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | shared/users/.에서 등록된 사용자 이름을 나열합니다. | `server/routes/system.py:list_shared_users` |
-| POST | `/api/system/anima-merge/rewrite-runtime-refs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | REWRITE_REFS가 디스크 상태를 업데이트한 후 라이브 캐시를 동기화합니다. | `server/routes/system.py:rewrite_anima_merge_runtime_refs` |
+| POST | `/api/system/rewrite-runtime-refs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | REWRITE_REFS가 디스크 상태를 업데이트한 후 라이브 캐시를 동기화합니다. | `server/routes/system.py:rewrite_runtime_refs` |
 | GET | `/api/system/connections` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | WebSocket 및 프로세스 연결 정보를 반환합니다. | `server/routes/system.py:system_connections` |
 | GET | `/api/system/cost` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 토큰 사용 요약과 예상 비용을 반환합니다. | `server/routes/system.py:get_token_cost` |
 | GET | `/api/system/frontend-logs` | 세션 필수 (local_trust 모드 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 선택적 필터로 JSONL 파일에서 프론트엔드 로그를 읽습니다. | `server/routes/system.py:view_frontend_logs` |

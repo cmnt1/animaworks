@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py cli -->
-<!-- generator: gen_reference/1  kind: cli  source-sha256: adb5ad1ec662d57e404f205cb581ef61b71e91183cb48225548788a88e037be6 -->
+<!-- generator: gen_reference/1  kind: cli  source-sha256: ff54349a500770313c446d318827ecfcb43645fe2d0a38745ca8d22b6e8019b6 -->
 
 # CLI リファレンス: `animaworks`
 
@@ -17,7 +17,7 @@
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,merge,merge-finalize,audit}
+                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
                         ...`
 
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
@@ -120,38 +120,6 @@ List all animas with status
 | 名前 | 種別 | 既定値 | 選択肢 | 説明 |
 |---|---|---|---|---|
 | --local | flag | false | — | Scan filesystem directly |
-
-## `anima merge`
-
-Merge one anima into another
-
-`usage: animaworks anima merge [-h] [--dry-run | --execute] [--resume]
-                              [--force]
-                              source target`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| source | positional | — | — | Anima to merge from |
-| target | positional | — | — | Anima to merge into |
-| --dry-run | flag | false | — | Generate a merge manifest without changing either anima (default) |
-| --execute | flag | false | — | Execute the merge through source tombstone |
-| --resume | flag | false | — | Resume an interrupted --execute operation |
-| --force | flag | false | — | Continue despite preflight warnings for recoverable in-progress state |
-
-## `anima merge-finalize`
-
-Archive and unregister a completed merge tombstone
-
-`usage: animaworks anima merge-finalize [-h] [--dry-run | --execute] [--resume]
-                                       source target`
-
-| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
-|---|---|---|---|---|
-| source | positional | — | — | Tombstoned source anima |
-| target | positional | — | — | Merged target anima |
-| --dry-run | flag | false | — | Validate and show the finalize plan without changing data (default) |
-| --execute | flag | false | — | Archive the source and remove its registration |
-| --resume | flag | false | — | Resume an interrupted --execute operation |
 
 ## `anima permissions`
 
@@ -723,6 +691,26 @@ Run a stdio MCP server for an anima
 | --anima | option | — | — | Anima name |
 | --project | option | — | — | Default project archive |
 | --tools | option | "search_memory,read_memory_file,write_memory_file" | — | Comma-separated exposed tools |
+
+## `memory`
+
+記憶を確認・保守します
+
+`usage: animaworks memory [-h] {forgetting-dry-run} ...`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+## `memory forgetting-dry-run`
+
+更新せずに低活性化と完全忘却の対象件数を表示します
+
+`usage: animaworks memory forgetting-dry-run [-h] --anima ANIMA`
+
+| 名前 | 種別 | 既定値 | 選択肢 | 説明 |
+|---|---|---|---|---|
+| --anima | option | — | — | 確認するAnima名 |
 
 ## `migrate`
 

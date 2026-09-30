@@ -69,7 +69,7 @@
 
 server housekeepingは上記の個別行に加えてepisode/hygiene archive、DM/cron log削除、shortterm episode化・削除、facts lock削除、`archive/superseded`・failed descriptor・runtime artifact削除を行う（`core/memory/maintenance/housekeeping.py:383-650,988-1514,1524-1935`）。Phase 2ではserver maintenance writerと各runnerが競合しないよう対象path/実行中jobをfenceし、Phase 3では各resourceのroot APIへdelete/archive操作も含める。mutation棚卸しの「writer」にはcreate/updateだけでなくrename/archive/deleteも含む。
 
-停止中のanimaを対象にするmerge/migration/factoryも、memory tree、conversation/task queue、status、旧stateのrename/copy/deleteを行うmanagement-plane writerである（`core/lifecycle/anima_merge/service.py:720-770,772-775,1578-1599,1665-1687`, `core/lifecycle/anima_merge/task_refs.py:60-94,202-227`, `core/migrations/steps.py:745-820`, `core/anima/factory.py:468-570,698-704`）。これらはPhase 2/3のruntime writerではなく、対象root/task runner/DB ownerが全停止したことを確認してからだけ実行するoffline mutationと分類する。実行中なら変更せず拒否し、完了後の起動時にresolver/rootが再読込する。
+停止中のanimaを対象にするmerge/migration/factoryも、memory tree、conversation/task queue、status、旧stateのrename/copy/deleteを行うmanagement-plane writerである（`scripts/anima_merge/service.py:720-770,772-775,1578-1599,1665-1687`, `scripts/anima_merge/task_refs.py:60-94,202-227`, `core/migrations/steps.py:745-820`, `core/anima/factory.py:468-570,698-704`）。これらはPhase 2/3のruntime writerではなく、対象root/task runner/DB ownerが全停止したことを確認してからだけ実行するoffline mutationと分類する。実行中なら変更せず拒否し、完了後の起動時にresolver/rootが再読込する。
 
 ## 4. Phase 2 advisory lock契約
 

@@ -17,7 +17,7 @@ Generated from the argparse definition of the `animaworks` command.
 Manage anima processes
 
 `usage: animaworks anima [-h]
-                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,merge,merge-finalize,audit}
+                        {restart,status,create,delete,disable,enable,list,info,repair-bootstrap,permissions,set-model,codex-yolo,set-background-model,set-outbound-limit,reload,set-role,rename,audit}
                         ...`
 
 | Name | Type | Default | Choices | Description |
@@ -120,38 +120,6 @@ List all animas with status
 | Name | Type | Default | Choices | Description |
 |---|---|---|---|---|
 | --local | flag | false | — | Scan filesystem directly |
-
-## `anima merge`
-
-Merge one anima into another
-
-`usage: animaworks anima merge [-h] [--dry-run | --execute] [--resume]
-                              [--force]
-                              source target`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| source | positional | — | — | Anima to merge from |
-| target | positional | — | — | Anima to merge into |
-| --dry-run | flag | false | — | Generate a merge manifest without changing either anima (default) |
-| --execute | flag | false | — | Execute the merge through source tombstone |
-| --resume | flag | false | — | Resume an interrupted --execute operation |
-| --force | flag | false | — | Continue despite preflight warnings for recoverable in-progress state |
-
-## `anima merge-finalize`
-
-Archive and unregister a completed merge tombstone
-
-`usage: animaworks anima merge-finalize [-h] [--dry-run | --execute] [--resume]
-                                       source target`
-
-| Name | Type | Default | Choices | Description |
-|---|---|---|---|---|
-| source | positional | — | — | Tombstoned source anima |
-| target | positional | — | — | Merged target anima |
-| --dry-run | flag | false | — | Validate and show the finalize plan without changing data (default) |
-| --execute | flag | false | — | Archive the source and remove its registration |
-| --resume | flag | false | — | Resume an interrupted --execute operation |
 
 ## `anima permissions`
 

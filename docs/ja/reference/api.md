@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: d379782b2dd2152537c75e1aa6c8456e88ce7f02fdae4272037bca0060d027ca -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 67ac2523566a090d644914d29b1e579b2295321bc67ad2fe1f00571bbaf15c15 -->
 
 # API リファレンス
 
@@ -221,7 +221,6 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | PUT | `/api/settings/activity-schedule` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update the time-based activity schedule (night mode). | `server/routes/system.py:set_activity_schedule` |
 | POST | `/api/settings/display-mode` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update display mode and sync config.image_gen.image_style. | `server/routes/system.py:set_display_mode` |
 | GET | `/api/shared/users` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List registered user names from shared/users/. | `server/routes/system.py:list_shared_users` |
-| POST | `/api/system/anima-merge/rewrite-runtime-refs` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Synchronize live caches after REWRITE_REFS updates disk state. | `server/routes/system.py:rewrite_anima_merge_runtime_refs` |
 | GET | `/api/system/connections` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return WebSocket and process connection info. | `server/routes/system.py:system_connections` |
 | GET | `/api/system/cost` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return token usage summary and estimated cost. | `server/routes/system.py:get_token_cost` |
 | GET | `/api/system/frontend-logs` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Read frontend logs from JSONL files with optional filters. | `server/routes/system.py:view_frontend_logs` |
@@ -234,6 +233,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/system/log-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the current root log level. | `server/routes/system.py:get_log_level` |
 | POST | `/api/system/log-level` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Change the log level at runtime (no restart required). | `server/routes/system.py:set_log_level` |
 | POST | `/api/system/reload` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Full sync: add new animas, refresh existing, remove deleted. | `server/routes/system.py:reload_animas` |
+| POST | `/api/system/rewrite-runtime-refs` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Synchronize live caches after REWRITE_REFS updates disk state. | `server/routes/system.py:rewrite_runtime_refs` |
 | GET | `/api/system/scheduler` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return scheduler status and job information. | `server/routes/system.py:system_scheduler` |
 | GET | `/api/system/status` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/system.py:system_status` |
 | GET | `/api/system/token-budget` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return current-month token budget status for each Anima. | `server/routes/system.py:get_token_budget` |
