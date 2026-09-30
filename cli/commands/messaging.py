@@ -8,6 +8,8 @@ import argparse
 import logging
 import os
 
+from cli._gateway import gateway_request
+
 logger = logging.getLogger("animaworks")
 
 
@@ -100,14 +102,13 @@ def _notify_server_message_sent(
     if pid is None or not is_process_alive(pid):
         return
 
-    server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500")
     try:
-        import httpx
-
         from core.internal_api import internal_api_headers
 
-        resp = httpx.post(
-            f"{server_url}/api/internal/message-sent",
+        resp = gateway_request(
+            argparse.Namespace(gateway_url=None),
+            "POST",
+            "/api/internal/message-sent",
             headers=internal_api_headers(),
             json={
                 "from_person": from_anima,
@@ -116,6 +117,7 @@ def _notify_server_message_sent(
                 "message_id": message_id,
             },
             timeout=5.0,
+            raw_response=True,
         )
         if resp.status_code == 200:
             logger.debug("Server notified of CLI send: %s -> %s", from_anima, to_anima)

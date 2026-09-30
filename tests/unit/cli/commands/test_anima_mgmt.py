@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -363,3 +362,151 @@ class TestUnregisterAnimaFromConfig:
 
         result = unregister_anima_from_config(tmp_path, "alice")
         assert result is False
+
+
+@pytest.mark.parametrize(
+    ("command_name", "endpoint", "initial_enabled", "expected_enabled", "label"),
+    [
+        ("cmd_anima_enable", "/api/animas/alice/enable", False, True, "Enabled"),
+        ("cmd_anima_disable", "/api/animas/alice/disable", True, False, "Disabled"),
+    ],
+)
+@pytest.mark.parametrize("server_running", [True, False])
+def test_enable_disable_gateway_and_offline_paths(
+    command_name, endpoint, initial_enabled, expected_enabled, label, server_running, tmp_path, capsys
+):
+    import cli.commands.anima_mgmt as anima_mgmt
+
+    data_dir = tmp_path / ".animaworks"
+    animas_dir = data_dir / "animas"
+    anima_dir = animas_dir / "alice"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+    status_file = anima_dir / "status.json"
+    status_file.write_text(json.dumps({"enabled": initial_enabled, "role": "general"}), encoding="utf-8")
+    if server_running:
+        (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+
+    response = MagicMock()
+    response.json.return_value = {"ok": True}
+    args = argparse.Namespace(anima="alice", gateway_url="http://custom:18501")
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("cli.commands.anima_mgmt.gateway_request", return_value=response) as mock_gateway,
+    ):
+        getattr(anima_mgmt, command_name)(args)
+
+    output = capsys.readouterr().out
+    status = json.loads(status_file.read_text(encoding="utf-8"))
+    if server_running:
+        mock_gateway.assert_called_once_with(
+            args,
+            "POST",
+            endpoint,
+            timeout=10,
+            raw_response=True,
+        )
+        assert f"{label} anima 'alice': {{'ok': True}}" in output
+        assert "offline mode" not in output
+        assert status["enabled"] is initial_enabled
+    else:
+        mock_gateway.assert_not_called()
+        assert f"{label} anima 'alice' (offline mode)" in output
+        assert status["enabled"] is expected_enabled
+    assert status["role"] == "general"
+
+
+def test_restart_gateway_when_server_running(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_restart
+
+    data_dir = tmp_path / ".animaworks"
+    data_dir.mkdir()
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    response = MagicMock()
+    response.json.return_value = {"pid": 5678}
+    args = argparse.Namespace(anima="alice", gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("cli.commands.anima_mgmt.gateway_request", return_value=response) as mock_gateway,
+    ):
+        cmd_anima_restart(args)
+
+    mock_gateway.assert_called_once_with(
+        args,
+        "POST",
+        "/api/animas/alice/restart",
+        timeout=30.0,
+        raw_response=True,
+    )
+    output = capsys.readouterr().out
+    assert "Anima 'alice' restarted successfully" in output
+    assert "PID: 5678" in output
+
+
+def test_restart_keeps_server_stopped_message_and_exit_code(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_restart
+
+    data_dir = tmp_path / ".animaworks"
+    data_dir.mkdir()
+    args = argparse.Namespace(anima="alice", gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        cmd_anima_restart(args)
+
+    assert exc_info.value.code == 1
+    assert capsys.readouterr().out.strip() == "Error: Server is not running"
+    mock_gateway.assert_not_called()
+
+
+@pytest.mark.parametrize("server_running", [True, False])
+def test_set_model_reports_server_state_without_gateway_request(server_running, tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_set_model
+
+    data_dir = tmp_path / ".animaworks"
+    anima_dir = data_dir / "animas" / "alice"
+    anima_dir.mkdir(parents=True)
+    if server_running:
+        (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    args = argparse.Namespace(all=False, anima="alice", model="new-model", credential=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch(
+            "core.config.model_config.smart_update_model",
+            return_value={"family_changed": False, "execution_mode": "S"},
+        ),
+        patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
+    ):
+        cmd_anima_set_model(args)
+
+    output = capsys.readouterr().out
+    assert "Model updated to 'new-model' for 'alice'" in output
+    assert ("Server is running" in output) is server_running
+    mock_gateway.assert_not_called()
+
+
+def test_gateway_request_raw_response_preserves_caller_error_handling():
+    import httpx
+
+    from cli._gateway import gateway_request
+
+    response = MagicMock()
+    args = argparse.Namespace(gateway_url="http://gateway.test:18501")
+    with patch("httpx.request", return_value=response) as mock_request:
+        assert gateway_request(args, "POST", "/api/animas/alice/enable", timeout=10, raw_response=True) is response
+    mock_request.assert_called_once_with(
+        "POST",
+        "http://gateway.test:18501/api/animas/alice/enable",
+        json=None,
+        timeout=10,
+    )
+
+    error = httpx.ConnectError("offline", request=httpx.Request("POST", "http://gateway.test:18501"))
+    with patch("httpx.request", side_effect=error), pytest.raises(httpx.ConnectError, match="offline"):
+        gateway_request(args, "POST", "/api/animas/alice/enable", timeout=10, raw_response=True)

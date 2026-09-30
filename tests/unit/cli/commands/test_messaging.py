@@ -72,7 +72,7 @@ class TestNotifyServer:
 
         _notify_server_message_sent("alice", "bob", "test")
 
-    @patch("httpx.post")
+    @patch("cli.commands.messaging.gateway_request")
     @patch("core.platform.process.is_process_alive", return_value=True)
     @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_successful_notification(self, mock_pid, mock_alive, mock_post):
@@ -86,7 +86,7 @@ class TestNotifyServer:
 
         mock_post.assert_called_once()
 
-    @patch("httpx.post")
+    @patch("cli.commands.messaging.gateway_request")
     @patch("core.platform.process.is_process_alive", return_value=True)
     @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_message_id_in_payload(self, mock_pid, mock_alive, mock_post):
@@ -103,7 +103,7 @@ class TestNotifyServer:
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert payload["message_id"] == "msg_123"
 
-    @patch("httpx.post", side_effect=Exception("connection error"))
+    @patch("cli.commands.messaging.gateway_request", side_effect=Exception("connection error"))
     @patch("core.platform.process.is_process_alive", return_value=True)
     @patch("core.platform.pid.read_server_pid", return_value=123)
     def test_notification_failure_silent(self, mock_pid, mock_alive, mock_post):
