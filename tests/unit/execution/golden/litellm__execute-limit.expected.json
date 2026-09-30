@@ -1,0 +1,161 @@
+{
+  "engine": "litellm",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "limit",
+  "events": null,
+  "result": {
+    "text": "Runaway summary",
+    "tool_call_records": [
+      {
+        "tool_name": "search_memory",
+        "tool_id": "call_limit_1",
+        "input_summary": "{'query': 'repeat'}",
+        "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'repeat'\n</tool_result>",
+        "is_error": false
+      },
+      {
+        "tool_name": "search_memory",
+        "tool_id": "call_limit_2",
+        "input_summary": "{'query': 'repeat'}",
+        "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'repeat'\n</tool_result>",
+        "is_error": false
+      },
+      {
+        "tool_name": "search_memory",
+        "tool_id": "call_limit_3",
+        "input_summary": "{'query': 'repeat'}",
+        "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'repeat'\n</tool_result>",
+        "is_error": false
+      },
+      {
+        "tool_name": "search_memory",
+        "tool_id": "call_limit_4",
+        "input_summary": "{'query': 'repeat'}",
+        "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'repeat'\n</tool_result>",
+        "is_error": false
+      }
+    ],
+    "usage": {
+      "input_tokens": 64,
+      "output_tokens": 16,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "truncated": true,
+    "error": false,
+    "reason": "",
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": null,
+    "num_turns": null
+  },
+  "raised": null,
+  "activity": [
+    {
+      "type": "tool_use",
+      "summary": "{'query': 'repeat'}",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_1"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "No results for 'repeat'",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_1",
+        "result_status": "ok",
+        "is_error": false,
+        "result_bytes": 23
+      }
+    },
+    {
+      "type": "tool_use",
+      "summary": "{'query': 'repeat'}",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_2"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "No results for 'repeat'",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_2",
+        "result_status": "ok",
+        "is_error": false,
+        "result_bytes": 23
+      }
+    },
+    {
+      "type": "warning",
+      "summary": "A runaway tool loop warning",
+      "meta": {
+        "level": "WARNING",
+        "reason": "runaway_tool_loop",
+        "mode": "A",
+        "iteration": 2,
+        "count": 3,
+        "tools": [
+          "search_memory"
+        ]
+      }
+    },
+    {
+      "type": "tool_use",
+      "summary": "{'query': 'repeat'}",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_3"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "No results for 'repeat'",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_3",
+        "result_status": "ok",
+        "is_error": false,
+        "result_bytes": 23
+      }
+    },
+    {
+      "type": "tool_use",
+      "summary": "{'query': 'repeat'}",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_4"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "No results for 'repeat'",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_limit_4",
+        "result_status": "ok",
+        "is_error": false,
+        "result_bytes": 23
+      }
+    },
+    {
+      "type": "error",
+      "summary": "A runaway tool loop halted",
+      "meta": {
+        "level": "ERROR",
+        "reason": "runaway_tool_loop",
+        "mode": "A",
+        "iteration": 4,
+        "count": 5,
+        "tools": [
+          "search_memory"
+        ]
+      }
+    }
+  ]
+}

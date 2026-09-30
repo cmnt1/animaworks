@@ -1,0 +1,4 @@
+{"kind":"assistant","blocks":[{"type":"tool_use","name":"Read","id":"tu_tool_1","input":{"path":"/tmp/golden.txt"}}]}
+{"kind":"tool_result","tool_use_id":"tu_tool_1","content":"file contents","is_error":false}
+{"kind":"assistant","blocks":[{"type":"text","text":"Tool-assisted answer"}]}
+{"kind":"result","usage":{"input_tokens":24,"output_tokens":9},"num_turns":2,"session_id":"ses-tool"}
