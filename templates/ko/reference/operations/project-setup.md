@@ -179,7 +179,6 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 배치된�
 | `local_llm` |  |
 | `workspaces` |  |
 | `github_identities` |  |
-| `channel_company_defaults` |  |
 | `activity_level` |  |
 | `activity_schedule` |  |
 | `icon_url_template` |  |

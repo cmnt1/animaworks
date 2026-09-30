@@ -984,15 +984,6 @@ def create_app(
 
     ws_manager = WebSocketManager()
 
-    # Run Person→Anima rename migration before any animas_dir access
-    try:
-        from core.config.migrate import migrate_person_to_anima
-        from core.paths import get_data_dir as _get_data_dir
-
-        migrate_person_to_anima(_get_data_dir())
-    except Exception:
-        logger.exception("Person-to-Anima migration failed")
-
     config = load_config()
     _base_path = _normalize_base_path(getattr(config.server, "base_path", ""))
 
@@ -1022,16 +1013,6 @@ def create_app(
         ws_manager=ws_manager,
         health_config=health_cfg,
     )
-
-    # Auto-migrate old Japanese cron.md format to standard cron expressions
-    try:
-        from core.config.migrate import migrate_all_cron
-
-        migrated = migrate_all_cron(animas_dir)
-        if migrated:
-            logger.info("Auto-migrated %d anima(s) cron.md to standard cron format", migrated)
-    except Exception:
-        logger.exception("Cron format auto-migration failed")
 
     # Discover anima names from disk (respect status.json)
     from core.supervisor.manager import ProcessSupervisor as _PS

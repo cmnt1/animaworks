@@ -36,9 +36,7 @@ animaworks company assign sample-anima --unassign
 
 ## 채널의 회사 귀속
 
-`config.json`의 `channel_company_defaults`은 회사가 지정되지 않은 상태로 만들어지는 open channel에 대해, 채널 이름에서 회사를 보완하기 위한 대응표이다. 값이 적용된 채널은 회사 스코프가 되며, 참가 자격과 게시 가능 여부는 소속의 경계에 따른다. 기존 채널을 변경할 경우에는 대상 채널의 회사와 멤버를 확인한다.
-
-외부 메시징에서 생성하는 board에는 연동별 `default_channel_company`도 이용할 수 있다. 설정의 전체 항목은 [설정 참조](../reference/config.md)를 참조한다.
+open channel의 회사 스코프는 채널 metadata의 `company` 필드로 관리한다. 외부 메시징에서 생성하는 board에는 연동별 `default_channel_company` 설정을 사용할 수 있다. 기존 채널을 변경할 때는 대상 채널의 회사와 멤버를 확인한다. 설정의 전체 항목은 [설정 참조](../reference/config.md)를 참조한다.
 
 ## GitHub 계정 할당
 

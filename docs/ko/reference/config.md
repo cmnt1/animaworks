@@ -466,7 +466,6 @@
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 | `workspaces` | `dict[str, str]` | `{}` | 이름 있는 workspace 경로의 대응. |
 | `github_identities` | `dict[str, str]` | `{}` | 회사 slug와 GitHub 계정의 대응. |
-| `channel_company_defaults` | `dict[str, str]` | `{}` | 채널명에 대한 기본 회사 속성. |
 | `activity_level` | `int` | `100` | 전체 활동 빈도를 조정하는 배율. |
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | 시간대별 활동 빈도. |
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |

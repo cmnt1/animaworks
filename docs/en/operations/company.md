@@ -36,9 +36,7 @@ To move existing assets into a company area, use `animaworks company adopt <path
 
 ## Channel Company Assignment
 
-`channel_company_defaults` in `config.json` is a mapping table for inferring the company from the channel name for open channels created without a company specified. Channels to which a value is applied become company-scoped, and participation eligibility and posting permissions follow membership boundaries. When modifying an existing channel, check the target channel's company and members.
-
-For boards created from external messaging, the per-integration `default_channel_company` can also be used. See the [configuration reference](../reference/config.md) for all configuration items.
+The company scope of an open channel is stored in the channel metadata's `company` field. Boards created from external messaging can use the per-integration `default_channel_company` setting. When modifying an existing channel, check its company and members. See the [configuration reference](../reference/config.md) for all configuration items.
 
 ## GitHub Account Assignment
 

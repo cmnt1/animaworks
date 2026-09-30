@@ -466,7 +466,6 @@
 | `local_llm.role_presets` | `dict[str, str]` | `…` | — |
 | `workspaces` | `dict[str, str]` | `{}` | 名前付き workspace パスの対応。 |
 | `github_identities` | `dict[str, str]` | `{}` | 会社 slug と GitHub アカウントの対応。 |
-| `channel_company_defaults` | `dict[str, str]` | `{}` | チャネル名に対する既定の会社属性。 |
 | `activity_level` | `int` | `100` | 全体の活動頻度を調整する倍率。 |
 | `activity_schedule` | `list[ActivityScheduleEntry]` | `[]` | 時刻帯ごとの活動頻度。 |
 | `activity_schedule.start` | `str` | `"—"` | Start time in HH:MM format |

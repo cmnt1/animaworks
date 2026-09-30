@@ -40,7 +40,10 @@ def ensure_runtime_dir(*, skip_animas: bool = False) -> Path:
     # but not be fully initialized yet.
     config_json = data_dir / "config.json"
     if config_json.exists():
-        # Run unified migration (includes Person→Anima, config, templates, DB sync)
+        from core.migrations.tracker import assert_supported_runtime_version
+
+        assert_supported_runtime_version(data_dir)
+        # Run supported migrations and synchronize bundled runtime templates.
         try:
             _run_auto_migrations(data_dir)
         except Exception:
@@ -391,26 +394,6 @@ def _create_default_config(data_dir: Path) -> None:
 
     save_config(config, data_dir / "config.json")
     logger.info("Default config.json created at %s", data_dir / "config.json")
-
-
-def _maybe_migrate_config(data_dir: Path) -> None:
-    """Auto-migrate existing config.md setups to config.json if needed."""
-    config_path = data_dir / "config.json"
-    if config_path.exists():
-        return
-
-    animas_dir = data_dir / "animas"
-    if not animas_dir.exists():
-        return
-
-    has_legacy = any((d / "config.md").exists() for d in animas_dir.iterdir() if d.is_dir())
-    if not has_legacy:
-        return
-
-    logger.info("Migrating legacy config.md files to config.json")
-    from core.config.migrate import migrate_to_config_json
-
-    migrate_to_config_json(data_dir)
 
 
 # ── Unified migration on startup ────────────────────────────

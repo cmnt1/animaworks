@@ -128,9 +128,9 @@ def test_register_all_steps_has_one_fingerprinted_template_sync(tmp_path: Path, 
     assert "v056_resync" not in ids
     assert "v063_behavior_rules_action_rules_skill_sync" not in ids
     assert "v0145_prompt_diet4_resync" not in ids
-    assert "v060_resync" in ids
+    assert "v060_resync" not in ids
     assert "v0140_harness_diet_resync" in ids
-    assert ids.index("global_permissions_create") < ids.index(sync_ids[0])
+    assert "permissions_migration" in ids
     assert ids.index(sync_ids[0]) < ids.index("update_version")
 
 
