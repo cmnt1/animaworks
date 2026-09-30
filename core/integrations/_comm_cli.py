@@ -16,12 +16,24 @@ handling used by both ``slack_cli`` and ``chatwork_cli``.
 
 import json
 import sys
+from collections.abc import Callable
+from functools import wraps
 from typing import Any
 
 
 def print_json(data: Any) -> None:
     """Print data as pretty-printed JSON to stdout."""
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def cli_main_safely(func: Callable[..., Any]) -> Callable[..., None]:
+    """Wrap a CLI entry point with :func:`run_cli_safely` error handling."""
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> None:
+        run_cli_safely(lambda: func(*args, **kwargs))
+
+    return wrapper
 
 
 def run_cli_safely(

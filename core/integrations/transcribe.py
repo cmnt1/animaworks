@@ -22,6 +22,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from core.integrations._base import dispatch_by_table
+from core.integrations._comm_cli import cli_main_safely
+
 logger = logging.getLogger(__name__)
 
 # ── Execution Profile ─────────────────────────────────────
@@ -307,6 +310,7 @@ def get_tool_schemas() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Standalone CLI for audio transcription."""
     parser = argparse.ArgumentParser(
@@ -403,17 +407,22 @@ def cli_main(argv: list[str] | None = None) -> None:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_audio(args: dict[str, Any]) -> Any:
+    return process_audio(
+        audio_path=args["audio_path"],
+        language=args.get("language"),
+        model=args.get("model"),
+        raw_only=args.get("raw_only", False),
+        custom_prompt=args.get("custom_prompt"),
+    )
+
+
+_DISPATCH_HANDLERS = {"transcribe_audio": _dispatch_audio}
+
+
 def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call to the appropriate handler."""
-    if tool_name == "transcribe_audio":
-        return process_audio(
-            audio_path=args["audio_path"],
-            language=args.get("language"),
-            model=args.get("model"),
-            raw_only=args.get("raw_only", False),
-            custom_prompt=args.get("custom_prompt"),
-        )
-    raise ValueError(f"Unknown tool: {tool_name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, tool_name, args)
 
 
 if __name__ == "__main__":

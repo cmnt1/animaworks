@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # Several collectors (5-min mention watch, 15-min unreplied tracker, heartbeat
 # sessions) sync the same cache concurrently.  In DELETE journal mode every
@@ -22,15 +25,33 @@ BUSY_TIMEOUT_S = 30.0
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class CacheTable:
+    """Static table metadata used by the shared cache CRUD helpers."""
+
+    name: str
+    columns: tuple[str, ...]
+    primary_key: tuple[str, ...]
+    search_column: str | None = None
+    scope_column: str | None = None
+    order_by: str | None = None
+    from_clause: str | None = None
+    select_columns: str = "*"
+
+    def __post_init__(self) -> None:
+        if not self.primary_key or not set(self.primary_key).issubset(self.columns):
+            raise ValueError(f"Cache table {self.name!r} must declare its primary-key columns")
+
+
 # ── BaseMessageCache ───────────────────────────────────────
 
 
 class BaseMessageCache:
     """SQLite-backed message cache base class.
 
-    Provides common database lifecycle management, WAL mode, and
-    ``row_factory`` setup.  Subclasses supply their own schema SQL
-    and domain-specific query methods.
+    Provides common database lifecycle management, row mapping, and
+    table-driven upsert/search/recent-message queries. Subclasses supply
+    their schema SQL, table metadata, and domain-specific query methods.
 
     Args:
         db_path: Path to the SQLite database file.  Parent directories
@@ -78,6 +99,61 @@ class BaseMessageCache:
         """Execute *query* and return rows as plain dicts."""
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
+
+    def upsert_records(
+        self,
+        table: CacheTable,
+        records: Iterable[Mapping[str, Any]],
+        *,
+        commit: bool = True,
+    ) -> None:
+        """Insert or replace rows using the declared table columns."""
+        columns = ", ".join(table.columns)
+        placeholders = ", ".join("?" for _ in table.columns)
+        query = f"INSERT OR REPLACE INTO {table.name} ({columns}) VALUES ({placeholders})"  # noqa: S608
+        self.conn.executemany(query, (tuple(record[column] for column in table.columns) for record in records))
+        if commit:
+            self.conn.commit()
+
+    def search_records(
+        self,
+        table: CacheTable,
+        keyword: str,
+        *,
+        scope_value: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Search a message table by LIKE substring, with optional scope."""
+        if table.search_column is None or table.order_by is None:
+            raise ValueError(f"Cache table {table.name!r} is not searchable")
+        from_clause = table.from_clause or table.name
+        query = f"SELECT {table.select_columns} FROM {from_clause} WHERE {table.search_column} LIKE ?"  # noqa: S608
+        params: list[Any] = [f"%{keyword}%"]
+        if scope_value:
+            if table.scope_column is None:
+                raise ValueError(f"Cache table {table.name!r} has no scope column")
+            query += f" AND {table.scope_column} = ?"  # noqa: S608
+            params.append(scope_value)
+        query += f" ORDER BY {table.order_by} DESC LIMIT ?"  # noqa: S608
+        params.append(limit)
+        return self._fetchall_dicts(query, params)
+
+    def get_recent_records(
+        self,
+        table: CacheTable,
+        scope_value: str,
+        *,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Return the newest rows for one scope from a message table."""
+        if table.scope_column is None or table.order_by is None:
+            raise ValueError(f"Cache table {table.name!r} has no recent-message query metadata")
+        from_clause = table.from_clause or table.name
+        query = (
+            f"SELECT {table.select_columns} FROM {from_clause} "
+            f"WHERE {table.scope_column} = ? ORDER BY {table.order_by} DESC LIMIT ?"
+        )  # noqa: S608
+        return self._fetchall_dicts(query, (scope_value, limit))
 
     def get_stats(self) -> dict:
         """Return basic cache statistics.

@@ -25,6 +25,7 @@ from typing import Any
 import httpx
 
 from core.i18n import t
+from core.integrations._comm_cli import cli_main_safely
 from core.notification.interactive import InteractionRequest
 
 logger = logging.getLogger(__name__)
@@ -269,6 +270,7 @@ animaworks-tool call_human "障害発生" "本番APIが503を返しています"
 **使わない場合:** 定常巡回で問題なし、軽微な自動修復完了"""
 
 
+@cli_main_safely
 def cli_main(args: list[str]) -> None:
     parser = argparse.ArgumentParser(
         prog="animaworks-tool call_human",

@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.exceptions import ToolConfigError
-from core.integrations._cache import BaseMessageCache
+from core.integrations._cache import BaseMessageCache, CacheTable
 from core.integrations._chatwork_client import JST, ChatworkClient
 from core.platform.atomic_io import atomic_write_json
 
@@ -56,6 +56,28 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_synced TEXT
 );
 """
+
+
+_CHATWORK_ROOMS_TABLE = CacheTable(
+    name="rooms",
+    columns=("room_id", "name", "type", "updated_at"),
+    primary_key=("room_id",),
+)
+_CHATWORK_MESSAGES_TABLE = CacheTable(
+    name="messages",
+    columns=("message_id", "room_id", "account_id", "account_name", "body", "send_time", "send_time_jst"),
+    primary_key=("room_id", "message_id"),
+    search_column="m.body",
+    scope_column="m.room_id",
+    order_by="m.send_time",
+    from_clause="messages m LEFT JOIN rooms r ON m.room_id = r.room_id",
+    select_columns="m.*, r.name as room_name",
+)
+_CHATWORK_SYNC_STATE_TABLE = CacheTable(
+    name="sync_state",
+    columns=("room_id", "last_synced"),
+    primary_key=("room_id",),
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -121,39 +143,42 @@ class MessageCache(BaseMessageCache):
         for 10s+ and starved every other collector sharing the cache.
         """
         now = datetime.now(JST).isoformat()
-        self.conn.executemany(
-            "INSERT OR REPLACE INTO rooms (room_id, name, type, updated_at) VALUES (?,?,?,?)",
-            [(str(room["room_id"]), room["name"], room.get("type", ""), now) for room in rooms],
+        self.upsert_records(
+            _CHATWORK_ROOMS_TABLE,
+            [
+                {
+                    "room_id": str(room["room_id"]),
+                    "name": room["name"],
+                    "type": room.get("type", ""),
+                    "updated_at": now,
+                }
+                for room in rooms
+            ],
         )
-        self.conn.commit()
 
     def upsert_messages(self, room_id: str, messages: list[dict]):
-        for m in messages:
-            send_time = m.get("send_time", 0)
-            dt = datetime.fromtimestamp(send_time, tz=JST)
-            account = m.get("account", {})
-            self.conn.execute(
-                """INSERT OR REPLACE INTO messages
-                   (message_id, room_id, account_id, account_name, body, send_time, send_time_jst)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (
-                    str(m["message_id"]),
-                    str(room_id),
-                    str(account.get("account_id", "")),
-                    account.get("name", ""),
-                    m.get("body", ""),
-                    send_time,
-                    dt.strftime("%Y-%m-%d %H:%M:%S"),
-                ),
-            )
-        self.conn.commit()
+        def _records():
+            for message in messages:
+                send_time = message.get("send_time", 0)
+                dt = datetime.fromtimestamp(send_time, tz=JST)
+                account = message.get("account", {})
+                yield {
+                    "message_id": str(message["message_id"]),
+                    "room_id": str(room_id),
+                    "account_id": str(account.get("account_id", "")),
+                    "account_name": account.get("name", ""),
+                    "body": message.get("body", ""),
+                    "send_time": send_time,
+                    "send_time_jst": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+
+        self.upsert_records(_CHATWORK_MESSAGES_TABLE, _records())
 
     def update_sync_state(self, room_id: str):
-        self.conn.execute(
-            "INSERT OR REPLACE INTO sync_state (room_id, last_synced) VALUES (?,?)",
-            (room_id, datetime.now(JST).isoformat()),
+        self.upsert_records(
+            _CHATWORK_SYNC_STATE_TABLE,
+            [{"room_id": room_id, "last_synced": datetime.now(JST).isoformat()}],
         )
-        self.conn.commit()
 
     def search(
         self,
@@ -161,31 +186,15 @@ class MessageCache(BaseMessageCache):
         room_id: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
-        query = """
-            SELECT m.*, r.name as room_name
-            FROM messages m
-            LEFT JOIN rooms r ON m.room_id = r.room_id
-            WHERE m.body LIKE ?
-        """
-        params: list = [f"%{keyword}%"]
-        if room_id:
-            query += " AND m.room_id = ?"
-            params.append(room_id)
-        query += " ORDER BY m.send_time DESC LIMIT ?"
-        params.append(limit)
-        rows = self.conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+        return self.search_records(
+            _CHATWORK_MESSAGES_TABLE,
+            keyword,
+            scope_value=room_id,
+            limit=limit,
+        )
 
     def get_recent(self, room_id: str, limit: int = 20) -> list[dict]:
-        rows = self.conn.execute(
-            """SELECT m.*, r.name as room_name
-               FROM messages m
-               LEFT JOIN rooms r ON m.room_id = r.room_id
-               WHERE m.room_id = ?
-               ORDER BY m.send_time DESC LIMIT ?""",
-            (room_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return self.get_recent_records(_CHATWORK_MESSAGES_TABLE, room_id, limit=limit)
 
     def get_room_name(self, room_id: str) -> str:
         row = self.conn.execute("SELECT name FROM rooms WHERE room_id = ?", (room_id,)).fetchone()

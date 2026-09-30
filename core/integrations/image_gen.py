@@ -35,7 +35,12 @@ import httpx  # noqa: F401 — patch compatibility
 # These live in _image_glb; we proxy reads and writes so that
 # ``import core.integrations.image_gen as mod; mod._FBX2GLTF_PATH = X`` propagates.
 import core.integrations._image_glb as _glb_mod  # noqa: E402
-from core.integrations._base import ToolConfigError, get_credential, logger  # noqa: F401 — patch compatibility
+from core.integrations._base import (  # noqa: F401 — patch compatibility
+    ToolConfigError,
+    dispatch_by_table,
+    get_credential,
+    logger,
+)
 
 # ── Re-exports: _image_cli ─────────────────────────────────
 from core.integrations._image_cli import cli_main
@@ -186,241 +191,239 @@ def _build_reference_client(image_config: Any) -> Any:
 # ── Dispatch ──────────────────────────────────────────
 
 
+def _dispatch_character_assets(args: dict[str, Any]) -> Any:
+    from core.config.models import load_config
+    from core.paths import get_animas_dir
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    supervisor_name: str | None = args.pop("supervisor_name", None)
+    config = load_config()
+    image_config = config.image_gen
+    prompt = args["prompt"]
+
+    # Auto-convert anime prompt when realistic style is configured
+    if image_config.image_style == "realistic" and _looks_like_anime_prompt(prompt):
+        from core.integrations._image_clients import _convert_anime_to_realistic
+
+        converted = _convert_anime_to_realistic(prompt)
+        logger.info(
+            "Auto-converted anime prompt to realistic for %s: %.120s → %.120s",
+            anima_dir.name,
+            prompt,
+            converted,
+        )
+        prompt = converted
+
+    # Use supervisor's fullbody image as Vibe Transfer reference
+    if supervisor_name:
+        ref_name = "avatar_fullbody_realistic.png" if image_config.image_style == "realistic" else "avatar_fullbody.png"
+        supervisor_fullbody = get_animas_dir() / supervisor_name / "assets" / ref_name
+        if supervisor_fullbody.exists():
+            image_config = image_config.model_copy(update={"style_reference": str(supervisor_fullbody)})
+            logger.info("Using supervisor image as vibe reference: %s", supervisor_fullbody)
+
+    pipeline = ImageGenPipeline(anima_dir, config=image_config)
+    result = pipeline.generate_all(
+        prompt=prompt,
+        negative_prompt=args.get("negative_prompt", ""),
+        skip_existing=args.get("skip_existing", True),
+        steps=args.get("steps"),
+        animations=args.get("animations"),
+    )
+    return result.to_dict()
+
+
+def _dispatch_fullbody(args: dict[str, Any]) -> Any:
+    from core.config.models import load_config
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    image_config = load_config().image_gen
+    client = _build_fullbody_client(image_config)
+    image = client.generate_fullbody(
+        prompt=args["prompt"],
+        negative_prompt=args.get("negative_prompt", ""),
+        width=args.get("width", 1024),
+        height=args.get("height", 1536),
+        seed=args.get("seed"),
+    )
+    output = assets_dir / "avatar_fullbody.png"
+    output.write_bytes(image)
+    return {"path": str(output), "size": len(image)}
+
+
+def _dispatch_bustup(args: dict[str, Any]) -> Any:
+    from core.config.models import load_config
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    reference_path = assets_dir / "avatar_fullbody.png"
+    if not reference_path.exists():
+        return {"error": "No full-body reference image found"}
+    image_config = load_config().image_gen
+    client = _build_reference_client(image_config)
+    image = client.generate_from_reference(
+        reference_image=reference_path.read_bytes(),
+        prompt=args.get("prompt", _BUSTUP_PROMPT),
+        aspect_ratio="3:4",
+    )
+    output = assets_dir / "avatar_bustup.png"
+    output.write_bytes(image)
+    return {"path": str(output), "size": len(image)}
+
+
+def _dispatch_icon(args: dict[str, Any]) -> Any:
+    from core.config.models import load_config
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    config = load_config().image_gen
+    is_realistic = config.image_style == "realistic"
+    ref_name = "avatar_bustup_realistic.png" if is_realistic else "avatar_bustup.png"
+    reference_path = assets_dir / ref_name
+    if not reference_path.exists():
+        return {"error": f"No bustup reference image found ({ref_name})"}
+    prompt = args.get("prompt") or (_REALISTIC_CHAT_ICON_PROMPT if is_realistic else _CHAT_ICON_PROMPT)
+    if config.style_prefix:
+        prompt = config.style_prefix + prompt
+    if config.style_suffix:
+        prompt = prompt + config.style_suffix
+    client = _build_reference_client(config)
+    image = client.generate_from_reference(
+        reference_image=reference_path.read_bytes(),
+        prompt=prompt,
+        aspect_ratio="1:1",
+        # guidance_scale=float(args.get("guidance_scale", 4.0)),
+        seed=args.get("seed"),
+    )
+    output_name = "icon_realistic.png" if is_realistic else "icon.png"
+    output = assets_dir / output_name
+    output.write_bytes(image)
+    try:
+        from core.integrations._anima_icon_url import persist_anima_icon_path_template
+
+        persist_anima_icon_path_template()
+    except Exception:
+        logger.debug("persist_anima_icon_path_template failed after icon generation", exc_info=True)
+    return {"path": str(output), "size": len(image)}
+
+
+def _dispatch_chibi(args: dict[str, Any]) -> Any:
+    from core.config.models import load_config
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    reference_path = assets_dir / "avatar_fullbody.png"
+    if not reference_path.exists():
+        return {"error": "No full-body reference image found"}
+    image_config = load_config().image_gen
+    client = _build_reference_client(image_config)
+    image = client.generate_from_reference(
+        reference_image=reference_path.read_bytes(),
+        prompt=args.get("prompt", _CHIBI_PROMPT),
+        aspect_ratio="1:1",
+    )
+    output = assets_dir / "avatar_chibi.png"
+    output.write_bytes(image)
+    return {"path": str(output), "size": len(image)}
+
+
+def _dispatch_3d_model(args: dict[str, Any]) -> Any:
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    chibi_path = assets_dir / "avatar_chibi.png"
+    if not chibi_path.exists():
+        return {"error": "No chibi image found for 3D conversion"}
+    client = MeshyClient()
+    task_id = client.create_task(
+        chibi_path.read_bytes(),
+        ai_model=args.get("ai_model", "meshy-6"),
+        target_polycount=args.get("target_polycount", 30000),
+    )
+    task = client.poll_task(task_id)
+    glb = client.download_model(task, fmt="glb")
+    output = assets_dir / "avatar_chibi.glb"
+    output.write_bytes(glb)
+    return {"path": str(output), "size": len(glb), "task_id": task_id}
+
+
+def _dispatch_rigged_model(args: dict[str, Any]) -> Any:
+    import httpx as _httpx
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    glb_path = assets_dir / "avatar_chibi.glb"
+    if not glb_path.exists():
+        return {"error": "No 3D model found for rigging"}
+    client = MeshyClient()
+    data_uri = _image_to_data_uri(glb_path.read_bytes(), mime="model/gltf-binary")
+    body = {"model_url": data_uri, "height_meters": args.get("height_meters", 1.0)}
+    response = _httpx.post(
+        MESHY_RIGGING_URL,
+        json=body,
+        headers=client._headers(),
+        timeout=_HTTP_TIMEOUT,
+    )
+    response.raise_for_status()
+    rig_task_id = response.json()["result"]
+    rig_task = client.poll_rigging_task(rig_task_id)
+    rigged = client.download_rigged_model(rig_task, fmt="glb")
+    rigged_path = assets_dir / "avatar_chibi_rigged.glb"
+    rigged_path.write_bytes(rigged)
+    basic_anims = client.download_rigging_animations(rig_task)
+    anim_results: dict[str, str] = {}
+    for anim_name, anim_bytes in basic_anims.items():
+        anim_path = assets_dir / f"anim_{anim_name}.glb"
+        anim_path.write_bytes(anim_bytes)
+        anim_results[anim_name] = str(anim_path)
+    return {"rigged_model": str(rigged_path), "animations": anim_results, "rig_task_id": rig_task_id}
+
+
+def _dispatch_animations(args: dict[str, Any]) -> Any:
+    import httpx as _httpx
+
+    anima_dir = Path(args.pop("anima_dir", ""))
+    assets_dir = anima_dir / "assets"
+    glb_path = assets_dir / "avatar_chibi.glb"
+    if not glb_path.exists():
+        return {"error": "No 3D model found for animation"}
+    client = MeshyClient()
+    data_uri = _image_to_data_uri(glb_path.read_bytes(), mime="model/gltf-binary")
+    response = _httpx.post(
+        MESHY_RIGGING_URL,
+        json={"model_url": data_uri, "height_meters": 1.0},
+        headers=client._headers(),
+        timeout=_HTTP_TIMEOUT,
+    )
+    response.raise_for_status()
+    rig_task_id = response.json()["result"]
+    client.poll_rigging_task(rig_task_id)
+    animation_map = args.get("animations") or _DEFAULT_ANIMATIONS
+    animation_results: dict[str, str] = {}
+    for animation_name, action_id in animation_map.items():
+        animation_task_id = client.create_animation_task(rig_task_id, action_id)
+        animation_task = client.poll_animation_task(animation_task_id)
+        animation_bytes = client.download_animation(animation_task, fmt="glb")
+        animation_path = assets_dir / f"anim_{animation_name}.glb"
+        animation_path.write_bytes(animation_bytes)
+        animation_results[animation_name] = str(animation_path)
+    return {"animations": animation_results, "rig_task_id": rig_task_id}
+
+
+_DISPATCH_HANDLERS = {
+    "generate_character_assets": _dispatch_character_assets,
+    "generate_fullbody": _dispatch_fullbody,
+    "generate_bustup": _dispatch_bustup,
+    "generate_icon": _dispatch_icon,
+    "generate_chibi": _dispatch_chibi,
+    "generate_3d_model": _dispatch_3d_model,
+    "generate_rigged_model": _dispatch_rigged_model,
+    "generate_animations": _dispatch_animations,
+}
+
+
 def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call to the appropriate handler."""
-    if tool_name == "generate_character_assets":
-        from core.config.models import load_config
-        from core.paths import get_animas_dir
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        supervisor_name: str | None = args.pop("supervisor_name", None)
-        config = load_config()
-        image_config = config.image_gen
-
-        prompt = args["prompt"]
-
-        # Auto-convert anime prompt when realistic style is configured
-        if image_config.image_style == "realistic" and _looks_like_anime_prompt(prompt):
-            from core.integrations._image_clients import _convert_anime_to_realistic
-
-            converted = _convert_anime_to_realistic(prompt)
-            logger.info(
-                "Auto-converted anime prompt to realistic for %s: %.120s → %.120s",
-                anima_dir.name,
-                prompt,
-                converted,
-            )
-            prompt = converted
-
-        # Use supervisor's fullbody image as Vibe Transfer reference
-        if supervisor_name:
-            ref_name = (
-                "avatar_fullbody_realistic.png" if image_config.image_style == "realistic" else "avatar_fullbody.png"
-            )
-            supervisor_fullbody = get_animas_dir() / supervisor_name / "assets" / ref_name
-            if supervisor_fullbody.exists():
-                image_config = image_config.model_copy(
-                    update={"style_reference": str(supervisor_fullbody)},
-                )
-                logger.info(
-                    "Using supervisor image as vibe reference: %s",
-                    supervisor_fullbody,
-                )
-
-        pipeline = ImageGenPipeline(anima_dir, config=image_config)
-        result = pipeline.generate_all(
-            prompt=prompt,
-            negative_prompt=args.get("negative_prompt", ""),
-            skip_existing=args.get("skip_existing", True),
-            steps=args.get("steps"),
-            animations=args.get("animations"),
-        )
-        return result.to_dict()
-
-    if tool_name == "generate_fullbody":
-        from core.config.models import load_config
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        image_config = load_config().image_gen
-        client = _build_fullbody_client(image_config)
-        img = client.generate_fullbody(
-            prompt=args["prompt"],
-            negative_prompt=args.get("negative_prompt", ""),
-            width=args.get("width", 1024),
-            height=args.get("height", 1536),
-            seed=args.get("seed"),
-        )
-        out = assets_dir / "avatar_fullbody.png"
-        out.write_bytes(img)
-        return {"path": str(out), "size": len(img)}
-
-    if tool_name == "generate_bustup":
-        from core.config.models import load_config
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        ref_path = assets_dir / "avatar_fullbody.png"
-        if not ref_path.exists():
-            return {"error": "No full-body reference image found"}
-        image_config = load_config().image_gen
-        client = _build_reference_client(image_config)
-        img = client.generate_from_reference(
-            reference_image=ref_path.read_bytes(),
-            prompt=args.get("prompt", _BUSTUP_PROMPT),
-            aspect_ratio="3:4",
-        )
-        out = assets_dir / "avatar_bustup.png"
-        out.write_bytes(img)
-        return {"path": str(out), "size": len(img)}
-
-    if tool_name == "generate_icon":
-        from core.config.models import load_config
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        config = load_config().image_gen
-        is_realistic = config.image_style == "realistic"
-        ref_name = "avatar_bustup_realistic.png" if is_realistic else "avatar_bustup.png"
-        ref_path = assets_dir / ref_name
-        if not ref_path.exists():
-            return {"error": f"No bustup reference image found ({ref_name})"}
-        prompt = args.get("prompt") or (_REALISTIC_CHAT_ICON_PROMPT if is_realistic else _CHAT_ICON_PROMPT)
-        if config.style_prefix:
-            prompt = config.style_prefix + prompt
-        if config.style_suffix:
-            prompt = prompt + config.style_suffix
-        client = _build_reference_client(config)
-        img = client.generate_from_reference(
-            reference_image=ref_path.read_bytes(),
-            prompt=prompt,
-            aspect_ratio="1:1",
-            # guidance_scale=float(args.get("guidance_scale", 4.0)),
-            seed=args.get("seed"),
-        )
-        out_name = "icon_realistic.png" if is_realistic else "icon.png"
-        out = assets_dir / out_name
-        out.write_bytes(img)
-        try:
-            from core.integrations._anima_icon_url import persist_anima_icon_path_template
-
-            persist_anima_icon_path_template()
-        except Exception:
-            logger.debug("persist_anima_icon_path_template failed after icon generation", exc_info=True)
-        return {"path": str(out), "size": len(img)}
-
-    if tool_name == "generate_chibi":
-        from core.config.models import load_config
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        ref_path = assets_dir / "avatar_fullbody.png"
-        if not ref_path.exists():
-            return {"error": "No full-body reference image found"}
-        image_config = load_config().image_gen
-        client = _build_reference_client(image_config)
-        img = client.generate_from_reference(
-            reference_image=ref_path.read_bytes(),
-            prompt=args.get("prompt", _CHIBI_PROMPT),
-            aspect_ratio="1:1",
-        )
-        out = assets_dir / "avatar_chibi.png"
-        out.write_bytes(img)
-        return {"path": str(out), "size": len(img)}
-
-    if tool_name == "generate_3d_model":
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        chibi_path = assets_dir / "avatar_chibi.png"
-        if not chibi_path.exists():
-            return {"error": "No chibi image found for 3D conversion"}
-        client = MeshyClient()
-        task_id = client.create_task(
-            chibi_path.read_bytes(),
-            ai_model=args.get("ai_model", "meshy-6"),
-            target_polycount=args.get("target_polycount", 30000),
-        )
-        task = client.poll_task(task_id)
-        glb = client.download_model(task, fmt="glb")
-        out = assets_dir / "avatar_chibi.glb"
-        out.write_bytes(glb)
-        return {"path": str(out), "size": len(glb), "task_id": task_id}
-
-    if tool_name == "generate_rigged_model":
-        import httpx as _httpx
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        glb_path = assets_dir / "avatar_chibi.glb"
-        if not glb_path.exists():
-            return {"error": "No 3D model found for rigging"}
-        client = MeshyClient()
-        data_uri = _image_to_data_uri(
-            glb_path.read_bytes(),
-            mime="model/gltf-binary",
-        )
-        body = {
-            "model_url": data_uri,
-            "height_meters": args.get("height_meters", 1.0),
-        }
-        resp = _httpx.post(
-            MESHY_RIGGING_URL,
-            json=body,
-            headers=client._headers(),
-            timeout=_HTTP_TIMEOUT,
-        )
-        resp.raise_for_status()
-        rig_task_id = resp.json()["result"]
-        rig_task = client.poll_rigging_task(rig_task_id)
-        rigged = client.download_rigged_model(rig_task, fmt="glb")
-        rigged_path = assets_dir / "avatar_chibi_rigged.glb"
-        rigged_path.write_bytes(rigged)
-        basic_anims = client.download_rigging_animations(rig_task)
-        anim_results: dict[str, str] = {}
-        for anim_name, anim_bytes in basic_anims.items():
-            anim_path = assets_dir / f"anim_{anim_name}.glb"
-            anim_path.write_bytes(anim_bytes)
-            anim_results[anim_name] = str(anim_path)
-        return {
-            "rigged_model": str(rigged_path),
-            "animations": anim_results,
-            "rig_task_id": rig_task_id,
-        }
-
-    if tool_name == "generate_animations":
-        import httpx as _httpx
-
-        anima_dir = Path(args.pop("anima_dir", ""))
-        assets_dir = anima_dir / "assets"
-        glb_path = assets_dir / "avatar_chibi.glb"
-        if not glb_path.exists():
-            return {"error": "No 3D model found for animation"}
-        client = MeshyClient()
-        data_uri = _image_to_data_uri(
-            glb_path.read_bytes(),
-            mime="model/gltf-binary",
-        )
-        body = {"model_url": data_uri, "height_meters": 1.0}
-        resp = _httpx.post(
-            MESHY_RIGGING_URL,
-            json=body,
-            headers=client._headers(),
-            timeout=_HTTP_TIMEOUT,
-        )
-        resp.raise_for_status()
-        rig_task_id = resp.json()["result"]
-        client.poll_rigging_task(rig_task_id)
-        anim_map = args.get("animations") or _DEFAULT_ANIMATIONS
-        anim_results_gen: dict[str, str] = {}
-        for anim_name, action_id in anim_map.items():
-            anim_task_id = client.create_animation_task(rig_task_id, action_id)
-            anim_task = client.poll_animation_task(anim_task_id)
-            anim_bytes = client.download_animation(anim_task, fmt="glb")
-            anim_path = assets_dir / f"anim_{anim_name}.glb"
-            anim_path.write_bytes(anim_bytes)
-            anim_results_gen[anim_name] = str(anim_path)
-        return {"animations": anim_results_gen, "rig_task_id": rig_task_id}
-
-    raise ValueError(f"Unknown tool: {tool_name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, tool_name, args)

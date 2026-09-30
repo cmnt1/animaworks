@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from core.integrations._comm_cli import cli_main_safely
 from core.integrations._image_clients import (
     _BUSTUP_PROMPT,
     _CHIBI_PROMPT,
@@ -36,6 +37,7 @@ __all__ = [
 ]
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """CLI entry point for ``animaworks-tool image_gen``."""
     parser = argparse.ArgumentParser(

@@ -27,6 +27,9 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from core.integrations._base import dispatch_by_table
+from core.integrations._comm_cli import cli_main_safely
+
 logger = logging.getLogger("animaworks.tools.web_search")
 
 # ── Execution Profile ─────────────────────────────────────
@@ -319,19 +322,25 @@ def get_tool_schemas() -> list[dict]:
     return []
 
 
+def _dispatch_web_search(args: dict[str, Any]) -> Any:
+    args.pop("anima_dir", None)
+    if "limit" in args:
+        args["count"] = args.pop("limit")
+    return search(**args)
+
+
+_DISPATCH_HANDLERS = {"web_search": _dispatch_web_search}
+
+
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
-    if name == "web_search":
-        args.pop("anima_dir", None)
-        if "limit" in args:
-            args["count"] = args.pop("limit")
-        return search(**args)
-    raise ValueError(f"Unknown tool: {name}")
+    return dispatch_by_table(_DISPATCH_HANDLERS, name, args)
 
 
 # ── CLI entry point ───────────────────────────────────────
 
 
+@cli_main_safely
 def cli_main(argv: list[str] | None = None) -> None:
     """Thin CLI entry point for web_search."""
     parser = argparse.ArgumentParser(
