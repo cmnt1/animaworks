@@ -811,8 +811,21 @@ class HousekeepingConfig(BaseModel):
     current_state_stale_hours: int = Field(default=24, ge=1)
     suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
     suppressed_messages_keep_generations: int = Field(default=5, ge=1)
+    sdk_bash_injection_max_size_mb: int = Field(default=10, ge=1)
     archive_superseded_retention_days: int = Field(default=7, ge=1)
     archive_versions_keep_per_file: int = Field(default=5, ge=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _preserve_legacy_sdk_log_limit(cls, values: Any) -> Any:
+        """Carry forward old configs until they set the dedicated SDK limit."""
+        if (
+            isinstance(values, dict)
+            and "sdk_bash_injection_max_size_mb" not in values
+            and "suppressed_messages_max_size_mb" in values
+        ):
+            return {**values, "sdk_bash_injection_max_size_mb": values["suppressed_messages_max_size_mb"]}
+        return values
 
 
 class InboxConfig(BaseModel):

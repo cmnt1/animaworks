@@ -52,6 +52,7 @@ class TestHousekeepingConfig:
         assert cfg.anima_local_log_retention_days == 30
         assert cfg.suppressed_messages_max_size_mb == 10
         assert cfg.suppressed_messages_keep_generations == 5
+        assert cfg.sdk_bash_injection_max_size_mb == 10
         assert cfg.archive_versions_keep_per_file == 5
 
     def test_custom_values(self):
@@ -82,6 +83,7 @@ class TestHousekeepingConfig:
             anima_local_log_retention_days=45,
             suppressed_messages_max_size_mb=20,
             suppressed_messages_keep_generations=2,
+            sdk_bash_injection_max_size_mb=32,
         )
         assert cfg.enabled is False
         assert cfg.run_time == "03:00"
@@ -102,6 +104,7 @@ class TestHousekeepingConfig:
         assert cfg.anima_local_log_retention_days == 45
         assert cfg.suppressed_messages_max_size_mb == 20
         assert cfg.suppressed_messages_keep_generations == 2
+        assert cfg.sdk_bash_injection_max_size_mb == 32
 
     def test_config_has_housekeeping_field(self):
         from core.config.models import AnimaWorksConfig
@@ -153,13 +156,43 @@ class TestHousekeepingConfig:
 
         results = await run_housekeeping(
             tmp_path,
-            housekeeping=HousekeepingConfig(suppressed_messages_max_size_mb=1, suppressed_messages_keep_generations=2),
+            housekeeping=HousekeepingConfig(sdk_bash_injection_max_size_mb=1, suppressed_messages_keep_generations=2),
         )
 
         assert results["sdk_bash_injection"]["files"] == 1
         assert results["sdk_bash_injection"]["rotated"] is True
         assert (logs_dir / "sdk_bash_injection.jsonl.1").read_bytes() == original
         assert log_path.stat().st_size == 0
+
+    @pytest.mark.asyncio
+    async def test_sdk_bash_injection_limit_is_independent_of_suppressed_messages(self, tmp_path: Path):
+        from core.config.models import HousekeepingConfig
+        from core.memory.maintenance.housekeeping import run_housekeeping
+
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        sdk_log = logs_dir / "sdk_bash_injection.jsonl"
+        sdk_log.write_bytes(b"s" * (1024 * 1024 + 1))
+
+        anima_state = tmp_path / "animas" / "alice" / "state"
+        anima_state.mkdir(parents=True)
+        suppressed_log = anima_state / "suppressed_messages.jsonl"
+        suppressed_log.write_bytes(b"m" * (1024 * 1024 + 1))
+
+        results = await run_housekeeping(
+            tmp_path,
+            housekeeping=HousekeepingConfig(
+                suppressed_messages_max_size_mb=1,
+                suppressed_messages_keep_generations=2,
+                sdk_bash_injection_max_size_mb=2,
+            ),
+        )
+
+        assert results["sdk_bash_injection"]["skipped"] is True
+        assert sdk_log.stat().st_size == 1024 * 1024 + 1
+        assert not (logs_dir / "sdk_bash_injection.jsonl.1").exists()
+        assert results["suppressed_messages"]["rotated"] == 1
+        assert suppressed_log.stat().st_size == 0
 
     @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_suppressed_messages_log(self, tmp_path: Path):

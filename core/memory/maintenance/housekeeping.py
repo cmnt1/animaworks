@@ -17,10 +17,11 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from core.config.models import HousekeepingConfig, InboxConfig
 from core.i18n import t
@@ -34,6 +35,71 @@ _ANIMA_LOG_DATE_RE = re.compile(r"(20\d{6})")
 _CODEX_LOG_DB_NAME = "logs_2.sqlite"
 _PROTECTED_PREFIXES = ("current_session_", "streaming_journal")
 _ARCHIVE_VERSION_RE = re.compile(r"^(?P<stem>.+)_v(?P<version>\d+)_(?P<ts>\d{8}_\d{6})(?P<suffix>\.[^.]+)$")
+
+
+@dataclass(frozen=True, slots=True)
+class _HousekeepingRule:
+    """One declarative cleanup target and the policy that processes it."""
+
+    result_key: str
+    root: Literal["data", "animas"]
+    path: str
+    pattern: str
+    method: str
+    settings: tuple[str, ...] = ()
+    config_section: Literal["housekeeping", "inbox"] = "housekeeping"
+    error_message: str = "cleanup failed"
+    count_target_file: bool = False
+    age_mode: Literal["mtime", "filename", "archive"] | None = None
+    filename_prefix: str = ""
+    retention_cap_days: int | None = None
+    files_only: bool = False
+    error_label: str = "file"
+    success_log: str = ""
+
+
+def _rule(
+    result_key: str,
+    pattern: str,
+    method: str,
+    *settings: str,
+    root: Literal["data", "animas"] = "animas",
+    path: str = ".",
+    **options: Any,
+) -> _HousekeepingRule:
+    options.setdefault("error_message", f"{result_key} cleanup failed")
+    return _HousekeepingRule(result_key, root, path, pattern, method, tuple(settings), **options)
+
+
+# fmt: off
+# Ordered for stable result keys; glob is relative to root/path.
+_HOUSEKEEPING_RULES = (
+    _rule("prompt_logs", "*/prompt_logs/*.jsonl", "prompt_logs", "prompt_log_retention_days"),
+    _rule("daemon_log", "server-daemon.log[.N]", "daemon_log", "daemon_log_max_size_mb", "daemon_log_keep_generations", root="data", path="logs/server-daemon.log"),
+    _rule("anima_logs", "<anima>/*", "anima_logs", "anima_log_retention_days", "anima_log_total_max_size_mb", root="data", path="logs/animas"),
+    _rule("frontend_logs", "dated backups", "frontend_logs", "frontend_log_backup_count", root="data", path="logs/frontend"),
+    _rule("dm_archives", "*.archive.jsonl", "delete_old_files", "dm_log_archive_retention_days", root="data", path="shared/dm_logs", error_label="dm archive", success_log="DM archive cleanup: deleted %d files"),
+    _rule("cron_logs", "*/state/cron_logs/*.jsonl", "delete_old_files", "cron_log_retention_days", age_mode="filename", retention_cap_days=14, error_label="cron log", success_log="Cron log cleanup: deleted %d files"),
+    _rule("shortterm", "*/shortterm/{chat,heartbeat,cron,inbox,task}/**/*", "shortterm", "shortterm_retention_days", "shortterm_archive_retention_days", "shortterm_thread_gc_days"),
+    _rule("facts_locks", "*/facts/*.lock", "facts_locks", "facts_lock_stale_hours"),
+    _rule("curator_reports", "*/state/skill_curator/report-*.json", "delete_old_files", "curator_report_retention_days", age_mode="filename", filename_prefix="report-", error_label="curator report", success_log="Curator report cleanup: deleted %d files"),
+    _rule("task_results", "*/state/task_results/*.md", "delete_old_files", "task_results_retention_days", error_label="task result", success_log="Task results cleanup: deleted %d files"),
+    _rule("pending_failed", "*/state/background_tasks/pending/failed/*.json", "delete_old_files", "pending_failed_retention_days", error_label="failed task", success_log="Pending failed cleanup: deleted %d files"),
+    _rule("corrupt_vectordb_archives", "*/archive/{vectordb-corrupt,corrupt-vectordb}-*", "corrupt_vectordb_archives", "corrupt_vectordb_keep_generations"),
+    _rule("runtime_tmp", "*", "runtime_tmp", "tmp_retention_days", root="data", path="tmp"),
+    _rule("backup_dirs", "*/*_backup_*", "backup_dirs", "backup_retention_days"),
+    _rule("codex_execution_logs", "*/.codex_home/logs_2.sqlite[-wal|-shm]", "codex_execution_logs", "codex_log_max_size_mb"),
+    _rule("codex_tmp", "*/.codex_home/{.tmp,tmp}/*", "codex_tmp", "codex_tmp_retention_hours"),
+    _rule("anima_runtime_artifacts", "*/tmp_gitdirs/* and */logs/**/*", "anima_runtime_artifacts", "anima_tmp_gitdirs_retention_days", "anima_local_log_retention_days"),
+    _rule("taskboard_stale", "animas/*/state/{background_tasks,current_state.md}", "taskboard_stale", "pending_processing_stale_hours", "background_running_stale_hours", "current_state_stale_hours", root="data"),
+    _rule("suppressed_messages", "**/suppressed_messages.jsonl[.N]", "suppressed_messages", "suppressed_messages_max_size_mb", "suppressed_messages_keep_generations", root="data"),
+    _rule("sdk_bash_injection", "sdk_bash_injection.jsonl[.N]", "daemon_log", "sdk_bash_injection_max_size_mb", "suppressed_messages_keep_generations", root="data", path="logs/sdk_bash_injection.jsonl", count_target_file=True),
+    _rule("archive_superseded", "*/archive/superseded/*", "delete_old_files", "archive_superseded_retention_days", age_mode="archive", files_only=True, error_label="archived file", success_log="Archive/superseded cleanup: deleted %d files"),
+    _rule("archive_versions", "*/archive/versions/*", "archive_versions", "archive_versions_keep_per_file"),
+    _rule("shared_inbox", "*/{pending,processed,expired,quarantine}/*", "shared_inbox", "ttl_hours", "expired_retention_days", "processed_retention_days", "quarantine_retention_days", root="data", path="shared/inbox", config_section="inbox"),
+    _rule("skill_curator", "*/state/skill_curator/report-<today>.json", "skill_curator"),
+)
+# fmt: on
 
 
 # ── Public API ──────────────────────────────────────────────────
@@ -53,307 +119,97 @@ async def run_housekeeping(
     loop = asyncio.get_running_loop()
     results: dict[str, Any] = {}
 
-    animas_dir = data_dir / "animas"
-
-    # 1. Prompt logs
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _rotate_prompt_logs_all,
-            animas_dir,
-            housekeeping.prompt_log_retention_days,
-        )
-        results["prompt_logs"] = r
-    except Exception:
-        logger.exception("Housekeeping: prompt_logs rotation failed")
-        results["prompt_logs"] = {"error": True}
-
-    # 2. Daemon log
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _rotate_daemon_log,
-            data_dir / "logs" / "server-daemon.log",
-            housekeeping.daemon_log_max_size_mb,
-            housekeeping.daemon_log_keep_generations,
-        )
-        results["daemon_log"] = r
-    except Exception:
-        logger.exception("Housekeeping: daemon_log rotation failed")
-        results["daemon_log"] = {"error": True}
-
-    # 2b. Per-Anima runtime logs
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_anima_runtime_logs,
-            data_dir / "logs" / "animas",
-            housekeeping.anima_log_retention_days,
-            housekeeping.anima_log_total_max_size_mb,
-        )
-        results["anima_logs"] = r
-    except Exception:
-        logger.exception("Housekeeping: anima runtime log cleanup failed")
-        results["anima_logs"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_frontend_logs,
-            data_dir / "logs" / "frontend",
-            housekeeping.frontend_log_backup_count,
-        )
-        results["frontend_logs"] = r
-    except Exception:
-        logger.exception("Housekeeping: frontend log cleanup failed")
-        results["frontend_logs"] = {"error": True}
-
-    # 3. DM archives
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_dm_archives,
-            data_dir / "shared" / "dm_logs",
-            housekeeping.dm_log_archive_retention_days,
-        )
-        results["dm_archives"] = r
-    except Exception:
-        logger.exception("Housekeeping: dm_archives cleanup failed")
-        results["dm_archives"] = {"error": True}
-
-    # 4. Cron logs
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_cron_logs,
-            animas_dir,
-            housekeeping.cron_log_retention_days,
-        )
-        results["cron_logs"] = r
-    except Exception:
-        logger.exception("Housekeeping: cron_logs cleanup failed")
-        results["cron_logs"] = {"error": True}
-
-    # 5. Shortterm
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_shortterm,
-            animas_dir,
-            housekeeping.shortterm_retention_days,
-            housekeeping.shortterm_archive_retention_days,
-            housekeeping.shortterm_thread_gc_days,
-        )
-        results["shortterm"] = r
-    except Exception:
-        logger.exception("Housekeeping: shortterm cleanup failed")
-        results["shortterm"] = {"error": True}
-
-    # 5b. Stale facts lock files
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_facts_locks,
-            animas_dir,
-            housekeeping.facts_lock_stale_hours,
-        )
-        results["facts_locks"] = r
-    except Exception:
-        logger.exception("Housekeeping: facts lock cleanup failed")
-        results["facts_locks"] = {"error": True}
-
-    # 5c. Skill Curator reports
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_curator_reports,
-            animas_dir,
-            housekeeping.curator_report_retention_days,
-        )
-        results["curator_reports"] = r
-    except Exception:
-        logger.exception("Housekeeping: curator report cleanup failed")
-        results["curator_reports"] = {"error": True}
-
-    # 6. Task results
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_task_results,
-            animas_dir,
-            housekeeping.task_results_retention_days,
-        )
-        results["task_results"] = r
-    except Exception:
-        logger.exception("Housekeeping: task_results cleanup failed")
-        results["task_results"] = {"error": True}
-
-    # 7. Pending failed tasks
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_pending_failed,
-            animas_dir,
-            housekeeping.pending_failed_retention_days,
-        )
-        results["pending_failed"] = r
-    except Exception:
-        logger.exception("Housekeeping: pending_failed cleanup failed")
-        results["pending_failed"] = {"error": True}
-
-    # 8. Runtime bloat retention
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_corrupt_vectordb_archives,
-            animas_dir,
-            housekeeping.corrupt_vectordb_keep_generations,
-        )
-        results["corrupt_vectordb_archives"] = r
-    except Exception:
-        logger.exception("Housekeeping: corrupt vectordb archive cleanup failed")
-        results["corrupt_vectordb_archives"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(None, _cleanup_runtime_tmp, data_dir / "tmp", housekeeping.tmp_retention_days)
-        results["runtime_tmp"] = r
-    except Exception:
-        logger.exception("Housekeeping: runtime tmp cleanup failed")
-        results["runtime_tmp"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(None, _cleanup_backup_dirs, animas_dir, housekeeping.backup_retention_days)
-        results["backup_dirs"] = r
-    except Exception:
-        logger.exception("Housekeeping: backup dir cleanup failed")
-        results["backup_dirs"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(
-            None, _cleanup_codex_execution_logs, animas_dir, housekeeping.codex_log_max_size_mb
-        )
-        results["codex_execution_logs"] = r
-    except Exception:
-        logger.exception("Housekeeping: Codex execution log cleanup failed")
-        results["codex_execution_logs"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(
-            None, _cleanup_codex_tmp_dirs, animas_dir, housekeeping.codex_tmp_retention_hours
-        )
-        results["codex_tmp"] = r
-    except Exception:
-        logger.exception("Housekeeping: Codex tmp cleanup failed")
-        results["codex_tmp"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_anima_runtime_artifacts,
-            animas_dir,
-            housekeeping.anima_tmp_gitdirs_retention_days,
-            housekeeping.anima_local_log_retention_days,
-        )
-        results["anima_runtime_artifacts"] = r
-    except Exception:
-        logger.exception("Housekeeping: Anima runtime artifact cleanup failed")
-        results["anima_runtime_artifacts"] = {"error": True}
-
-    try:
-        from core.tasks.board.housekeeping import cleanup_taskboard_stale_artifacts
-
-        r = await loop.run_in_executor(
-            None,
-            cleanup_taskboard_stale_artifacts,
-            data_dir,
-            housekeeping.pending_processing_stale_hours,
-            housekeeping.background_running_stale_hours,
-            housekeeping.current_state_stale_hours,
-        )
-        results["taskboard_stale"] = r
-    except Exception:
-        logger.exception("Housekeeping: taskboard stale cleanup failed")
-        results["taskboard_stale"] = {"error": True}
-
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _rotate_suppressed_message_logs,
-            data_dir,
-            housekeeping.suppressed_messages_max_size_mb,
-            housekeeping.suppressed_messages_keep_generations,
-        )
-        results["suppressed_messages"] = r
-    except Exception:
-        logger.exception("Housekeeping: suppressed message log rotation failed")
-        results["suppressed_messages"] = {"error": True}
-
-    try:
-        sdk_bash_log = data_dir / "logs" / "sdk_bash_injection.jsonl"
-        r = await loop.run_in_executor(
-            None,
-            _rotate_daemon_log,
-            sdk_bash_log,
-            housekeeping.suppressed_messages_max_size_mb,
-            housekeeping.suppressed_messages_keep_generations,
-        )
-        r["files"] = int(sdk_bash_log.is_file())
-        results["sdk_bash_injection"] = r
-    except Exception:
-        logger.exception("Housekeeping: SDK bash injection log rotation failed")
-        results["sdk_bash_injection"] = {"error": True}
-
-    # 9. Archive/superseded rotation
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _rotate_archive_superseded,
-            animas_dir,
-            housekeeping.archive_superseded_retention_days,
-        )
-        results["archive_superseded"] = r
-    except Exception:
-        logger.exception("Housekeeping: archive_superseded rotation failed")
-        results["archive_superseded"] = {"error": True}
-
-    # 9b. Archive/versions generation retention
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _prune_archive_versions,
-            animas_dir,
-            housekeeping.archive_versions_keep_per_file,
-        )
-        results["archive_versions"] = r
-    except Exception:
-        logger.exception("Housekeeping: archive/versions pruning failed")
-        results["archive_versions"] = {"error": True}
-
-    # 10. Shared inbox stale-file cleanup
-    try:
-        r = await loop.run_in_executor(
-            None,
-            _cleanup_shared_inbox,
-            data_dir / "shared" / "inbox",
-            inbox.ttl_hours,
-            inbox.expired_retention_days,
-            inbox.processed_retention_days,
-            inbox.quarantine_retention_days,
-        )
-        results["shared_inbox"] = r
-    except Exception:
-        logger.exception("Housekeeping: shared inbox cleanup failed")
-        results["shared_inbox"] = {"error": True}
-
-    # 11. Skill Curator report
-    try:
-        r = await loop.run_in_executor(None, _run_skill_curator_reports, animas_dir)
-        results["skill_curator"] = r
-    except Exception:
-        logger.exception("Housekeeping: skill curator report failed")
-        results["skill_curator"] = {"error": True}
+    for rule in _HOUSEKEEPING_RULES:
+        try:
+            result = await loop.run_in_executor(
+                None,
+                _execute_housekeeping_rule,
+                rule,
+                data_dir,
+                housekeeping,
+                inbox,
+            )
+            results[rule.result_key] = result
+        except Exception:
+            logger.exception("Housekeeping: %s", rule.error_message)
+            results[rule.result_key] = {"error": True}
 
     return results
+
+
+def _execute_housekeeping_rule(
+    rule: _HousekeepingRule,
+    data_dir: Path,
+    housekeeping: HousekeepingConfig,
+    inbox: InboxConfig,
+) -> dict[str, Any]:
+    root = data_dir if rule.root == "data" else data_dir / "animas"
+    target = root / rule.path
+    config = inbox if rule.config_section == "inbox" else housekeeping
+    settings = tuple(getattr(config, key) for key in rule.settings)
+    if rule.method == "delete_old_files":
+        return _delete_old_files(
+            target,
+            rule.pattern,
+            settings[0],
+            age_mode=rule.age_mode or "mtime",
+            filename_prefix=rule.filename_prefix,
+            retention_cap_days=rule.retention_cap_days,
+            files_only=rule.files_only,
+            error_label=rule.error_label,
+            success_log=rule.success_log,
+        )
+
+    result = _HOUSEKEEPING_HANDLERS[rule.method](target, *settings)
+    if rule.count_target_file:
+        result["files"] = int(target.is_file())
+    return result
+
+
+def _delete_old_files(
+    directory: Path,
+    pattern: str,
+    retention_days: int,
+    *,
+    age_mode: Literal["mtime", "filename", "archive"] = "mtime",
+    filename_prefix: str = "",
+    retention_cap_days: int | None = None,
+    files_only: bool = False,
+    error_label: str = "file",
+    success_log: str = "",
+) -> dict[str, Any]:
+    """Apply a table-driven age policy to matching files."""
+    if not directory.exists():
+        return {"skipped": True}
+
+    days = min(retention_days, retention_cap_days) if retention_cap_days is not None else retention_days
+    cutoff: float | str
+    if age_mode == "filename":
+        cutoff = (today_local() - timedelta(days=days)).isoformat()
+    else:
+        cutoff = (now_local() - timedelta(days=days)).timestamp()
+
+    matches = directory.glob(pattern)
+    if files_only:
+        matches = (path for path in matches if path.is_file())
+
+    deleted = 0
+    for path in matches:
+        try:
+            if age_mode == "filename":
+                age: float | str = path.stem[len(filename_prefix) :]
+            else:
+                stat = path.stat()
+                age = max(stat.st_mtime, stat.st_ctime) if age_mode == "archive" else stat.st_mtime
+            if age < cutoff:
+                path.unlink()
+                deleted += 1
+        except OSError:
+            logger.warning("Failed to delete %s: %s", error_label, path)
+
+    if deleted and success_log:
+        logger.info(success_log, deleted)
+    return {"deleted_files": deleted}
 
 
 # ── Sub-functions ───────────────────────────────────────────────
@@ -745,60 +601,28 @@ def _cleanup_shared_inbox(
     return totals
 
 
-def _cleanup_dm_archives(
-    dm_logs_dir: Path,
-    retention_days: int,
-) -> dict[str, Any]:
+def _cleanup_dm_archives(dm_logs_dir: Path, retention_days: int) -> dict[str, Any]:
     """Delete DM log archive files older than *retention_days*."""
-    if not dm_logs_dir.exists():
-        return {"skipped": True}
-
-    cutoff = now_local() - timedelta(days=retention_days)
-    cutoff_ts = cutoff.timestamp()
-    deleted = 0
-
-    for f in dm_logs_dir.glob("*.archive.jsonl"):
-        try:
-            if f.stat().st_mtime < cutoff_ts:
-                f.unlink()
-                deleted += 1
-        except OSError:
-            logger.warning("Failed to delete dm archive: %s", f)
-
-    if deleted:
-        logger.info("DM archive cleanup: deleted %d files", deleted)
-    return {"deleted_files": deleted}
+    return _delete_old_files(
+        dm_logs_dir,
+        "*.archive.jsonl",
+        retention_days,
+        error_label="dm archive",
+        success_log="DM archive cleanup: deleted %d files",
+    )
 
 
-def _cleanup_cron_logs(
-    animas_dir: Path,
-    retention_days: int,
-) -> dict[str, Any]:
-    """Delete cron log date files older than *retention_days*."""
-    if not animas_dir.exists():
-        return {"skipped": True}
-
-    cutoff = (today_local() - timedelta(days=min(retention_days, 14))).isoformat()
-    total_deleted = 0
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        cron_log_dir = anima_dir / "state" / "cron_logs"
-        if not cron_log_dir.is_dir():
-            continue
-        for f in cron_log_dir.glob("*.jsonl"):
-            # Filename format: YYYY-MM-DD.jsonl
-            if f.stem < cutoff:
-                try:
-                    f.unlink()
-                    total_deleted += 1
-                except OSError:
-                    logger.warning("Failed to delete cron log: %s", f)
-
-    if total_deleted:
-        logger.info("Cron log cleanup: deleted %d files", total_deleted)
-    return {"deleted_files": total_deleted}
+def _cleanup_cron_logs(animas_dir: Path, retention_days: int) -> dict[str, Any]:
+    """Delete filename-dated cron logs, with the historical 14-day cap."""
+    return _delete_old_files(
+        animas_dir,
+        "*/state/cron_logs/*.jsonl",
+        retention_days,
+        age_mode="filename",
+        retention_cap_days=14,
+        error_label="cron log",
+        success_log="Cron log cleanup: deleted %d files",
+    )
 
 
 def _episodeify_abandoned_session(anima_dir: Path, json_path: Path) -> bool:
@@ -1121,109 +945,41 @@ def _cleanup_facts_locks(animas_dir: Path, stale_hours: int) -> dict[str, Any]:
     }
 
 
-def _cleanup_curator_reports(
-    animas_dir: Path,
-    retention_days: int,
-) -> dict[str, Any]:
-    """Delete Skill Curator report files older than *retention_days*.
-
-    Reports are generated daily into ``state/skill_curator/report-*.json`` but
-    only the newest is ever consumed, so older ones accumulate unbounded. The
-    filename carries the ISO date (``report-YYYY-MM-DD.json``); anything past
-    the cutoff is removed.
-    """
-    if not animas_dir.exists():
-        return {"skipped": True}
-
-    cutoff = (today_local() - timedelta(days=retention_days)).isoformat()
-    total_deleted = 0
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        report_dir = anima_dir / "state" / "skill_curator"
-        if not report_dir.is_dir():
-            continue
-        for f in report_dir.glob("report-*.json"):
-            # Filename format: report-YYYY-MM-DD.json
-            date_part = f.stem[len("report-") :]
-            if date_part < cutoff:
-                try:
-                    f.unlink()
-                    total_deleted += 1
-                except OSError:
-                    logger.warning("Failed to delete curator report: %s", f)
-
-    if total_deleted:
-        logger.info("Curator report cleanup: deleted %d files", total_deleted)
-    return {"deleted_files": total_deleted}
+def _cleanup_curator_reports(animas_dir: Path, retention_days: int) -> dict[str, Any]:
+    """Delete reports whose ``report-YYYY-MM-DD.json`` date has expired."""
+    return _delete_old_files(
+        animas_dir,
+        "*/state/skill_curator/report-*.json",
+        retention_days,
+        age_mode="filename",
+        filename_prefix="report-",
+        error_label="curator report",
+        success_log="Curator report cleanup: deleted %d files",
+    )
 
 
-def _cleanup_task_results(
-    animas_dir: Path,
-    retention_days: int,
-) -> dict[str, Any]:
+def _cleanup_task_results(animas_dir: Path, retention_days: int) -> dict[str, Any]:
     """Delete old task result files from state/task_results/."""
-    if not animas_dir.exists():
-        return {"skipped": True}
-
-    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
-    total_deleted = 0
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        results_dir = anima_dir / "state" / "task_results"
-        if not results_dir.is_dir():
-            continue
-        for f in results_dir.glob("*.md"):
-            try:
-                if f.stat().st_mtime < cutoff_ts:
-                    f.unlink()
-                    total_deleted += 1
-            except OSError:
-                logger.warning("Failed to delete task result: %s", f)
-
-    if total_deleted:
-        logger.info("Task results cleanup: deleted %d files", total_deleted)
-    return {"deleted_files": total_deleted}
+    return _delete_old_files(
+        animas_dir,
+        "*/state/task_results/*.md",
+        retention_days,
+        error_label="task result",
+        success_log="Task results cleanup: deleted %d files",
+    )
 
 
-def _rotate_archive_superseded(
-    animas_dir: Path,
-    retention_days: int,
-) -> dict[str, Any]:
-    """Delete archived files in archive/superseded/ older than *retention_days*."""
-    if not animas_dir.exists():
-        return {"skipped": True}
-
-    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
-    total_deleted = 0
-
-    for anima_dir in sorted(animas_dir.iterdir()):
-        if not anima_dir.is_dir():
-            continue
-        archive_dir = anima_dir / "archive" / "superseded"
-        if not archive_dir.is_dir():
-            continue
-        for f in archive_dir.iterdir():
-            if not f.is_file():
-                continue
-            try:
-                # mtime is preserved by shutil.move, so a file archived today can
-                # carry an old mtime and be deleted immediately. ctime is updated
-                # by the move itself, so max(mtime, ctime) approximates the time
-                # the file entered archive/superseded.
-                st = f.stat()
-                if max(st.st_mtime, st.st_ctime) < cutoff_ts:
-                    f.unlink()
-                    total_deleted += 1
-            except OSError:
-                logger.warning("Failed to delete archived file: %s", f)
-
-    if total_deleted:
-        logger.info("Archive/superseded cleanup: deleted %d files", total_deleted)
-    return {"deleted_files": total_deleted}
+def _rotate_archive_superseded(animas_dir: Path, retention_days: int) -> dict[str, Any]:
+    """Expire files by max(mtime, ctime), which approximates archive-entry time."""
+    return _delete_old_files(
+        animas_dir,
+        "*/archive/superseded/*",
+        retention_days,
+        age_mode="archive",
+        files_only=True,
+        error_label="archived file",
+        success_log="Archive/superseded cleanup: deleted %d files",
+    )
 
 
 def _prune_archive_versions(animas_dir: Path, keep_per_file: int) -> dict[str, Any]:
@@ -1278,13 +1034,15 @@ def _prune_archive_versions(animas_dir: Path, keep_per_file: int) -> dict[str, A
     return {"deleted_files": deleted_files, "kept_files": kept_files}
 
 
-def _cleanup_pending_failed(
-    animas_dir: Path,
-    retention_days: int,
-) -> dict[str, Any]:
-    from core.tasks.pending_housekeeping import cleanup_pending_failed
-
-    return cleanup_pending_failed(animas_dir, retention_days)
+def _cleanup_pending_failed(animas_dir: Path, retention_days: int) -> dict[str, Any]:
+    """Delete expired background-task failures (not legacy LLM pending files)."""
+    return _delete_old_files(
+        animas_dir,
+        "*/state/background_tasks/pending/failed/*.json",
+        retention_days,
+        error_label="failed task",
+        success_log="Pending failed cleanup: deleted %d files",
+    )
 
 
 _CORRUPT_VECTORDB_RE = re.compile(r"^(?:vectordb-corrupt|corrupt-vectordb)[-_](?P<stamp>\d{8}[-_]?\d{6}|\d{14})")
@@ -1350,89 +1108,87 @@ def _cleanup_corrupt_vectordb_archives(
 
 
 def _cleanup_runtime_tmp(tmp_dir: Path, retention_days: int) -> dict[str, Any]:
-    """Delete old top-level entries from runtime tmp."""
+    """Delete old top-level entries while retaining selected tmp roots."""
     if not tmp_dir.exists():
         return {"skipped": True}
 
-    cutoff_ts = (now_local() - timedelta(days=retention_days)).timestamp()
-    open_paths = _collect_open_tmp_paths(tmp_dir)
-    deleted_entries = 0
-    freed_bytes = 0
-    skipped_count = 0
-    errors: list[str] = []
+    cutoff = (now_local() - timedelta(days=retention_days)).timestamp()
+    result = _cleanup_tree_children(
+        tmp_dir,
+        cutoff,
+        _collect_open_tmp_paths(tmp_dir),
+        skip_hidden=True,
+        count_skipped_symlinks=True,
+        preserved_roots=_PRESERVED_TMP_SUBDIRS,
+        open_warning="Runtime tmp entry is open; skipping: %s",
+        error_label="runtime tmp entry",
+    )
+    if result["deleted_entries"]:
+        logger.info(
+            "Runtime tmp cleanup: deleted=%d freed=%d bytes",
+            result["deleted_entries"],
+            result["freed_bytes"],
+        )
+    return {key: result[key] for key in ("deleted_entries", "freed_bytes", "skipped_count", "errors")}
 
-    for entry in sorted(tmp_dir.iterdir()):
-        if entry.name.startswith("."):
+
+def _cleanup_tree_children(
+    root: Path,
+    cutoff_ts: float,
+    open_paths: set[Path],
+    *,
+    skip_hidden: bool = False,
+    count_skipped_symlinks: bool = False,
+    preserved_roots: frozenset[str] = frozenset(),
+    open_warning: str | None = None,
+    error_label: str,
+) -> dict[str, Any]:
+    """Remove stale children using shared tree-age, open-file and size rules."""
+    result: dict[str, Any] = {
+        "deleted_entries": 0,
+        "freed_bytes": 0,
+        "skipped_count": 0,
+        "skipped_open": 0,
+        "errors": [],
+    }
+    for entry in sorted(root.iterdir()):
+        if skip_hidden and entry.name.startswith("."):
             continue
         if entry.is_symlink():
-            skipped_count += 1
+            result["skipped_count"] += int(count_skipped_symlinks)
             continue
-        try:
-            if entry.name in _PRESERVED_TMP_SUBDIRS and entry.is_dir():
-                nested = _cleanup_runtime_tmp_contents(entry, cutoff_ts, open_paths)
-                deleted_entries += nested["deleted_entries"]
-                freed_bytes += nested["freed_bytes"]
-                skipped_count += nested["skipped_count"]
-                errors.extend(nested["errors"])
-                continue
-            if not _path_tree_older_than(entry, cutoff_ts):
-                continue
-            if _path_has_open_files(entry, open_paths):
-                skipped_count += 1
-                logger.warning("Runtime tmp entry is open; skipping: %s", entry)
-                continue
-            size = _path_size(entry)
-            _remove_path(entry)
-            deleted_entries += 1
-            freed_bytes += size
-        except OSError as exc:
-            logger.warning("Failed to delete runtime tmp entry: %s", entry, exc_info=True)
-            skipped_count += 1
-            errors.append(f"{entry}: {exc}")
-
-    if deleted_entries:
-        logger.info("Runtime tmp cleanup: deleted=%d freed=%d bytes", deleted_entries, freed_bytes)
-    return {
-        "deleted_entries": deleted_entries,
-        "freed_bytes": freed_bytes,
-        "skipped_count": skipped_count,
-        "errors": errors,
-    }
-
-
-def _cleanup_runtime_tmp_contents(root: Path, cutoff_ts: float, open_paths: set[Path]) -> dict[str, Any]:
-    """Clean old children inside a preserved tmp subdir without deleting it."""
-    deleted_entries = 0
-    freed_bytes = 0
-    skipped_count = 0
-    errors: list[str] = []
-
-    for entry in sorted(root.iterdir()):
-        if entry.name.startswith(".") or entry.is_symlink():
-            skipped_count += 1
+        if entry.name in preserved_roots and entry.is_dir():
+            nested = _cleanup_tree_children(
+                entry,
+                cutoff_ts,
+                open_paths,
+                skip_hidden=skip_hidden,
+                count_skipped_symlinks=count_skipped_symlinks,
+                open_warning=open_warning,
+                error_label=error_label,
+            )
+            for key in ("deleted_entries", "freed_bytes", "skipped_count", "skipped_open"):
+                result[key] += nested[key]
+            result["errors"].extend(nested["errors"])
             continue
         try:
             if not _path_tree_older_than(entry, cutoff_ts):
                 continue
             if _path_has_open_files(entry, open_paths):
-                skipped_count += 1
-                logger.warning("Runtime tmp entry is open; skipping: %s", entry)
+                result["skipped_count"] += 1
+                result["skipped_open"] += 1
+                if open_warning:
+                    logger.warning(open_warning, entry)
                 continue
             size = _path_size(entry)
             _remove_path(entry)
-            deleted_entries += 1
-            freed_bytes += size
+            result["deleted_entries"] += 1
+            result["freed_bytes"] += size
         except OSError as exc:
-            logger.warning("Failed to delete runtime tmp entry: %s", entry, exc_info=True)
-            skipped_count += 1
-            errors.append(f"{entry}: {exc}")
-
-    return {
-        "deleted_entries": deleted_entries,
-        "freed_bytes": freed_bytes,
-        "skipped_count": skipped_count,
-        "errors": errors,
-    }
+            logger.warning("Failed to delete %s: %s", error_label, entry, exc_info=True)
+            result["skipped_count"] += 1
+            result["errors"].append(f"{entry}: {exc}")
+    return result
 
 
 def _path_tree_older_than(path: Path, cutoff_ts: float) -> bool:
@@ -1463,57 +1219,55 @@ def _collect_open_paths(root: Path) -> set[Path]:
     lsof = shutil.which("lsof")
     if not lsof:
         return set()
-    try:
-        result = subprocess.run(
-            [lsof, "-F", "n", "+D", str(root)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-    except subprocess.TimeoutExpired:
-        logger.warning("Runtime tmp lsof scan timed out; proceeding without open-file skips for %s", root)
-        return set()
-    if result.returncode not in (0, 1):
-        logger.debug("Runtime tmp lsof scan exited with status %s for %s", result.returncode, root)
-    paths: set[Path] = set()
-    for line in result.stdout.splitlines():
-        if not line.startswith("n"):
-            continue
-        raw_path = line[1:].split(" (", 1)[0]
-        if raw_path:
-            paths.add(Path(raw_path).resolve(strict=False))
-    return paths
+    return _run_lsof(
+        [lsof, "-F", "n", "+D", str(root)],
+        timeout=10,
+        target=root,
+        timeout_message="Runtime tmp lsof scan timed out; proceeding without open-file skips for %s",
+        debug_message="Runtime tmp lsof scan exited with status %s for %s",
+    )
 
 
 def _collect_open_file_paths(paths_to_check: Iterable[Path]) -> set[Path]:
-    paths_list = [p for p in paths_to_check if p.exists()]
-    if not paths_list:
-        return set()
+    paths = [path for path in paths_to_check if path.exists()]
     lsof = shutil.which("lsof")
-    if not lsof:
+    if not lsof or not paths:
         return set()
+    return _run_lsof(
+        [lsof, "-F", "n", "--", *(str(path) for path in paths)],
+        timeout=5,
+        target=paths,
+        timeout_message="Open-file scan timed out; proceeding without open-file skips for %s",
+    )
+
+
+def _run_lsof(
+    command: list[str],
+    *,
+    timeout: int,
+    target: Path | list[Path],
+    timeout_message: str,
+    debug_message: str = "",
+) -> set[Path]:
     try:
         result = subprocess.run(
-            [lsof, "-F", "n", "--", *(str(p) for p in paths_list)],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
             check=False,
-            timeout=5,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        logger.warning("Open-file scan timed out; proceeding without open-file skips for %s", paths_list)
+        logger.warning(timeout_message, target)
         return set()
-    paths: set[Path] = set()
-    for line in result.stdout.splitlines():
-        if not line.startswith("n"):
-            continue
-        raw_path = line[1:].split(" (", 1)[0]
-        if raw_path:
-            paths.add(Path(raw_path).resolve(strict=False))
-    return paths
+    if debug_message and result.returncode not in (0, 1):
+        logger.debug(debug_message, result.returncode, target)
+    return {
+        Path(raw_path).resolve(strict=False)
+        for line in result.stdout.splitlines()
+        if line.startswith("n") and (raw_path := line[1:].split(" (", 1)[0])
+    }
 
 
 def _path_has_open_files(path: Path, open_paths: set[Path]) -> bool:
@@ -1609,37 +1363,26 @@ def _cleanup_codex_tmp_dirs(animas_dir: Path, retention_hours: int) -> dict[str,
     if not animas_dir.exists():
         return {"skipped": True}
 
-    cutoff_ts = (now_local() - timedelta(hours=retention_hours)).timestamp()
-    deleted_entries = 0
-    freed_bytes = 0
-    skipped_open = 0
-
+    cutoff = (now_local() - timedelta(hours=retention_hours)).timestamp()
+    totals = {"deleted_entries": 0, "freed_bytes": 0, "skipped_open": 0}
     for codex_home in sorted(animas_dir.glob("*/.codex_home")):
-        for tmp_root_name in (".tmp", "tmp"):
-            tmp_root = codex_home / tmp_root_name
+        for name in (".tmp", "tmp"):
+            tmp_root = codex_home / name
             if not tmp_root.is_dir():
                 continue
-            open_paths = _collect_open_paths(tmp_root)
-            for entry in sorted(tmp_root.iterdir()):
-                if entry.is_symlink():
-                    continue
-                try:
-                    if not _path_tree_older_than(entry, cutoff_ts):
-                        continue
-                    if _path_has_open_files(entry, open_paths):
-                        skipped_open += 1
-                        logger.warning("Codex tmp entry is open; skipping: %s", entry)
-                        continue
-                    size = _path_size(entry)
-                    _remove_path(entry)
-                    deleted_entries += 1
-                    freed_bytes += size
-                except OSError:
-                    logger.warning("Failed to delete Codex tmp entry: %s", entry, exc_info=True)
+            result = _cleanup_tree_children(
+                tmp_root,
+                cutoff,
+                _collect_open_paths(tmp_root),
+                open_warning="Codex tmp entry is open; skipping: %s",
+                error_label="Codex tmp entry",
+            )
+            for key in totals:
+                totals[key] += result[key]
 
-    if deleted_entries:
-        logger.info("Codex tmp cleanup: deleted=%d freed=%d bytes", deleted_entries, freed_bytes)
-    return {"deleted_entries": deleted_entries, "freed_bytes": freed_bytes, "skipped_open": skipped_open}
+    if totals["deleted_entries"]:
+        logger.info("Codex tmp cleanup: deleted=%d freed=%d bytes", totals["deleted_entries"], totals["freed_bytes"])
+    return totals
 
 
 def _cleanup_anima_runtime_artifacts(
@@ -1661,22 +1404,15 @@ def _cleanup_anima_runtime_artifacts(
     for anima_dir in sorted(p for p in animas_dir.iterdir() if p.is_dir()):
         tmp_gitdirs = anima_dir / "tmp_gitdirs"
         if tmp_gitdirs.is_dir():
-            open_paths = _collect_open_paths(tmp_gitdirs)
-            for entry in sorted(tmp_gitdirs.iterdir()):
-                if entry.is_symlink():
-                    continue
-                try:
-                    if not _path_tree_older_than(entry, tmp_cutoff_ts):
-                        continue
-                    if _path_has_open_files(entry, open_paths):
-                        skipped_open += 1
-                        continue
-                    size = _path_size(entry)
-                    _remove_path(entry)
-                    tmp_gitdirs_deleted += 1
-                    freed_bytes += size
-                except OSError:
-                    logger.warning("Failed to delete tmp gitdir artifact: %s", entry, exc_info=True)
+            result = _cleanup_tree_children(
+                tmp_gitdirs,
+                tmp_cutoff_ts,
+                _collect_open_paths(tmp_gitdirs),
+                error_label="tmp gitdir artifact",
+            )
+            tmp_gitdirs_deleted += result["deleted_entries"]
+            freed_bytes += result["freed_bytes"]
+            skipped_open += result["skipped_open"]
 
         local_logs = anima_dir / "logs"
         if local_logs.is_dir():
@@ -1708,3 +1444,40 @@ def _cleanup_anima_runtime_artifacts(
         "freed_bytes": freed_bytes,
         "skipped_open": skipped_open,
     }
+
+
+def _cleanup_taskboard_stale(
+    data_dir: Path,
+    pending_processing_stale_hours: int,
+    background_running_stale_hours: int,
+    current_state_stale_hours: int,
+) -> dict[str, Any]:
+    from core.tasks.board.housekeeping import cleanup_taskboard_stale_artifacts
+
+    return cleanup_taskboard_stale_artifacts(
+        data_dir,
+        pending_processing_stale_hours,
+        background_running_stale_hours,
+        current_state_stale_hours,
+    )
+
+
+_HOUSEKEEPING_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
+    "prompt_logs": _rotate_prompt_logs_all,
+    "daemon_log": _rotate_daemon_log,
+    "anima_logs": _cleanup_anima_runtime_logs,
+    "frontend_logs": _cleanup_frontend_logs,
+    "shortterm": _cleanup_shortterm,
+    "facts_locks": _cleanup_facts_locks,
+    "corrupt_vectordb_archives": _cleanup_corrupt_vectordb_archives,
+    "runtime_tmp": _cleanup_runtime_tmp,
+    "backup_dirs": _cleanup_backup_dirs,
+    "codex_execution_logs": _cleanup_codex_execution_logs,
+    "codex_tmp": _cleanup_codex_tmp_dirs,
+    "anima_runtime_artifacts": _cleanup_anima_runtime_artifacts,
+    "taskboard_stale": _cleanup_taskboard_stale,
+    "suppressed_messages": _rotate_suppressed_message_logs,
+    "archive_versions": _prune_archive_versions,
+    "shared_inbox": _cleanup_shared_inbox,
+    "skill_curator": _run_skill_curator_reports,
+}
