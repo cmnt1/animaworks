@@ -1,9 +1,9 @@
 # Mode S (Agent SDK) Authentication Mode Configuration Guide
 
-How to switch the authentication method used by Mode S (Claude Agent SDK) for each Anima.
-The authentication mode is specified via an explicit setting called **`mode_s_auth`** (not auto-detected from credentials).
+How to switch the authentication method used in Mode S (Claude Agent SDK) for each Anima.
+The authentication mode is specified through an explicit configuration called **`mode_s_auth`** (not automatic credential detection).
 
-Implementation: `core/execution/engines/claude/executor.py`'s `_build_env()` builds the environment variables for the Claude Code child process.
+Implementation: `_build_env()` in `core/execution/engines/claude/executor.py` builds the environment variables for the Claude Code child process.
 
 ## Authentication Mode List
 

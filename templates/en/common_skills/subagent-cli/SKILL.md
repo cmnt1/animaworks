@@ -13,17 +13,17 @@ Use it as a "power tool" to extend execution capability while maintaining your o
 
 ## Relationship with Framework Execution Modes
 
-This skill applies **only when the Bash tool is available**.
+This skill applies only **when the Bash tool is available**.
 
-| Mode | Implementation | Bash | Applicability of This Skill |
+| Mode | Implementation | Bash | Applicability of this skill |
 |--------|------|------|------------------|
-| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | Available by default | Applies. Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP (send_message, etc.) + Task/Agent are available inside the Claude Code subprocess. The cwd during Bash execution is anima_dir |
-| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Depends on Codex CLI's toolset | **codex exec is not needed** — the framework executes Codex directly. cursor-agent / claude -p can be called via Bash (if Bash is available) |
-| **Mode D** | Cursor Agent (cursor-agent subprocess) | Depends on Cursor CLI's toolset | **cursor-agent -p is not needed** — the framework executes cursor-agent directly. MCP integration. Tool access is similar to Mode S, but the actual binary is cursor-agent. codex exec / claude -p can be called via Bash (if Bash is available) |
-| **Mode G** | Gemini CLI (gemini subprocess) | Depends on Gemini CLI's toolset | **Manual Gemini CLI startup is not needed** — the framework executes it directly. MCP integration, stream-json output. Other CLIs can be called via Bash (if Bash is available) |
-| **Mode A/B**** | LiteLLM + tool_use / 1-shot | Only when permitted by permissions.json | Applies if Bash is permitted |
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | Available by default | Applies. Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP (send_message, etc.) + Task/Agent are available within the Claude Code subprocess. The cwd during Bash execution is anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Depends on the Codex CLI toolset | **codex exec is not needed** — the framework runs Codex directly. cursor-agent / claude -p can be invoked via Bash (if Bash is available) |
+| **Mode D** | Cursor Agent (cursor-agent subprocess) | Depends on the Cursor CLI toolset | **cursor-agent -p is not needed** — the framework runs cursor-agent directly. MCP integration. Tool access is similar to Mode S, but the actual binary is cursor-agent. codex exec / claude -p can be invoked via Bash (if Bash is available) |
+| **Mode G** | Gemini CLI (gemini subprocess) | Depends on the Gemini CLI toolset | **Manual startup of Gemini CLI is not needed** — the framework runs it directly. MCP integration, stream-json output. Other CLIs can be invoked via Bash (if Bash is available) |
+| **Mode A/B** | LiteLLM + tool_use / 1-shot | Only when permitted by permissions.json | Applies if Bash is permitted |
 
-**Important**: In Mode C (`codex/*`), Mode D (`cursor/*`), and Mode G (`gemini/*`), the Anima framework executes each engine directly. In this case, you do not need to call `codex exec` (Mode C), `cursor-agent -p` (Mode D), or Gemini CLI (Mode G) yourself from Bash. Only refer to the relevant section of this skill when you explicitly want to use a different CLI (cursor-agent / claude -p / codex exec, etc.).
+**Important**: For Anima in Mode C (`codex/*`), Mode D (`cursor/*`), and Mode G (`gemini/*`), the framework runs each engine directly. In this case, you do not need to invoke `codex exec` (Mode C), `cursor-agent -p` (Mode D), or Gemini CLI (Mode G) yourself via Bash. Only refer to the relevant section of this skill when you explicitly want to use a different CLI (cursor-agent / claude -p / codex exec, etc.).
 
 **Windows exception**: In a native Windows environment, if shell execution becomes `policy blocked`, or if `codex exec exited with code 1` occurs repeatedly, stop retrying the local `codex exec`. Escalate shell-required tasks to the supervisor (`supervisor`).
 
@@ -345,8 +345,8 @@ Periodically check whether the process is still alive, and once complete, read t
 
 ## Notes
 
-- Sub-agents cannot access AnimaWorks memory or tools. They are merely "coding hands"
-- Record execution results in your own episodes/, and accumulate learned patterns in knowledge/
-- Execution takes 5 to 20 minutes or more. Always run in the background and set a timeout
-- Work in git-managed repositories (for easy change tracking and rollback)
-- In Mode S, during Bash execution, `ANIMAWORKS_ANIMA_DIR` (Anima's data directory) and `ANIMAWORKS_PROJECT_DIR` (AnimaWorks framework root) are set as environment variables (injected via `core/execution/engines/claude/executor.py`'s `_build_env()`)
+- Subagents cannot access AnimaWorks memory or tools. They are merely "coding hands."
+- Record execution results in your own episodes/ and accumulate learned patterns in knowledge/.
+- Execution takes 5 to 20+ minutes. Always run in the background and set a timeout.
+- Work in a git-managed repository (for easy change tracking and rollback).
+- In Mode S, `ANIMAWORKS_ANIMA_DIR` (Anima's data directory) and `ANIMAWORKS_PROJECT_DIR` (AnimaWorks framework root) are set as environment variables during Bash execution (injected via `core/execution/engines/claude/executor.py`'s `_build_env()`).

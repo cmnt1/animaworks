@@ -100,7 +100,7 @@ When calling from `animaworks-tool`, **`cli_main` must be implemented** afterwar
 
 #### Multiple Actions + Authentication (API Integration)
 
-The resolution order for `get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` is: **`credentials.{credential_name}` of `config.json`** (`api_key` or `keys[key_name]`) → **the `shared` section of `vault.json`** (key name is the string passed as argument `env_var`) → **`shared/credentials.json` (legacy, key is `env_var`)** → **environment variable `env_var`** (`core/credentials.py`).
+The resolution order for `get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` is **`config.json`'s `credentials.{credential_name}`** (`api_key` or `keys[key_name]`) → **the `shared` section of `vault.json`** (the key name is the string passed as argument `env_var`) → **`shared/credentials.json` (legacy, key is `env_var`)** → **environment variable `env_var`** (`core/credentials.py`).
 
 ```python
 from __future__ import annotations
@@ -184,7 +184,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
     raise ValueError(f"Unknown tool: {name}")
 ```
 
-**Per-Anima authentication** (e.g., Chatwork): There is a pattern of taking the Anima name from `args.get("anima_dir")` and resolving an **Anima-specific key** like `CHATWORK_API_TOKEN__{anima_name}` via `resolve_env_style_credential(...)` (e.g., `resolve_identity` of `core/integrations/_chatwork_identity.py`; if not registered, raise an error without falling back). The same key naming can be used in custom tools.
+**Per-Anima authentication** (Chatwork, etc.): There is a pattern where the Anima name is taken from `args.get("anima_dir")` and an **Anima-specific key** like `CHATWORK_API_TOKEN__{anima_name}` is resolved via `resolve_env_style_credential(...)` (e.g., `resolve_identity` of `core/integrations/_chatwork_identity.py`. If not registered, raise an error without falling back). The same key naming can be used in custom tools.
 
 #### `cli_main` (for animaworks-tool)
 

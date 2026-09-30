@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/execution.md -->
-<!-- i18n: source-sha256=bd59837486f618bd44a589c0dcbad8e70fbd20f544b32a74ad0edc4f2a6e0873 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=dc706c803aa27d2b8b296c056e63e9b928e46ad6c645d16d576bde53c3d44278 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -22,11 +22,11 @@ The resolution order from the model name is: explicit per-anima specification in
 
 ## Common Execution Layer and Failure Behavior
 
-Implementations for each engine are placed in `core/execution/engines/`. The common layer's `core/execution/events.py`, `core/execution/session/session_store.py`, `process_runner.py`, `watchdog.py`, `tool_evidence.py`, and `cli_stream.py` standardize events, session persistence, process control, and tool evidence. Error classification, process termination, binary search, `clear_session`, and response/error determination are also handled in the intermediate layer. D and G are included in this structure.
+Each engine implementation is placed in `core/execution/engines/`. The common layer's `core/execution/events.py`, `core/execution/session/session_store.py`, `process_runner.py`, `watchdog.py`, `tool_evidence.py`, `cli_stream.py` standardize events, session persistence, process control, and tool evidence. Error classification, process termination, binary search, `clear_session`, and response/error determination are also handled in the intermediate layer. D and G are also included in this configuration.
 
-The watchdog determines idle status when no engine event arrives for 1200 seconds. This is not a timeout measuring total execution time. Rate limit and provider overload information is shared per provider family in `llm_rate_guard`, preventing other Anima instances from making consecutive requests to the same provider. This guard is designed so that read/write failures do not stop normal execution.
+The watchdog determines that the engine is idle if no engine event arrives within 1200 seconds. It is not a timeout measuring total execution time. Rate limit and provider overload information is shared per provider family in `llm_rate_guard`, preventing other Anima instances from making consecutive requests to the same provider. This guard is designed so that even if reading or writing fails, normal execution is not interrupted.
 
-In addition to the primary model, `fallback_model` or `fallback_models` can be specified. Based on classification results for authentication, rate limits, etc., and fallback settings, the system switches to the next candidate. For heartbeat and cron, `background_model`, `background_credential`, and `background_thinking_effort` can be specified.
+In addition to the main model, `fallback_model` or `fallback_models` can be specified. Based on classification results such as authentication and rate limit, along with fallback configuration, the system switches to the next candidate. For heartbeat and cron, `background_model`, `background_credential`, and `background_thinking_effort` can be specified.
 
 ## Context Management
 

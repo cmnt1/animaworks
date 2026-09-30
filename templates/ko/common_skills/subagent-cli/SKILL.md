@@ -13,19 +13,19 @@ description: >-
 
 ## 프레임워크 실행 모드와의 관계
 
-이 스킬은 **Bash 도구가 사용 가능한 경우**에만 적용된다.
+이 스킬은 **Bash 도구를 사용할 수 있는 경우**에만 적용된다.
 
 | 모드 | 구현 | Bash | 이 스킬의 적용 |
 |--------|------|------|------------------|
-| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | 기본적으로 사용 가능 | 적용됨. Claude Code 서브프로세스 내에서 Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 등) + Task/Agent가 사용 가능. Bash 실행 시 cwd는 anima_dir |
-| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Codex CLI의 도구 세트에 의존 | **codex exec는 불필요** — 프레임워크가 Codex를 직접 실행. cursor-agent / claude -p는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
-| **Mode D** | Cursor Agent (cursor-agent 서브프로세스) | Cursor CLI의 도구 세트에 의존 | **cursor-agent -p는 불필요** — 프레임워크가 cursor-agent를 직접 실행. MCP 통합. Mode S에 가까운 도구 접근이지만 실체는 cursor-agent 바이너리. codex exec / claude -p는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
-| **Mode G** | Gemini CLI (gemini 서브프로세스) | Gemini CLI의 도구 세트에 의존 | **Gemini CLI의 수동 시작은 불필요** — 프레임워크가 직접 실행. MCP 통합, stream-json 출력. 다른 CLI는 Bash를 통해 호출 가능 (Bash가 사용 가능한 경우) |
-| **Mode A/B** | LiteLLM + tool_use / 1샷 | permissions.json에서 허용 시에만 | Bash 허용이 있으면 적용 |
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | 기본적으로 사용 가능 | 적용된다. Claude Code 서브프로세스 내에서 Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 등) + Task/Agent를 사용할 수 있다. Bash 실행 시 cwd는 anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Codex CLI의 도구 세트에 의존 | **codex exec는 불필요** — 프레임워크가 Codex를 직접 실행한다. cursor-agent / claude -p는 Bash를 통해 호출할 수 있다(Bash를 사용할 수 있는 경우) |
+| **Mode D** | Cursor Agent(cursor-agent 서브프로세스) | Cursor CLI의 도구 세트에 의존 | **cursor-agent -p는 불필요** — 프레임워크가 cursor-agent를 직접 실행한다. MCP 통합. Mode S에 가까운 도구 접근이지만 실체는 cursor-agent 바이너리다. codex exec / claude -p는 Bash를 통해 호출할 수 있다(Bash를 사용할 수 있는 경우) |
+| **Mode G** | Gemini CLI(gemini 서브프로세스) | Gemini CLI의 도구 세트에 의존 | **Gemini CLI의 수동 시작은 불필요** — 프레임워크가 직접 실행한다. MCP 통합, stream-json 출력. 다른 CLI는 Bash를 통해 호출할 수 있다(Bash를 사용할 수 있는 경우) |
+| **Mode A/B**** | LiteLLM + tool_use / 1샷 | permissions.json에서 허용 시에만 | Bash 허용이 있으면 적용 |
 
-**중요**: Mode C (`codex/*`), Mode D (`cursor/*`), Mode G (`gemini/*`)의 Anima는 프레임워크가 각 엔진을 직접 실행한다. 이 경우, 자신이 `codex exec` (Mode C)나 `cursor-agent -p` (Mode D), Gemini CLI (Mode G)를 Bash에서 호출할 필요는 없다. 다른 CLI (cursor-agent / claude -p / codex exec 등)를 명시적으로 사용하고 싶은 경우에만, 이 스킬의 해당 섹션을 참조한다.
+**중요**: Mode C(`codex/*`), Mode D(`cursor/*`), Mode G(`gemini/*`)의 Anima는 프레임워크가 각 엔진을 직접 실행한다. 이 경우, 직접 `codex exec`(Mode C)나 `cursor-agent -p`(Mode D), Gemini CLI(Mode G)를 Bash에서 호출할 필요가 없다. 다른 CLI(cursor-agent / claude -p / codex exec 등)를 명시적으로 사용하고 싶은 경우에만, 이 스킬의 해당 섹션을 참조한다.
 
-**Windows 예외**: 네이티브 Windows 환경에서 shell 실행이 `policy blocked`이 된 경우, 또는 `codex exec exited with code 1`이 반복적으로 발생하는 경우, 로컬 `codex exec`의 재시도를 중단할 것. shell 필수 작업은 상급자 (`supervisor`)에게 에스컬레이션한다.
+**Windows 예외**: 네이티브 Windows 환경에서 shell 실행이 `policy blocked`이 된 경우, 또는 `codex exec exited with code 1`이 반복적으로 발생하는 경우에는 로컬 `codex exec`의 재시도를 중단할 것. shell 필수 작업은 상급자(`supervisor`)에게 에스컬레이션한다.
 
 ## 도구 선택의 우선순위
 
@@ -343,10 +343,10 @@ nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
 4. 自分で実行を試みるか、上司に報告する
 ```
 
-## 주의 사항
+## 주의사항
 
-- 서브 에이전트는 AnimaWorks의 기억·도구에 접근할 수 없다. 어디까지나 '코딩의 손'
-- 실행 결과는 자신의 episodes/에 기록하고, 배운 패턴은 knowledge/에 축적할 것
-- 실행에는 5분~20분 이상 걸린다. 반드시 백그라운드로 실행하고, timeout을 설정할 것
-- git 관리된 리포지토리에서 작업할 것 (변경의 추적·취소가 용이)
-- Mode S에서는 Bash 실행 시 `ANIMAWORKS_ANIMA_DIR` (Anima의 데이터 디렉터리)와 `ANIMAWORKS_PROJECT_DIR` (AnimaWorks 프레임워크의 루트)가 환경 변수로 설정된다 (`core/execution/engines/claude/executor.py`의 `_build_env()`에서 주입)
+- 서브에이전트는 AnimaWorks의 메모리·도구에 접근할 수 없다. 어디까지나 '코딩의 손'일 뿐이다
+- 실행 결과는 자신의 episodes/에 기록하고, 학습한 패턴은 knowledge/에 축적할 것
+- 실행에는 5분~20분 이상 걸린다. 반드시 백그라운드에서 실행하고, timeout을 설정할 것
+- git 관리되는 리포지토리에서 작업할 것(변경 추적·취소가 용이)
+- Mode S에서는 Bash 실행 시 `ANIMAWORKS_ANIMA_DIR`(Anima의 데이터 디렉터리)과 `ANIMAWORKS_PROJECT_DIR`(AnimaWorks 프레임워크의 루트)이 환경 변수로 설정된다(`core/execution/engines/claude/executor.py`의 `_build_env()`에서 주입)

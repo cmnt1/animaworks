@@ -98,9 +98,9 @@ def _do_action(param1: str, param2: int = 10) -> dict[str, Any]:
 
 `animaworks-tool`에서 호출하는 경우, 이 다음에 **`cli_main`를 반드시 구현**한다(아래 「`cli_main`」 절).
 
-#### 복수 액션 + 인증(API 연동)
+#### 복수 액션 + 인증 (API 연동)
 
-`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)`의 해결 순서는 **`config.json`의 `credentials.{credential_name}`**(`api_key` 또는 `keys[key_name]`) → **`vault.json`의 `shared` 섹션**(키 이름은 인자 `env_var`로 전달한 문자열) → **`shared/credentials.json`(레거시, 키는 `env_var`)** → **환경 변수 `env_var`**(`core/credentials.py`).
+`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)`의 해결 순서는 **`config.json`의 `credentials.{credential_name}`** (`api_key` 또는 `keys[key_name]`) → **`vault.json`의 `shared` 섹션** (키 이름은 인수 `env_var`로 전달한 문자열) → **`shared/credentials.json` (레거시, 키는 `env_var`)** → **환경 변수 `env_var`** (`core/credentials.py`).
 
 ```python
 from __future__ import annotations
@@ -184,7 +184,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
     raise ValueError(f"Unknown tool: {name}")
 ```
 
-**Per-Anima 인증**(Chatwork 등): `args.get("anima_dir")`에서 Anima 이름을 가져와, `CHATWORK_API_TOKEN__{anima_name}`와 같은 **Anima 전용 키**를 `resolve_env_style_credential(...)`로 해결하는 패턴이 있다(`core/integrations/_chatwork_identity.py`의 `resolve_identity` 등. 미등록이면 폴백하지 않고 오류로 처리). 동일한 키 명명을 커스텀 도구에서도 사용할 수 있다.
+**Per-Anima 인증** (Chatwork 등): `args.get("anima_dir")`에서 Anima 이름을 가져와 `CHATWORK_API_TOKEN__{anima_name}`와 같은 **Anima 전용 키**를 `resolve_env_style_credential(...)`로 해결하는 패턴이 있다 (`core/integrations/_chatwork_identity.py`의 `resolve_identity` 등. 미등록이면 폴백하지 않고 오류로 처리). 동일한 키 명명 방식을 커스텀 툴에서도 사용할 수 있다.
 
 #### `cli_main`(animaworks-tool용)
 
