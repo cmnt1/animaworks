@@ -184,7 +184,7 @@ class TestRetryPromptWithRealSummary:
     """Verify that the retry prompt reads better with real summaries."""
 
     def test_retry_prompt_contains_result_summary(self) -> None:
-        from core.execution._session import build_stream_retry_prompt
+        from core.execution._shortterm_handoff import build_stream_retry_prompt
         from core.memory.conversation.shortterm import StreamCheckpoint
 
         cp = StreamCheckpoint(
@@ -208,7 +208,7 @@ class TestRetryPromptWithRealSummary:
         assert "web_search: web_search" not in prompt
 
     def test_retry_prompt_with_fallback_summary(self) -> None:
-        from core.execution._session import build_stream_retry_prompt
+        from core.execution._shortterm_handoff import build_stream_retry_prompt
         from core.memory.conversation.shortterm import StreamCheckpoint
 
         cp = StreamCheckpoint(

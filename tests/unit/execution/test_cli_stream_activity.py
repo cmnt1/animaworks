@@ -13,13 +13,14 @@ from typing import Any
 import pytest
 
 from core.execution.cli_stream import CLIStreamExecutor
+from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
 
 
 class _FakeCLIStreamExecutor(CLIStreamExecutor):
     engine_mode = "X"
 
-    async def execute_streaming(self, *args: Any, **kwargs: Any):
+    async def _stream_events(self, *args: Any, **kwargs: Any):
         yield {
             "type": "tool_start",
             "tool_id": "tool-1",
@@ -43,7 +44,14 @@ async def test_cli_tool_end_records_activity(tmp_path: Path, monkeypatch: pytest
     anima_dir.mkdir(parents=True)
     executor = _FakeCLIStreamExecutor(ModelConfig(model="test"), anima_dir)
 
-    events = [event async for event in executor.execute_streaming()]
+    events = [
+        event
+        async for event in executor.execute_streaming(
+            system_prompt="",
+            prompt="",
+            tracker=ContextTracker(model="test"),
+        )
+    ]
 
     assert [event["type"] for event in events] == ["tool_start", "tool_end"]
     activity_files = list((anima_dir / "activity_log").glob("*.jsonl"))

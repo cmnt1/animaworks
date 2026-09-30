@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from core.execution.engines.cursor.cursor_agent import CursorAgentExecutor
-from core.execution.engines.gemini.gemini_cli import GeminiCLIExecutor
+from core.execution.engines.cursor.executor import CursorAgentExecutor
+from core.execution.engines.gemini.executor import GeminiCLIExecutor
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
 
@@ -126,7 +126,7 @@ async def test_cli_errors_are_terminal_stream_events_and_blocking_errors(engine_
         )
     else:
         patches.append(
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/fake/gemini")
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/fake/gemini")
         )
 
     with ExitStack() as stack:
@@ -163,7 +163,7 @@ async def test_successful_cli_stream_has_no_error_event(engine_setup, engine):
         patch("asyncio.create_subprocess_exec", side_effect=lambda *args, **kwargs: _process_for(engine, "success")),
         patch.object(cursor, "_find_binary", return_value="/fake/cursor-agent")
         if engine == "D"
-        else patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/fake/gemini"),
+        else patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/fake/gemini"),
         patch.object(cursor, "_ensure_workspace"),
         patch.object(cursor, "_write_mcp_config"),
         patch.object(cursor, "_write_cursor_rules"),
@@ -189,7 +189,7 @@ async def test_missing_cli_is_reported_as_terminal_unknown_error(engine_setup, e
     binary_patch = (
         patch.object(cursor, "_find_binary", return_value=None)
         if engine == "D"
-        else patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value=None)
+        else patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None)
     )
 
     with binary_patch:

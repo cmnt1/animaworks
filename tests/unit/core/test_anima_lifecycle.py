@@ -182,7 +182,7 @@ class TestRunCronCommandZombieReap:
         with (
             patch("asyncio.create_subprocess_shell", return_value=mock_proc) as create_shell,
             patch("core.tooling.handler.active_session_type") as mock_ast,
-            patch("core.execution.session_context.RuntimeSessionContext.create") as create_runtime_context,
+            patch("core.execution.session.session_context.RuntimeSessionContext.create") as create_runtime_context,
         ):
             mock_ast.reset = MagicMock()
             from core.anima.lifecycle import LifecycleMixin

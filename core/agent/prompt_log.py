@@ -16,7 +16,7 @@ import logging
 from datetime import timedelta
 from pathlib import Path
 
-from core.execution.session_context import current_runtime_session
+from core.execution.session.session_context import current_runtime_session
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.agent")

@@ -32,7 +32,7 @@ from core.execution.fallback_activity import (
     log_model_fallback,
     report_capacity_block,
 )
-from core.execution.session_types import resolve_runtime_session_type
+from core.execution.session.session_types import resolve_runtime_session_type
 from core.i18n import t
 from core.llm.guard.error_classifier import (
     FailoverReason,

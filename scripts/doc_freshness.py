@@ -116,7 +116,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "server/routes/tasks.py",
     ],
     "reference/operations/mode-s-auth-guide.md": [
-        "core/execution/engines/claude/agent_sdk.py",
+        "core/execution/engines/claude/executor.py",
         "core/execution/engines/claude/_sdk_security.py",
     ],
     "reference/operations/project-setup.md": [
@@ -200,8 +200,8 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/skill_creator.py",
     ],
     "common_skills/subagent-cli/SKILL.md": [
-        "core/execution/engines/claude/agent_sdk.py",
-        "core/execution/engines/codex/codex_sdk.py",
+        "core/execution/engines/claude/executor.py",
+        "core/execution/engines/codex/executor.py",
     ],
     "common_skills/subordinate-management/SKILL.md": [
         "core/tooling/handler_org.py",

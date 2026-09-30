@@ -89,17 +89,17 @@ class TestStreamDisconnectedErrorDefaultPartial:
 
 
 class TestStreamDisconnectedBackwardCompatImport:
-    """Importing StreamDisconnectedError from agent_sdk still works."""
+    """Importing StreamDisconnectedError from the executor module still works."""
 
-    def test_import_from_agent_sdk(self) -> None:
-        from core.execution.engines.claude.agent_sdk import StreamDisconnectedError as SDE
+    def test_import_from_executor(self) -> None:
+        from core.execution.engines.claude.executor import StreamDisconnectedError as SDE
 
         assert SDE is StreamDisconnectedError
 
-    def test_in_agent_sdk_all(self) -> None:
-        from core.execution.engines.claude import agent_sdk
+    def test_in_executor_all(self) -> None:
+        from core.execution.engines.claude import executor
 
-        assert "StreamDisconnectedError" in agent_sdk.__all__
+        assert "StreamDisconnectedError" in executor.__all__
 
 
 # ── BaseExecutor streaming defaults ───────────────────────────
@@ -262,7 +262,7 @@ def _make_mock_tool_call(
 @pytest.fixture
 def litellm_executor(tmp_path: Path):
     """Build a LiteLLMExecutor with mocked dependencies."""
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
 
     config = ModelConfig(
         model="openai/gpt-4o",
@@ -293,7 +293,7 @@ def litellm_executor(tmp_path: Path):
 @pytest.fixture
 def ollama_executor(tmp_path: Path):
     """Build a LiteLLMExecutor configured for Ollama (iteration-level)."""
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
 
     config = ModelConfig(
         model="ollama/llama3.2",
@@ -323,7 +323,7 @@ class TestIsOllamaModelDetection:
     """_is_ollama_model returns True for ollama/ and ollama_chat/ prefixes."""
 
     def test_ollama_prefix(self, tmp_path: Path) -> None:
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         config = ModelConfig(model="ollama/llama3.2")
         th = MagicMock()
@@ -342,7 +342,7 @@ class TestIsOllamaModelDetection:
         assert ex._is_ollama_model is True
 
     def test_ollama_chat_prefix(self, tmp_path: Path) -> None:
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         config = ModelConfig(model="ollama_chat/glm-4")
         th = MagicMock()
@@ -364,7 +364,7 @@ class TestIsOllamaModelDetection:
         assert litellm_executor._is_ollama_model is False
 
     def test_anthropic_prefix_is_not_ollama(self, tmp_path: Path) -> None:
-        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.executor import LiteLLMExecutor
 
         config = ModelConfig(model="anthropic/claude-sonnet-4-6")
         th = MagicMock()
@@ -681,7 +681,7 @@ class TestA2StreamingRunawayGuard:
             patch("litellm.acompletion", mock_acompletion),
             patch.object(ollama_executor, "_preflight_clamp", return_value={}),
             patch.object(ollama_executor, "_process_streaming_tool_calls", mock_process),
-            patch("core.execution.engines.litellm.litellm_loop.RunawayGuard", SmallWindowGuard),
+            patch("core.execution.engines.litellm.executor.RunawayGuard", SmallWindowGuard),
         ):
             events = await _collect_events(
                 ollama_executor.execute_streaming(
@@ -797,7 +797,7 @@ class TestA2TokenLevelErrorRaisesStreamDisconnected:
         with (
             pytest.raises(StreamDisconnectedError) as exc_info,
             patch("litellm.acompletion", mock_acompletion),
-            patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0),
+            patch("core.execution.engines.litellm.executor.decorrelated_jitter", return_value=0.0),
             patch.object(litellm_executor, "_preflight_clamp", return_value={}),
         ):
             await _collect_events(

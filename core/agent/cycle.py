@@ -26,9 +26,13 @@ if TYPE_CHECKING:
 
 from core.agent.priming import SystemPromptContext
 from core.agent.prompt_log import _save_prompt_log, _save_prompt_log_end
-from core.execution.engine_session import clear_all_engine_sessions, clear_engine_session
-from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
-from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
+from core.execution.session.engine_session import clear_all_engine_sessions, clear_engine_session
+from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
+from core.execution.session.session_types import (
+    is_clean_start_session,
+    resolve_runtime_session_type,
+    trigger_uses_chat_session,
+)
 from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -1276,7 +1280,7 @@ class CycleMixin:
                     }
 
                     # Load checkpoint and build retry prompt
-                    from core.execution._session import build_stream_retry_prompt
+                    from core.execution._shortterm_handoff import build_stream_retry_prompt
                     from core.memory.conversation.shortterm import StreamCheckpoint
 
                     checkpoint = shortterm.load_checkpoint()

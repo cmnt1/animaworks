@@ -52,7 +52,7 @@ def shared_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _make_executor(anima_dir: Path):
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
     from core.memory import MemoryManager
     from core.tooling.handler import ToolHandler
 
@@ -92,7 +92,7 @@ async def test_rate_error_records_block_in_shared_file(shared_data_dir: Path) ->
     mock = AsyncMock(side_effect=_RateLimit429())
 
     with (
-        patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0),
+        patch("core.execution.engines.litellm.executor.decorrelated_jitter", return_value=0.0),
         patch("litellm.acompletion", mock),
         pytest.raises(LLMAPIError),
     ):

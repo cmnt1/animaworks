@@ -428,7 +428,7 @@ class CodexSetupMixin:
 
     def _build_env(self) -> dict[str, str]:
         """Build env dict for the Codex CLI child process."""
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
         env: dict[str, str] = {
@@ -483,7 +483,7 @@ class CodexSetupMixin:
 
     def _build_mcp_env(self) -> dict[str, str]:
         """Build env dict for the MCP server subprocess."""
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
         env = {

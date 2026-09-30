@@ -30,11 +30,18 @@ from typing import Any
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
 from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS
-from core.execution.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
-from core.execution.events import stream_events
+from core.execution.events import (
+    done_event,
+    error_event,
+    text_delta_event,
+    thinking_delta_event,
+    tool_end_event,
+    tool_start_event,
+)
 from core.execution.process_runner import ProcessRunner
-from core.execution.session_context import _resolve_session_type
-from core.execution.session_store import SessionRecord, SessionStore
+from core.execution.session.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
+from core.execution.session.session_context import _resolve_session_type
+from core.execution.session.session_ids import EngineSessionIds
 from core.i18n import t
 from core.platform.grok import get_grok_executable as _find_grok_binary
 from core.platform.grok import is_grok_cli_available
@@ -48,14 +55,10 @@ __all__ = [
     "GrokResultMessage",
     "is_grok_cli_available",
     "_MAX_RESUME_TURNS",
-    "_clear_session_id",
     "_find_grok_binary",
-    "_load_session_id",
     "_resolve_real_error",
     "_resolve_grok_model",
     "_resolve_session_type",
-    "_save_session_id",
-    "_session_id_path",
 ]
 
 # ACP NDJSON lines carry whole tool outputs / context blobs in one line;
@@ -80,41 +83,7 @@ def _resolve_grok_model(model: str) -> str:
     return model[len("grok/") :] if model.startswith("grok/") else model
 
 
-def _session_id_path(anima_dir: Path, session_type: str, thread_id: str = "default") -> Path:
-    """Return the per-trigger, per-thread Grok session state path."""
-    return SessionStore.path_for("grok", anima_dir, session_type, thread_id)
-
-
-def _save_session_id(
-    anima_dir: Path,
-    session_id: str,
-    session_type: str,
-    thread_id: str = "default",
-    turn_count: int = 1,
-) -> None:
-    SessionStore(_session_id_path(anima_dir, session_type, thread_id)).write_text_record(
-        SessionRecord(session_id, turn_count),
-        with_turn_count=True,
-    )
-
-
-def _load_session_id(
-    anima_dir: Path,
-    session_type: str,
-    thread_id: str = "default",
-) -> tuple[str | None, int]:
-    """Load a session ID and turn count, accepting a legacy one-line file."""
-    record = SessionStore(_session_id_path(anima_dir, session_type, thread_id)).read_text_record(
-        with_turn_count=True,
-        ignore_read_errors=True,
-    )
-    if record is None:
-        return (None, 0)
-    return (record.session_id, record.turn_count)
-
-
-def _clear_session_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
-    SessionStore(_session_id_path(anima_dir, session_type, thread_id)).clear()
+_GROK_SESSION_IDS = EngineSessionIds("grok")
 
 
 def _resolve_real_error(
@@ -373,7 +342,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 if os.environ.get(key)
             ),
         ]
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
 
         runtime_ctx = current_runtime_session()
         if runtime_ctx is not None:
@@ -844,14 +813,14 @@ class GrokCLIExecutor(CLIStreamExecutor):
                         content = update.get("content")
                         text = content.get("text", "") if isinstance(content, dict) else ""
                         if text:
-                            yield {"type": "thinking_delta", "text": str(text)}
+                            yield thinking_delta_event(str(text))
                     elif kind == "agent_message_chunk":
                         content = update.get("content")
                         text = content.get("text", "") if isinstance(content, dict) else ""
                         if text:
                             text = str(text)
                             state.full_text += text
-                            yield {"type": "text_delta", "text": text}
+                            yield text_delta_event(text)
                     elif kind == "usage_update":
                         # Per-response context size (xAI extension).  Last wins.
                         # Log the raw payload once so field names can be verified
@@ -862,12 +831,11 @@ class GrokCLIExecutor(CLIStreamExecutor):
                     elif kind == "tool_call":
                         tool_id = str(update.get("toolCallId") or "")
                         pending_tools[tool_id] = update
-                        yield {
-                            "type": "tool_start",
-                            "tool_name": self._tool_name(update),
-                            "tool_id": tool_id,
-                            "tool_detail": self._summarize(update.get("rawInput")),
-                        }
+                        yield tool_start_event(
+                            self._tool_name(update),
+                            tool_id,
+                            tool_detail=self._summarize(update.get("rawInput")),
+                        )
                     elif kind == "tool_call_update" and update.get("status") in {
                         "completed",
                         "failed",
@@ -876,13 +844,12 @@ class GrokCLIExecutor(CLIStreamExecutor):
                         start = pending_tools.pop(tool_id, {"toolCallId": tool_id})
                         record = self._tool_record(start, update)
                         state.tool_records.append(record)
-                        yield {
-                            "type": "tool_end",
-                            "tool_name": record.tool_name,
-                            "tool_id": record.tool_id,
-                            "result": record.result_summary,
-                            "is_error": record.is_error,
-                        }
+                        yield tool_end_event(
+                            record.tool_name,
+                            record.tool_id,
+                            result=record.result_summary,
+                            is_error=record.is_error,
+                        )
 
         except asyncio.CancelledError:
             # A pre-existing/in-flight AnimaWorks interrupt is a normal
@@ -957,22 +924,20 @@ class GrokCLIExecutor(CLIStreamExecutor):
         stop_kind: str = "normal",
     ) -> dict[str, Any]:
         usage_dict = usage.to_dict()
-        return {
-            "type": "done",
-            "full_text": str(full_text),
-            "result_message": GrokResultMessage(
+        return done_event(
+            str(full_text),
+            result_message=GrokResultMessage(
                 num_turns=int(num_turns),
                 session_id=str(session_id),
                 usage=usage_dict,
             ),
-            "tool_call_records": [asdict(record) for record in records],
-            "usage": usage_dict,
-            "stop_kind": stop_kind,
-            "session_rotation_pending": session_rotation_pending,
-        }
+            tool_call_records=[asdict(record) for record in records],
+            usage=usage_dict,
+            stop_kind=stop_kind,
+            session_rotation_pending=session_rotation_pending,
+        )
 
-    @stream_events
-    async def execute_streaming(
+    async def _stream_events(
         self,
         system_prompt: str,
         prompt: str,
@@ -989,7 +954,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
 
         if not _find_grok_binary():
             text = t("grok_cli.not_installed")
-            yield {"type": "text_delta", "text": text}
+            yield text_delta_event(text)
             yield self._done_event(text, [], TokenUsage(), "", 0)
             return
 
@@ -1014,7 +979,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 "Grok session/load failed for %s; retrying with a fresh session",
                 resume_session_id[:12],
             )
-            _clear_session_id(self._anima_dir, session_type, thread_id)
+            _GROK_SESSION_IDS.clear(self._anima_dir, session_type, thread_id)
             state = _RunState()
             rotated_during_run = True
             async for event in self._run_acp(
@@ -1031,18 +996,14 @@ class GrokCLIExecutor(CLIStreamExecutor):
         elif state.error_text:
             error_metadata = self._error_metadata(state.error_text)
             if error_metadata.get("terminal") is True:
-                yield {
-                    "type": "error",
-                    "message": state.error_text,
-                    **error_metadata,
-                }
+                yield error_event(state.error_text, **error_metadata)
             else:
                 if state.full_text:
                     state.full_text += "\n\n" + state.error_text
-                    yield {"type": "text_delta", "text": "\n\n" + state.error_text}
+                    yield text_delta_event("\n\n" + state.error_text)
                 else:
                     state.full_text = state.error_text
-                    yield {"type": "text_delta", "text": state.error_text}
+                    yield text_delta_event(state.error_text)
 
         if state.completed and tracker is not None:
             # Context size priority:
@@ -1068,7 +1029,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 resumed=resume_session_id is not None,
                 rotated_during_run=rotated_during_run,
             )
-            _save_session_id(
+            _GROK_SESSION_IDS.save(
                 self._anima_dir,
                 state.session_id,
                 session_type,

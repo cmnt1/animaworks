@@ -32,28 +32,28 @@ class EngineAdapter:
 # Imported lazily so a missing optional SDK/CLI only disables its own mode.
 ENGINE_ADAPTERS: dict[str, EngineAdapter] = {
     "s": EngineAdapter(
-        "core.execution.engines.claude.agent_sdk:AgentSDKExecutor",
+        "core.execution.engines.claude.executor:AgentSDKExecutor",
         availability_attr="_sdk_available",
     ),
     "c": EngineAdapter(
-        "core.execution.engines.codex.codex_sdk:CodexSDKExecutor",
+        "core.execution.engines.codex.executor:CodexSDKExecutor",
         availability_path="core.execution.engines.codex.setup:is_codex_sdk_available",
         extra_kwargs=("codex_home",),
     ),
     "d": EngineAdapter(
-        "core.execution.engines.cursor.cursor_agent:CursorAgentExecutor",
-        availability_path="core.execution.engines.cursor.cursor_agent:is_cursor_agent_available",
+        "core.execution.engines.cursor.executor:CursorAgentExecutor",
+        availability_path="core.execution.engines.cursor.executor:is_cursor_agent_available",
     ),
     "g": EngineAdapter(
-        "core.execution.engines.gemini.gemini_cli:GeminiCLIExecutor",
-        availability_path="core.execution.engines.gemini.gemini_cli:is_gemini_cli_available",
+        "core.execution.engines.gemini.executor:GeminiCLIExecutor",
+        availability_path="core.execution.engines.gemini.executor:is_gemini_cli_available",
     ),
     "x": EngineAdapter(
-        "core.execution.engines.grok.grok_cli:GrokCLIExecutor",
-        availability_path="core.execution.engines.grok.grok_cli:is_grok_cli_available",
+        "core.execution.engines.grok.executor:GrokCLIExecutor",
+        availability_path="core.execution.engines.grok.executor:is_grok_cli_available",
     ),
     "a": EngineAdapter(
-        "core.execution.engines.litellm.litellm_loop:LiteLLMExecutor",
+        "core.execution.engines.litellm.executor:LiteLLMExecutor",
         extra_kwargs=("tool_handler", "memory"),
     ),
 }

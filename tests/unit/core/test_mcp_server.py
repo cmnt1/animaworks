@@ -644,13 +644,13 @@ class TestAgentSdkMcpTriggerEnv:
         from core.schemas import ModelConfig
 
         mc = ModelConfig(model="claude-sonnet-4-6", api_key="test-key", extra_mcp_servers={})
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir or (tmp_path / "animas" / "a"))
 
     def test_scoped_trigger_sets_mcp_tools_env(self, tmp_path: Path) -> None:
         """A scoped trigger propagates ANIMAWORKS_MCP_TOOLS to the subprocess env."""
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         executor = self._executor(tmp_path)
         ctx = RuntimeSessionContext.create(session_type="inbox", thread_id="t", trigger="inbox")
@@ -667,7 +667,7 @@ class TestAgentSdkMcpTriggerEnv:
     ) -> None:
         """With config mcp.trigger_scoped_tools=False the env stays unset (full set)."""
         from core.config.schemas import AnimaWorksConfig
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         cfg = AnimaWorksConfig()
         cfg.mcp.trigger_scoped_tools = False
@@ -681,7 +681,7 @@ class TestAgentSdkMcpTriggerEnv:
 
     def test_heartbeat_leaves_full_tool_set(self, tmp_path: Path) -> None:
         """Heartbeat leaves ANIMAWORKS_MCP_TOOLS unset so the full set is advertised."""
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         executor = self._executor(tmp_path)
         ctx = RuntimeSessionContext.create(session_type="heartbeat", thread_id="t", trigger="heartbeat")

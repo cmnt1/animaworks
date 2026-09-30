@@ -32,7 +32,7 @@ from typing import Any
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
 from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_event
-from core.execution.events import stream_events
+from core.execution.events import done_event, text_delta_event, tool_end_event, tool_start_event
 from core.execution.process_runner import ProcessRunner
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
@@ -153,7 +153,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
 
         runtime_ctx = current_runtime_session()
         if runtime_ctx is not None:
@@ -271,8 +271,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
 
     # ── Streaming ───────────────────────────────────────────────
 
-    @stream_events
-    async def execute_streaming(
+    async def _stream_events(
         self,
         system_prompt: str,
         prompt: str,
@@ -284,13 +283,12 @@ class GeminiCLIExecutor(CLIStreamExecutor):
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Streaming execution yielding events from gemini CLI stream-json."""
         if self._check_interrupted():
-            yield {
-                "type": "done",
-                "full_text": "[Session interrupted by user]",
-                "result_message": None,
-                "tool_call_records": [],
-                "stop_kind": "interrupted",
-            }
+            yield done_event(
+                "[Session interrupted by user]",
+                result_message=None,
+                tool_call_records=[],
+                stop_kind="interrupted",
+            )
             return
 
         error_meta: dict[str, Any] | None = None
@@ -299,16 +297,15 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             text = t("gemini_cli.not_installed")
             error_meta = self._error_metadata(text)
             error_meta["reason"] = "unknown"
-            yield {"type": "text_delta", "text": text}
+            yield text_delta_event(text)
             yield engine_error_event(text, error_meta)
-            yield {
-                "type": "done",
-                "full_text": text,
-                "result_message": None,
-                "tool_call_records": [],
-                "error": True,
-                "reason": "unknown",
-            }
+            yield done_event(
+                text,
+                result_message=None,
+                tool_call_records=[],
+                error=True,
+                reason="unknown",
+            )
             return
 
         self._ensure_workspace()
@@ -343,13 +340,12 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                     async for line in self.iter_lines(proc.stdout):
                         if self._check_interrupted():
                             await self._kill_process(proc)
-                            yield {
-                                "type": "done",
-                                "full_text": accumulated_text or "[Session interrupted by user]",
-                                "result_message": None,
-                                "tool_call_records": [r.__dict__ for r in tool_records],
-                                "stop_kind": "interrupted",
-                            }
+                            yield done_event(
+                                accumulated_text or "[Session interrupted by user]",
+                                result_message=None,
+                                tool_call_records=[r.__dict__ for r in tool_records],
+                                stop_kind="interrupted",
+                            )
                             return
 
                         event = self._parse_ndjson_event(line.decode("utf-8", errors="replace"))
@@ -362,10 +358,10 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                             content = event.get("content", "")
                             if event.get("delta"):
                                 accumulated_text += content
-                                yield {"type": "text_delta", "text": content}
+                                yield text_delta_event(content)
                             elif content:
                                 accumulated_text = content
-                                yield {"type": "text_delta", "text": content}
+                                yield text_delta_event(content)
 
                         elif etype == "tool_use":
                             tid = event.get("tool_id", "")
@@ -373,12 +369,11 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                             if tool_name.startswith("mcp_aw_"):
                                 tool_name = tool_name[len("mcp_aw_") :]
                             pending_tools[tid] = event
-                            yield {
-                                "type": "tool_start",
-                                "tool_name": tool_name,
-                                "tool_id": tid,
-                                "input": event.get("parameters", {}),
-                            }
+                            yield tool_start_event(
+                                tool_name,
+                                tid,
+                                input=event.get("parameters", {}),
+                            )
 
                         elif etype == "tool_result":
                             tid = event.get("tool_id", "")
@@ -386,13 +381,12 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                             if tool_use_evt:
                                 record = self._extract_tool_record(tool_use_evt, event)
                                 tool_records.append(record)
-                                yield {
-                                    "type": "tool_end",
-                                    "tool_id": tid,
-                                    "tool_name": record.tool_name,
-                                    "result": record.result_summary,
-                                    "is_error": record.is_error,
-                                }
+                                yield tool_end_event(
+                                    record.tool_name,
+                                    tid,
+                                    result=record.result_summary,
+                                    is_error=record.is_error,
+                                )
 
                         elif etype == "result":
                             usage = self._parse_stats(event.get("stats"))
@@ -402,7 +396,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                                 error_meta = self._error_metadata(err_msg)
                                 if err_msg and not accumulated_text:
                                     accumulated_text = f"[Gemini CLI Error: {err_msg}]"
-                                    yield {"type": "text_delta", "text": accumulated_text}
+                                    yield text_delta_event(accumulated_text)
 
                         elif etype == "error":
                             severity = event.get("severity", "warning")
@@ -418,7 +412,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                 timeout_msg = t("gemini_cli.timeout", timeout=self.event_idle_timeout_seconds)
                 timeout_text = f"\n\n{timeout_msg}" if accumulated_text else timeout_msg
                 accumulated_text += timeout_text
-                yield {"type": "text_delta", "text": timeout_text}
+                yield text_delta_event(timeout_text)
                 if error_meta is None:
                     error_meta = self._error_metadata(timeout_msg)
                 error_meta["reason"] = "timeout"
@@ -439,14 +433,14 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                     error_meta["reason"] = "auth"
                     err_text = t("gemini_cli.not_authenticated")
                     accumulated_text = err_text
-                    yield {"type": "text_delta", "text": err_text}
+                    yield text_delta_event(err_text)
                 elif not accumulated_text:
                     accumulated_text = f"[Gemini CLI Error (exit {proc.returncode}): {stderr_text[:500]}]"
-                    yield {"type": "text_delta", "text": accumulated_text}
+                    yield text_delta_event(accumulated_text)
 
         except FileNotFoundError:
             text = t("gemini_cli.not_installed")
-            yield {"type": "text_delta", "text": text}
+            yield text_delta_event(text)
             accumulated_text = text
             error_meta = self._error_metadata(text)
             error_meta["reason"] = "unknown"
@@ -455,7 +449,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
             if error_meta is None:
                 error_meta = self._error_metadata(str(e))
             err = f"[Gemini CLI Error: {e}]"
-            yield {"type": "text_delta", "text": err}
+            yield text_delta_event(err)
             accumulated_text = err
         finally:
             if proc is not None:
@@ -464,11 +458,10 @@ class GeminiCLIExecutor(CLIStreamExecutor):
 
         if error_meta is not None:
             yield engine_error_event(accumulated_text, error_meta)
-        yield {
-            "type": "done",
+        yield done_event(
+            accumulated_text,
             **({"error": True, "reason": str(error_meta.get("reason") or "")} if error_meta is not None else {}),
-            "full_text": accumulated_text,
-            "result_message": None,
-            "tool_call_records": [r.__dict__ for r in tool_records],
-            "usage": usage.to_dict() if usage else None,
-        }
+            result_message=None,
+            tool_call_records=[r.__dict__ for r in tool_records],
+            usage=usage.to_dict() if usage else None,
+        )

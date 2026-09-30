@@ -42,7 +42,7 @@ def anima_dir(tmp_path: Path) -> Path:
 
 def _make_executor(model_config: ModelConfig, anima_dir: Path):
     with patch_agent_sdk():
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         return AgentSDKExecutor(
             model_config=model_config,
@@ -164,7 +164,7 @@ class TestPromptFileCleanup:
 
     def test_cleanup_prompt_files(self, tmp_path):
         """_cleanup_prompt_files removes all listed files."""
-        from core.execution.engines.claude.agent_sdk import _cleanup_prompt_files
+        from core.execution.engines.claude.executor import _cleanup_prompt_files
 
         f1 = tmp_path / "prompt1.txt"
         f2 = tmp_path / "prompt2.txt"
@@ -178,14 +178,14 @@ class TestPromptFileCleanup:
 
     def test_cleanup_prompt_files_missing_ok(self, tmp_path):
         """_cleanup_prompt_files silently handles already-deleted files."""
-        from core.execution.engines.claude.agent_sdk import _cleanup_prompt_files
+        from core.execution.engines.claude.executor import _cleanup_prompt_files
 
         missing = tmp_path / "nonexistent.txt"
         _cleanup_prompt_files([missing])  # Should not raise
 
     def test_cleanup_prompt_files_empty_list(self):
         """_cleanup_prompt_files with empty list is a no-op."""
-        from core.execution.engines.claude.agent_sdk import _cleanup_prompt_files
+        from core.execution.engines.claude.executor import _cleanup_prompt_files
 
         _cleanup_prompt_files([])  # Should not raise
 

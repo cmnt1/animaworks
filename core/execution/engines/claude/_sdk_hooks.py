@@ -211,7 +211,7 @@ def _build_pre_tool_hook(
             _anima_name = anima_dir.name
 
         proxy = _SubmitTasksProxy()
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
 
         runtime = current_runtime_session()
         proxy._session_origin = runtime.origin if runtime is not None else ""
@@ -421,7 +421,7 @@ def _build_pre_tool_hook(
             session_stats["min_trust_seen"] = min(current_min, rank)
 
             # Persist to the active tool session so its MCP subprocess can read.
-            from core.execution.session_context import current_runtime_session
+            from core.execution.session.session_context import current_runtime_session
 
             ctx = current_runtime_session()
             if ctx is not None:

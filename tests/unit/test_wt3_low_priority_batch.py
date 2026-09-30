@@ -2,7 +2,7 @@
 
 Covers:
 - Fix 8:  Board mention fanout targets running Animas only
-- Fix 10: A2 streaming comment updates (agent.py + litellm_loop.py)
+- Fix 10: A2 streaming comment updates (agent.py + LiteLLM executor)
 - Fix 11: CLAUDE.md Mode B session chaining exclusion note
 - Fix N4: ProcessHandle streaming lock
 - Fix N5: Forgetting relaxed thresholds
@@ -172,19 +172,17 @@ class TestStreamingCommentUpdated:
 
 
 class TestLitellmCommentUpdated:
-    """Fix 10: litellm_loop.py session chaining comment updated."""
+    """Fix 10: LiteLLM executor session chaining comment updated."""
 
     def test_litellm_comment_updated(self):
-        """litellm_loop.py should say 'handled by AgentCore', not 'NOT handled'."""
+        """The LiteLLM executor should say 'handled by AgentCore', not 'NOT handled'."""
         litellm_path = (
-            Path(__file__).resolve().parents[2] / "core" / "execution" / "engines" / "litellm" / "litellm_loop.py"
+            Path(__file__).resolve().parents[2] / "core" / "execution" / "engines" / "litellm" / "executor.py"
         )
         content = litellm_path.read_text(encoding="utf-8")
-        assert "handled by AgentCore" in content, (
-            "litellm_loop.py should say session chaining is 'handled by AgentCore'"
-        )
+        assert "handled by AgentCore" in content, "LiteLLM executor should say chaining is 'handled by AgentCore'"
         # Verify old incorrect comment is gone
-        assert "NOT handled" not in content, "litellm_loop.py should NOT contain 'NOT handled' anymore"
+        assert "NOT handled" not in content, "LiteLLM executor should NOT contain 'NOT handled' anymore"
 
 
 # ══════════════════════════════════════════════════════════════════════

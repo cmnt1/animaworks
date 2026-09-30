@@ -22,8 +22,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.execution.engine_session import clear_engine_session
-from core.execution.session_store import SessionEngine
+from core.execution.session.engine_session import clear_engine_session
+from core.execution.session.session_store import SessionEngine
 
 if TYPE_CHECKING:
     from core.activity.models import ActivityEntry

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from core.activity.runtime_context import set_runtime_session_provider
-from core.execution.session_types import resolve_runtime_session_type
+from core.execution.session.session_types import resolve_runtime_session_type
 
 
 @dataclass(frozen=True)

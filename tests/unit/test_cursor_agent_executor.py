@@ -17,18 +17,22 @@ import pytest
 
 from core.execution.base import ExecutionResult
 from core.execution.engine_base import engine_error_metadata
-from core.execution.engines.cursor.cursor_agent import (
+from core.execution.engines.cursor.executor import (
     _MAX_RESUME_TURNS,
     CursorAgentExecutor,
-    _chat_id_path,
-    _clear_chat_id,
     _find_cursor_agent_binary,
-    _load_chat_id,
     _resolve_session_type,
-    _save_chat_id,
     is_cursor_agent_available,
 )
-from core.execution.session_types import is_resumable_trigger
+from core.execution.session.session_ids import EngineSessionIds
+from core.execution.session.session_types import is_resumable_trigger
+
+_CURSOR_SESSION_IDS = EngineSessionIds("cursor")
+
+
+def _load_cursor_chat_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> tuple[str | None, int]:
+    record = _CURSOR_SESSION_IDS.load(anima_dir, session_type, thread_id)
+    return (record.session_id, record.turn_count) if record is not None else (None, 0)
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -126,7 +130,7 @@ class TestWorkspace:
         assert "ANIMAWORKS_ANIMA_DIR" in aw_conf["env"]
 
     def test_write_mcp_config_propagates_runtime_trigger(self, executor):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         executor._ensure_workspace()
         ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
@@ -501,82 +505,82 @@ class TestSessionTypeResolution:
 
 class TestChatIdPersistence:
     def test_save_and_load(self, anima_dir):
-        _save_chat_id(anima_dir, "sess-abc-123", "chat", turn_count=3)
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        _CURSOR_SESSION_IDS.save(anima_dir, "sess-abc-123", "chat", turn_count=3)
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "sess-abc-123"
         assert tc == 3
 
     def test_save_default_turn_count(self, anima_dir):
-        _save_chat_id(anima_dir, "sess-abc-123", "chat")
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        _CURSOR_SESSION_IDS.save(anima_dir, "sess-abc-123", "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "sess-abc-123"
         assert tc == 1
 
     def test_load_missing_returns_none(self, anima_dir):
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid is None
         assert tc == 0
 
     def test_load_empty_file_returns_none(self, anima_dir):
-        p = _chat_id_path(anima_dir, "chat")
+        p = _CURSOR_SESSION_IDS.path_for(anima_dir, "chat")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("", encoding="utf-8")
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid is None
         assert tc == 0
 
     def test_load_whitespace_only_returns_none(self, anima_dir):
-        p = _chat_id_path(anima_dir, "chat")
+        p = _CURSOR_SESSION_IDS.path_for(anima_dir, "chat")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("   \n  ", encoding="utf-8")
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid is None
         assert tc == 0
 
     def test_backward_compatible_single_line(self, anima_dir):
         """Legacy 1-line format (chatId only) → turn_count=0."""
-        p = _chat_id_path(anima_dir, "chat")
+        p = _CURSOR_SESSION_IDS.path_for(anima_dir, "chat")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("legacy-session-id", encoding="utf-8")
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "legacy-session-id"
         assert tc == 0
 
     def test_corrupted_turn_count(self, anima_dir):
         """Non-integer second line → turn_count=0."""
-        p = _chat_id_path(anima_dir, "chat")
+        p = _CURSOR_SESSION_IDS.path_for(anima_dir, "chat")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("some-session\nNOT_A_NUMBER", encoding="utf-8")
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "some-session"
         assert tc == 0
 
     def test_clear(self, anima_dir):
-        _save_chat_id(anima_dir, "sess-abc-123", "chat")
-        _clear_chat_id(anima_dir, "chat")
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        _CURSOR_SESSION_IDS.save(anima_dir, "sess-abc-123", "chat")
+        _CURSOR_SESSION_IDS.clear(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid is None
         assert tc == 0
 
     def test_clear_missing_no_error(self, anima_dir):
-        _clear_chat_id(anima_dir, "chat")
+        _CURSOR_SESSION_IDS.clear(anima_dir, "chat")
 
     def test_thread_id_isolation(self, anima_dir):
-        _save_chat_id(anima_dir, "sess-default", "chat", "default", turn_count=2)
-        _save_chat_id(anima_dir, "sess-thread-a", "chat", "thread-a", turn_count=5)
-        cid_d, tc_d = _load_chat_id(anima_dir, "chat", "default")
-        cid_a, tc_a = _load_chat_id(anima_dir, "chat", "thread-a")
+        _CURSOR_SESSION_IDS.save(anima_dir, "sess-default", "chat", "default", turn_count=2)
+        _CURSOR_SESSION_IDS.save(anima_dir, "sess-thread-a", "chat", "thread-a", turn_count=5)
+        cid_d, tc_d = _load_cursor_chat_id(anima_dir, "chat", "default")
+        cid_a, tc_a = _load_cursor_chat_id(anima_dir, "chat", "thread-a")
         assert cid_d == "sess-default"
         assert tc_d == 2
         assert cid_a == "sess-thread-a"
         assert tc_a == 5
 
     def test_path_default_thread(self, anima_dir):
-        p = _chat_id_path(anima_dir, "chat", "default")
+        p = _CURSOR_SESSION_IDS.path_for(anima_dir, "chat", "default")
         assert p == anima_dir / "shortterm" / "chat" / "cursor_chat_id.txt"
 
     def test_path_custom_thread(self, anima_dir):
-        p = _chat_id_path(anima_dir, "chat", "my-thread")
+        p = _CURSOR_SESSION_IDS.path_for(anima_dir, "chat", "my-thread")
         assert p == anima_dir / "shortterm" / "chat" / "my-thread" / "cursor_chat_id.txt"
 
     def test_resumable_triggers(self):
@@ -617,14 +621,14 @@ class TestSessionResume:
             result = await executor.execute(prompt="hello", trigger="chat")
 
         assert result.text == "Hi!"
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "sid-aaa-bbb-ccc"
         assert tc == 1
 
     @pytest.mark.asyncio
     async def test_resume_uses_saved_chat_id(self, executor, anima_dir):
         """Second chat → --resume flag with saved chatId."""
-        _save_chat_id(anima_dir, "prev-session-id", "chat", turn_count=2)
+        _CURSOR_SESSION_IDS.save(anima_dir, "prev-session-id", "chat", turn_count=2)
         captured_cmds: list[list[str]] = []
 
         async def mock_create(*args, **kwargs):
@@ -657,14 +661,14 @@ class TestSessionResume:
         assert "--resume" in flat_cmd
         ri = flat_cmd.index("--resume")
         assert flat_cmd[ri + 1] == "prev-session-id"
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "new-session-id"
         assert tc == 3
 
     @pytest.mark.asyncio
     async def test_resume_failure_retries_fresh(self, executor, anima_dir):
         """Resume fails → clear chatId → retry without --resume."""
-        _save_chat_id(anima_dir, "stale-session", "chat", turn_count=3)
+        _CURSOR_SESSION_IDS.save(anima_dir, "stale-session", "chat", turn_count=3)
         call_count = 0
 
         async def mock_create(*args, **kwargs):
@@ -703,14 +707,14 @@ class TestSessionResume:
 
         assert call_count == 2
         assert result.text == "Recovered!"
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "fresh-session"
         assert tc == 1
 
     @pytest.mark.asyncio
     async def test_non_resumable_trigger_skips_resume(self, executor, anima_dir):
         """heartbeat trigger → no resume even if chatId file exists."""
-        _save_chat_id(anima_dir, "should-not-be-used", "heartbeat")
+        _CURSOR_SESSION_IDS.save(anima_dir, "should-not-be-used", "heartbeat")
 
         captured_cmds: list[list[str]] = []
 
@@ -767,13 +771,13 @@ class TestSessionResume:
         ):
             await executor.execute(prompt="hello", trigger="chat")
 
-        cid, _ = _load_chat_id(anima_dir, "chat")
+        cid, _ = _load_cursor_chat_id(anima_dir, "chat")
         assert cid is None
 
     @pytest.mark.asyncio
     async def test_auth_error_does_not_retry(self, executor, anima_dir):
         """Auth errors should not trigger resume retry."""
-        _save_chat_id(anima_dir, "some-session", "chat", turn_count=2)
+        _CURSOR_SESSION_IDS.save(anima_dir, "some-session", "chat", turn_count=2)
 
         mock_proc = AsyncMock()
         mock_proc.stdout = AsyncMock()
@@ -829,9 +833,9 @@ class TestSessionResume:
         ):
             await executor.execute(prompt="hello", trigger="chat", thread_id="thread-b")
 
-        cid_b, _ = _load_chat_id(anima_dir, "chat", "thread-b")
+        cid_b, _ = _load_cursor_chat_id(anima_dir, "chat", "thread-b")
         assert cid_b == "thread-b-session"
-        cid_d, _ = _load_chat_id(anima_dir, "chat", "default")
+        cid_d, _ = _load_cursor_chat_id(anima_dir, "chat", "default")
         assert cid_d is None
 
 
@@ -844,7 +848,7 @@ class TestTurnRotation:
     @pytest.mark.asyncio
     async def test_rotation_at_session_limit(self, executor, anima_dir):
         """When turn_count >= MAX → chatId cleared, fresh session."""
-        _save_chat_id(anima_dir, "old-session", "chat", turn_count=_MAX_RESUME_TURNS)
+        _CURSOR_SESSION_IDS.save(anima_dir, "old-session", "chat", turn_count=_MAX_RESUME_TURNS)
         captured_cmds: list[list[str]] = []
 
         async def mock_create(*args, **kwargs):
@@ -879,14 +883,14 @@ class TestTurnRotation:
         flat_cmd = captured_cmds[0]
         assert "--resume" not in flat_cmd
         assert "<system_context>" in flat_cmd[-1]
-        cid, tc = _load_chat_id(anima_dir, "chat")
+        cid, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert cid == "new-rotated-session"
         assert tc == 1
 
     @pytest.mark.asyncio
     async def test_rotation_pending_on_last_turn(self, executor, anima_dir):
         """When new turn_count reaches MAX → rotation_pending=True."""
-        _save_chat_id(anima_dir, "session-abc", "chat", turn_count=_MAX_RESUME_TURNS - 1)
+        _CURSOR_SESSION_IDS.save(anima_dir, "session-abc", "chat", turn_count=_MAX_RESUME_TURNS - 1)
 
         async def mock_create(*args, **kwargs):
             mock_proc = AsyncMock()
@@ -914,13 +918,13 @@ class TestTurnRotation:
             result = await executor.execute(prompt="last turn", trigger="chat")
 
         assert result.session_rotation_pending is True
-        _, tc = _load_chat_id(anima_dir, "chat")
+        _, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert tc == _MAX_RESUME_TURNS
 
     @pytest.mark.asyncio
     async def test_no_rotation_before_max(self, executor, anima_dir):
         """Mid-session: neither rotated nor pending."""
-        _save_chat_id(anima_dir, "session-abc", "chat", turn_count=3)
+        _CURSOR_SESSION_IDS.save(anima_dir, "session-abc", "chat", turn_count=3)
 
         async def mock_create(*args, **kwargs):
             mock_proc = AsyncMock()
@@ -948,7 +952,7 @@ class TestTurnRotation:
             result = await executor.execute(prompt="mid session", trigger="chat")
 
         assert result.session_rotation_pending is False
-        _, tc = _load_chat_id(anima_dir, "chat")
+        _, tc = _load_cursor_chat_id(anima_dir, "chat")
         assert tc == 4
 
 
@@ -958,7 +962,7 @@ class TestResumePromptContent:
     @pytest.mark.asyncio
     async def test_resume_skips_system_prompt(self, executor, anima_dir):
         """Resume turns inject only time, not <system_context>."""
-        _save_chat_id(anima_dir, "prev-session", "chat", turn_count=2)
+        _CURSOR_SESSION_IDS.save(anima_dir, "prev-session", "chat", turn_count=2)
         captured_cmds: list[list[str]] = []
 
         async def mock_create(*args, **kwargs):

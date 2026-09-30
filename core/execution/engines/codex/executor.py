@@ -32,10 +32,22 @@ from core.execution.base import (
     ToolCallRecord,
 )
 from core.execution.cli_stream import CLIStreamExecutor
-from core.execution.events import stream_events
-from core.execution.session_context import _resolve_session_type
-from core.execution.session_store import SessionRecord, SessionStore
-from core.execution.session_types import is_persistent_codex_session
+from core.execution.events import (
+    done_event,
+    stream_event,
+    text_delta_event,
+    thinking_delta_event,
+    thinking_end_event,
+    thinking_start_event,
+    tool_detail_event,
+    tool_end_event,
+    tool_start_event,
+    usage_event,
+)
+from core.execution.session.session_context import _resolve_session_type
+from core.execution.session.session_ids import EngineSessionIds
+from core.execution.session.session_store import SessionStore
+from core.execution.session.session_types import is_persistent_codex_session
 from core.execution.tool_evidence import ToolEvidence
 from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import ContextTracker
@@ -64,32 +76,12 @@ _TOOL_ITEM_TYPES = frozenset(
 
 # ── Session (thread) ID persistence ──────────────────────────
 
-
-def _thread_id_path(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> Path:
-    return SessionStore.path_for("codex", anima_dir, session_type, chat_thread_id)
-
-
-def _save_thread_id(anima_dir: Path, thread_id: str, session_type: str, chat_thread_id: str = "default") -> None:
-    SessionStore(_thread_id_path(anima_dir, session_type, chat_thread_id)).write_text_record(
-        SessionRecord(thread_id),
-        with_turn_count=False,
-    )
-
-
-def _load_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> str | None:
-    record = SessionStore(_thread_id_path(anima_dir, session_type, chat_thread_id)).read_text_record(
-        with_turn_count=False,
-    )
-    return record.session_id if record is not None else None
-
-
-def _clear_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
-    SessionStore(_thread_id_path(anima_dir, session_type, chat_thread_id)).clear()
+_CODEX_SESSION_IDS = EngineSessionIds("codex")
 
 
 def clear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
     """Clear one resolved Codex thread ID namespace."""
-    _clear_thread_id(anima_dir, session_type, chat_thread_id)
+    _CODEX_SESSION_IDS.clear(anima_dir, session_type, chat_thread_id)
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -217,13 +209,12 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     e,
                 )
                 if persist_thread:
-                    _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
+                    _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
         thread = await setup._maybe_await(codex.thread_start(**thread_kwargs))
         logger.info("Started fresh Codex thread")
         return thread
 
-    @stream_events
-    async def execute_streaming(
+    async def _stream_events(
         self,
         system_prompt: str,
         prompt: str,
@@ -251,13 +242,12 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
             ``{"type": "done", "full_text": "...", "result_message": ...}``
         """
         if self._check_interrupted():
-            yield {"type": "text_delta", "text": "[Session interrupted by user]"}
-            yield {
-                "type": "done",
-                "full_text": "[Session interrupted by user]",
-                "result_message": None,
-                "stop_kind": "interrupted",
-            }
+            yield text_delta_event("[Session interrupted by user]")
+            yield done_event(
+                "[Session interrupted by user]",
+                result_message=None,
+                stop_kind="interrupted",
+            )
             return
 
         if setup._should_prefer_cli_exec(trigger):
@@ -270,7 +260,8 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
         chat_thread_id = thread_id
         persist_thread = is_persistent_codex_session(trigger)
         if persist_thread:
-            codex_thread_id = _load_thread_id(self._anima_dir, session_type, chat_thread_id)
+            session_record = _CODEX_SESSION_IDS.load(self._anima_dir, session_type, chat_thread_id)
+            codex_thread_id = session_record.session_id if session_record is not None else None
         else:
             clear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
             codex_thread_id = None
@@ -325,8 +316,8 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
             chunks: list[dict[str, Any]] = []
             if not thinking_started:
                 thinking_started = True
-                chunks.append({"type": "thinking_start"})
-            chunks.append({"type": "thinking_delta", "text": text})
+                chunks.append(thinking_start_event())
+            chunks.append(thinking_delta_event(text))
             return chunks
 
         def _thinking_end_chunk() -> dict[str, Any] | None:
@@ -334,7 +325,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
             if not thinking_started:
                 return None
             thinking_started = False
-            return {"type": "thinking_end"}
+            return thinking_end_event()
 
         async def _stream_turn(tid: str | None) -> AsyncGenerator[dict[str, Any], None]:
             nonlocal completed_turn_count, turn_result, active_thread, interrupted
@@ -361,21 +352,12 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                 if not tool_id or tool_id in tool_started:
                     return None
                 tool_started.add(tool_id)
-                return {
-                    "type": "tool_start",
-                    "tool_name": tool_name,
-                    "tool_id": tool_id,
-                }
+                return tool_start_event(tool_name, tool_id)
 
             def _tool_detail_chunk(tool_id: str, tool_name: str, detail: str) -> dict[str, Any] | None:
                 if not detail:
                     return None
-                return {
-                    "type": "tool_detail",
-                    "tool_id": tool_id,
-                    "tool_name": tool_name,
-                    "detail": detail,
-                }
+                return tool_detail_event(tool_id, tool_name=tool_name, detail=detail)
 
             def _usage_from_raw(raw_usage: Any) -> dict[str, Any] | None:
                 if not raw_usage:
@@ -383,7 +365,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                 delta = usage_meter.update(raw_usage)
                 usage_acc.merge(delta)
                 if any(delta.to_dict().values()):
-                    return {"type": "usage", "usage": delta.to_dict()}
+                    return usage_event(delta.to_dict())
                 return None
 
             def _handle_agent_message_item(item: Any, phase: str) -> list[dict[str, Any]]:
@@ -405,11 +387,11 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     item_text_len[item_id] = len(text)
                     agent_delta_seen.add(item_id)
                     _remember_agent_delta(item_id, delta)
-                    return [{"type": "text_delta", "text": delta}]
+                    return [text_delta_event(delta)]
 
                 _set_agent_text(item_id, text)
                 item_text_len[item_id] = len(text)
-                return [] if item_id in agent_delta_seen else [{"type": "text_delta", "text": text}]
+                return [] if item_id in agent_delta_seen else [text_delta_event(text)]
 
             def _handle_reasoning_item(item: Any, phase: str) -> list[dict[str, Any]]:
                 item_id = events._item_id(item)
@@ -480,7 +462,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     tool_evidence.merge([record])
                 if item_id not in tool_ended:
                     tool_ended.add(item_id)
-                    chunks.append({"type": "tool_end", "tool_id": item_id, "tool_name": tool_name})
+                    chunks.append(tool_end_event(tool_name, item_id))
                 return chunks
 
             def _handle_command_execution_item(item: Any, phase: str) -> list[dict[str, Any]]:
@@ -511,7 +493,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     len(text),
                 )
                 _set_agent_text(item_id, text)
-                return [{"type": "text_delta", "text": text}]
+                return [text_delta_event(text)]
 
             item_handlers = {
                 "agent_message": _handle_agent_message_item,
@@ -572,7 +554,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         if end_chunk:
                             yield end_chunk
                         interrupted_text = "[Session interrupted by user]"
-                        yield {"type": "text_delta", "text": interrupted_text}
+                        yield text_delta_event(interrupted_text)
                         return
 
                     if method == "item/agentMessage/delta":
@@ -581,7 +563,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         if delta:
                             agent_delta_seen.add(item_id)
                             _remember_agent_delta(item_id, delta)
-                            yield {"type": "text_delta", "text": delta}
+                            yield text_delta_event(delta)
                         continue
 
                     if method in ("item/reasoning/textDelta", "item/reasoning/summaryTextDelta"):
@@ -664,7 +646,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         turn_result = events._wrap_result_message(payload, thread, completed_turns=completed_turn_count)
                         saved_tid = events._get_thread_id(thread)
                         if saved_tid and persist_thread:
-                            _save_thread_id(self._anima_dir, saved_tid, session_type, chat_thread_id)
+                            _CODEX_SESSION_IDS.save(self._anima_dir, saved_tid, session_type, chat_thread_id)
                         turn_obj = events._get_attr(payload, "turn", None)
                         error_obj = events._get_attr(turn_obj, "error", None)
                         error_msg = events._get_str(error_obj, "message")
@@ -673,11 +655,11 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             end_chunk = _thinking_end_chunk()
                             if end_chunk:
                                 yield end_chunk
-                            yield {
-                                "type": "error",
-                                "message": f"[Codex turn failed: {error_msg}]",
+                            yield stream_event(
+                                "error",
+                                message=f"[Codex turn failed: {error_msg}]",
                                 **self._error_metadata(error_msg),
-                            }
+                            )
                         continue
 
                     if method == "turn/failed":
@@ -687,11 +669,11 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
                             yield end_chunk
-                        yield {
-                            "type": "error",
-                            "message": f"[Codex turn failed: {error_msg}]",
+                        yield stream_event(
+                            "error",
+                            message=f"[Codex turn failed: {error_msg}]",
                             **self._error_metadata(error_msg),
-                        }
+                        )
                         continue
 
                     if method == "error":
@@ -700,11 +682,11 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
                             yield end_chunk
-                        yield {
-                            "type": "error",
-                            "message": f"[Codex error: {error_msg}]",
+                        yield stream_event(
+                            "error",
+                            message=f"[Codex error: {error_msg}]",
                             **self._error_metadata(error_msg),
-                        }
+                        )
                         continue
 
                     if method in ("thread/started", "turn/started"):
@@ -744,7 +726,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             codex_thread_id,
                         )
                         if persist_thread:
-                            _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
+                            _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
                         fell_back = True
                         await gen.aclose()
                     except Exception as e:
@@ -756,7 +738,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             e,
                         )
                         if persist_thread:
-                            _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
+                            _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
                         fell_back = True
                         await gen.aclose()
                     else:
@@ -772,7 +754,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         e,
                     )
                     if persist_thread:
-                        _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
+                        _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
                     fell_back = True
             else:
                 fell_back = True
@@ -801,7 +783,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                                     delta = events._token_usage(ev.get("usage") or {})
                                     usage_acc.merge(delta)
                                     if any(delta.to_dict().values()):
-                                        yield {"type": "usage", "usage": delta.to_dict()}
+                                        yield usage_event(delta.to_dict())
                                 ev = {**ev, "usage": usage_acc.to_dict(), "usage_already_emitted": True}
                                 if ev.get("result_message") is not None:
                                     ev["result_message"].usage = usage_acc.to_dict()
@@ -837,16 +819,15 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
             end_chunk = _thinking_end_chunk()
             if end_chunk:
                 yield end_chunk
-            yield {
-                "type": "done",
-                "full_text": full_text,
-                "result_message": turn_result,
-                "replied_to_from_transcript": replied_to,
-                "tool_call_records": tool_evidence.to_dicts(),
-                "usage": usage_acc.to_dict(),
-                "usage_already_emitted": True,
-                "stop_kind": "interrupted" if interrupted else "normal",
-            }
+            yield done_event(
+                full_text,
+                result_message=turn_result,
+                replied_to_from_transcript=replied_to,
+                tool_call_records=tool_evidence.to_dicts(),
+                usage=usage_acc.to_dict(),
+                usage_already_emitted=True,
+                stop_kind="interrupted" if interrupted else "normal",
+            )
         except BaseException as exc:
             if isinstance(exc, (Exception, asyncio.CancelledError)):
                 exc.usage = usage_acc.to_dict()

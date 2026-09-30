@@ -24,11 +24,11 @@ from typing import Any
 from core.execution.base import ExecutionResult, ToolCallRecord, _truncate_for_record, join_answer_parts
 from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_event
-from core.execution.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
-from core.execution.events import stream_events
+from core.execution.events import done_event, text_delta_event, tool_end_event, tool_start_event
 from core.execution.process_runner import ProcessRunner
-from core.execution.session_context import _resolve_session_type
-from core.execution.session_store import SessionRecord, SessionStore
+from core.execution.session.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
+from core.execution.session.session_context import _resolve_session_type
+from core.execution.session.session_ids import EngineSessionIds
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.platform.atomic_io import atomic_write_json
@@ -43,63 +43,12 @@ from core.schemas import ImageData, ModelConfig
 
 logger = logging.getLogger("animaworks.execution.cursor_agent")
 
-__all__ = [
-    "CursorAgentExecutor",
-    "is_cursor_agent_available",
-    "_MAX_RESUME_TURNS",
-    "_chat_id_path",
-    "_clear_chat_id",
-    "_load_chat_id",
-    "_resolve_session_type",
-    "_save_chat_id",
-]
+__all__ = ["CursorAgentExecutor", "is_cursor_agent_available", "_MAX_RESUME_TURNS", "_resolve_session_type"]
 
 # ── Constants ───────────────────────────────────────────────────
 
 _MAX_RESUME_TURNS = MAX_RESUME_TURNS
-
-
-# ── Session (chat ID) persistence ─────────────────────────────
-
-
-def _chat_id_path(anima_dir: Path, session_type: str, thread_id: str = "default") -> Path:
-    return SessionStore.path_for("cursor", anima_dir, session_type, thread_id)
-
-
-def _save_chat_id(
-    anima_dir: Path,
-    chat_id: str,
-    session_type: str,
-    thread_id: str = "default",
-    turn_count: int = 1,
-) -> None:
-    SessionStore(_chat_id_path(anima_dir, session_type, thread_id)).write_text_record(
-        SessionRecord(chat_id, turn_count),
-        with_turn_count=True,
-    )
-
-
-def _load_chat_id(
-    anima_dir: Path,
-    session_type: str,
-    thread_id: str = "default",
-) -> tuple[str | None, int]:
-    """Load chat ID and turn count from persistence file.
-
-    Returns ``(chat_id, turn_count)``.  Backward-compatible with
-    the legacy 1-line format (returns turn_count=0).
-    """
-    record = SessionStore(_chat_id_path(anima_dir, session_type, thread_id)).read_text_record(
-        with_turn_count=True,
-        ignore_read_errors=True,
-    )
-    if record is None:
-        return (None, 0)
-    return (record.session_id, record.turn_count)
-
-
-def _clear_chat_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
-    SessionStore(_chat_id_path(anima_dir, session_type, thread_id)).clear()
+_CURSOR_SESSION_IDS = EngineSessionIds("cursor")
 
 
 def _format_current_time() -> str:
@@ -165,7 +114,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
 
         runtime_ctx = current_runtime_session()
         if runtime_ctx is not None:
@@ -410,7 +359,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 "Session resume failed (chat_id=%s), retrying with fresh session",
                 resume_chat_id[:12],
             )
-            _clear_chat_id(self._anima_dir, session_type, thread_id)
+            _CURSOR_SESSION_IDS.clear(self._anima_dir, session_type, thread_id)
             if system_prompt:
                 fresh_prompt = (
                     "<system_context>\n" + system_prompt + "\n</system_context>\n\n" + time_prefix + "\n\n" + prompt
@@ -432,7 +381,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
         )
 
         if session_id and is_resumable:
-            _save_chat_id(self._anima_dir, session_id, session_type, thread_id, new_turn)
+            _CURSOR_SESSION_IDS.save(self._anima_dir, session_id, session_type, thread_id, new_turn)
             logger.debug(
                 "Saved cursor-agent chat_id %s turn=%d for %s/%s",
                 session_id[:12],
@@ -445,8 +394,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
 
         return result
 
-    @stream_events
-    async def execute_streaming(
+    async def _stream_events(
         self,
         system_prompt: str,
         prompt: str,
@@ -485,21 +433,20 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 yield event
             result = await task
             if result.text and not streamed_text:
-                yield {"type": "text_delta", "text": result.text}
+                yield text_delta_event(result.text)
             if result.error:
                 yield engine_error_event(result.text, {"terminal": True, "reason": result.reason})
-            yield {
-                "type": "done",
+            yield done_event(
+                result.text,
                 **({"error": True, "reason": result.reason} if result.error else {}),
-                "full_text": result.text,
-                "result_message": result.result_message,
-                "replied_to_from_transcript": result.replied_to_from_transcript,
-                "tool_call_records": [record.__dict__ for record in result.tool_call_records],
-                "usage": result.usage.to_dict() if result.usage else None,
-                "session_rotation_pending": result.session_rotation_pending,
-                "truncated": result.truncated,
-                "stop_kind": "interrupted" if self._check_interrupted() else "normal",
-            }
+                result_message=result.result_message,
+                replied_to_from_transcript=result.replied_to_from_transcript,
+                tool_call_records=[record.__dict__ for record in result.tool_call_records],
+                usage=result.usage.to_dict() if result.usage else None,
+                session_rotation_pending=result.session_rotation_pending,
+                truncated=result.truncated,
+                stop_kind="interrupted" if self._check_interrupted() else "normal",
+            )
         finally:
             if not task.done():
                 task.cancel()
@@ -587,7 +534,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                             if parts:
                                 current_turn_chunks.extend(parts)
                                 for text_part in parts:
-                                    await _emit({"type": "text_delta", "text": text_part})
+                                    await _emit(text_delta_event(text_part))
 
                         elif etype == "tool_call":
                             _flush_current_turn()
@@ -599,40 +546,37 @@ class CursorAgentExecutor(CLIStreamExecutor):
                                 if subtype == "started" and tool_key not in started_tools:
                                     started_tools.add(tool_key)
                                     await _emit(
-                                        {
-                                            "type": "tool_start",
-                                            "tool_name": record.tool_name,
-                                            "tool_id": record.tool_id,
-                                            "input": record.input_summary,
-                                        }
+                                        tool_start_event(
+                                            record.tool_name,
+                                            record.tool_id,
+                                            input=record.input_summary,
+                                        )
                                     )
                                 elif subtype == "completed":
                                     if tool_key not in started_tools:
                                         started_tools.add(tool_key)
                                         await _emit(
-                                            {
-                                                "type": "tool_start",
-                                                "tool_name": record.tool_name,
-                                                "tool_id": record.tool_id,
-                                                "input": record.input_summary,
-                                            }
+                                            tool_start_event(
+                                                record.tool_name,
+                                                record.tool_id,
+                                                input=record.input_summary,
+                                            )
                                         )
                                     tool_records.append(record)
                                     await _emit(
-                                        {
-                                            "type": "tool_end",
-                                            "tool_name": record.tool_name,
-                                            "tool_id": record.tool_id,
-                                            "result": record.result_summary,
-                                            "is_error": record.is_error,
-                                        }
+                                        tool_end_event(
+                                            record.tool_name,
+                                            record.tool_id,
+                                            result=record.result_summary,
+                                            is_error=record.is_error,
+                                        )
                                     )
 
                         elif etype == "result":
                             result_text = event.get("result", "")
                             if result_text and not _full_text():
                                 current_turn_chunks.append(result_text)
-                                await _emit({"type": "text_delta", "text": result_text})
+                                await _emit(text_delta_event(result_text))
 
             except TimeoutError:
                 logger.warning("Cursor agent timed out after %ds", self.event_idle_timeout_seconds)
@@ -640,7 +584,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 timeout_msg = t("cursor_agent.timeout", timeout=self.event_idle_timeout_seconds)
                 full_text = _full_text()
                 timeout_text = f"\n\n{timeout_msg}" if full_text else timeout_msg
-                await _emit({"type": "text_delta", "text": timeout_text})
+                await _emit(text_delta_event(timeout_text))
                 self._error_metadata(timeout_msg)
                 return (
                     ExecutionResult(
@@ -670,7 +614,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 error_reason = "auth" if is_auth_error else str(metadata.get("reason") or "unknown")
                 if is_auth_error:
                     error_text = t("cursor_agent.not_authenticated")
-                    await _emit({"type": "text_delta", "text": error_text})
+                    await _emit(text_delta_event(error_text))
                     return (
                         ExecutionResult(text=error_text, error=True, reason=error_reason),
                         session_id,
@@ -679,18 +623,18 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 if not _full_text():
                     error_text = f"[Cursor Agent Error (exit {proc.returncode}): {stderr_text[:500]}]"
                     current_turn_chunks.append(error_text)
-                    await _emit({"type": "text_delta", "text": error_text})
+                    await _emit(text_delta_event(error_text))
 
         except FileNotFoundError:
             error_text = t("cursor_agent.not_installed")
-            await _emit({"type": "text_delta", "text": error_text})
+            await _emit(text_delta_event(error_text))
             self._error_metadata(error_text)
             return (ExecutionResult(text=error_text, error=True, reason="unknown"), None, True)
         except Exception as e:
             logger.exception("Cursor agent execution error")
             metadata = self._error_metadata(str(e))
             error_text = f"[Cursor Agent Error: {e}]"
-            await _emit({"type": "text_delta", "text": error_text})
+            await _emit(text_delta_event(error_text))
             return (
                 ExecutionResult(text=error_text, error=True, reason=str(metadata.get("reason") or "unknown")),
                 None,

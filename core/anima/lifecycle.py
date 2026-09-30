@@ -1221,7 +1221,7 @@ class LifecycleMixin:
                 if serialize:
                     await lock_stack.enter_async_context(self._background_lock)
                 logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
-                from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+                from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
                 _runtime_ctx = RuntimeSessionContext.create(
                     session_type="cron",

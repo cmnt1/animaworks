@@ -1,7 +1,7 @@
 """Tests for agent_sdk tool record helper functions.
 
 Tests for _handle_tool_use_block(), _handle_tool_result_block(),
-and _finalize_pending_records() extracted from core.execution.engines.claude.agent_sdk.
+and _finalize_pending_records() extracted from core.execution.engines.claude.executor.
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -12,7 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from core.execution.base import ToolCallRecord
-from core.execution.engines.claude.agent_sdk import (
+from core.execution.engines.claude.executor import (
     _finalize_pending_records,
     _handle_tool_result_block,
     _handle_tool_use_block,

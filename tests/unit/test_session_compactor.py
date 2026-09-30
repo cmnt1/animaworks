@@ -1111,7 +1111,7 @@ class TestRunIdleCompaction:
         storage_engine: str,
         should_clear: bool,
     ) -> None:
-        from core.execution.session_store import SessionRecord, SessionStore
+        from core.execution.session.session_store import SessionRecord, SessionStore
 
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)

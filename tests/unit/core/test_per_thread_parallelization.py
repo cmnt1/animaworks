@@ -234,26 +234,27 @@ class TestCodexThreadIdPath:
     """codex_thread_id paths are separated per chat thread_id."""
 
     def test_default_thread_uses_existing_path(self, tmp_path: Path) -> None:
-        from core.execution.engines.codex.codex_sdk import _thread_id_path
+        from core.execution.session.session_ids import EngineSessionIds
 
-        p = _thread_id_path(tmp_path, "chat", "default")
+        p = EngineSessionIds("codex").path_for(tmp_path, "chat", "default")
         assert p == tmp_path / "shortterm" / "chat" / "codex_thread_id.txt"
 
     def test_custom_thread_uses_subdirectory(self, tmp_path: Path) -> None:
-        from core.execution.engines.codex.codex_sdk import _thread_id_path
+        from core.execution.session.session_ids import EngineSessionIds
 
-        p = _thread_id_path(tmp_path, "chat", "thread-xyz")
+        p = EngineSessionIds("codex").path_for(tmp_path, "chat", "thread-xyz")
         assert p == tmp_path / "shortterm" / "chat" / "thread-xyz" / "codex_thread_id.txt"
 
     def test_save_load_roundtrip(self, tmp_path: Path) -> None:
-        from core.execution.engines.codex.codex_sdk import _load_thread_id, _save_thread_id
+        from core.execution.session.session_ids import EngineSessionIds
 
-        _save_thread_id(tmp_path, "tid-123", "chat", "my-thread")
-        loaded = _load_thread_id(tmp_path, "chat", "my-thread")
-        assert loaded == "tid-123"
+        session_ids = EngineSessionIds("codex")
+        session_ids.save(tmp_path, "tid-123", "chat", "my-thread")
+        loaded = session_ids.load(tmp_path, "chat", "my-thread")
+        assert loaded is not None and loaded.session_id == "tid-123"
 
-        # Different thread should be None
-        assert _load_thread_id(tmp_path, "chat", "other") is None
+        # Different thread should be empty.
+        assert session_ids.load(tmp_path, "chat", "other") is None
 
 
 class TestSDKSessionIdPath:

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 from core.activity.logger import (
     ActivityEntry,
     ActivityLogger,

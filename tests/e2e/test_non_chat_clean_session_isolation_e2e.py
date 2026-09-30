@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
-from core.execution.engines.codex.codex_sdk import _load_thread_id, _save_thread_id
+from core.execution.session.session_ids import EngineSessionIds
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory, StreamCheckpoint
 from tests.helpers.mocks import patch_agent_sdk
 
@@ -19,11 +19,12 @@ async def test_inbox_run_clears_non_chat_residue_without_touching_chat(make_agen
     agent = make_agent_core(name="non-chat-isolation", model="claude-sonnet-4-6")
     agent._sdk_available = True
     anima_dir = agent.anima_dir
+    codex_session_ids = EngineSessionIds("codex")
 
     chat_shortterm = ShortTermMemory(anima_dir, session_type="chat")
     chat_shortterm.save(SessionState(session_id="chat-shortterm", trigger="message:admin"))
     _save_session_id(anima_dir, "chat-sdk-session", "chat")
-    _save_thread_id(anima_dir, "chat-codex-thread", "chat")
+    codex_session_ids.save(anima_dir, "chat-codex-thread", "chat")
 
     inbox_shortterm = ShortTermMemory(anima_dir, session_type="inbox", thread_id="inbox")
     inbox_shortterm.save(SessionState(session_id="stale-inbox-shortterm", trigger="inbox:sakura"))
@@ -35,7 +36,7 @@ async def test_inbox_run_clears_non_chat_residue_without_touching_chat(make_agen
         )
     )
     _save_session_id(anima_dir, "stale-inbox-sdk-session", "inbox", thread_id="inbox")
-    _save_thread_id(anima_dir, "stale-inbox-codex-thread", "inbox", "inbox")
+    codex_session_ids.save(anima_dir, "stale-inbox-codex-thread", "inbox", "inbox")
 
     with patch_agent_sdk(response_text="inbox processed"):
         result = await agent.run_cycle(
@@ -48,9 +49,10 @@ async def test_inbox_run_clears_non_chat_residue_without_touching_chat(make_agen
 
     assert chat_shortterm.has_pending()
     assert _load_session_id(anima_dir, "chat") == "chat-sdk-session"
-    assert _load_thread_id(anima_dir, "chat") == "chat-codex-thread"
+    chat_codex_session = codex_session_ids.load(anima_dir, "chat")
+    assert chat_codex_session is not None and chat_codex_session.session_id == "chat-codex-thread"
 
     assert not inbox_shortterm.has_pending()
     assert not inbox_checkpoint.exists()
     assert _load_session_id(anima_dir, "inbox", thread_id="inbox") is None
-    assert _load_thread_id(anima_dir, "inbox", "inbox") is None
+    assert codex_session_ids.load(anima_dir, "inbox", "inbox") is None

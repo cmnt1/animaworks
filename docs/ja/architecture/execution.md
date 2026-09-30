@@ -19,7 +19,7 @@
 
 ## 共通実行層と障害時の動作
 
-各エンジンの実装は `core/execution/engines/` に置かれる。共通層の `core/execution/events.py`、`session_store.py`、`process_runner.py`、`watchdog.py`、`tool_evidence.py`、`cli_stream.py` はイベント、セッション保存、プロセス制御、tool evidence を共通化する。エラー分類、プロセス終了、バイナリ探索、`clear_session`、応答・エラー判定も中間層で扱う。D と G もこの構成に含まれる。
+各エンジンの実装は `core/execution/engines/` に置かれる。共通層の `core/execution/events.py`、`core/execution/session/session_store.py`、`process_runner.py`、`watchdog.py`、`tool_evidence.py`、`cli_stream.py` はイベント、セッション保存、プロセス制御、tool evidence を共通化する。エラー分類、プロセス終了、バイナリ探索、`clear_session`、応答・エラー判定も中間層で扱う。D と G もこの構成に含まれる。
 
 watchdog は engine event が 1200 秒間届かなかった場合に idle と判定する。全実行時間を計る timeout ではない。rate limit や provider 過負荷の情報は `llm_rate_guard` に provider family ごとに共有され、他の Anima が同じ provider へ連続要求するのを抑える。この guard は読み書きに失敗しても通常の実行を止めない設計である。
 

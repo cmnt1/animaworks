@@ -86,7 +86,7 @@ class TestHandleToolResultBlockWithAnimaDir:
 
     def test_logs_to_activity_with_anima_dir(self, tmp_path: Path) -> None:
         from core.execution.base import ToolCallRecord
-        from core.execution.engines.claude.agent_sdk import _handle_tool_result_block
+        from core.execution.engines.claude.executor import _handle_tool_result_block
 
         pending = {
             "tu_test": ToolCallRecord(
@@ -117,7 +117,7 @@ class TestHandleToolResultBlockWithAnimaDir:
 
     def test_no_activity_log_without_anima_dir(self, tmp_path: Path) -> None:
         from core.execution.base import ToolCallRecord
-        from core.execution.engines.claude.agent_sdk import _handle_tool_result_block
+        from core.execution.engines.claude.executor import _handle_tool_result_block
 
         pending = {
             "tu_test2": ToolCallRecord(

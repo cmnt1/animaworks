@@ -16,8 +16,8 @@ description: >-
 
 | モード | 実装 | Bash | このスキルの適用 |
 |--------|------|------|------------------|
-| **Mode S** | `agent_sdk.py` (Claude Agent SDK) | デフォルトで利用可能 | 適用される。Claude Code サブプロセス内で Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 等) + Task/Agent が利用可能。Bash 実行時の cwd は anima_dir |
-| **Mode C** | `codex_sdk.py` (Codex SDK) | Codex CLI のツールセットに依存 | **codex exec は不要** — フレームワークが Codex を直接実行。cursor-agent / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
+| **Mode S** | `core/execution/engines/claude/executor.py` (Claude Agent SDK) | デフォルトで利用可能 | 適用される。Claude Code サブプロセス内で Read/Write/Edit/Bash/Grep/Glob/WebFetch/WebSearch + MCP(send_message 等) + Task/Agent が利用可能。Bash 実行時の cwd は anima_dir |
+| **Mode C** | `core/execution/engines/codex/executor.py` (Codex SDK) | Codex CLI のツールセットに依存 | **codex exec は不要** — フレームワークが Codex を直接実行。cursor-agent / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
 | **Mode D** | Cursor Agent（cursor-agent サブプロセス） | Cursor CLI のツールセットに依存 | **cursor-agent -p は不要** — フレームワークが cursor-agent を直接実行。MCP 統合。Mode S に近いツールアクセスだが実体は cursor-agent バイナリ。codex exec / claude -p は Bash 経由で呼べる（Bash が利用可能な場合） |
 | **Mode G** | Gemini CLI（gemini サブプロセス） | Gemini CLI のツールセットに依存 | **Gemini CLI の手動起動は不要** — フレームワークが直接実行。MCP 統合、stream-json 出力。他 CLI は Bash 経由で呼べる（Bash が利用可能な場合） |
 | **Mode A/B** | LiteLLM + tool_use / 1ショット | permissions.json で許可時のみ | Bash 許可があれば適用 |
@@ -348,4 +348,4 @@ nohup timeout 30m codex exec --full-auto --ephemeral -C /path \
 - 実行結果は自分のepisodes/に記録し、学んだパターンはknowledge/に蓄積すること
 - 実行には5分〜20分以上かかる。必ずバックグラウンドで実行し、timeout を設定すること
 - git管理されたリポジトリで作業すること（変更の追跡・取り消しが容易）
-- Mode S では Bash 実行時に `ANIMAWORKS_ANIMA_DIR`（Anima のデータディレクトリ）と `ANIMAWORKS_PROJECT_DIR`（AnimaWorks フレームワークのルート）が環境変数として設定される（`agent_sdk.py` の `_build_env()` で注入）
+- Mode S では Bash 実行時に `ANIMAWORKS_ANIMA_DIR`（Anima のデータディレクトリ）と `ANIMAWORKS_PROJECT_DIR`（AnimaWorks フレームワークのルート）が環境変数として設定される（`core/execution/engines/claude/executor.py` の `_build_env()` で注入）

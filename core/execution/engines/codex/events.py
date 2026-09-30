@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
+from core.execution.events import done_event, text_delta_event, tool_end_event, tool_start_event, usage_event
 from core.execution.process_runner import ProcessRunner
 from core.execution.tool_evidence import ToolEvidence
 from core.prompt.context import ContextTracker
@@ -558,11 +559,10 @@ class CodexEventsMixin(setup.CodexSetupMixin):
                     ):
                         emitted_tool_starts.add(item_id)
                         tool_evidence.started(item_id, _codex_item_tool_name(item, item_type))
-                        yield {
-                            "type": "tool_start",
-                            "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
-                            "tool_id": item_id,
-                        }
+                        yield tool_start_event(
+                            _codex_item_tool_name(type("Obj", (), item)(), item_type),
+                            item_id,
+                        )
                     continue
 
                 if ptype == "item.completed":
@@ -574,18 +574,17 @@ class CodexEventsMixin(setup.CodexSetupMixin):
                         text = str(item.get("text", ""))
                         if text:
                             response_parts.append(text)
-                            yield {"type": "text_delta", "text": text}
+                            yield text_delta_event(text)
                         continue
 
                     if item_type in ("command_execution", "mcp_tool_call", "file_change"):
                         tool_evidence.started(item_id, _codex_item_tool_name(item, item_type))
                         if item_id not in emitted_tool_starts:
                             emitted_tool_starts.add(item_id)
-                            yield {
-                                "type": "tool_start",
-                                "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
-                                "tool_id": item_id,
-                            }
+                            yield tool_start_event(
+                                _codex_item_tool_name(type("Obj", (), item)(), item_type),
+                                item_id,
+                            )
                         if item_type == "command_execution":
                             command = str(item.get("command", ""))
                             output = str(item.get("aggregated_output") or item.get("output", ""))
@@ -610,11 +609,10 @@ class CodexEventsMixin(setup.CodexSetupMixin):
                         if rec:
                             tool_records.append(rec)
                             tool_evidence.merge([rec])
-                        yield {
-                            "type": "tool_end",
-                            "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
-                            "tool_id": item_id,
-                        }
+                        yield tool_end_event(
+                            _codex_item_tool_name(type("Obj", (), item)(), item_type),
+                            item_id,
+                        )
                         continue
 
                 if ptype == "turn.completed":
@@ -625,7 +623,7 @@ class CodexEventsMixin(setup.CodexSetupMixin):
                     delta = usage_meter.update(usage_dict)
                     usage_acc.merge(delta)
                     if any(delta.to_dict().values()):
-                        yield {"type": "usage", "usage": delta.to_dict()}
+                        yield usage_event(delta.to_dict())
                     continue
 
             returncode = await proc.wait()
@@ -652,16 +650,15 @@ class CodexEventsMixin(setup.CodexSetupMixin):
         if not full_text and tool_records:
             full_text = _synthesise_fallback(tool_records)
         replied_to = self._read_replied_to_file()
-        yield {
-            "type": "done",
-            "full_text": full_text,
-            "result_message": CodexResultMessage(
+        yield done_event(
+            full_text,
+            result_message=CodexResultMessage(
                 num_turns=completed_turn_count or int(bool(full_text or tool_records)),
                 session_id=thread_id,
                 usage=usage_acc.to_dict(),
             ),
-            "replied_to_from_transcript": replied_to,
-            "tool_call_records": tool_evidence.to_dicts(),
-            "usage": usage_acc.to_dict(),
-            "usage_already_emitted": True,
-        }
+            replied_to_from_transcript=replied_to,
+            tool_call_records=tool_evidence.to_dicts(),
+            usage=usage_acc.to_dict(),
+            usage_already_emitted=True,
+        )

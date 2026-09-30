@@ -26,8 +26,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.execution.session_store import SessionStore
-from core.execution.session_types import RESUMABLE_SESSION_TYPES
+from core.execution.session.session_ids import EngineSessionIds
+from core.execution.session.session_store import SessionStore
+from core.execution.session.session_types import RESUMABLE_SESSION_TYPES
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -132,14 +133,11 @@ class SessionContextState:
 
 
 _session_state_lock = threading.Lock()
+_SESSION_IDS = EngineSessionIds("agent_sdk")
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _session_state_path(anima_dir: Path, session_type: str, thread_id: str) -> Path:
-    return SessionStore.path_for("agent_sdk", anima_dir, session_type, thread_id)
 
 
 def _state_from_dict(data: dict[str, Any]) -> SessionContextState | None:
@@ -187,19 +185,10 @@ def load_session_state(
     thread_id: str = "default",
 ) -> SessionContextState | None:
     """Load persisted SDK session metadata, including legacy files."""
-    path = _session_state_path(anima_dir, session_type, thread_id)
-    try:
-        data = SessionStore(path).read_json()
-    except (json.JSONDecodeError, OSError):
-        return None
-    if not isinstance(data, dict):
+    data = _SESSION_IDS.load_state(anima_dir, session_type, thread_id)
+    if data is None:
         return None
     return _state_from_dict(data)
-
-
-def _write_session_state(path: Path, data: dict[str, Any]) -> None:
-    """Atomically replace a session state file in its own directory."""
-    SessionStore(path).write_json(data)
 
 
 def _state_to_dict(state: SessionContextState) -> dict[str, Any]:
@@ -228,7 +217,6 @@ def record_session_measurement(
     baseline_tokens: int = 0,
 ) -> SessionContextState:
     """Persist a context measurement without reseeding its baseline."""
-    path = _session_state_path(anima_dir, session_type, thread_id)
     now = _now_iso()
     with _session_state_lock:
         existing = load_session_state(anima_dir, session_type, thread_id)
@@ -256,11 +244,11 @@ def record_session_measurement(
                 model=model or existing.model,
                 swept_at=existing.swept_at,
             )
-        _write_session_state(path, _state_to_dict(state))
+        _SESSION_IDS.save_state(anima_dir, session_type, _state_to_dict(state), thread_id)
     return state
 
 
-from core.execution.session_context import _resolve_session_type  # noqa: F401 (re-exported to agent_sdk)
+from core.execution.session.session_context import _resolve_session_type  # noqa: F401 (re-exported to executor)
 
 
 def _session_file(session_type: str, thread_id: str = "default") -> str:
@@ -301,7 +289,6 @@ def _save_session_id(
     thread_id: str = "default",
 ) -> None:
     """Persist a session ID while retaining all measurement metadata."""
-    path = _session_state_path(anima_dir, session_type, thread_id)
     now = _now_iso()
     with _session_state_lock:
         existing = load_session_state(anima_dir, session_type, thread_id)
@@ -324,7 +311,7 @@ def _save_session_id(
                 model=existing.model,
                 swept_at=existing.swept_at,
             )
-        _write_session_state(path, _state_to_dict(state))
+        _SESSION_IDS.save_state(anima_dir, session_type, _state_to_dict(state), thread_id)
 
 
 def mark_session_swept(
@@ -339,7 +326,6 @@ def mark_session_swept(
     again on every sweep tick. Marking ``swept_at`` with the current
     ``updated_at`` makes the sweep wait for fresh activity.
     """
-    path = _session_state_path(anima_dir, session_type, thread_id)
     with _session_state_lock:
         existing = load_session_state(anima_dir, session_type, thread_id)
         if existing is None:
@@ -355,12 +341,12 @@ def mark_session_swept(
             model=existing.model,
             swept_at=existing.updated_at,
         )
-        _write_session_state(path, _state_to_dict(state))
+        _SESSION_IDS.save_state(anima_dir, session_type, _state_to_dict(state), thread_id)
 
 
 def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> None:
     """Clear persisted session ID (e.g., after resume failure)."""
-    path = _session_state_path(anima_dir, session_type, thread_id)
+    path = _SESSION_IDS.path_for(anima_dir, session_type, thread_id)
     with _session_state_lock:
         if path.exists():
             logger.debug(
@@ -369,7 +355,7 @@ def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: st
                 anima_dir.name,
                 thread_id,
             )
-            SessionStore(path).clear()
+            _SESSION_IDS.clear(anima_dir, session_type, thread_id)
 
 
 def clear_session_id_for_type(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:

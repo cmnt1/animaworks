@@ -165,7 +165,7 @@ class SDKOptionsMixin:
         * ``"max"`` / ``None`` (default) — subscription auth →
           ``ANTHROPIC_API_KEY=""`` (Max plan).
         """
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
         env: dict[str, str] = {
@@ -246,7 +246,7 @@ class SDKOptionsMixin:
         The MCP server needs ANIMAWORKS_ANIMA_DIR and ANIMAWORKS_PROJECT_DIR
         to initialize ToolHandler, plus PYTHONPATH so it can import core modules.
         """
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
         from core.paths import PROJECT_DIR
 
         env = {

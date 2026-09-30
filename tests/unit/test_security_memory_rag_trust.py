@@ -260,7 +260,7 @@ class TestMinTrustSeenSDKHook:
     async def test_sdk_hook_persists_trust_by_runtime_session(self, tmp_path):
         from core.trust import read_session_trust
         from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         anima_dir = tmp_path / "animas" / "hook-test"
         anima_dir.mkdir(parents=True)
@@ -383,7 +383,7 @@ class TestKnowledgeOriginFrontmatter:
     def test_mode_s_file_trust_fallback(self, tmp_path):
         """A session's isolated trust-state file contributes to the write origin."""
         from core.trust import record_session_trust
-        from core.execution.session_context import RuntimeSessionContext
+        from core.execution.session.session_context import RuntimeSessionContext
 
         handler = _make_handler(tmp_path)
         ctx = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")

@@ -33,7 +33,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 from core.tooling.handler_base import active_session_type
 from core.tooling.surface import (
     CONSOLIDATION_BLOCKED_TOOL_NAMES,

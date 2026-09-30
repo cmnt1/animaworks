@@ -139,7 +139,7 @@ async def test_error_category_falls_back_to_message_classification(cycle_agent):
 
 
 async def test_blocking_x_threshold_saves_handoff_and_removes_grok_session(cycle_agent):
-    from core.execution.session_store import SessionStore
+    from core.execution.session.session_store import SessionStore
 
     agent, anima_dir = cycle_agent
     executor = StubExecutor(anima_dir, "x", engine="grok", force_threshold=True)
@@ -164,7 +164,7 @@ async def test_rotation_pending_saves_handoff_without_clearing_engine_session(
     engine,
     streaming,
 ):
-    from core.execution.session_store import SessionStore
+    from core.execution.session.session_store import SessionStore
 
     agent, anima_dir = cycle_agent
     result_message = SimpleNamespace(session_id="current-session", num_turns=4)

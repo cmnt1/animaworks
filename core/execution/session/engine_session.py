@@ -10,8 +10,9 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.execution.session_store import SessionEngine, SessionStore
-from core.execution.session_types import is_resumable_trigger, resolve_runtime_session_type
+from core.execution.session.session_ids import EngineSessionIds
+from core.execution.session.session_store import SessionEngine, SessionStore
+from core.execution.session.session_types import is_resumable_trigger, resolve_runtime_session_type
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def clear_engine_session(
 
         _clear_session_id(anima_dir, session_type, thread_id)
         return
-    SessionStore(SessionStore.path_for(engine, anima_dir, session_type, thread_id)).clear()
+    EngineSessionIds(engine).clear(anima_dir, session_type, thread_id)
 
 
 def clear_all_engine_sessions(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
@@ -73,12 +74,11 @@ def load_turn_limited_session(
     if not resumable:
         return ResumeDecision(session_id=None, turn_count=0, resumable=False, rotated=False)
 
-    store = SessionStore(SessionStore.path_for(engine, anima_dir, resolve_runtime_session_type(trigger), thread_id))
-    record = store.read_text_record(with_turn_count=True, ignore_read_errors=True)
+    record = EngineSessionIds(engine).load(anima_dir, resolve_runtime_session_type(trigger), thread_id)
     if record is None:
         return ResumeDecision(session_id=None, turn_count=0, resumable=True, rotated=False)
     if SessionStore.turn_limit_reached(record.turn_count, max_turns):
-        store.clear()
+        EngineSessionIds(engine).clear(anima_dir, resolve_runtime_session_type(trigger), thread_id)
         return ResumeDecision(session_id=None, turn_count=0, resumable=True, rotated=True)
     return ResumeDecision(
         session_id=record.session_id,

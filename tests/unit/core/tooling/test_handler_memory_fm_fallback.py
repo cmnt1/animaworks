@@ -206,7 +206,7 @@ class TestParsefailedFrontmatterFallback:
 
     def test_other_session_trust_file_is_not_used(self, handler: _FakeWriteHandler) -> None:
         from core.trust import record_session_trust
-        from core.execution.session_context import RuntimeSessionContext
+        from core.execution.session.session_context import RuntimeSessionContext
 
         own_context = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")
         other_context = RuntimeSessionContext.create(session_type="chat", thread_id="t", trigger="chat")

@@ -79,7 +79,7 @@ class PrimingMixin:
         Returns:
             Tuple of (priming_section, pending_human_notifications).
         """
-        from core.execution.session_types import (
+        from core.execution.session.session_types import (
             SESSION_TYPE_CHAT,
             SESSION_TYPE_CRON,
             SESSION_TYPE_HEARTBEAT,
@@ -193,7 +193,7 @@ class PrimingMixin:
         Chat behavior remains conversation-backed; inbox reads only the activity
         log so unrelated chat history cannot leak into a background run.
         """
-        from core.execution.session_types import trigger_uses_chat_session
+        from core.execution.session.session_types import trigger_uses_chat_session
 
         if trigger.startswith("inbox:"):
             try:

@@ -20,7 +20,7 @@ core.config.models -> core.prompt.context
 core.execution.engines.claude._sdk_hooks -> core.tooling.handler_base
 core.execution.engines.claude._sdk_hooks -> core.tooling.handler_skills
 core.execution.engines.claude._sdk_options -> core.mcp.server
-core.execution.session_context -> core.tasks.board.tasks
+core.execution.session.session_context -> core.tasks.board.tasks
 core.integrations._image_pipeline -> core.anima.asset_reconciler
 core.memory._llm_utils -> core.execution.engines.claude._sdk_options
 core.memory._llm_utils -> core.execution.engines.claude._sdk_patch

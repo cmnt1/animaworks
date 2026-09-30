@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
-from core.execution.engines.codex.codex_sdk import _load_thread_id, _save_thread_id
+from core.execution.session.session_ids import EngineSessionIds
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
@@ -263,12 +263,14 @@ def test_chat_exit_fsyncs_conversation_and_engine_resume_files(tmp_path: Path) -
     conversation = anima_dir / "state" / "conversation.json"
     conversation.parent.mkdir(parents=True, exist_ok=True)
     conversation.write_text("state", encoding="utf-8")
+    codex_session_ids = EngineSessionIds("codex")
     _save_session_id(anima_dir, "claude-session", "chat")
-    _save_thread_id(anima_dir, "codex-thread", "chat")
+    codex_session_ids.save(anima_dir, "codex-thread", "chat")
 
     with patch("core.supervisor.task_runner.os.fsync") as fsync:
         task_runner._fsync_chat_state(anima_dir)
 
     assert fsync.call_count == 3
     assert _load_session_id(anima_dir, "chat") == "claude-session"
-    assert _load_thread_id(anima_dir, "chat") == "codex-thread"
+    codex_session = codex_session_ids.load(anima_dir, "chat")
+    assert codex_session is not None and codex_session.session_id == "codex-thread"

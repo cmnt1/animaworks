@@ -131,7 +131,7 @@ class TestBypassPermissionsConfig:
         from tests.helpers.mocks import patch_agent_sdk
 
         with patch_agent_sdk():
-            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.executor import AgentSDKExecutor
             from core.schemas import ModelConfig
 
             config = ModelConfig(

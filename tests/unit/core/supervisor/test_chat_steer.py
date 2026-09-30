@@ -12,7 +12,7 @@ import pytest
 
 from core.anima.messaging import _inject_chat_message
 from core.execution.base import BaseExecutor, ExecutionResult
-from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+from core.execution.engines.claude.executor import AgentSDKExecutor
 from core.memory.conversation.memory import ConversationMemory
 from core.schemas import ModelConfig
 from core.supervisor import task_runner

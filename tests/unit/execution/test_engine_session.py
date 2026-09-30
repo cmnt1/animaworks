@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.execution.engine_session import (
+from core.execution.session.engine_session import (
     MAX_RESUME_TURNS,
     ResumeDecision,
     clear_all_engine_sessions,
@@ -12,8 +12,8 @@ from core.execution.engine_session import (
     load_turn_limited_session,
     next_turn_count,
 )
-from core.execution.session_store import SessionEngine, SessionRecord, SessionStore
-from core.execution.session_types import (
+from core.execution.session.session_store import SessionEngine, SessionRecord, SessionStore
+from core.execution.session.session_types import (
     RESUMABLE_SESSION_TYPES,
     is_resumable_trigger,
     resolve_runtime_session_type,

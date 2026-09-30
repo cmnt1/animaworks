@@ -57,7 +57,7 @@ def _make_litellm_executor(
     memory: MagicMock,
 ):
     """Instantiate a LiteLLMExecutor with minimal dependencies."""
-    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.executor import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=model_config,

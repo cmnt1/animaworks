@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.execution.session_context import RuntimeSessionContext
+from core.execution.session.session_context import RuntimeSessionContext
 from core.activity.logger import ActivityLogger
 from core.tooling.handler import ToolHandler
 

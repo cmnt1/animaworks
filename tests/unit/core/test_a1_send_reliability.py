@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+from core.execution.engines.claude.executor import AgentSDKExecutor
 from core.schemas import ModelConfig
 
 # ── _build_env() ─────────────────────────────────────────

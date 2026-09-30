@@ -23,7 +23,7 @@ class TestSettingSourcesE2E:
         """_build_sdk_options() (used by execute and execute_streaming) must set setting_sources=[]."""
         import inspect
 
-        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.executor import AgentSDKExecutor
 
         # Options construction is centralized in _build_sdk_options()
         options_src = inspect.getsource(AgentSDKExecutor._build_sdk_options)

@@ -30,7 +30,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from core.activity.logger import ActivityLogger
 from core.exceptions import AnimaWorksError, ConfigError
-from core.execution.session_context import RuntimeSessionContext, current_runtime_session
+from core.execution.session.session_context import RuntimeSessionContext, current_runtime_session
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.state_lock import StateFileLock

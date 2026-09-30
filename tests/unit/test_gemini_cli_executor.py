@@ -17,7 +17,7 @@ import pytest
 
 from core.execution.base import ExecutionResult
 from core.execution.engine_base import engine_error_metadata
-from core.execution.engines.gemini.gemini_cli import (
+from core.execution.engines.gemini.executor import (
     GeminiCLIExecutor,
     _find_gemini_binary,
     _resolve_gemini_model,
@@ -130,7 +130,7 @@ class TestWorkspace:
         assert executor._workspace == anima_dir / ".gemini-workspace"
 
     def test_write_settings_propagates_runtime_trigger(self, executor):
-        from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
+        from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 
         executor._ensure_workspace()
         ctx = RuntimeSessionContext.create(session_type="cron", thread_id="t-1", trigger="cron:daily")
@@ -180,7 +180,7 @@ class TestSystemPrompt:
 
 class TestBuildCommand:
     def test_command_structure(self, executor):
-        with patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"):
             cmd = executor._build_command("hello world")
         assert cmd[0] == "/usr/bin/gemini"
         assert "-p" in cmd
@@ -196,7 +196,7 @@ class TestBuildCommand:
         assert cmd[m_idx + 1] == "gemini-2.5-pro"
 
     def test_empty_when_no_binary(self, executor):
-        with patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None):
             assert executor._build_command("test") == []
 
 
@@ -303,7 +303,7 @@ class TestStatsParsing:
 class TestExecute:
     @pytest.mark.asyncio
     async def test_not_installed(self, executor):
-        with patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None):
             result = await executor.execute(prompt="hello")
         assert "gemini" in result.text.lower() or "インストール" in result.text
 
@@ -342,7 +342,7 @@ class TestExecute:
         proc = _mock_proc(_make_ndjson_lines(events))
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hi", system_prompt="You are helpful")
@@ -382,7 +382,7 @@ class TestExecute:
         proc = _mock_proc(_make_ndjson_lines(events))
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="search")
@@ -397,7 +397,7 @@ class TestExecute:
         proc = _mock_proc(b"", returncode=1, stderr_data=b"Error: unauthenticated, run gemini auth login")
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -409,7 +409,7 @@ class TestExecute:
         proc = _mock_proc(b"", returncode=1, stderr_data=b"Something went wrong")
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -429,7 +429,7 @@ class TestExecute:
         proc = _mock_proc(_make_ndjson_lines(events))
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await executor.execute(prompt="hello")
@@ -448,7 +448,7 @@ class TestExecute:
             )
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", side_effect=mock_create),
         ):
             await executor.execute(prompt="test", system_prompt="You are a test assistant")
@@ -491,7 +491,7 @@ class TestExecuteStreaming:
         tracker = ContextTracker(model="gemini-2.5-pro", threshold=0.5)
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             collected = []
@@ -533,7 +533,7 @@ class TestExecuteStreaming:
         tracker = ContextTracker(model="gemini-2.5-pro", threshold=0.5)
 
         with (
-            patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value="/usr/bin/gemini"),
+            patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value="/usr/bin/gemini"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             collected = []
@@ -552,7 +552,7 @@ class TestExecuteStreaming:
         from core.prompt.context import ContextTracker
 
         tracker = ContextTracker(model="gemini-2.5-pro", threshold=0.5)
-        with patch("core.execution.engines.gemini.gemini_cli._find_gemini_binary", return_value=None):
+        with patch("core.execution.engines.gemini.executor._find_gemini_binary", return_value=None):
             collected = []
             async for evt in executor.execute_streaming(system_prompt="", prompt="hello", tracker=tracker):
                 collected.append(evt)

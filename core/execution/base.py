@@ -23,10 +23,10 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 
 # ── Streaming error ──────────────────────────────────────────
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
-from core.execution.events import stream_events
+from core.execution.events import done_event, stream_events, text_delta_event
 from core.execution.reminder import SystemReminderQueue
-from core.execution.session_store import SessionEngine
-from core.execution.session_types import is_resumable_trigger, resolve_runtime_session_type
+from core.execution.session.session_store import SessionEngine
+from core.execution.session.session_types import is_resumable_trigger, resolve_runtime_session_type
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -659,7 +659,7 @@ class BaseExecutor(ABC):
         """Clear this executor's persisted session for a runtime trigger."""
         if self.session_engine is None:
             return
-        from core.execution.engine_session import clear_engine_session
+        from core.execution.session.engine_session import clear_engine_session
 
         clear_engine_session(
             self._anima_dir,
@@ -734,7 +734,7 @@ class BaseExecutor(ABC):
         import json as _json
         import logging
 
-        from core.execution.session_context import current_runtime_session
+        from core.execution.session.session_context import current_runtime_session
 
         ctx = current_runtime_session()
         if ctx is not None:
@@ -893,11 +893,10 @@ class BaseExecutor(ABC):
             prior_messages=prior_messages,
             thread_id=thread_id,
         )
-        yield {"type": "text_delta", "text": result.text}
-        yield {
-            "type": "done",
-            "full_text": result.text,
-            "result_message": result.result_message,
-            "tool_call_records": [asdict(r) for r in result.tool_call_records],
-            "truncated": result.truncated,
-        }
+        yield text_delta_event(result.text)
+        yield done_event(
+            result.text,
+            result_message=result.result_message,
+            tool_call_records=[asdict(r) for r in result.tool_call_records],
+            truncated=result.truncated,
+        )
