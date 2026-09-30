@@ -14,6 +14,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -23,18 +24,30 @@ if TYPE_CHECKING:
 
     from core.execution.base import ExecutionResult
 
+from core.agent.priming import SystemPromptContext
 from core.agent.prompt_log import _save_prompt_log, _save_prompt_log_end
 from core.execution.engine_session import clear_all_engine_sessions, clear_engine_session
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
-from core.prompt.builder import build_system_prompt
 from core.prompt.context import ContextTracker
 from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.agent")
+
+
+@dataclass
+class _PreparedCyclePrompt:
+    """Prompt and session context shared by blocking and streaming cycles."""
+
+    prompt: str
+    system_prompt: str
+    tracker: ContextTracker
+    shortterm: ShortTermMemory
+    uses_chat_session: bool
+    prompt_context: SystemPromptContext
 
 
 def _request_background_review(anima_dir: Path, trigger: str) -> None:
@@ -521,48 +534,33 @@ class CycleMixin:
                 except (TypeError, ValueError):
                     pass
 
-    async def _run_cycle_inner_scoped(
+    async def _prepare_cycle_prompt(
         self,
         prompt: str,
         trigger: str,
-        images: list[ImageData] | None = None,
-        prior_messages: list[dict[str, Any]] | None = None,
-        message_intent: str = "",
-        thread_id: str = "default",
-        model_config_override: ModelConfig | None = None,
-    ) -> CycleResult:
-        start = time.monotonic()
-        active_model_config = model_config_override or self.model_config
-        active_executor = (
-            self._create_executor(active_model_config) if model_config_override is not None else self._executor
-        )
-        executor_config = getattr(active_executor, "_model_config", None)
-        if isinstance(executor_config, ModelConfig):
-            active_model_config = executor_config
-        mode = self._resolve_execution_mode(active_model_config)
-        logger.info(
-            "run_cycle START trigger=%s prompt_len=%d mode=%s",
-            trigger,
-            len(prompt),
-            mode,
-        )
-
-        # ── Resolve context window and prompt tier ────────────
+        *,
+        message_intent: str,
+        thread_id: str,
+        prior_messages: list[dict[str, Any]] | None,
+        active_model_config: ModelConfig,
+        active_executor: Any,
+        mode: str,
+        save_prompt_log_after_preflight: bool,
+    ) -> _PreparedCyclePrompt:
+        """Resolve, build, fit, and log the prompt shared by both cycle paths."""
         from core.prompt.builder import resolve_prompt_tier
         from core.prompt.context import resolve_context_window
 
-        _ctx_window = resolve_context_window(
+        context_window = resolve_context_window(
             active_model_config.model,
             overrides=self._load_context_window_overrides(),
         )
-        _prompt_tier = resolve_prompt_tier(_ctx_window)
-
-        # ── Priming: Automatic memory retrieval ────────────────
+        prompt_tier = resolve_prompt_tier(context_window)
         priming_section, pending_human_notifications = await self._run_priming(
             prompt,
             trigger,
             message_intent=message_intent,
-            prompt_tier=_prompt_tier,
+            prompt_tier=prompt_tier,
             model_config=active_model_config,
         )
 
@@ -600,29 +598,24 @@ class CycleMixin:
             session_created_at=session_state.created_at if session_state is not None else "",
             session_last_ratio=session_state.last_ratio if session_state is not None else 0.0,
         )
-
-        build_result = build_system_prompt(
-            self.memory,
-            tool_registry=self._tool_registry,
-            personal_tools=self._personal_tools,
+        prompt_context = SystemPromptContext(
             priming_section=priming_section,
             execution_mode=mode,
             message=prompt,
-            retriever=self._get_retriever(),
             trigger=trigger,
-            context_window=_ctx_window,
+            context_window=context_window,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
             shortterm_text=shortterm_text,
         )
-        system_prompt = build_result.system_prompt
-        logger.debug("System prompt assembled, length=%d tier=%s", len(system_prompt), _prompt_tier)
+        system_prompt = self._compose_system_prompt(prompt_context).system_prompt
+        if not save_prompt_log_after_preflight:
+            logger.debug("System prompt assembled, length=%d tier=%s", len(system_prompt), prompt_tier)
 
-        # ── Context-window-aware tier downgrade ────────────
         system_prompt = self._fit_prompt_to_context_window(
             system_prompt,
             prompt,
-            _ctx_window,
+            context_window,
             priming_section=priming_section,
             mode=mode,
             trigger=trigger,
@@ -631,29 +624,31 @@ class CycleMixin:
             shortterm_text=shortterm_text,
         )
 
-        # ── Prompt log: save full payload for debugging ───
-        from core.tooling.schemas import load_all_tool_schemas
+        def _save_cycle_prompt_log() -> None:
+            from core.tooling.schemas import load_all_tool_schemas
 
-        _tool_schemas = load_all_tool_schemas(
-            tool_registry=self._tool_registry,
-            personal_tools=self._personal_tools,
-        )
-        _save_prompt_log(
-            self.anima_dir,
-            trigger=trigger,
-            sender=self._extract_sender(prompt, trigger),
-            model=active_model_config.model,
-            mode=mode,
-            system_prompt=system_prompt,
-            user_message=prompt,
-            tools=self._tool_registry,
-            session_id=self._tool_handler.session_id,
-            context_window=_ctx_window,
-            prior_messages=prior_messages,
-            tool_schemas=_tool_schemas,
-        )
+            tool_schemas = load_all_tool_schemas(
+                tool_registry=self._tool_registry,
+                personal_tools=self._personal_tools,
+            )
+            _save_prompt_log(
+                self.anima_dir,
+                trigger=trigger,
+                sender=self._extract_sender(prompt, trigger),
+                model=active_model_config.model,
+                mode=mode,
+                system_prompt=system_prompt,
+                user_message=prompt,
+                tools=self._tool_registry,
+                session_id=self._tool_handler.session_id,
+                context_window=context_window,
+                prior_messages=prior_messages,
+                tool_schemas=tool_schemas,
+            )
 
-        # ── Common preflight and executor preparation ──────────
+        if not save_prompt_log_after_preflight:
+            _save_cycle_prompt_log()
+
         conv_memory = None
         if uses_chat_session:
             from core.memory.conversation.memory import ConversationMemory
@@ -667,12 +662,68 @@ class CycleMixin:
             mode=mode,
             message=prompt,
             trigger=trigger,
-            context_window=_ctx_window,
+            context_window=context_window,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
             shortterm_text=shortterm_text,
         )
+        prompt_context = replace(prompt_context, message=prompt)
         active_executor.prepare_tracker(tracker, system_prompt, prompt)
+
+        if save_prompt_log_after_preflight:
+            _save_cycle_prompt_log()
+
+        return _PreparedCyclePrompt(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            tracker=tracker,
+            shortterm=shortterm,
+            uses_chat_session=uses_chat_session,
+            prompt_context=prompt_context,
+        )
+
+    async def _run_cycle_inner_scoped(
+        self,
+        prompt: str,
+        trigger: str,
+        images: list[ImageData] | None = None,
+        prior_messages: list[dict[str, Any]] | None = None,
+        message_intent: str = "",
+        thread_id: str = "default",
+        model_config_override: ModelConfig | None = None,
+    ) -> CycleResult:
+        start = time.monotonic()
+        active_model_config = model_config_override or self.model_config
+        active_executor = (
+            self._create_executor(active_model_config) if model_config_override is not None else self._executor
+        )
+        executor_config = getattr(active_executor, "_model_config", None)
+        if isinstance(executor_config, ModelConfig):
+            active_model_config = executor_config
+        mode = self._resolve_execution_mode(active_model_config)
+        logger.info(
+            "run_cycle START trigger=%s prompt_len=%d mode=%s",
+            trigger,
+            len(prompt),
+            mode,
+        )
+
+        prepared_prompt = await self._prepare_cycle_prompt(
+            prompt,
+            trigger,
+            message_intent=message_intent,
+            thread_id=thread_id,
+            prior_messages=prior_messages,
+            active_model_config=active_model_config,
+            active_executor=active_executor,
+            mode=mode,
+            save_prompt_log_after_preflight=False,
+        )
+        prompt = prepared_prompt.prompt
+        system_prompt = prepared_prompt.system_prompt
+        tracker = prepared_prompt.tracker
+        shortterm = prepared_prompt.shortterm
+        uses_chat_session = prepared_prompt.uses_chat_session
 
         try:
             result = await active_executor.execute(
@@ -962,131 +1013,23 @@ class CycleMixin:
             }
             return
 
-        # ── Resolve context window and prompt tier ────────────
-        from core.prompt.builder import resolve_prompt_tier as _rpt
-        from core.prompt.context import resolve_context_window as _rcw
-
-        _ctx_window_s = _rcw(
-            active_model_config.model,
-            overrides=self._load_context_window_overrides(),
-        )
-        _prompt_tier_s = _rpt(_ctx_window_s)
-
-        # ── All streaming-capable executors ──────────────────────
-        priming_section, pending_human_notifications = await self._run_priming(
+        prepared_prompt = await self._prepare_cycle_prompt(
             prompt,
             trigger,
             message_intent=message_intent,
-            prompt_tier=_prompt_tier_s,
-            model_config=active_model_config,
-        )
-
-        session_type = resolve_runtime_session_type(trigger)
-        uses_chat_session = trigger_uses_chat_session(trigger)
-        session_state = await self._guard_chat_sdk_session(
-            executor=active_executor,
-            uses_chat_session=uses_chat_session,
-            active_model_config=active_model_config,
             thread_id=thread_id,
-        )
-        shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
-        self._prepare_clean_start_session(
-            trigger=trigger,
-            session_type=session_type,
-            thread_id=thread_id,
-            shortterm=shortterm,
-        )
-        shortterm_text = ""
-        if uses_chat_session and shortterm.has_pending():
-            shortterm_text = shortterm.render_for_injection()
-            logger.info("Included short-term memory in system prompt allocation")
-        tracker = ContextTracker(
-            model=active_model_config.model,
-            threshold=active_model_config.context_threshold,
-            absolute_ceiling=active_model_config.context_absolute_ceiling,
-            baseline_tokens=session_state.baseline_tokens if session_state is not None else 0,
-            context_window_overrides=self._load_context_window_overrides(),
-            anima_dir=self.anima_dir,
-            session_type=session_type
-            if getattr(active_executor, "tracks_sdk_session_state", False) is True and uses_chat_session
-            else "",
-            thread_id=thread_id,
-            session_id=session_state.session_id if session_state is not None else "",
-            session_created_at=session_state.created_at if session_state is not None else "",
-            session_last_ratio=session_state.last_ratio if session_state is not None else 0.0,
-        )
-
-        build_result = build_system_prompt(
-            self.memory,
-            tool_registry=self._tool_registry,
-            personal_tools=self._personal_tools,
-            priming_section=priming_section,
-            execution_mode=mode,
-            message=prompt,
-            retriever=self._get_retriever(),
-            trigger=trigger,
-            context_window=_ctx_window_s,
-            pending_human_notifications=pending_human_notifications,
-            thread_id=thread_id,
-            shortterm_text=shortterm_text,
-        )
-        system_prompt = build_result.system_prompt
-
-        # ── Context-window-aware tier downgrade ────────────
-        system_prompt = self._fit_prompt_to_context_window(
-            system_prompt,
-            prompt,
-            _ctx_window_s,
-            priming_section=priming_section,
-            mode=mode,
-            trigger=trigger,
-            pending_human_notifications=pending_human_notifications,
-            thread_id=thread_id,
-            shortterm_text=shortterm_text,
-        )
-
-        # Pre-flight size check for streaming path
-        conv_memory = None
-        if uses_chat_session:
-            from core.memory.conversation.memory import ConversationMemory
-
-            conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
-        system_prompt, prompt = await self._preflight_size_check(
-            system_prompt,
-            prompt,
-            conv_memory,
-            priming_section=priming_section,
-            mode=mode,
-            message=prompt,
-            trigger=trigger,
-            context_window=_ctx_window_s,
-            pending_human_notifications=pending_human_notifications,
-            thread_id=thread_id,
-            shortterm_text=shortterm_text,
-        )
-        active_executor.prepare_tracker(tracker, system_prompt, prompt)
-
-        # ── Prompt log: save full payload for debugging ───
-        from core.tooling.schemas import load_all_tool_schemas as _lats
-
-        _tool_schemas_s = _lats(
-            tool_registry=self._tool_registry,
-            personal_tools=self._personal_tools,
-        )
-        _save_prompt_log(
-            self.anima_dir,
-            trigger=trigger,
-            sender=self._extract_sender(prompt, trigger),
-            model=active_model_config.model,
-            mode=mode,
-            system_prompt=system_prompt,
-            user_message=prompt,
-            tools=self._tool_registry,
-            session_id=self._tool_handler.session_id,
-            context_window=_ctx_window_s,
             prior_messages=prior_messages,
-            tool_schemas=_tool_schemas_s,
+            active_model_config=active_model_config,
+            active_executor=active_executor,
+            mode=mode,
+            save_prompt_log_after_preflight=True,
         )
+        prompt = prepared_prompt.prompt
+        system_prompt = prepared_prompt.system_prompt
+        tracker = prepared_prompt.tracker
+        shortterm = prepared_prompt.shortterm
+        uses_chat_session = prepared_prompt.uses_chat_session
+        prompt_context = prepared_prompt.prompt_context
 
         # ── Stream retry configuration ────────────────────
         retry_cfg = self._load_stream_retry_config()
@@ -1352,20 +1295,7 @@ class CycleMixin:
 
                     # Reset tracker for fresh session
                     tracker.reset()
-                    current_system_prompt = build_system_prompt(
-                        self.memory,
-                        tool_registry=self._tool_registry,
-                        personal_tools=self._personal_tools,
-                        priming_section=priming_section,
-                        execution_mode=mode,
-                        message=prompt,
-                        retriever=self._get_retriever(),
-                        trigger=trigger,
-                        context_window=_ctx_window_s,
-                        pending_human_notifications=pending_human_notifications,
-                        thread_id=thread_id,
-                        shortterm_text=shortterm_text,
-                    ).system_prompt
+                    current_system_prompt = self._compose_system_prompt(prompt_context).system_prompt
 
                     await asyncio.sleep(actual_delay)
                     continue
@@ -1473,19 +1403,9 @@ class CycleMixin:
                     terminal_error_chunk = None
                     current_prompt = prompt
                     tracker.reset()
-                    current_system_prompt = build_system_prompt(
-                        self.memory,
-                        tool_registry=self._tool_registry,
-                        personal_tools=self._personal_tools,
-                        priming_section=priming_section,
+                    current_system_prompt = self._compose_system_prompt(
+                        prompt_context,
                         execution_mode=mode,
-                        message=prompt,
-                        retriever=self._get_retriever(),
-                        trigger=trigger,
-                        context_window=_ctx_window_s,
-                        pending_human_notifications=pending_human_notifications,
-                        thread_id=thread_id,
-                        shortterm_text=shortterm_text,
                     ).system_prompt
                     yield {
                         "type": "retry_start",

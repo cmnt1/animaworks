@@ -35,7 +35,7 @@ import psutil
 
 if TYPE_CHECKING:
     try:
-        from claude_agent_sdk import ClaudeSDKClient, ResultMessage
+        from claude_agent_sdk import ClaudeSDKClient
     except ImportError:
         pass
 
@@ -44,27 +44,26 @@ from pathlib import Path
 # ── Re-exports from submodules (backward compatibility) ──────
 from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
 from core.execution.engines.claude import _sdk_session
-from core.execution.engines.claude._sdk_interrupt import _graceful_interrupt_blocking
 from core.execution.engines.claude._sdk_options import SDKOptionsMixin
 from core.execution.engines.claude._sdk_session import (
     _RESUMABLE_SESSION_TYPES,
     COMPACT_TIMEOUT_SEC,
     RESUME_TIMEOUT_SEC,
-    _build_sdk_query_input,
+    _build_sdk_query_input,  # noqa: F401 - backward-compatible re-export
     _cleanup_prompt_files,
     _cleanup_tool_outputs,
     _load_session_id,
     _resolve_session_type,
-    _save_session_id,
+    _save_session_id,  # noqa: F401 - backward-compatible re-export
     compact_sdk_session,
 )
 from core.execution.engines.claude._sdk_stream import (
     StreamingContext,
     StreamingState,
     _finalize_pending_records,
-    _handle_tool_result_block,
-    _handle_tool_use_block,
-    _tool_result_content_len,
+    _handle_tool_result_block,  # noqa: F401 - backward-compatible re-export
+    _handle_tool_use_block,  # noqa: F401 - backward-compatible re-export
+    _tool_result_content_len,  # noqa: F401 - backward-compatible re-export
     process_stream_messages,
 )
 from core.execution.error_classifier import (
@@ -134,6 +133,32 @@ def _sdk_failure_text(result: Any, text: str, assistant_error: str | None = None
     # envelope + known transport/status signature; prose mentioning an error
     # or a quoted log is still a successful model answer.
     return detect_cli_error_envelope(text)
+
+
+def _usage_from_stream_event(value: Any) -> TokenUsage:
+    """Convert streaming usage metadata to the blocking result type."""
+    if not isinstance(value, dict):
+        return TokenUsage()
+    return TokenUsage(
+        input_tokens=value.get("input_tokens", 0) or 0,
+        output_tokens=value.get("output_tokens", 0) or 0,
+        cache_read_tokens=value.get("cache_read_tokens", 0) or 0,
+        cache_write_tokens=value.get("cache_write_tokens", 0) or 0,
+    )
+
+
+def _tool_records_from_stream_event(value: Any) -> list[ToolCallRecord]:
+    """Convert serialized streaming tool records back to executor records."""
+    if not isinstance(value, list):
+        return []
+    fields = ("tool_name", "tool_id", "input_summary", "result_summary", "is_error")
+    records: list[ToolCallRecord] = []
+    for item in value:
+        if isinstance(item, ToolCallRecord):
+            records.append(item)
+        elif isinstance(item, dict):
+            records.append(ToolCallRecord(**{key: item[key] for key in fields if key in item}))
+    return records
 
 
 # ── SDK subprocess PID tracking / cleanup ────────────
@@ -324,97 +349,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
     # ── Blocking execution ───────────────────────────────────
 
-    async def _process_blocking_messages(
-        self,
-        client: ClaudeSDKClient,
-        prompt: str,
-        response_text: list[str],
-        pending_records: dict[str, ToolCallRecord],
-        session_stats: dict[str, Any],
-        tracker: ContextTracker | None,
-        session_type: str = "chat",
-        images: list[ImageData] | None = None,
-        usage_acc: TokenUsage | None = None,
-        thread_id: str = "default",
-    ) -> ResultMessage | None:
-        """Run query + message loop for blocking (non-streaming) execution."""
-        from claude_agent_sdk import (
-            AssistantMessage,
-            ResultMessage,
-            SystemMessage,
-            TextBlock,
-            ToolResultBlock,
-            ToolUseBlock,
-            UserMessage,
-        )
-
-        result_message: ResultMessage | None = None
-        await client.query(_build_sdk_query_input(prompt, images))
-        async for message in client.receive_response():
-            if self._check_interrupted():
-                logger.info("Agent SDK execute interrupted — sending graceful interrupt")
-                response_text.append("[Session interrupted by user]")
-                await _graceful_interrupt_blocking(
-                    client,
-                    self._anima_dir,
-                    session_type,
-                    thread_id=thread_id,
-                )
-                return result_message
-
-            if isinstance(message, ResultMessage):
-                result_message = message
-                session_id = getattr(message, "session_id", "")
-                if session_id and session_type in _RESUMABLE_SESSION_TYPES:
-                    _save_session_id(self._anima_dir, session_id, session_type, thread_id=thread_id)
-                if tracker:
-                    tracker.update_from_result_message(message.usage)
-                if usage_acc and message.usage:
-                    u = message.usage
-                    usage_acc.input_tokens = u.get("input_tokens", 0) or 0
-                    usage_acc.output_tokens = u.get("output_tokens", 0) or 0
-                    usage_acc.cache_read_tokens = u.get("cache_read_input_tokens", 0) or 0
-                    usage_acc.cache_write_tokens = u.get("cache_creation_input_tokens", 0) or 0
-            elif isinstance(message, AssistantMessage):
-                sdk_error = getattr(message, "error", None)
-                if isinstance(sdk_error, str) and sdk_error:
-                    session_stats["sdk_error"] = sdk_error
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        response_text.append(block.text)
-                    elif isinstance(block, ToolUseBlock):
-                        _handle_tool_use_block(
-                            block,
-                            pending_records,
-                            None,
-                            self._model_config.model,
-                            cw_overrides=self._resolve_cw_overrides(),
-                        )
-            elif isinstance(message, UserMessage):
-                if isinstance(message.content, list):
-                    for block in message.content:
-                        if isinstance(block, ToolResultBlock):
-                            session_stats["total_result_bytes"] += _tool_result_content_len(block)
-                            _handle_tool_result_block(
-                                block,
-                                pending_records,
-                                None,
-                                self._model_config.model,
-                                anima_dir=self._anima_dir,
-                                cw_overrides=self._resolve_cw_overrides(),
-                            )
-            elif isinstance(message, SystemMessage):
-                if message.subtype == "init" and message.data:
-                    for srv in message.data.get("mcp_servers", []):
-                        name = srv.get("name", "unknown")
-                        status = srv.get("status", "unknown")
-                        if status != "connected":
-                            logger.error("MCP server '%s' failed to connect: status=%s", name, status)
-                        else:
-                            logger.info("MCP server '%s' connected successfully", name)
-
-        return result_message
-
     async def execute(
         self,
         prompt: str,
@@ -426,152 +360,102 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         prior_messages: list[dict[str, Any]] | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
-        """Run a session via Claude Agent SDK with context monitoring hook."""
-        from claude_agent_sdk import ClaudeSDKClient, ClaudeSDKError, ProcessError
+        """Consume the streaming SDK path and adapt its terminal result."""
+        if tracker is None:
+            tracker = ContextTracker(
+                model=self._model_config.model,
+                threshold=self._model_config.context_threshold,
+                absolute_ceiling=self._model_config.context_absolute_ceiling,
+            )
 
-        self._rate_guard_preflight()
-        _cw = self._resolve_cw()
-        session_stats = self._init_session_stats(system_prompt, prompt, trigger)
-        session_type = _resolve_session_type(trigger)
-        if session_type in _RESUMABLE_SESSION_TYPES:
-            session_id_to_resume = _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
-        else:
-            _sdk_session.clear_session_id_for_type(self._anima_dir, session_type, thread_id=thread_id)
-            session_id_to_resume = None
-
-        options, _temp_files = self._build_sdk_options(
-            system_prompt,
-            _cw,
-            session_stats,
-            resume=session_id_to_resume,
-        )
-        _prompt_files: list[Path] = list(_temp_files)
-        response_text: list[str] = []
-        pending_records: dict[str, ToolCallRecord] = {}
-        result_message = None
-        usage_acc = TokenUsage()
-        _msg_args = dict(
-            prompt=prompt,
-            response_text=response_text,
-            pending_records=pending_records,
-            session_stats=session_stats,
-            tracker=tracker,
-            session_type=session_type,
-            images=images,
-            usage_acc=usage_acc,
-            thread_id=thread_id,
-        )
-
-        sdk_pid: int | None = None
-        sdk_pid_create_time: float | None = None
-
-        async def _run_blocking_client(run_options, *, log_label: str) -> ResultMessage | None:
-            nonlocal sdk_pid, sdk_pid_create_time
-            logger.info("ClaudeSDKClient connecting (%s, resume=%s)", log_label, getattr(run_options, "resume", None))
-            async with ClaudeSDKClient(options=run_options) as client:
-                logger.info("ClaudeSDKClient connected")
-                sdk_pid = _extract_sdk_pid(client)
-                sdk_pid_create_time = None
-                if sdk_pid is not None:
-                    try:
-                        sdk_pid_create_time = float(psutil.Process(sdk_pid).create_time())
-                    except Exception:
-                        logger.debug(
-                            "failed to read create_time for SDK subprocess pid=%s",
-                            sdk_pid,
-                            exc_info=True,
-                        )
-                return await self._process_blocking_messages(client, **_msg_args)
-
+        execution_snapshot: dict[str, Any] = {}
         try:
-            result_message = await _run_blocking_client(options, log_label="blocking mode")
-            logger.debug("ClaudeSDKClient disconnected")
-        except (ProcessError, ClaudeSDKError) as e:
-            if session_id_to_resume:
-                logger.warning("SDK session resume failed (session_id=%s): %s", session_id_to_resume, e)
-                _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
-                options, tfs = self._build_sdk_options(system_prompt, _cw, session_stats, resume=None)
-                _prompt_files.extend(tfs)
-                try:
-                    result_message = await _run_blocking_client(options, log_label="blocking mode fresh session retry")
-                except Exception as retry_exc:
-                    logger.exception("Agent SDK execution error (fresh session retry)")
-                    return ExecutionResult(
-                        text=f"[Agent SDK Error: {retry_exc}]\n" + "\n".join(response_text),
-                        tool_call_records=_finalize_pending_records(pending_records),
-                        error=True,
-                        usage=usage_acc,
-                    )
-            else:
-                logger.exception("Agent SDK execution error")
-                return ExecutionResult(
-                    text=f"[Agent SDK Error: {e}]\n" + "\n".join(response_text),
-                    tool_call_records=_finalize_pending_records(pending_records),
-                    error=True,
-                    usage=usage_acc,
-                )
-        except Exception as e:
-            logger.exception("Agent SDK execution error")
-            return ExecutionResult(
-                text=f"[Agent SDK Error: {e}]\n" + "\n".join(response_text),
-                tool_call_records=_finalize_pending_records(pending_records),
-                error=True,
-                usage=usage_acc,
-            )
-        finally:
-            _kill_sdk_process(sdk_pid, sdk_pid_create_time)
-            _cleanup_tool_outputs(self._anima_dir)
-            _cleanup_prompt_files(_prompt_files)
+            terminal_event: dict[str, Any] | None = None
+            async for event in self.execute_streaming(
+                system_prompt=system_prompt,
+                prompt=prompt,
+                tracker=tracker,
+                images=images,
+                prior_messages=prior_messages,
+                trigger=trigger,
+                thread_id=thread_id,
+                _execution_snapshot=execution_snapshot,
+                _aggregate_result=True,
+            ):
+                if event.get("type") in {"done", "error"}:
+                    terminal_event = event
 
-        auth_failure = _detect_sdk_auth_failure(
-            _sdk_failure_text(result_message, "\n".join(response_text), session_stats.get("sdk_error")) or ""
-        )
-        if auth_failure and self._should_retry_sdk_auth_failure():
-            logger.warning("Claude SDK returned auth failure text; retrying fresh session once")
-            response_text.clear()
-            pending_records.clear()
-            result_message = None
-            usage_acc = TokenUsage()
-            session_stats.pop("sdk_error", None)
-            _msg_args["usage_acc"] = usage_acc
-            if session_type in _RESUMABLE_SESSION_TYPES:
-                _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
-            retry_options, retry_files = self._build_sdk_options(
-                system_prompt,
-                _cw,
-                session_stats,
-                resume=None,
-            )
-            try:
-                result_message = await _run_blocking_client(
-                    retry_options,
-                    log_label="blocking mode auth failure retry",
-                )
-            except Exception as retry_exc:
-                logger.exception("Agent SDK auth failure retry failed")
+        except Exception as exc:
+            if not isinstance(exc, (StreamDisconnectedError, TimeoutError)):
+                raise
+            logger.exception("Agent SDK execution error")
+            root_exc = exc
+            while root_exc.__cause__ is not None:
+                root_exc = root_exc.__cause__
+            partial_text = getattr(exc, "partial_text", "") or execution_snapshot.get("response_text", "")
+            if execution_snapshot.get("auth_retry_started"):
                 return ExecutionResult(
-                    text=f"[Agent SDK Error: {retry_exc}]",
+                    text=f"[Agent SDK Error: {root_exc}]",
                     tool_call_records=[],
                     error=True,
-                    usage=usage_acc,
+                    usage=_usage_from_stream_event(execution_snapshot.get("usage")),
                 )
-            finally:
-                _kill_sdk_process(sdk_pid, sdk_pid_create_time)
-                _cleanup_tool_outputs(self._anima_dir)
-                _cleanup_prompt_files(retry_files)
+            partial_records = _tool_records_from_stream_event(execution_snapshot.get("tool_call_records"))
+            pending_records = {record.tool_id: record for record in partial_records}
+            return ExecutionResult(
+                text=f"[Agent SDK Error: {root_exc}]\n{partial_text}",
+                tool_call_records=_finalize_pending_records(pending_records),
+                error=True,
+                usage=_usage_from_stream_event(execution_snapshot.get("usage")),
+            )
 
-        all_tool_records = _finalize_pending_records(pending_records)
-        replied_to = self._read_replied_to_file()
-        failure = _sdk_failure_text(result_message, "\n".join(response_text), session_stats.get("sdk_error"))
+        if terminal_event is None:
+            partial_records = _tool_records_from_stream_event(execution_snapshot.get("tool_call_records"))
+            pending_records = {record.tool_id: record for record in partial_records}
+            return ExecutionResult(
+                text=execution_snapshot.get("response_text") or "(no response)",
+                result_message=execution_snapshot.get("result_message"),
+                replied_to_from_transcript=self._read_replied_to_file(),
+                tool_call_records=_finalize_pending_records(pending_records),
+                force_chain=bool(execution_snapshot.get("force_chain", False)),
+                task_compact_requested=bool(execution_snapshot.get("task_compact_requested", False)),
+                usage=_usage_from_stream_event(execution_snapshot.get("usage")),
+            )
+
+        result_message = terminal_event.get("result_message")
+        tool_records = _tool_records_from_stream_event(terminal_event.get("tool_call_records"))
+        usage = _usage_from_stream_event(terminal_event.get("usage"))
+        if terminal_event.get("type") == "error":
+            if result_message is None:
+                result_message = execution_snapshot.get("result_message")
+            return ExecutionResult(
+                text=terminal_event.get("message") or "(no response)",
+                result_message=result_message,
+                replied_to_from_transcript=self._read_replied_to_file(),
+                tool_call_records=tool_records,
+                force_chain=bool(execution_snapshot.get("force_chain", False)),
+                task_compact_requested=bool(execution_snapshot.get("task_compact_requested", False)),
+                usage=usage,
+                error=True,
+            )
+
+        full_text = terminal_event.get("full_text") or "(no response)"
+        if terminal_event.get("stop_kind") == "interrupted":
+            completed_text = execution_snapshot.get("response_text", "")
+            full_text = (
+                f"{completed_text}\n[Session interrupted by user]"
+                if completed_text
+                else "[Session interrupted by user]"
+            )
+        replied_to = terminal_event.get("replied_to_from_transcript") or set()
         return ExecutionResult(
-            text=failure or "\n".join(response_text) or "(no response)",
+            text=full_text,
             result_message=result_message,
             replied_to_from_transcript=replied_to,
-            tool_call_records=all_tool_records,
-            force_chain=session_stats.get("force_chain", False),
-            task_compact_requested=session_stats.get("task_compact_requested", False),
-            usage=usage_acc,
-            error=failure is not None,
+            tool_call_records=tool_records,
+            force_chain=bool(terminal_event.get("force_chain", False)),
+            task_compact_requested=bool(terminal_event.get("task_compact_requested", False)),
+            usage=usage,
         )
 
     # ── Streaming execution ──────────────────────────────────
@@ -588,6 +472,8 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         thread_id: str = "default",
         task_compaction_count: int = 0,
         resume_session_id: str | None = None,
+        _execution_snapshot: dict[str, Any] | None = None,
+        _aggregate_result: bool = False,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream events from Claude Agent SDK."""
         from claude_agent_sdk import ClaudeSDKClient, ClaudeSDKError, ProcessError
@@ -632,6 +518,30 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         )
         emitted_text_delta = False
 
+        last_result_message: Any = None
+
+        def _snapshot_execution_state() -> None:
+            nonlocal last_result_message
+            if _execution_snapshot is None:
+                return
+            if (
+                _aggregate_result
+                and state.result_message is not None
+                and state.result_message is not last_result_message
+            ):
+                tracker.update_from_result_message(getattr(state.result_message, "usage", None))
+                last_result_message = state.result_message
+            _execution_snapshot.update(
+                response_text="\n".join(state.response_text),
+                tool_call_records=[asdict(record) for record in state.pending_records.values()],
+                usage=state.usage_acc.to_dict(),
+                result_message=state.result_message,
+                force_chain=session_stats.get("force_chain", False),
+                task_compact_requested=session_stats.get("task_compact_requested", False),
+                interrupted=state.interrupted,
+            )
+
+        _snapshot_execution_state()
         sdk_pid: int | None = None
         sdk_pid_create_time: float | None = None
 
@@ -661,9 +571,17 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                                 exc_info=True,
                             )
                     try:
-                        async for ev in process_stream_messages(fc, ctx, state):
+                        async for ev in process_stream_messages(
+                            fc,
+                            ctx,
+                            state,
+                            flush_unterminated_messages=_aggregate_result,
+                            update_context_tracker=not _aggregate_result,
+                        ):
+                            _snapshot_execution_state()
                             yield ev
                     finally:
+                        _snapshot_execution_state()
                         if self._active_client is fc:
                             self._active_client = None
             except BaseException as exc:
@@ -692,7 +610,13 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                             exc_info=True,
                         )
                 try:
-                    gen = process_stream_messages(client, ctx, state)
+                    gen = process_stream_messages(
+                        client,
+                        ctx,
+                        state,
+                        flush_unterminated_messages=_aggregate_result,
+                        update_context_tracker=not _aggregate_result,
+                    )
                     if resume_guard:
                         try:
                             first = await asyncio.wait_for(gen.__anext__(), timeout=RESUME_TIMEOUT_SEC)
@@ -708,12 +632,15 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                         else:
                             if first.get("type") == "text_delta":
                                 emitted_text_delta = True
+                            _snapshot_execution_state()
                             yield first
                     async for ev in gen:
                         if ev.get("type") == "text_delta":
                             emitted_text_delta = True
+                        _snapshot_execution_state()
                         yield ev
                 finally:
+                    _snapshot_execution_state()
                     if self._active_client is client:
                         self._active_client = None
 
@@ -759,6 +686,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 partial_text="\n".join(state.response_text),
             ) from e
         finally:
+            _snapshot_execution_state()
             _kill_sdk_process(sdk_pid, sdk_pid_create_time)
             _cleanup_tool_outputs(self._anima_dir)
             _cleanup_prompt_files(_prompt_files)
@@ -766,11 +694,19 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         auth_failure = _detect_sdk_auth_failure(
             _sdk_failure_text(state.result_message, "\n".join(state.response_text), state.sdk_error) or ""
         )
-        if auth_failure and self._should_retry_sdk_auth_failure() and not emitted_text_delta and not resume_session_id:
+        if (
+            auth_failure
+            and self._should_retry_sdk_auth_failure()
+            and (not emitted_text_delta or _aggregate_result)
+            and not resume_session_id
+        ):
             logger.warning("Claude SDK returned auth failure text during streaming; retrying fresh session once")
             if session_type in _RESUMABLE_SESSION_TYPES:
                 _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
             state = StreamingState(usage_acc=TokenUsage())
+            if _execution_snapshot is not None:
+                _execution_snapshot["auth_retry_started"] = True
+            _snapshot_execution_state()
             ctx = StreamingContext(
                 prompt=prompt,
                 images=images,
@@ -784,10 +720,16 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 thread_id=thread_id,
             )
             emitted_text_delta = False
-            async for ev in _fresh_session():
-                if ev.get("type") == "text_delta":
-                    emitted_text_delta = True
-                yield ev
+            try:
+                async for ev in _fresh_session():
+                    if ev.get("type") == "text_delta":
+                        emitted_text_delta = True
+                    yield ev
+            finally:
+                _snapshot_execution_state()
+                _kill_sdk_process(sdk_pid, sdk_pid_create_time)
+                _cleanup_tool_outputs(self._anima_dir)
+                _cleanup_prompt_files(_prompt_files)
 
         all_tool_records = _finalize_pending_records(state.pending_records)
         full_text = "\n".join(state.response_text) or "(no response)"

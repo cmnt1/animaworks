@@ -63,7 +63,7 @@ def _common_patches(*, spy_clear=None, retry_max=2):
     """Return the common patch context manager args for run_cycle_streaming tests."""
     clear_side_effect = spy_clear if spy_clear is not None else MagicMock()
     return [
-        patch("core.agent.cycle.build_system_prompt", return_value=_build_result_mock()),
+        patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
         patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
         patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
         patch("core.agent.agent_core.AgentCore._preflight_size_check"),
@@ -115,7 +115,7 @@ class TestRetryFreshSession:
         agent._executor.supports_streaming = True
 
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
             patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
@@ -165,7 +165,7 @@ class TestRetryFreshSession:
         agent._executor.supports_streaming = True
 
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
             patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
@@ -224,7 +224,7 @@ class TestRetryFreshSession:
         agent._executor.supports_streaming = True
 
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
             patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
@@ -270,7 +270,7 @@ class TestRetryExhausted:
         agent._executor.supports_streaming = True
 
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
             patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="s"),
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
@@ -342,7 +342,7 @@ class TestTerminalErrorChunk:
         agent._executor.supports_streaming = True
 
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core.agent.priming.build_system_prompt", return_value=_build_result_mock()),
             patch("core.prompt.builder.inject_shortterm", side_effect=lambda sp, _stm: sp),
             patch("core.agent.agent_core.AgentCore._resolve_execution_mode", return_value="c"),
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,

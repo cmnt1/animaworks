@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from contextlib import contextmanager
@@ -24,6 +25,7 @@ from tests.helpers.mocks import (
     MockStreamEvent,
     MockTextBlock,
     MockToolResultBlock,
+    MockToolUseBlock,
     MockUserMessage,
     patch_agent_sdk,
     patch_agent_sdk_streaming,
@@ -43,7 +45,7 @@ def _patch_agent_sdk_sequences(message_sequences: list[list[Any]]):
     mock_module.AssistantMessage = MockAssistantMessage
     mock_module.ResultMessage = MockResultMessage
     mock_module.TextBlock = MockTextBlock
-    mock_module.ToolUseBlock = MagicMock
+    mock_module.ToolUseBlock = MockToolUseBlock
     mock_module.ToolResultBlock = MockToolResultBlock
     mock_module.UserMessage = MockUserMessage
     mock_module.SystemMessage = MagicMock
@@ -61,7 +63,7 @@ def _patch_agent_sdk_sequences(message_sequences: list[list[Any]]):
         saved_modules[key] = sys.modules.get(key)
         sys.modules[key] = mock_types if key == "claude_agent_sdk.types" else mock_module
     try:
-        yield
+        yield mock_module
     finally:
         for key, saved in saved_modules.items():
             if saved is None:
@@ -248,6 +250,197 @@ class TestAgentSDKExecutor:
             assert result.result_message is not None
             assert result.result_message.usage["input_tokens"] == 500
 
+    async def test_execute_aggregates_streamed_result_metadata(self, model_config, anima_dir):
+        from types import SimpleNamespace
+
+        from core.execution.base import TokenUsage, ToolCallRecord
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        result_message = SimpleNamespace(session_id="aggregate-session", num_turns=3)
+        streamed_record = {
+            "tool_name": "Read",
+            "tool_id": "tu_aggregate",
+            "input_summary": "path=README.md",
+            "result_summary": "contents",
+            "is_error": False,
+        }
+
+        async def _events(**kwargs):
+            assert kwargs["_aggregate_result"] is True
+            yield {"type": "text_delta", "text": "incremental text"}
+            yield {
+                "type": "done",
+                "full_text": "assembled response",
+                "result_message": result_message,
+                "replied_to_from_transcript": {"alice"},
+                "tool_call_records": [streamed_record],
+                "force_chain": True,
+                "task_compact_requested": True,
+                "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 12,
+                    "cache_read_tokens": 13,
+                    "cache_write_tokens": 14,
+                },
+            }
+
+        with patch.object(executor, "execute_streaming", _events):
+            result = await executor.execute("prompt", system_prompt="system")
+
+        assert result.text == "assembled response"
+        assert result.result_message is result_message
+        assert result.replied_to_from_transcript == {"alice"}
+        assert result.tool_call_records == [ToolCallRecord(**streamed_record)]
+        assert result.force_chain is True
+        assert result.task_compact_requested is True
+        assert result.usage == TokenUsage(11, 12, 13, 14)
+
+    async def test_execute_retries_failed_resume_with_fresh_session(self, model_config, anima_dir):
+        from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        fresh_messages = [
+            MockAssistantMessage([MockTextBlock("fresh session response")]),
+            MockResultMessage(session_id="fresh-session"),
+        ]
+        with _patch_agent_sdk_sequences([fresh_messages]) as sdk_module:
+            default_factory = sdk_module.ClaudeSDKClient
+            attempts = []
+
+            class _FailedResumeClient:
+                async def __aenter__(self):
+                    raise RuntimeError("stale session")
+
+                async def __aexit__(self, *args):
+                    return False
+
+            def _client_factory(**kwargs):
+                attempts.append(kwargs)
+                return _FailedResumeClient() if len(attempts) == 1 else default_factory(**kwargs)
+
+            sdk_module.ClaudeSDKClient = _client_factory
+            _save_session_id(anima_dir, "stale-session", "chat")
+            executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+            result = await executor.execute("prompt", system_prompt="system")
+
+        assert result.text == "fresh session response"
+        assert len(attempts) == 2
+        assert _load_session_id(anima_dir, "chat") == "fresh-session"
+
+    async def test_execute_timeout_keeps_received_text_and_incomplete_tool_record(self, model_config, anima_dir):
+        from core.execution.base import ToolCallRecord
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        async def _receive_then_timeout(self):
+            yield MockAssistantMessage(
+                [
+                    MockTextBlock("received before timeout"),
+                    MockToolUseBlock("Read", {"path": "partial.txt"}, id="tu_partial"),
+                ]
+            )
+            raise TimeoutError("read timed out")
+
+        with (
+            _patch_agent_sdk_sequences([[]]),
+            patch.object(MockClaudeSDKClient, "receive_messages", _receive_then_timeout),
+        ):
+            result = await AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir).execute(
+                "prompt", system_prompt="system"
+            )
+
+        assert result.text == "[Agent SDK Error: read timed out]\nreceived before timeout"
+        assert result.error is True
+        assert result.tool_call_records == [
+            ToolCallRecord(
+                tool_name="Read",
+                tool_id="tu_partial",
+                input_summary="{'path': 'partial.txt'}",
+                result_summary="",
+                is_error=True,
+            )
+        ]
+
+    async def test_execute_idle_timeout_preserves_buffered_assistant_text(self, model_config, anima_dir):
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        waiting_for_next_message = asyncio.Event()
+
+        async def _receive_then_block(self):
+            yield MockAssistantMessage([MockTextBlock("received before idle timeout")])
+            waiting_for_next_message.set()
+            await asyncio.Event().wait()
+
+        with (
+            _patch_agent_sdk_sequences([[]]),
+            patch.object(MockClaudeSDKClient, "receive_messages", _receive_then_block),
+            patch("core.execution.events.DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS", 0.05),
+        ):
+            result = await AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir).execute(
+                "prompt", system_prompt="system"
+            )
+
+        assert waiting_for_next_message.is_set()
+        assert result.error is True
+        assert result.text.endswith("\nreceived before idle timeout")
+
+    async def test_execute_cancellation_propagates(self, model_config, anima_dir):
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        waiting_for_next_message = asyncio.Event()
+
+        async def _receive_then_block(self):
+            yield MockAssistantMessage([MockTextBlock("received before cancellation")])
+            waiting_for_next_message.set()
+            await asyncio.Event().wait()
+
+        with (
+            _patch_agent_sdk_sequences([[]]),
+            patch.object(MockClaudeSDKClient, "receive_messages", _receive_then_block),
+        ):
+            task = asyncio.create_task(
+                AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir).execute(
+                    "prompt", system_prompt="system"
+                )
+            )
+            await asyncio.wait_for(waiting_for_next_message.wait(), timeout=1.0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    async def test_execute_auth_retry_failure_keeps_legacy_result_shape(self, model_config, anima_dir):
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+
+        auth_text = 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
+        first_messages = [
+            MockAssistantMessage([MockTextBlock(auth_text)]),
+            MockResultMessage(usage={"input_tokens": 10, "output_tokens": 5}),
+        ]
+        with _patch_agent_sdk_sequences([first_messages]) as sdk_module:
+            default_factory = sdk_module.ClaudeSDKClient
+            attempts = []
+
+            class _FailedRetryClient:
+                async def __aenter__(self):
+                    raise RuntimeError("retry failed")
+
+                async def __aexit__(self, *args):
+                    return False
+
+            def _client_factory(**kwargs):
+                attempts.append(kwargs)
+                return default_factory(**kwargs) if len(attempts) == 1 else _FailedRetryClient()
+
+            sdk_module.ClaudeSDKClient = _client_factory
+            result = await AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir).execute(
+                "prompt", system_prompt="system"
+            )
+
+        assert result.text == "[Agent SDK Error: retry failed]"
+        assert result.error is True
+        assert result.tool_call_records == []
+        assert result.usage.input_tokens == 0
+
     async def test_execute_empty_response(self, model_config, anima_dir):
         with patch_agent_sdk(response_text=""):
             from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
@@ -261,6 +454,13 @@ class TestAgentSDKExecutor:
     async def test_execute_retries_max_auth_failure_once(self, model_config, anima_dir):
         auth_text = 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
         first_messages = [
+            MockStreamEvent(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": auth_text},
+                    "index": 0,
+                }
+            ),
             MockAssistantMessage([MockTextBlock(auth_text)]),
             MockResultMessage(usage={"input_tokens": 10, "output_tokens": 5}),
         ]
@@ -312,6 +512,31 @@ class TestAgentSDKExecutor:
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test", tracker=tracker)
             assert "tracked response" in result.text
+
+    async def test_execute_keeps_blocking_context_tracker_semantics(self, model_config, anima_dir):
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
+        from core.prompt.context import ContextTracker
+
+        tracker = ContextTracker(model=model_config.model, threshold=0.5)
+        messages = [
+            MockStreamEvent(
+                {
+                    "type": "message_start",
+                    "message": {"usage": {"input_tokens": 30, "cache_read_input_tokens": 4}},
+                }
+            ),
+            MockAssistantMessage([MockTextBlock("response")]),
+            MockResultMessage(usage={"input_tokens": 100, "output_tokens": 20}),
+        ]
+        with _patch_agent_sdk_sequences([messages]):
+            result = await AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir).execute(
+                "prompt", tracker=tracker
+            )
+
+        assert result.text == "response"
+        assert tracker.baseline_tokens == 0
+        assert tracker._input_tokens == 100
+        assert tracker._output_tokens == 20
 
 
 # ── Streaming execution ──────────────────────────────────────

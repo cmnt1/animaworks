@@ -11,6 +11,7 @@ are resolved at runtime via MRO when mixed into ``AgentCore``.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -23,8 +24,40 @@ from core.prompt.tokens import estimate_tokens
 logger = logging.getLogger("animaworks.agent")
 
 
+@dataclass(frozen=True)
+class SystemPromptContext:
+    """Inputs shared by every system-prompt rebuild in an agent cycle."""
+
+    priming_section: str
+    execution_mode: str
+    message: str
+    trigger: str
+    context_window: int
+    pending_human_notifications: str = ""
+    thread_id: str = "default"
+    shortterm_text: str = ""
+
+
 class PrimingMixin:
     """Mixin: priming (auto-recall), context fitting, pre-flight size check."""
+
+    def _compose_system_prompt(self, context: SystemPromptContext, **overrides: Any):
+        """Build a system prompt from shared cycle inputs plus explicit overrides."""
+        kwargs: dict[str, Any] = {
+            "tool_registry": self._tool_registry,
+            "personal_tools": self._personal_tools,
+            "priming_section": context.priming_section,
+            "execution_mode": context.execution_mode,
+            "message": context.message,
+            "retriever": self._get_retriever(),
+            "trigger": context.trigger,
+            "context_window": context.context_window,
+            "pending_human_notifications": context.pending_human_notifications,
+            "thread_id": context.thread_id,
+            "shortterm_text": context.shortterm_text,
+        }
+        kwargs.update(overrides)
+        return build_system_prompt(self.memory, **kwargs)
 
     async def _run_priming(
         self,
@@ -339,20 +372,18 @@ class PrimingMixin:
         best_prompt = system_prompt
         for shrink in (0.75, 0.50, 0.25):
             reduced_budget = int(original_budget.target * shrink)
-            build_result = build_system_prompt(
-                self.memory,
-                tool_registry=self._tool_registry,
-                personal_tools=self._personal_tools,
-                priming_section=priming_section,
-                execution_mode=mode,
-                message=prompt,
-                retriever=self._get_retriever(),
-                trigger=trigger,
-                context_window=context_window,
+            build_result = self._compose_system_prompt(
+                SystemPromptContext(
+                    priming_section=priming_section,
+                    execution_mode=mode,
+                    message=prompt,
+                    trigger=trigger,
+                    context_window=context_window,
+                    pending_human_notifications=pending_human_notifications,
+                    thread_id=thread_id,
+                    shortterm_text=shortterm_text,
+                ),
                 system_budget=reduced_budget,
-                pending_human_notifications=pending_human_notifications,
-                thread_id=thread_id,
-                shortterm_text=shortterm_text,
             )
             best_prompt = build_result.system_prompt
             new_estimated = estimate_tokens(best_prompt) + prompt_tokens + tool_overhead
@@ -426,19 +457,17 @@ class PrimingMixin:
             try:
                 await conv_memory._compress()
                 prompt = conv_memory.build_chat_prompt(message, "human")
-                system_prompt = build_system_prompt(
-                    self.memory,
-                    tool_registry=self._tool_registry,
-                    personal_tools=self._personal_tools,
-                    priming_section=priming_section,
-                    execution_mode=mode,
-                    message=prompt,
-                    retriever=self._get_retriever(),
-                    trigger=trigger,
-                    context_window=context_window,
-                    pending_human_notifications=pending_human_notifications,
-                    thread_id=thread_id,
-                    shortterm_text=shortterm_text,
+                system_prompt = self._compose_system_prompt(
+                    SystemPromptContext(
+                        priming_section=priming_section,
+                        execution_mode=mode,
+                        message=prompt,
+                        trigger=trigger,
+                        context_window=context_window,
+                        pending_human_notifications=pending_human_notifications,
+                        thread_id=thread_id,
+                        shortterm_text=shortterm_text,
+                    )
                 ).system_prompt
             except Exception:
                 logger.exception("Forced compression failed")

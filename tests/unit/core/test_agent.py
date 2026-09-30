@@ -278,7 +278,7 @@ class TestRunCycle:
         agent._executor.execute = AsyncMock(return_value=ExecutionResult(text="", error=True, reason="quota_exhausted"))
 
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
+            patch("core.agent.priming.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
             patch("core.agent.cycle.ShortTermMemory") as shortterm,
         ):
             shortterm.return_value.has_pending.return_value = False
@@ -297,7 +297,7 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=mock_build_result),
+            patch("core.agent.priming.build_system_prompt", return_value=mock_build_result),
             patch("core.prompt.builder.inject_shortterm", return_value="sysprompt"),
             patch("core.agent.cycle.ShortTermMemory") as MockST,
         ):
@@ -318,7 +318,7 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=mock_build_result),
+            patch("core.agent.priming.build_system_prompt", return_value=mock_build_result),
             patch("core.prompt.builder.inject_shortterm", return_value="sysprompt"),
             patch("core.agent.cycle.ShortTermMemory") as MockST,
         ):
@@ -346,7 +346,7 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core.agent.cycle.build_system_prompt", return_value=mock_build_result),
+            patch("core.agent.priming.build_system_prompt", return_value=mock_build_result),
             patch("core.prompt.builder.inject_shortterm", return_value="sysprompt"),
             patch("core.agent.cycle.ShortTermMemory") as MockST,
             patch("core.agent.cycle.ContextTracker") as MockCT,
