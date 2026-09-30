@@ -12,19 +12,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.file_access_policy import (
-    check_file_write_roots,
+    FileAccessContext,
+    FileAccessDecision,
     effective_write_roots,
+    evaluate_file_access,
     find_denied_root,
-    find_internal_cache_root,
     resolve_effective_denied_roots,
 )
 from core.config.models import PermissionsConfig, load_permissions
 from core.i18n import t
-from core.tooling.handler_base import (
-    _error_result,
-    _is_global_permissions_write_blocked,
-    _is_protected_write,
-)
+from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
     from core.memory import MemoryManager
@@ -178,215 +175,149 @@ class PermissionsMixin:
         Returns ``None`` if allowed, or an error message string if denied.
         """
         if self._superuser:
+            context = FileAccessContext(
+                anima_dir=self._anima_dir,
+                data_dir=self._anima_dir.resolve().parent.parent,
+                superuser=True,
+            )
+        else:
+            effective_config = config or self._load_permissions_config()
+            effective_denied_roots = (
+                denied_roots if denied_roots is not None else self._resolved_file_deny_roots(effective_config)
+            )
+
+            from core.paths import get_data_dir
+
+            data_dir = get_data_dir().resolve()
+            write_roots = effective_write_roots(self._anima_dir, effective_config.file_roots) if write else ()
+            additional_read_dirs: list[Path] = []
+            if not write:
+                from core.paths import (
+                    get_common_knowledge_dir,
+                    get_common_skills_dir,
+                    get_company_dir,
+                    get_reference_dir,
+                    get_shared_dir,
+                )
+
+                for shared_dir in (
+                    get_shared_dir(),
+                    get_common_knowledge_dir(),
+                    get_common_skills_dir(),
+                    get_reference_dir(),
+                    get_company_dir(),
+                ):
+                    if shared_dir.exists():
+                        additional_read_dirs.append(shared_dir.resolve())
+
+                # External skill roots (host ~/.claude/skills etc.) are
+                # read-only and surfaced via external/<engine>/<name>/SKILL.md.
+                try:
+                    from core.config.models import load_config
+
+                    for root in load_config().skills.external_roots:
+                        if not getattr(root, "enabled", True):
+                            continue
+                        root_dir = Path(root.path).expanduser().resolve()
+                        if root_dir.exists():
+                            additional_read_dirs.append(root_dir)
+                except Exception:
+                    logger.debug("external_roots check skipped", exc_info=True)
+
+            context = FileAccessContext(
+                anima_dir=self._anima_dir.resolve(),
+                data_dir=data_dir,
+                denied_roots=effective_denied_roots,
+                file_roots=tuple(effective_config.file_roots),
+                file_roots_readonly=tuple(effective_config.file_roots_readonly),
+                write_roots=tuple(write_roots),
+                restrict_reads_to_roots=True,
+                additional_read_dirs=tuple(additional_read_dirs),
+                subordinate_activity_dirs=tuple(path.resolve() for path in self._subordinate_activity_dirs),
+                descendant_activity_dirs=tuple(path.resolve() for path in self._descendant_activity_dirs),
+                peer_activity_dirs=tuple(path.resolve() for path in self._peer_activity_dirs),
+                subordinate_management_files=tuple(path.resolve() for path in self._subordinate_management_files),
+                subordinate_root_dirs=tuple(path.resolve() for path in self._subordinate_root_dirs),
+                descendant_read_files=tuple(path.resolve() for path in self._descendant_state_files),
+                descendant_read_dirs=tuple(path.resolve() for path in self._descendant_state_dirs),
+                trusted_internal_cache_write=trusted_internal_cache_write,
+            )
+
+        decision = evaluate_file_access(path, context, write=write)
+        return self._file_access_error(path, decision)
+
+    def _file_access_error(self, path: str, decision: FileAccessDecision) -> str | None:
+        """Convert the shared policy decision to ToolHandler's JSON error format."""
+        if decision.allowed:
             return None
-        resolved = Path(path).resolve()
-        effective_config = config or self._load_permissions_config()
-        effective_denied_roots = (
-            denied_roots if denied_roots is not None else self._resolved_file_deny_roots(effective_config)
-        )
 
-        # When explicit file deny is enabled, model-facing tools must not
-        # expose internal copies/caches that can retain content from a denied
-        # source.  Trusted search services may consume these caches, but their
-        # filtered results are returned through separate handlers.
-        if effective_denied_roots and not (write and trusted_internal_cache_write):
-            internal_cache = find_internal_cache_root(path, self._anima_dir)
-            if internal_cache is not None:
-                logger.warning(
-                    "permission_denied anima=%s path=%s reason=internal_cache root=%s",
-                    self._anima_name,
-                    path,
-                    internal_cache,
-                )
-                return _error_result(
-                    "PermissionDenied",
-                    f"Direct access to internal runtime cache is not allowed: '{path}'",
-                    context={"system_denied_root": str(internal_cache)},
-                )
-
-        # Explicit denies are the primary boundary and override every normal
-        # grant below, including own/shared/supervisor paths and file_roots=["/"].
-        denied = self._find_denied_file_root(resolved, effective_denied_roots)
-        if denied is not None:
+        if decision.reason == "internal_cache":
+            logger.warning(
+                "permission_denied anima=%s path=%s reason=internal_cache root=%s",
+                self._anima_name,
+                path,
+                decision.internal_cache_root,
+            )
+            return _error_result(
+                "PermissionDenied",
+                f"Direct access to internal runtime cache is not allowed: '{path}'",
+                context={"system_denied_root": str(decision.internal_cache_root)},
+            )
+        if decision.reason == "denied_root":
             logger.warning(
                 "permission_denied anima=%s path=%s reason=file_root_denied root=%s",
                 self._anima_name,
                 path,
-                denied,
+                decision.denied_root,
             )
             return _error_result(
                 "PermissionDenied",
                 f"'{path}' is under an explicitly denied directory",
-                context={"denied_root": str(denied)},
+                context={"denied_root": str(decision.denied_root)},
             )
-
-        if write:
-            gp_err = _is_global_permissions_write_blocked(resolved)
-            if gp_err:
-                logger.warning(
-                    "permission_denied anima=%s path=%s reason=global_permissions_protected", self._anima_name, path
-                )
-                return gp_err
-            write_roots = effective_write_roots(self._anima_dir, effective_config.file_roots)
-        else:
-            write_roots = ()
-
-        # Own anima_dir
-        if resolved.is_relative_to(self._anima_dir.resolve()):
-            if write:
-                err = _is_protected_write(self._anima_dir, resolved)
-                if err:
-                    logger.warning("permission_denied anima=%s path=%s reason=protected_file", self._anima_name, path)
-                    return err
-            return None
-
-        # Supervisor can read direct subordinate's activity_log (work records)
-        if not write:
-            for sub_activity in self._subordinate_activity_dirs:
-                if resolved.is_relative_to(sub_activity):
-                    return None
-
-        # Supervisor can read any descendant's activity_log
-        if not write:
-            for desc_activity in self._descendant_activity_dirs:
-                if resolved.is_relative_to(desc_activity):
-                    return None
-
-        # Peers (same supervisor) can read each other's activity_log
-        if not write:
-            for peer_activity in self._peer_activity_dirs:
-                if resolved.is_relative_to(peer_activity):
-                    return None
-
-        # Supervisor can read any descendant's state files
-        if not write:
-            for desc_state in self._descendant_state_files:
-                if resolved == desc_state:
-                    return None
-
-        # Supervisor can read any descendant's state/plans/ directory
-        if not write:
-            for desc_state_dir in self._descendant_state_dirs:
-                if resolved.is_relative_to(desc_state_dir):
-                    return None
-
-        # Supervisor can read/write subordinate's management files
-        for mgmt_file in self._subordinate_management_files:
-            if resolved == mgmt_file:
-                return None
-
-        # Supervisor can list direct subordinate's root directory
-        if not write:
-            for sub_root in self._subordinate_root_dirs:
-                if resolved == sub_root:
-                    return None
-
-        # Framework shared directories — read-only for all Animas
-        if not write:
-            from core.paths import (
-                get_common_knowledge_dir,
-                get_common_skills_dir,
-                get_company_dir,
-                get_reference_dir,
-                get_shared_dir,
+        if decision.reason == "global_permissions":
+            logger.warning(
+                "permission_denied anima=%s path=%s reason=global_permissions_protected",
+                self._anima_name,
+                path,
             )
-
-            for shared_dir in (
-                get_shared_dir(),
-                get_common_knowledge_dir(),
-                get_common_skills_dir(),
-                get_reference_dir(),
-                get_company_dir(),
-            ):
-                if shared_dir.exists() and resolved.is_relative_to(shared_dir.resolve()):
-                    return None
-            # External skill roots (host ~/.claude/skills etc.) — read-only,
-            # surfaced via the external/<engine>/<name>/SKILL.md pointer.
-            try:
-                from core.config.models import load_config
-
-                for root in load_config().skills.external_roots:
-                    if not getattr(root, "enabled", True):
-                        continue
-                    rdir = Path(root.path).expanduser().resolve()
-                    if rdir.exists() and resolved.is_relative_to(rdir):
-                        return None
-            except Exception:
-                logger.debug("external_roots check skipped", exc_info=True)
-
-        # Inter-anima boundary: block access to other anima's directories
-        # that were not already allowed by subordinate/descendant/peer rules.
-        animas_root = self._anima_dir.resolve().parent
-        if resolved.is_relative_to(animas_root) and not resolved.is_relative_to(self._anima_dir.resolve()):
+            return _error_result(
+                "PermissionDenied",
+                "permissions.global.json is a protected system file and cannot be modified by the anima itself",
+            )
+        if decision.reason == "protected_file":
+            logger.warning("permission_denied anima=%s path=%s reason=protected_file", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{decision.protected_path}' is a protected file and cannot be modified by the anima itself",
+            )
+        if decision.reason == "protected_directory":
+            logger.warning("permission_denied anima=%s path=%s reason=protected_directory", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{decision.protected_path}/' is a protected directory and cannot be modified by the anima itself",
+            )
+        if decision.reason == "other_anima":
             logger.warning("permission_denied anima=%s path=%s reason=other_anima_dir", self._anima_name, path)
             return _error_result(
                 "PermissionDenied",
                 f"Access to other anima's directory is not allowed: {path}",
             )
-
-        # file_roots == ["/"]: allow all (after protected file check)
-        if effective_config.file_roots == ["/"]:
-            return None
-
-        if write:
-            write_denial = check_file_write_roots(
-                resolved,
-                file_roots=effective_config.file_roots,
-                file_roots_readonly=effective_config.file_roots_readonly,
-                write_roots=write_roots,
+        if decision.reason == "readonly_dir":
+            logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{path}' is in a read-only directory (write not allowed)",
+                context={"readonly_dir": str(decision.readonly_root)},
             )
-            if write_denial is None:
-                return None
-            if write_denial == "outside_allowed_dirs" and not effective_config.file_roots:
-                logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
-                return _error_result(
-                    "PermissionDenied",
-                    f"'{path}' is not under any allowed directory",
-                    context={"allowed_dirs": []},
-                )
-            if write_denial == "readonly_dir":
-                readonly_dirs = [
-                    Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()
-                ]
-                readonly_root = next(root for root in readonly_dirs if resolved.is_relative_to(root))
-                logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
-                return _error_result(
-                    "PermissionDenied",
-                    f"'{path}' is in a read-only directory (write not allowed)",
-                    context={"readonly_dir": str(readonly_root)},
-                )
-            readonly_dirs = [Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()]
-            all_allowed = list(write_roots) + readonly_dirs
+        if decision.reason == "outside_allowed_dirs":
             logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
             return _error_result(
                 "PermissionDenied",
                 f"'{path}' is not under any allowed directory",
-                context={"allowed_dirs": [str(d) for d in all_allowed]},
+                context={"allowed_dirs": [str(root) for root in decision.allowed_dirs]},
             )
-
-        # Read access is unchanged: explicit roots and read-only roots grant access.
-        allowed_dirs = [Path(r).resolve() for r in effective_config.file_roots if Path(r).is_absolute()]
-        for allowed in allowed_dirs:
-            if resolved.is_relative_to(allowed):
-                return None
-        if not effective_config.file_roots:
-            logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
-            return _error_result(
-                "PermissionDenied",
-                f"'{path}' is not under any allowed directory",
-                context={"allowed_dirs": []},
-            )
-        readonly_dirs = [Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()]
-        for readonly in readonly_dirs:
-            if resolved.is_relative_to(readonly):
-                return None
-        all_allowed = allowed_dirs + readonly_dirs
-        logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
-        return _error_result(
-            "PermissionDenied",
-            f"'{path}' is not under any allowed directory",
-            context={"allowed_dirs": [str(d) for d in all_allowed]},
-        )
+        return _error_result("PermissionDenied", f"Access to file is not allowed: {path}")
 
     def _check_command_permission(self, command: str) -> str | None:
         """Check if the command is allowed by permissions config and security rules.

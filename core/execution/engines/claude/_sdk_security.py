@@ -19,23 +19,21 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from core.paths import get_data_dir
+from core.config.file_access_policy import (
+    PROTECTED_FILE_PATHS,
+    FileAccessContext,
+    FileAccessDecision,
+    effective_write_roots,
+    evaluate_file_access,
+    resolve_effective_denied_roots,
+)
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
 injection_logger = logging.getLogger("animaworks.security.sdk_bash_injection")
+_PROTECTED_FILES = PROTECTED_FILE_PATHS
 
 
 # ── Mode S security ──────────────────────────────────────────
-
-_PROTECTED_FILES = frozenset(
-    {
-        "permissions.md",
-        "permissions.json",
-        "identity.md",
-        "bootstrap.md",
-        "status.json",
-    }
-)
 
 _WRITE_COMMANDS = frozenset(
     {
@@ -79,117 +77,94 @@ def _check_a1_file_access(
 
     Returns violation reason string if blocked, None if allowed.
     """
-    if superuser:
-        return None
-    if not file_path:
-        return None
+    if superuser or not file_path:
+        context = FileAccessContext(
+            anima_dir=anima_dir,
+            data_dir=anima_dir.resolve().parent.parent,
+            superuser=superuser,
+        )
+        return _mode_s_file_access_error(
+            file_path,
+            evaluate_file_access(file_path, context, write=write),
+            write=write,
+        )
 
-    resolved = Path(file_path).resolve()
-    from core.config.file_access_policy import find_denied_root, load_denied_roots
+    from core.config.schemas import load_permissions
+    from core.paths import get_data_dir
 
     try:
-        denied_roots = load_denied_roots(anima_dir)
+        permissions = load_permissions(anima_dir)
+        denied_roots = resolve_effective_denied_roots(anima_dir, permissions.file_roots_denied)
+        data_dir = get_data_dir().resolve()
     except Exception:
         logger.exception("Failed to load file permission policy for anima_dir=%s", anima_dir)
         return "File permission check failed"
-    denied_root = find_denied_root(resolved, denied_roots)
-    if denied_root is not None:
-        return f"Access to denied directory is not allowed: {file_path}"
-    if write and denied_roots:
-        from core.config.file_access_policy import find_internal_cache_root
 
-        if find_internal_cache_root(resolved, anima_dir) is not None:
-            return f"Direct access to internal runtime cache is not allowed: '{file_path}'"
-
-    if write:
-        data_dir = get_data_dir().resolve()
-        if resolved.name == "permissions.global.json":
-            try:
-                if resolved.is_relative_to(data_dir):
-                    return "permissions.global.json cannot be modified via Mode S tools"
-            except ValueError:
-                pass
-
-    anima_resolved = anima_dir.resolve()
-    animas_root = anima_resolved.parent
-
-    # Block access to other animas' directories
-    if resolved.is_relative_to(animas_root):
-        if not resolved.is_relative_to(anima_resolved):
-            # Supervisor can read subordinate's activity_log
-            if not write and subordinate_activity_dirs:
-                for sub_activity in subordinate_activity_dirs:
-                    if resolved.is_relative_to(sub_activity):
-                        return None
-
-            # Peers (same supervisor) can read each other's activity_log
-            if not write and peer_activity_dirs:
-                for peer_activity in peer_activity_dirs:
-                    if resolved.is_relative_to(peer_activity):
-                        return None
-
-            # Supervisor can read/write subordinate's management files
-            if subordinate_management_files:
-                for mgmt_file in subordinate_management_files:
-                    if resolved == mgmt_file:
-                        return None
-
-            # Descendant read-only files (identity.md, state files)
-            if not write and descendant_read_files:
-                for desc_file in descendant_read_files:
-                    if resolved == desc_file:
-                        return None
-
-            # Descendant read-only directories (state/plans/)
-            if not write and descendant_read_dirs:
-                for desc_dir in descendant_read_dirs:
-                    if resolved.is_relative_to(desc_dir):
-                        return None
-
-            return f"Access to other anima's directory is not allowed: {file_path}"
-
-        # Block writes to protected files within own directory
+    try:
         if write:
-            rel = str(resolved.relative_to(anima_resolved))
-            if rel in _PROTECTED_FILES:
-                return f"'{rel}' is a protected file and cannot be modified"
-            # Block writes to activity_log directory
-            if "activity_log" in rel:
-                return "'activity_log/' is a protected directory and cannot be modified"
-        return None
-
-    if write:
-        try:
-            from core.config.file_access_policy import check_file_write_roots, effective_write_roots
-            from core.config.schemas import load_permissions
             from core.paths import get_common_knowledge_dir, get_common_skills_dir
 
-            permissions = load_permissions(anima_dir)
-            # Same charter roots as the Codex/Grok sandboxes: file_roots, the
-            # task workspace, and the system temp dir (workspace-write parity).
-            # common_knowledge/common_skills stay writable as write_memory_file
-            # allows (e.g. the shared holds ledger).
+            # Mode S keeps its historical workspace-write grants in addition
+            # to the configured roots used by ToolHandler.
             write_roots = (
                 *effective_write_roots(anima_dir, permissions.file_roots, task_cwd),
                 Path(tempfile.gettempdir()).resolve(),
                 get_common_knowledge_dir().resolve(),
                 get_common_skills_dir().resolve(),
             )
-            write_denial = check_file_write_roots(
-                resolved,
-                file_roots=permissions.file_roots,
-                file_roots_readonly=permissions.file_roots_readonly,
-                write_roots=write_roots,
-            )
-        except Exception:
-            logger.exception("Failed to evaluate file write permission for anima_dir=%s", anima_dir)
-            return "File permission check failed"
-        if write_denial == "readonly_dir":
-            return f"Write access to read-only directory is not allowed: {file_path}"
-        if write_denial:
-            return f"Write access outside configured file roots is not allowed: {file_path}"
+        else:
+            write_roots = ()
+    except Exception:
+        logger.exception("Failed to evaluate file write permission for anima_dir=%s", anima_dir)
+        return "File permission check failed"
 
-    return None
+    context = FileAccessContext(
+        anima_dir=anima_dir.resolve(),
+        data_dir=data_dir,
+        denied_roots=denied_roots,
+        file_roots=tuple(permissions.file_roots),
+        file_roots_readonly=tuple(permissions.file_roots_readonly),
+        write_roots=tuple(write_roots),
+        restrict_reads_to_roots=False,
+        subordinate_activity_dirs=tuple(Path(path).resolve() for path in (subordinate_activity_dirs or ())),
+        peer_activity_dirs=tuple(Path(path).resolve() for path in (peer_activity_dirs or ())),
+        subordinate_management_files=tuple(Path(path).resolve() for path in (subordinate_management_files or ())),
+        subordinate_root_dirs=tuple(Path(path).resolve().parent for path in (subordinate_activity_dirs or ())),
+        descendant_read_files=tuple(Path(path).resolve() for path in (descendant_read_files or ())),
+        descendant_read_dirs=tuple(Path(path).resolve() for path in (descendant_read_dirs or ())),
+    )
+    decision = evaluate_file_access(file_path, context, write=write)
+    return _mode_s_file_access_error(file_path, decision, write=write)
+
+
+def _mode_s_file_access_error(
+    file_path: str,
+    decision: FileAccessDecision,
+    *,
+    write: bool,
+) -> str | None:
+    """Convert a shared decision to Mode S's plain-string error format."""
+    if decision.allowed:
+        return None
+    if decision.reason == "internal_cache":
+        return f"Direct access to internal runtime cache is not allowed: '{file_path}'"
+    if decision.reason == "denied_root":
+        return f"Access to denied directory is not allowed: {file_path}"
+    if decision.reason == "global_permissions":
+        return "permissions.global.json cannot be modified via Mode S tools"
+    if decision.reason == "protected_file":
+        return f"'{decision.protected_path}' is a protected file and cannot be modified"
+    if decision.reason == "protected_directory":
+        return f"'{decision.protected_path}/' is a protected directory and cannot be modified"
+    if decision.reason == "other_anima":
+        return f"Access to other anima's directory is not allowed: {file_path}"
+    if decision.reason == "readonly_dir":
+        return f"Write access to read-only directory is not allowed: {file_path}"
+    if decision.reason == "outside_allowed_dirs":
+        if write:
+            return f"Write access outside configured file roots is not allowed: {file_path}"
+        return f"Read access outside configured file roots is not allowed: {file_path}"
+    return "File permission check failed"
 
 
 def _check_a1_bash_command(
