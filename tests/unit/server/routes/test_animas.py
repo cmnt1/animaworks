@@ -92,6 +92,20 @@ class TestListAnimas:
         assert len(data) == 1
         assert data[0]["name"] == "alice"
         assert data[0]["status"] == "running"
+        assert data[0]["enabled"] is True
+
+    async def test_list_reports_disabled_from_status_json(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": False}), encoding="utf-8")
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/animas")
+        assert resp.json()[0]["enabled"] is False
 
 
 # ── GET /animas/{name} ─────────────────────────────────

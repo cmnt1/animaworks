@@ -89,6 +89,7 @@ def create_animas_router() -> APIRouter:
             department = ""
             title = ""
             company = ""
+            enabled = True
             anima_supervisor = None
             anima_speciality = None
             try:
@@ -103,6 +104,7 @@ def create_animas_router() -> APIRouter:
                     department = status_data.get("department", "")
                     title = status_data.get("title", "")
                     company = status_data.get("company", "")
+                    enabled = bool(status_data.get("enabled", True))
             except Exception:
                 logger.debug("Failed to resolve config for anima '%s'", name, exc_info=True)
 
@@ -130,6 +132,7 @@ def create_animas_router() -> APIRouter:
                 "department": department,
                 "title": title,
                 "company": company,
+                "enabled": enabled,
             }
             result.append(data)
 
