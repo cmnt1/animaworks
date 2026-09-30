@@ -220,3 +220,23 @@ class TestPostChannelFromNameValidation:
             m.post_channel("general", "Spoofed", from_name="hacker")
 
         assert any("unknown from_name" in r.message for r in caplog.records)
+
+    @patch("core.config.models.load_config", side_effect=RuntimeError("config unavailable"))
+    def test_config_load_failure_rejects_post(self, mock_load: MagicMock, tmp_path: Path, caplog):
+        import logging
+
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+        (shared_dir / "channels").mkdir()
+        channel_file = shared_dir / "channels" / "general.jsonl"
+        channel_file.touch()
+
+        from core.messaging.messenger import Messenger
+
+        messenger = Messenger(shared_dir, "sakura")
+        with caplog.at_level(logging.WARNING, logger="animaworks.messenger"):
+            messenger.post_channel("general", "Should not be posted", from_name="sakura")
+
+        assert channel_file.read_text(encoding="utf-8") == ""
+        assert any("Failed to validate channel from_name" in record.message for record in caplog.records)
+        mock_load.assert_called_once()

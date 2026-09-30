@@ -395,6 +395,28 @@ class TestEnableAnima:
         # start_anima NOT called because already running
         supervisor.start_anima.assert_not_awaited()
 
+    async def test_enable_rejects_corrupt_status_without_overwriting(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        status_file = alice_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=[])
+        supervisor = app.state.supervisor
+        supervisor.processes = {}
+        supervisor.start_anima = AsyncMock()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/animas/alice/enable")
+
+        assert resp.status_code == 409
+        assert status_file.read_bytes() == original
+        supervisor.start_anima.assert_not_awaited()
+
     async def test_enable_not_found(self):
         """Enable a nonexistent anima returns 404."""
         app = _make_test_app(anima_names=[])
@@ -489,6 +511,28 @@ class TestDisableAnima:
 
         # Always call stop_anima so in-flight start races are covered
         supervisor.stop_anima.assert_awaited_once_with("alice")
+
+    async def test_disable_rejects_corrupt_status_without_overwriting(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        status_file = alice_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        supervisor = app.state.supervisor
+        supervisor.processes = {"alice": MagicMock()}
+        supervisor.stop_anima = AsyncMock()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/animas/alice/disable")
+
+        assert resp.status_code == 409
+        assert status_file.read_bytes() == original
+        supervisor.stop_anima.assert_not_awaited()
 
     async def test_disable_not_found(self):
         """Disable a nonexistent anima returns 404."""

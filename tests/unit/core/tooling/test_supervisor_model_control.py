@@ -203,6 +203,25 @@ class TestSetSubordinateModel:
 # ── restart_subordinate tests ─────────────────────────────
 
 
+class TestDisableSubordinate:
+    def test_disable_rejects_corrupt_status_without_overwriting(self, tmp_path: Path):
+        handler = _make_handler(tmp_path, "manager")
+        target_dir = tmp_path / "animas" / "engineer"
+        target_dir.mkdir(parents=True)
+        status_file = target_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        with (
+            patch("core.tooling.handler.ToolHandler._check_descendant", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            result = handler._handle_disable_subordinate({"name": "engineer"})
+
+        assert _parse_error(result)["status"] == "error"
+        assert status_file.read_bytes() == original
+
+
 class TestRestartSubordinate:
     """Tests for ToolHandler._handle_restart_subordinate()."""
 
@@ -211,6 +230,22 @@ class TestRestartSubordinate:
         d = tmp_path / "animas" / name
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def test_restart_rejects_corrupt_status_without_overwriting(self, tmp_path: Path):
+        handler = _make_handler(tmp_path, "manager")
+        target_dir = self._make_target_dir(tmp_path, "engineer")
+        status_file = target_dir / "status.json"
+        original = b"{broken status"
+        status_file.write_bytes(original)
+
+        with (
+            patch("core.tooling.handler.ToolHandler._check_descendant", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            result = handler._handle_restart_subordinate({"name": "engineer"})
+
+        assert _parse_error(result)["status"] == "error"
+        assert status_file.read_bytes() == original
 
     def test_restart_success(self, tmp_path: Path):
         """restart_requested: true is written to an existing status.json."""

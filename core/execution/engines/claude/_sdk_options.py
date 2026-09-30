@@ -501,6 +501,7 @@ class SDKOptionsMixin:
                                         superuser=_is_debug_superuser(self._anima_dir),
                                         on_task_intercepted=self._make_pending_executor_wake_callback(),
                                         has_subordinates=_has_subs,
+                                        task_cwd=self._task_cwd,
                                     )
                                 ],
                             )

@@ -383,7 +383,13 @@ class Messenger:
                     )
                     return
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to validate channel from_name=%r for #%s; refusing post",
+                    poster,
+                    channel,
+                    exc_info=True,
+                )
+                return
         channels_dir.mkdir(parents=True, exist_ok=True)
         entry = json.dumps(
             {

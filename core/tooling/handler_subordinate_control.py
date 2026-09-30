@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import OrgHelpersMixin, resolve_anima_name
 
@@ -51,17 +52,16 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if status_file.exists():
             try:
                 existing = _json.loads(status_file.read_text(encoding="utf-8"))
-            except (_json.JSONDecodeError, OSError):
-                pass
+                if not isinstance(existing, dict):
+                    raise ValueError("status.json must contain an object")
+            except (ValueError, OSError):
+                return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
 
         if not existing.get("enabled", True):
             return t("handler.already_disabled", target_name=target_name)
 
         existing["enabled"] = False
-        status_file.write_text(
-            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(status_file, existing)
         log_summary = t("handler.disable_log_summary", target_name=target_name)
         if reason:
             log_summary += t("handler.disable_reason", reason=reason)
@@ -104,17 +104,16 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if status_file.exists():
             try:
                 existing = _json.loads(status_file.read_text(encoding="utf-8"))
-            except (_json.JSONDecodeError, OSError):
-                pass
+                if not isinstance(existing, dict):
+                    raise ValueError("status.json must contain an object")
+            except (ValueError, OSError):
+                return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
 
         if existing.get("enabled", True):
             return t("handler.already_enabled", target_name=target_name)
 
         existing["enabled"] = True
-        status_file.write_text(
-            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(status_file, existing)
 
         self._activity.log(
             "tool_use",
@@ -259,14 +258,13 @@ class SubordinateControlMixin(OrgHelpersMixin):
         if status_file.exists():
             try:
                 existing = _json.loads(status_file.read_text(encoding="utf-8"))
-            except (_json.JSONDecodeError, OSError):
-                pass
+                if not isinstance(existing, dict):
+                    raise ValueError("status.json must contain an object")
+            except (ValueError, OSError):
+                return _error_result("InvalidState", t("handler.status_json_invalid", target_name=target_name))
 
         existing["restart_requested"] = True
-        status_file.write_text(
-            _json.dumps(existing, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(status_file, existing)
 
         log_summary = t("handler.restart_log", target_name=target_name)
         if reason:

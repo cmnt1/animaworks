@@ -121,6 +121,31 @@ def shared_tool_cache_write_root(anima_dir: Path) -> Path | None:
     return resolved
 
 
+def check_file_write_roots(
+    path: str | Path,
+    *,
+    file_roots: list[str],
+    file_roots_readonly: list[str],
+    write_roots: tuple[Path, ...],
+) -> str | None:
+    """Check a write target against already-resolved writable/read-only roots.
+
+    Returns ``"readonly_dir"`` or ``"outside_allowed_dirs"`` when denied,
+    otherwise ``None``. Callers handle higher-priority grants and explicit
+    deny rules before using this common root-boundary check.
+    """
+    resolved = Path(path).resolve()
+    if any(resolved.is_relative_to(root) for root in write_roots):
+        return None
+    if not file_roots:
+        return "outside_allowed_dirs"
+
+    readonly_roots = tuple(Path(root).resolve() for root in file_roots_readonly if Path(root).is_absolute())
+    if any(resolved.is_relative_to(root) for root in readonly_roots):
+        return "readonly_dir"
+    return "outside_allowed_dirs"
+
+
 def company_denied_roots(anima_dir: Path) -> tuple[Path, ...]:
     """Return canonical roots for every company other than the Anima's own.
 

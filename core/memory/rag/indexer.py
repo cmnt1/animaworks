@@ -517,6 +517,8 @@ class MemoryIndexer:
             return self._finish_index_file(0, "skipped")
 
         if memory_type in ("skills", "common_skills") and file_path.name == "SKILL.md":
+            allowed = False
+            reason = "curator evaluation failed"
             try:
                 from core.skills.curator import curator_allows_access, replay_curator_state
                 from core.skills.loader import load_skill_metadata
@@ -531,12 +533,13 @@ class MemoryIndexer:
                     self._skill_curator_replay = replay_curator_state(self.anima_dir)
                     self._skill_curator_state_marker = state_marker
                 allowed, reason = curator_allows_access(meta, replay=self._skill_curator_replay)
-                if not allowed:
-                    logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
-                    self.delete_indexed_file(file_path, memory_type)
-                    return self._finish_index_file(0, "skipped")
             except Exception:
-                logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
+                logger.warning("Failed to evaluate skill curator access for %s; skipping", file_path, exc_info=True)
+
+            if not allowed:
+                logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
+                self.delete_indexed_file(file_path, memory_type)
+                return self._finish_index_file(0, "skipped")
 
         # Check if file has changed
         source_stat = file_path.stat()

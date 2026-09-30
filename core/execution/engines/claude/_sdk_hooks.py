@@ -129,6 +129,7 @@ def _build_pre_tool_hook(
     superuser: bool = False,
     on_task_intercepted: Callable[[], None] | None = None,
     has_subordinates: bool = False,
+    task_cwd: Path | None = None,
 ) -> Callable:
     """Build a PreToolUse hook with security checks, output guards, and tool logging.
 
@@ -414,6 +415,7 @@ def _build_pre_tool_hook(
                 descendant_read_dirs=_desc_read_dirs,
                 peer_activity_dirs=_peer_activity_dirs,
                 superuser=superuser,
+                task_cwd=task_cwd,
             )
             if violation:
                 _log_tool_use(

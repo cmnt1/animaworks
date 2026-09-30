@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.file_access_policy import (
+    check_file_write_roots,
     effective_write_roots,
     find_denied_root,
     find_internal_cache_root,
@@ -327,17 +328,47 @@ class PermissionsMixin:
         if effective_config.file_roots == ["/"]:
             return None
 
-        # Otherwise: check if path is under an effective writable root.
-        allowed_dirs = (
-            list(write_roots)
-            if write
-            else [Path(r).resolve() for r in effective_config.file_roots if Path(r).is_absolute()]
-        )
+        if write:
+            write_denial = check_file_write_roots(
+                resolved,
+                file_roots=effective_config.file_roots,
+                file_roots_readonly=effective_config.file_roots_readonly,
+                write_roots=write_roots,
+            )
+            if write_denial is None:
+                return None
+            if write_denial == "outside_allowed_dirs" and not effective_config.file_roots:
+                logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
+                return _error_result(
+                    "PermissionDenied",
+                    f"'{path}' is not under any allowed directory",
+                    context={"allowed_dirs": []},
+                )
+            if write_denial == "readonly_dir":
+                readonly_dirs = [
+                    Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()
+                ]
+                readonly_root = next(root for root in readonly_dirs if resolved.is_relative_to(root))
+                logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
+                return _error_result(
+                    "PermissionDenied",
+                    f"'{path}' is in a read-only directory (write not allowed)",
+                    context={"readonly_dir": str(readonly_root)},
+                )
+            readonly_dirs = [Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()]
+            all_allowed = list(write_roots) + readonly_dirs
+            logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
+            return _error_result(
+                "PermissionDenied",
+                f"'{path}' is not under any allowed directory",
+                context={"allowed_dirs": [str(d) for d in all_allowed]},
+            )
+
+        # Read access is unchanged: explicit roots and read-only roots grant access.
+        allowed_dirs = [Path(r).resolve() for r in effective_config.file_roots if Path(r).is_absolute()]
         for allowed in allowed_dirs:
             if resolved.is_relative_to(allowed):
                 return None
-
-        # file_roots == []: only anima_dir + framework shared dirs (already handled above)
         if not effective_config.file_roots:
             logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
             return _error_result(
@@ -345,20 +376,10 @@ class PermissionsMixin:
                 f"'{path}' is not under any allowed directory",
                 context={"allowed_dirs": []},
             )
-
-        # Check file_roots_readonly — read allowed, write denied
         readonly_dirs = [Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()]
         for readonly in readonly_dirs:
             if resolved.is_relative_to(readonly):
-                if write:
-                    logger.warning("permission_denied anima=%s path=%s reason=readonly_dir", self._anima_name, path)
-                    return _error_result(
-                        "PermissionDenied",
-                        f"'{path}' is in a read-only directory (write not allowed)",
-                        context={"readonly_dir": str(readonly)},
-                    )
                 return None
-
         all_allowed = allowed_dirs + readonly_dirs
         logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
         return _error_result(
