@@ -198,6 +198,7 @@ class TestMcpServerConfig:
 
         # Types sub-module
         mock_types = MagicMock()
+        mock_types.StreamEvent = type("StreamEvent", (), {})
         mock_types.HookContext = MagicMock()
         mock_types.HookInput = MagicMock()
         mock_types.PostToolUseHookSpecificOutput = MagicMock()
@@ -463,6 +464,7 @@ class TestMcpStatusLogging:
         mock_module.ClaudeAgentOptions = FakeClaudeAgentOptions
 
         mock_types = MagicMock()
+        mock_types.StreamEvent = type("StreamEvent", (), {})
         mock_types.SyncHookJSONOutput = MagicMock(return_value=MagicMock())
         mock_types.PreToolUseHookSpecificOutput = MagicMock()
 
@@ -498,7 +500,7 @@ class TestMcpStatusLogging:
             async def query(self, prompt):
                 pass
 
-            async def receive_response(self):
+            async def receive_messages(self):
                 yield sys_msg
                 yield result_msg
 
@@ -514,7 +516,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.engines.claude.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude._sdk_stream.logger") as mock_logger,
         ):
             await executor.execute(prompt="hello", system_prompt="sys")
 
@@ -556,7 +558,7 @@ class TestMcpStatusLogging:
             async def query(self, prompt):
                 pass
 
-            async def receive_response(self):
+            async def receive_messages(self):
                 yield sys_msg
                 yield result_msg
 
@@ -572,7 +574,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.engines.claude.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude._sdk_stream.logger") as mock_logger,
         ):
             result = await executor.execute(prompt="hello", system_prompt="sys")
 
@@ -612,7 +614,7 @@ class TestMcpStatusLogging:
             async def query(self, prompt):
                 pass
 
-            async def receive_response(self):
+            async def receive_messages(self):
                 yield sys_msg
                 yield result_msg
 
@@ -628,7 +630,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.engines.claude.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude._sdk_stream.logger") as mock_logger,
         ):
             await executor.execute(prompt="hello", system_prompt="sys")
 

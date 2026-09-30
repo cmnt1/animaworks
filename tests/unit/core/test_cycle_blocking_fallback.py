@@ -49,7 +49,7 @@ async def test_blocking_error_runs_fallback_model(tmp_path: Path):
     agent._create_executor = MagicMock(return_value=fallback_executor)
 
     with (
-        patch("core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt="system")),
+        patch("core.agent.priming.build_system_prompt", return_value=BuildResult(system_prompt="system")),
         patch("core.agent.cycle._save_prompt_log"),
         patch("core.agent.cycle._save_prompt_log_end"),
         patch("core.agent.cycle._log_session_token_usage"),

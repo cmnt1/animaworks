@@ -81,7 +81,7 @@ async def test_terminal_quota_error_swaps_to_fallback_model(make_agent_core, mon
     monkeypatch.setattr(agent, "_run_priming", AsyncMock(return_value=("", "")))
     monkeypatch.setattr(agent, "_create_executor", lambda cfg=None: swapped)
     monkeypatch.setattr(
-        "core.agent.cycle.build_system_prompt",
+        "core.agent.priming.build_system_prompt",
         lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
     )
     monkeypatch.setattr("core.prompt.builder.inject_shortterm", lambda sp, st: sp)
@@ -119,7 +119,7 @@ async def test_terminal_error_surfaces_when_no_fallback_available(make_agent_cor
 
     monkeypatch.setattr(agent, "_run_priming", AsyncMock(return_value=("", "")))
     monkeypatch.setattr(
-        "core.agent.cycle.build_system_prompt",
+        "core.agent.priming.build_system_prompt",
         lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
     )
     monkeypatch.setattr("core.prompt.builder.inject_shortterm", lambda sp, st: sp)
@@ -164,7 +164,7 @@ async def test_partial_tool_work_is_not_replayed_on_another_engine(make_agent_co
     monkeypatch.setattr(agent, "_create_executor", create_executor)
     monkeypatch.setattr(agent, "_run_priming", AsyncMock(return_value=("", "")))
     monkeypatch.setattr(
-        "core.agent.cycle.build_system_prompt",
+        "core.agent.priming.build_system_prompt",
         lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
     )
     monkeypatch.setattr("core.prompt.builder.inject_shortterm", lambda sp, st: sp)

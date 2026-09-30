@@ -31,16 +31,15 @@ class TestSettingSourcesDisabled:
         source = inspect.getsource(AgentSDKExecutor._build_sdk_options)
         assert "setting_sources=[]" in source, "_build_sdk_options() must pass setting_sources=[] to ClaudeAgentOptions"
 
-    def test_execute_streaming_passes_empty_setting_sources(self):
-        """execute_streaming() uses _build_sdk_options which includes setting_sources=[]."""
+    def test_execute_aggregates_streaming_path(self):
+        """execute() delegates SDK setup to the streaming implementation."""
         import inspect
 
         from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
-        # Verify execute() and execute_streaming() both call _build_sdk_options
         exec_source = inspect.getsource(AgentSDKExecutor.execute)
         stream_source = inspect.getsource(AgentSDKExecutor.execute_streaming)
-        assert "_build_sdk_options" in exec_source, "execute() must call _build_sdk_options()"
+        assert "self.execute_streaming(" in exec_source
         assert "_build_sdk_options" in stream_source, "execute_streaming() must call _build_sdk_options()"
 
 
@@ -126,8 +125,8 @@ class TestPerAnimaVectorStore:
 
     def test_reset_clears_all_clients(self):
         from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
-        from tests.helpers.rag import reset_rag_state as _reset_for_testing
         from core.memory.rag.vector_registry import get_vector_store
+        from tests.helpers.rag import reset_rag_state as _reset_for_testing
 
         configure_endpoints(RagEndpoints(vector_url="http://localhost:18500/vector"))
         first = get_vector_store("a")

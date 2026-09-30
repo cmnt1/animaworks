@@ -18,6 +18,7 @@ Also provides ``StreamingContext`` / ``StreamingState`` and the
 ``AgentSDKExecutor.execute_streaming``.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
@@ -308,6 +309,9 @@ async def process_stream_messages(
     client: Any,
     ctx: StreamingContext,
     state: StreamingState,
+    *,
+    flush_unterminated_messages: bool = False,
+    update_context_tracker: bool = True,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Process streaming messages from an SDK client and yield UI events.
 
@@ -327,15 +331,42 @@ async def process_stream_messages(
     buffered_assistant_messages: list[Any] = []
     buffered_user_messages: list[Any] = []
 
+    def _flush_buffered_messages() -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        for buffered in buffered_assistant_messages:
+            state.message_count += 1
+            events.extend(_append_assistant_blocks_to_state(buffered.content, state, ctx))
+        for buffered in buffered_user_messages:
+            if isinstance(buffered.content, list):
+                _apply_user_tool_results_to_state(buffered.content, state, ctx)
+        buffered_assistant_messages.clear()
+        buffered_user_messages.clear()
+        return events
+
     await client.query(_build_sdk_query_input(ctx.prompt, ctx.images))
     _msg_aiter = client.receive_messages().__aiter__()
     while True:
         try:
             message = await wait_for_engine_event(_msg_aiter.__anext__())
         except StopAsyncIteration:
+            if flush_unterminated_messages and not got_stream_event and state.result_message is None:
+                for event in _flush_buffered_messages():
+                    yield event
             break
         except TimeoutError:
             logger.error("SDK message stream timed out — CLI subprocess may have died or become unresponsive")
+            if flush_unterminated_messages and not got_stream_event and state.result_message is None:
+                for event in _flush_buffered_messages():
+                    yield event
+            raise
+        except asyncio.CancelledError:
+            if flush_unterminated_messages and not got_stream_event and state.result_message is None:
+                _flush_buffered_messages()
+            raise
+        except Exception:
+            if flush_unterminated_messages and not got_stream_event and state.result_message is None:
+                for event in _flush_buffered_messages():
+                    yield event
             raise
 
         if ctx.check_interrupted():
@@ -371,7 +402,7 @@ async def process_stream_messages(
 
             if event_type == "message_start":
                 usage = event.get("message", {}).get("usage", {})
-                if usage:
+                if usage and update_context_tracker:
                     ctx.tracker.update_from_message_start(usage)
                     ctx.session_stats["last_context_tokens"] = ctx.tracker._input_tokens
                     state.usage_acc.cache_read_tokens += usage.get("cache_read_input_tokens", 0) or 0
@@ -431,16 +462,12 @@ async def process_stream_messages(
 
         elif isinstance(message, ResultMessage):
             if not got_stream_event:
-                for buffered in buffered_assistant_messages:
-                    state.message_count += 1
-                    for event in _append_assistant_blocks_to_state(buffered.content, state, ctx):
-                        yield event
-                for buffered in buffered_user_messages:
-                    if isinstance(buffered.content, list):
-                        _apply_user_tool_results_to_state(buffered.content, state, ctx)
+                for event in _flush_buffered_messages():
+                    yield event
             state.result_message = message
-            if message.session_id and ctx.session_type in _RESUMABLE_SESSION_TYPES:
-                _save_session_id(ctx.anima_dir, message.session_id, ctx.session_type, thread_id=ctx.thread_id)
+            session_id = getattr(message, "session_id", "")
+            if session_id and ctx.session_type in _RESUMABLE_SESSION_TYPES:
+                _save_session_id(ctx.anima_dir, session_id, ctx.session_type, thread_id=ctx.thread_id)
             if message.usage:
                 u = message.usage
                 state.usage_acc.input_tokens = u.get("input_tokens", 0) or 0

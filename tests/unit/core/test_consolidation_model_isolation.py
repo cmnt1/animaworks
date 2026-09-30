@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from core.agent.cycle import CycleMixin
+from core.agent.priming import PrimingMixin
 from core.execution.base import ExecutionResult
 from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.schemas import CycleResult, ModelConfig
@@ -533,7 +534,7 @@ class _FakeExecutor:
         }
 
 
-class _FakeCycle(CycleMixin):
+class _FakeCycle(CycleMixin, PrimingMixin):
     def __init__(self, tmp_path) -> None:
         self.anima_dir = tmp_path / "ritsu"
         self.anima_dir.mkdir()
@@ -597,7 +598,7 @@ async def test_run_cycle_override_uses_local_executor_without_mutating_shared_st
     prompt_log_calls = []
 
     with (
-        patch("core.agent.cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch("core.agent.priming.build_system_prompt", return_value=_simple_prompt_result()),
         patch(
             "core.agent.cycle._save_prompt_log",
             side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
@@ -621,7 +622,7 @@ async def test_run_cycle_streaming_override_uses_local_executor_without_mutating
     chunks = []
 
     with (
-        patch("core.agent.cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch("core.agent.priming.build_system_prompt", return_value=_simple_prompt_result()),
         patch(
             "core.agent.cycle._save_prompt_log",
             side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),

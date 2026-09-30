@@ -77,7 +77,7 @@ def cycle_agent(tmp_path: Path, monkeypatch):
     }
     agent._fit_prompt_to_context_window = lambda system_prompt, prompt, *_args, **_kwargs: system_prompt
     monkeypatch.setattr(
-        "core.agent.cycle.build_system_prompt", lambda *args, **kwargs: BuildResult(system_prompt="system")
+        "core.agent.priming.build_system_prompt", lambda *args, **kwargs: BuildResult(system_prompt="system")
     )
     monkeypatch.setattr("core.agent.cycle._save_prompt_log", MagicMock())
     monkeypatch.setattr("core.agent.cycle._save_prompt_log_end", MagicMock())

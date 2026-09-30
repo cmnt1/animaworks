@@ -156,7 +156,8 @@ class TestPreflightSizeCheck:
 
         with (
             patch(
-                "core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt=oversized_system_prompt)
+                "core.agent.priming.build_system_prompt",
+                return_value=BuildResult(system_prompt=oversized_system_prompt),
             ),
             patch("core.agent.cycle._save_prompt_log"),
             patch("core.agent.cycle._save_prompt_log_end"),

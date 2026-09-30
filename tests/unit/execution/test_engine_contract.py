@@ -654,11 +654,7 @@ async def _drive_agent_sdk(anima_dir: Path, golden_id: str, path: str) -> dict:
         if path == "stream":
             events = [e async for e in executor.execute_streaming(system_prompt="sys", prompt="test", tracker=tracker)]
             return {"events": _norm(events), "result": None, "activity": _read_activity(anima_dir)}
-        if interrupt_event is not None:
-            with patch("core.execution.engines.claude.agent_sdk._graceful_interrupt_blocking", AsyncMock()):
-                result = await executor.execute(system_prompt="sys", prompt="test", tracker=tracker)
-        else:
-            result = await executor.execute(system_prompt="sys", prompt="test", tracker=tracker)
+        result = await executor.execute(system_prompt="sys", prompt="test", tracker=tracker)
         return {"events": None, "result": _serialise_result(result), "activity": _read_activity(anima_dir)}
     finally:
         for key, val in saved.items():
