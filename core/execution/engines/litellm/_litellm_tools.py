@@ -25,6 +25,7 @@ from core.exceptions import ToolExecutionError
 from core.execution._sanitize import TRUST_RANK, resolve_tool_trust, wrap_tool_result
 from core.execution._tool_summary import make_tool_detail_chunk
 from core.execution.base import ToolCallRecord, _truncate_for_record, tool_input_save_budget, tool_result_save_budget
+from core.execution.events import tool_end_event
 from core.tooling.schemas import (
     build_unified_tool_list,
     to_litellm_format,
@@ -215,6 +216,7 @@ class ToolProcessingMixin:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         context_window: int = 128_000,
+        record_errors: bool = False,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Execute already-parsed tool calls.
 
@@ -252,19 +254,19 @@ class ToolProcessingMixin:
                         "content": wrap_tool_result(fn_name, error_content),
                     }
                 )
-                yield {
-                    "type": "tool_end",
-                    "tool_id": tc_id,
-                    "tool_name": fn_name,
-                    "record": ToolCallRecord(
+                yield tool_end_event(
+                    fn_name,
+                    tc_id,
+                    record=ToolCallRecord(
                         tool_name=fn_name,
                         tool_id=tc_id,
                         input_summary="(invalid arguments)",
                         result_summary=_truncate_for_record(
                             error_content, tool_result_save_budget(fn_name, context_window)
                         ),
+                        is_error=record_errors,
                     ),
-                }
+                )
                 continue
 
             pending_calls.append((tc, fn_args))
@@ -322,22 +324,23 @@ class ToolProcessingMixin:
                     result_summary = _truncate_for_record(
                         str(r), tool_result_save_budget(shim.function.name, context_window)
                     )
-                yield {
-                    "type": "tool_end",
-                    "tool_id": shim.id,
-                    "tool_name": shim.function.name,
-                    "record": ToolCallRecord(
+                yield tool_end_event(
+                    shim.function.name,
+                    shim.id,
+                    record=ToolCallRecord(
                         tool_name=shim.function.name,
                         tool_id=shim.id,
                         input_summary=_truncate_for_record(
                             str(args_map[shim.id]), tool_input_save_budget(context_window)
                         ),
                         result_summary=result_summary,
+                        is_error=record_errors and isinstance(r, BaseException),
                     ),
-                }
+                )
 
         for batch in serial_batches:
             for shim in batch:
+                call_failed = False
                 try:
                     r = await self._execute_tool_call(shim, args_map[shim.id])
                     messages.append(r)
@@ -345,6 +348,7 @@ class ToolProcessingMixin:
                         r.get("content", ""), tool_result_save_budget(shim.function.name, context_window)
                     )
                 except ToolExecutionError as e:
+                    call_failed = True
                     logger.warning("Serial tool execution error: %s", e)
                     error_content = _json.dumps(
                         {
@@ -365,6 +369,7 @@ class ToolProcessingMixin:
                         error_content, tool_result_save_budget(shim.function.name, context_window)
                     )
                 except Exception as e:
+                    call_failed = True
                     logger.warning("Serial tool execution error (unexpected): %s", e)
                     error_content = _json.dumps(
                         {
@@ -384,16 +389,16 @@ class ToolProcessingMixin:
                     result_summary = _truncate_for_record(
                         error_content, tool_result_save_budget(shim.function.name, context_window)
                     )
-                yield {
-                    "type": "tool_end",
-                    "tool_id": shim.id,
-                    "tool_name": shim.function.name,
-                    "record": ToolCallRecord(
+                yield tool_end_event(
+                    shim.function.name,
+                    shim.id,
+                    record=ToolCallRecord(
                         tool_name=shim.function.name,
                         tool_id=shim.id,
                         input_summary=_truncate_for_record(
                             str(args_map[shim.id]), tool_input_save_budget(context_window)
                         ),
                         result_summary=result_summary,
+                        is_error=record_errors and call_failed,
                     ),
-                }
+                )

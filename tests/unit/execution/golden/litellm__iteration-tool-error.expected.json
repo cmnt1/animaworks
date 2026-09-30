@@ -5,16 +5,16 @@
   "scenario": "tool-error",
   "events": [
     {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "call_error_1"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 0.0001015625,
       "input_tokens": 13,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "tool_start",
-      "tool_name": "search_memory",
-      "tool_id": "call_error_1"
     },
     {
       "type": "tool_detail",
@@ -35,15 +35,15 @@
       }
     },
     {
+      "type": "text_delta",
+      "text": "Recovered after tool error"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 0.0001328125,
       "input_tokens": 17,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "text_delta",
-      "text": "Recovered after tool error"
     },
     {
       "type": "done",

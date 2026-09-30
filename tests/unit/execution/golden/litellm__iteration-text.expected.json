@@ -5,15 +5,15 @@
   "scenario": "text",
   "events": [
     {
+      "type": "text_delta",
+      "text": "Plain answer"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 8.59375e-05,
       "input_tokens": 11,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "text_delta",
-      "text": "Plain answer"
     },
     {
       "type": "done",

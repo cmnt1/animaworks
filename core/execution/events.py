@@ -56,16 +56,88 @@ class StreamEvent(TypedDict, total=False):
     usage: Any
     session_id: str | None
     tool_call_records: list[dict[str, Any]]
+    record: Any
     terminal: bool
     message: str
     reason: str
     stop_kind: str
     truncated: bool
     context_update: Any
+    context_usage_ratio: float
+    input_tokens: int
+    context_window: int
+    threshold: float
 
 
 _P = ParamSpec("_P")
 _EventInput = TypeVar("_EventInput", bound=Mapping[str, Any])
+_EVENT_UNSET = object()
+
+
+def text_delta_event(text: str) -> StreamEvent:
+    """Build the common visible-text event."""
+    return {"type": "text_delta", "text": text}
+
+
+def context_update_event(
+    *,
+    context_usage_ratio: float,
+    input_tokens: int,
+    context_window: int,
+    threshold: float,
+) -> StreamEvent:
+    """Build a context measurement event with the established wire keys."""
+    return {
+        "type": "context_update",
+        "context_usage_ratio": context_usage_ratio,
+        "input_tokens": input_tokens,
+        "context_window": context_window,
+        "threshold": threshold,
+    }
+
+
+def tool_start_event(tool_name: str, tool_id: str) -> StreamEvent:
+    """Build the common tool-start event."""
+    return {"type": "tool_start", "tool_name": tool_name, "tool_id": tool_id}
+
+
+def tool_end_event(tool_name: str, tool_id: str, *, record: Any) -> StreamEvent:
+    """Build the common tool-completion event."""
+    return {"type": "tool_end", "tool_id": tool_id, "tool_name": tool_name, "record": record}
+
+
+def done_event(
+    full_text: str,
+    *,
+    result_message: Any = None,
+    tool_call_records: Any = _EVENT_UNSET,
+    usage: Any = _EVENT_UNSET,
+    stop_kind: Any = _EVENT_UNSET,
+    truncated: Any = _EVENT_UNSET,
+) -> StreamEvent:
+    """Build a terminal success event without changing optional key presence."""
+    event: StreamEvent = {
+        "type": "done",
+        "full_text": full_text,
+        "result_message": result_message,
+    }
+    if tool_call_records is not _EVENT_UNSET:
+        event["tool_call_records"] = tool_call_records
+    if usage is not _EVENT_UNSET:
+        event["usage"] = usage
+    if stop_kind is not _EVENT_UNSET:
+        event["stop_kind"] = stop_kind
+    if truncated is not _EVENT_UNSET:
+        event["truncated"] = truncated
+    return event
+
+
+def error_event(message: str, *, terminal: bool = False, reason: str | None = None) -> StreamEvent:
+    """Build an error event using the established public event shape."""
+    event: StreamEvent = {"type": "error", "terminal": terminal, "message": message}
+    if reason is not None:
+        event["reason"] = reason
+    return event
 
 
 def as_stream_event(value: Mapping[str, Any]) -> StreamEvent:

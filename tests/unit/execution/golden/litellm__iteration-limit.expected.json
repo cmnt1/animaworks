@@ -5,16 +5,16 @@
   "scenario": "limit",
   "events": [
     {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "call_limit_1"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 7.8125e-05,
       "input_tokens": 10,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "tool_start",
-      "tool_name": "search_memory",
-      "tool_id": "call_limit_1"
     },
     {
       "type": "tool_detail",
@@ -35,16 +35,16 @@
       }
     },
     {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "call_limit_2"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 7.8125e-05,
       "input_tokens": 10,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "tool_start",
-      "tool_name": "search_memory",
-      "tool_id": "call_limit_2"
     },
     {
       "type": "tool_detail",
@@ -65,16 +65,16 @@
       }
     },
     {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "call_limit_3"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 7.8125e-05,
       "input_tokens": 10,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "tool_start",
-      "tool_name": "search_memory",
-      "tool_id": "call_limit_3"
     },
     {
       "type": "tool_detail",
@@ -95,16 +95,16 @@
       }
     },
     {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "call_limit_4"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 7.8125e-05,
       "input_tokens": 10,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "tool_start",
-      "tool_name": "search_memory",
-      "tool_id": "call_limit_4"
     },
     {
       "type": "tool_detail",
@@ -132,15 +132,15 @@
       "threshold": 0.6728
     },
     {
+      "type": "text_delta",
+      "text": "Runaway summary"
+    },
+    {
       "type": "context_update",
       "context_usage_ratio": 0.000109375,
       "input_tokens": 14,
       "context_window": 128000,
       "threshold": 0.6728
-    },
-    {
-      "type": "text_delta",
-      "text": "Runaway summary"
     },
     {
       "type": "done",
