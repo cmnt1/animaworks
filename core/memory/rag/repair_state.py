@@ -13,6 +13,7 @@ from typing import Any
 
 from core.memory.rag.repair_types import RepairResult
 from core.memory.rag.repair_utils import iso, parse_dt, utc_now
+from core.platform.atomic_io import atomic_write_json
 
 ACTIVE_REPAIR_STATUSES = frozenset({"requested", "stopping", "repairing"})
 STAGE_FENCE_ACCESS = "fence_access"
@@ -47,7 +48,7 @@ def read_state(anima_name: str, *, animas_dir: Path | None = None) -> dict[str, 
 def write_state(anima_name: str, state: dict[str, Any], *, animas_dir: Path | None = None) -> None:
     path = state_path(anima_name, animas_dir=animas_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_json(path, state, indent=2, ensure_ascii=False)
 
 
 def state_with_defaults(state: dict[str, Any] | None = None) -> dict[str, Any]:

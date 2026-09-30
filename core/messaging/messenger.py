@@ -24,6 +24,7 @@ from core.exceptions import (
     RecipientNotFoundError,
 )  # noqa: F401
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 from core.time_utils import ensure_aware, now_iso, now_local
 
@@ -124,10 +125,7 @@ def save_channel_meta(shared_dir: Path, channel: str, meta: ChannelMeta) -> None
         "slack_deleted_at": meta.slack_deleted_at,
         "company": meta.company,
     }
-    meta_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    atomic_write_json(meta_path, data, indent=2, ensure_ascii=False, trailing_newline=False)
 
 
 def is_channel_member(

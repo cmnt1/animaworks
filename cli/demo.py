@@ -20,6 +20,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from core.platform.atomic_io import atomic_write_json
+
 # Model names (must match KNOWN_MODELS in core/config/model_mode.py)
 CLAUDE_MODEL_MAIN = "claude-sonnet-4-6"
 CLAUDE_MODEL_BACKGROUND = "claude-haiku-4-5-20251001"
@@ -125,7 +127,7 @@ def _apply_overlay(data_dir: Path, overlay_path: Path) -> None:
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     ovl = json.loads(overlay_path.read_text(encoding="utf-8"))
     _deep_merge(cfg, ovl)
-    cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(cfg_path, cfg, indent=2, ensure_ascii=False, trailing_newline=False)
 
 
 def _inject_credentials(auth: dict) -> None:
@@ -168,8 +170,7 @@ def _override_models(data_dir: Path, family: str) -> None:
         else:
             status["model"] = bg_model
             status["background_model"] = bg_model
-        with open(status_path, "w", encoding="utf-8") as fh:
-            json.dump(status, fh, indent=2, ensure_ascii=False)
+        atomic_write_json(status_path, status, indent=2, ensure_ascii=False, trailing_newline=False)
     print("  Demo model override applied.")
 
 

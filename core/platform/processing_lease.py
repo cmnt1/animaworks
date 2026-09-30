@@ -104,9 +104,14 @@ def write_processing_lease(
                 "process_start_time": float(start_time),
             }
         )
-        atomic_write_json(lease_path, payload, indent=None, trailing_newline=False, fsync_dir=True)
-    else:
-        lease_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(
+        lease_path,
+        payload,
+        indent=None,
+        ensure_ascii=False,
+        trailing_newline=False,
+        fsync_dir=v2_ready,
+    )
     return lease_path
 
 

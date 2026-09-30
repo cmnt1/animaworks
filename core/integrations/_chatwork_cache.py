@@ -19,6 +19,7 @@ from pathlib import Path
 from core.exceptions import ToolConfigError
 from core.integrations._cache import BaseMessageCache
 from core.integrations._chatwork_client import JST, ChatworkClient
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.tools.chatwork.cache")
 
@@ -90,13 +91,8 @@ def resolve_cache_db_path(client: ChatworkClient) -> Path:
         me = client.me()
         account_id = str(me["account_id"])
         identity_map[token_fingerprint] = account_id
-        temp_path = map_path.with_suffix(".json.tmp")
         try:
-            temp_path.write_text(
-                json.dumps(identity_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            temp_path.replace(map_path)
+            atomic_write_json(map_path, identity_map, indent=2, ensure_ascii=False, sort_keys=True)
         except OSError as exc:
             # The account id was just resolved from the API, so the lookup can
             # proceed uncached instead of blocking every Chatwork read.

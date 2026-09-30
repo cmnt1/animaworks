@@ -27,6 +27,7 @@ from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.messaging.messenger import InboxItem
 from core.paths import load_prompt
+from core.platform.atomic_io import atomic_write_json
 from core.schemas import CycleResult
 from core.skills.cron_context import SkillContextRejection, SkillContextWarning
 from core.time_utils import ensure_aware, now_iso, now_local
@@ -672,10 +673,7 @@ class HeartbeatMixin:
                 "trigger": "heartbeat",
                 "unread_count": unread_count,
             }
-            checkpoint_path.write_text(
-                json.dumps(checkpoint_data, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            atomic_write_json(checkpoint_path, checkpoint_data, indent=None, trailing_newline=False)
         except Exception:
             logger.debug("[%s] Failed to write heartbeat checkpoint", self.name, exc_info=True)
 

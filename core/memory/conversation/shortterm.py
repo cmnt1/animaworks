@@ -22,6 +22,7 @@ from typing import Any
 
 from core.exceptions import MemoryWriteError
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_json
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.shortterm_memory")
@@ -110,10 +111,7 @@ class ShortTermMemory:
         # Write JSON (critical: raise MemoryWriteError on failure)
         json_path = self.shortterm_dir / "session_state.json"
         try:
-            json_path.write_text(
-                json.dumps(asdict(state), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            atomic_write_json(json_path, asdict(state), indent=2, ensure_ascii=False, trailing_newline=False)
         except OSError as exc:
             raise MemoryWriteError(f"Short-term memory save failed: {exc}") from exc
 
@@ -212,10 +210,7 @@ class ShortTermMemory:
         self.shortterm_dir.mkdir(parents=True, exist_ok=True)
         path = self.shortterm_dir / self._CHECKPOINT_FILE
         try:
-            path.write_text(
-                json.dumps(asdict(checkpoint), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            atomic_write_json(path, asdict(checkpoint), indent=2, ensure_ascii=False, trailing_newline=False)
         except OSError:
             logger.warning("Failed to write stream checkpoint to %s", path, exc_info=True)
         logger.debug(

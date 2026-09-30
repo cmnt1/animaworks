@@ -26,6 +26,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import atomic_write_json
+
 logger = logging.getLogger("animaworks.background")
 
 
@@ -446,10 +448,7 @@ class BackgroundTaskManager:
         """Persist task state to disk."""
         path = self._storage_dir / f"{task.task_id}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(task.to_dict(), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(path, task.to_dict(), indent=2, ensure_ascii=False)
 
     def _load_task(self, task_id: str) -> BackgroundTask | None:
         """Load a task from disk."""

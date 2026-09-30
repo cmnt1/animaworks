@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from core.paths import TEMPLATES_DIR
+from core.platform.atomic_io import atomic_write_json
 
 logger = logging.getLogger("animaworks.anima_factory")
 
@@ -477,10 +478,7 @@ def _ensure_status_json(anima_dir: Path) -> None:
     if status_path.exists():
         return
     status = {"enabled": True}
-    status_path.write_text(
-        json.dumps(status, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(status_path, status, indent=2, ensure_ascii=False)
     logger.debug("Created minimal status.json in %s", anima_dir)
 
 
@@ -566,10 +564,7 @@ def _create_status_json(
     if sheet_cred:
         status["credential"] = sheet_cred
 
-    (anima_dir / "status.json").write_text(
-        json.dumps(status, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(anima_dir / "status.json", status, indent=2, ensure_ascii=False)
     logger.debug("Created status.json in %s (role=%s)", anima_dir, role)
 
 

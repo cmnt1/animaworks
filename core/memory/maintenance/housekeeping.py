@@ -24,6 +24,7 @@ from typing import Any
 
 from core.config.models import HousekeepingConfig, InboxConfig
 from core.i18n import t
+from core.platform.atomic_io import atomic_write_text
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_local, today_local
 
@@ -384,7 +385,10 @@ def _run_skill_curator_reports(animas_dir: Path) -> dict[str, Any]:
             report_path = report_dir / f"report-{today_local().isoformat()}.json"
             import json
 
-            report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            atomic_write_text(
+                report_path,
+                json.dumps(report, ensure_ascii=False, indent=2, default=str),
+            )
             generated += 1
         except Exception:
             logger.debug("Skill Curator report failed for %s", anima_dir, exc_info=True)

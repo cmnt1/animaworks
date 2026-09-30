@@ -17,6 +17,7 @@ from typing import Any
 
 from core.config.file_access_policy import effective_write_roots
 from core.execution._sanitize import ORIGIN_HUMAN
+from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import resolve_anima_name
 
@@ -231,10 +232,7 @@ class WorkspaceToolsMixin:
         effective_write_roots(target_dir, [str(workspace_path)])
         permissions.file_roots.append(str(workspace_path))
         payload = permissions.model_dump(mode="json")
-        (target_dir / "permissions.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write_json(target_dir / "permissions.json", payload, indent=2, ensure_ascii=False)
         return True, False
 
     def _workspace_grant_update_status(self, target_dir: Path, qualified: str) -> bool:
@@ -250,5 +248,5 @@ class WorkspaceToolsMixin:
         if data.get("default_workspace") == qualified:
             return False
         data["default_workspace"] = qualified
-        status_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(status_path, data, indent=2, ensure_ascii=False)
         return True

@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
@@ -203,10 +204,7 @@ class CreateAnimaMixin:
                 status_data = _json.loads(status_path.read_text(encoding="utf-8"))
                 if not status_data.get("supervisor"):
                     status_data["supervisor"] = self._anima_name
-                    status_path.write_text(
-                        _json.dumps(status_data, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8",
-                    )
+                    atomic_write_json(status_path, status_data, indent=2, ensure_ascii=False)
                     logger.debug(
                         "Set fallback supervisor '%s' for '%s'",
                         self._anima_name,

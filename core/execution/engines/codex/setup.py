@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import logging
 import os
 import shutil
@@ -23,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from core.execution.process_runner import ProcessRunner
+from core.platform.atomic_io import atomic_write_json
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.schemas import ModelConfig
 
@@ -836,7 +836,7 @@ class CodexSetupMixin:
                 ]
             }
         }
-        (self._codex_home / "hooks.json").write_text(json.dumps(hooks, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(self._codex_home / "hooks.json", hooks, indent=2, ensure_ascii=True)
 
     def _create_codex_client(self) -> Any:
         """Create an ``AsyncCodex`` SDK client instance."""

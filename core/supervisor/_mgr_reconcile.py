@@ -13,6 +13,8 @@ import json
 import logging
 import time
 
+from core.platform.atomic_io import atomic_write_json
+
 logger = logging.getLogger(__name__)
 
 
@@ -123,10 +125,7 @@ class ReconcileMixin:
                 continue
             # Clear flag to prevent re-trigger
             status.pop("restart_requested", None)
-            status_file.write_text(
-                json.dumps(status, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            atomic_write_json(status_file, status, indent=2, ensure_ascii=False)
             logger.info("Reconciliation: restart_requested for %s, restarting", name)
             try:
                 await self.restart_anima(name)
