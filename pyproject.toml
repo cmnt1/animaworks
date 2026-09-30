@@ -33,7 +33,6 @@ dependencies = [
     "chromadb>=1.0.0",  # Known issue: fails on Python 3.14 due to pydantic.v1 compat (chroma-core/chroma#5996)
     "sentence-transformers>=2.2.0",
     "numpy>=1.24.0",
-    "diffusers>=0.35.1",
     "Pillow>=10.0.0",
     "structlog>=24.1.0",
     "orjson>=3.9.0",
@@ -67,6 +66,8 @@ gmail = ["google-api-python-client>=2.0", "google-auth-oauthlib>=1.0", "google-a
 transcribe = ["faster-whisper>=1.0"]
 aws = ["boto3>=1.34"]
 rag = ["networkx>=3.0"]
+# Local Stable Diffusion image generation (also needs a CUDA-enabled torch).
+image-local = ["diffusers>=0.35.1"]
 # Always use `uv sync --all-extras` (or --frozen --all-extras); a narrow sync strips codex/claude packages and breaks Mode C/S fleets.
 codex = ["openai-codex>=0.1.0b3,<0.2", "openai-codex-cli-bin==0.137.0a4"]
 all-tools = ["animaworks[claude,communication,gmail,transcribe,aws,rag,zoom,tui]"]

@@ -181,7 +181,7 @@ def _import_diffusers() -> tuple[Any, Any]:
         from diffusers import AutoPipelineForImage2Image, AutoPipelineForText2Image
     except ImportError as exc:
         raise RuntimeError(
-            "diffusers is required for local image generation. Install animaworks with Diffusers support."
+            "diffusers is required for local image generation. Install it with: pip install 'animaworks[image-local]'"
         ) from exc
     return AutoPipelineForText2Image, AutoPipelineForImage2Image
 
