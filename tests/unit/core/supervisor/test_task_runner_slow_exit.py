@@ -44,7 +44,11 @@ async def _spawn_with_result(
             attempt=1,
             display_lane="background",
             on_spawned=None,
-            url_env={"ANIMAWORKS_EMBED_URL": "http://localhost:0"},
+            url_env={
+                "ANIMAWORKS_EMBED_URL": "http://localhost:0",
+                "ANIMAWORKS_VECTOR_URL": "http://localhost:0/vector",
+                "ANIMAWORKS_RERANK_URL": "http://localhost:0/rerank",
+            },
         )
     )
     # Deliver the terminal result once the job is registered.
@@ -103,7 +107,11 @@ async def test_spawn_callback_failure_reaps_child_before_releasing_job(tmp_path,
                 attempt=1,
                 display_lane="background",
                 on_spawned=failed_callback,
-                url_env={"ANIMAWORKS_EMBED_URL": "http://localhost:0"},
+                url_env={
+                    "ANIMAWORKS_EMBED_URL": "http://localhost:0",
+                    "ANIMAWORKS_VECTOR_URL": "http://localhost:0/vector",
+                    "ANIMAWORKS_RERANK_URL": "http://localhost:0/rerank",
+                },
             ),
             timeout=5,
         )

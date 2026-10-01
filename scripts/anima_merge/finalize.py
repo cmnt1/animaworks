@@ -281,9 +281,14 @@ class AnimaMergeFinalizeService:
         vectordb = archive_path / "vectordb"
         if not vectordb.is_dir():
             return []
+        from core.memory.rag.direct_access import OWNER_CAPABILITY
         from core.memory.rag.store import create_chroma_vector_store
 
-        store = create_chroma_vector_store(persist_dir=vectordb, anima_name=self.source, allow_direct=True)
+        store = create_chroma_vector_store(
+            persist_dir=vectordb,
+            anima_name=self.source,
+            allow_direct=OWNER_CAPABILITY,
+        )
         removed: list[str] = []
         try:
             collections = store.list_collections()

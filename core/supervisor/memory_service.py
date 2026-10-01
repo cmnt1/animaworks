@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import sys
 import uuid
@@ -210,12 +211,14 @@ class MemoryService:
         if include_shared:
             cmd.append("--shared")
         from core.config import load_config
+        from core.memory.rag.endpoints import child_env, get_endpoints
 
         timeout = int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
         cwd = await asyncio.to_thread(lambda: Path(__file__).resolve().parents[2])
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=cwd,
+            env={**os.environ, **child_env(get_endpoints())},
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -741,13 +744,14 @@ class MemoryService:
         return [{"document": cls._documents([result.document])[0], "score": result.score} for result in results]
 
     def _open_native_store(self) -> ChromaVectorStore:
+        from core.memory.rag.direct_access import OWNER_CAPABILITY
         from core.memory.rag.store import create_chroma_vector_store
         from core.paths import get_anima_vectordb_dir
 
         return create_chroma_vector_store(
             persist_dir=get_anima_vectordb_dir(self.anima_name),
             anima_name=self.anima_name,
-            allow_direct=True,
+            allow_direct=OWNER_CAPABILITY,
         )
 
     async def close(self) -> None:

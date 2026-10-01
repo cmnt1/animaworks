@@ -18,6 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 
 class TestDetectOrphanAnimas:
     """Tests for detect_orphan_animas."""
@@ -359,7 +361,7 @@ class TestChromaVectorStoreMkdirGuard:
         with patch.dict(sys.modules, {"chromadb": mock_chromadb}):
             from core.memory.rag.store import ChromaVectorStore
 
-            ChromaVectorStore(persist_dir=persist_dir, allow_direct=True)
+            ChromaVectorStore(persist_dir=persist_dir, allow_direct=OWNER_CAPABILITY)
 
         assert persist_dir.exists()
 
@@ -374,7 +376,7 @@ class TestChromaVectorStoreMkdirGuard:
         with patch.dict(sys.modules, {"chromadb": mock_chromadb}), caplog.at_level(logging.WARNING):
             from core.memory.rag.store import ChromaVectorStore
 
-            ChromaVectorStore(persist_dir=persist_dir, allow_direct=True)
+            ChromaVectorStore(persist_dir=persist_dir, allow_direct=OWNER_CAPABILITY)
 
         assert persist_dir.exists()
         assert "Parent directory does not exist" in caplog.text

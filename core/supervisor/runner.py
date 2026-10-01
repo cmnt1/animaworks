@@ -34,7 +34,8 @@ from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.env import get_env
 from core.platform.locks import acquire_file_lock, release_file_lock
-from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids
+from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids, terminate_pid
+from core.platform.subprocess_entries import SubprocessEntry
 from core.platform.tasks import spawn
 from core.supervisor.event_bus import RootEventBus
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 _ORPHAN_CHECK_INTERVAL_SEC = 300  # 5 minutes
 _ORPHAN_MAX_AGE_SEC = 7200  # 2 hours
+_ORPHAN_TASK_RUNNER_TERMINATE_GRACE_SEC = 2.0
 
 
 # ── AnimaRunner ──────────────────────────────────────────────────
@@ -87,6 +89,7 @@ class AnimaRunner:
         self._expects_startup_ack = get_env("ANIMAWORKS_EXPECT_STARTUP_ACK") == "1"
         self._started_at = now_local()
         self._lock_file: Any | None = None
+        self._orphan_task_runner_cleanup_done = False
 
         # Delegate instances (created in run() after anima initialization)
         self._scheduler_mgr: SchedulerManager | None = None
@@ -239,6 +242,7 @@ class AnimaRunner:
 
             set_live_event_sink(self._event_bus.publish)
             self._acquire_process_lock()
+            self._cleanup_orphaned_task_runners()
 
             # Start IPC server first so the socket is created immediately.
             self.ipc_server = IPCServer(socket_path=self.socket_path, request_handler=self._handle_request)
@@ -689,6 +693,76 @@ class AnimaRunner:
             )
 
     # ── Orphan Process Cleanup ───────────────────────────────────
+
+    def _cleanup_orphaned_task_runners(self) -> None:
+        """Terminate stale task runners belonging to this data dir and anima."""
+        if self._orphan_task_runner_cleanup_done:
+            return
+        self._orphan_task_runner_cleanup_done = True
+
+        current_pid = os.getpid()
+        try:
+            current = psutil.Process(current_pid)
+            own_descendant_pids = {child.pid for child in current.children(recursive=True)}
+        except (psutil.Error, AttributeError):
+            logger.warning(
+                "Skipping orphan task-runner cleanup for %s: cannot inspect own descendants", self.anima_name
+            )
+            return
+
+        own_data_dir = self.shared_dir.parent.resolve()
+        try:
+            processes = psutil.process_iter()
+            for process in processes:
+                try:
+                    pid = process.pid
+                    if pid == current_pid or pid in own_descendant_pids:
+                        continue
+                    cmdline = process.cmdline()
+                    if SubprocessEntry.TASK_RUNNER.value not in cmdline:
+                        continue
+                    if not any(
+                        argument == "--anima" and index + 1 < len(cmdline) and cmdline[index + 1] == self.anima_name
+                        for index, argument in enumerate(cmdline)
+                    ):
+                        continue
+                    try:
+                        process_data_dir = process.environ().get("ANIMAWORKS_DATA_DIR")
+                    except Exception:
+                        continue
+                    if not process_data_dir or Path(process_data_dir).expanduser().resolve() != own_data_dir:
+                        continue
+
+                    logger.warning("Terminating orphaned task runner pid=%d cmdline=%s", pid, " ".join(cmdline))
+                    self._terminate_orphan_task_runner(process)
+                except (psutil.Error, OSError, RuntimeError, TypeError, ValueError):
+                    continue
+        except Exception:
+            logger.debug("Orphan task-runner cleanup failed for %s", self.anima_name, exc_info=True)
+
+    @staticmethod
+    def _terminate_orphan_task_runner(process: psutil.Process) -> None:
+        """Send SIGTERM to an orphan's process group, then SIGKILL survivors."""
+        pid = process.pid
+        try:
+            descendants = process.children(recursive=True)
+        except psutil.Error:
+            descendants = []
+        targets = [process, *descendants]
+        terminate_pid(pid, include_children=True)
+        try:
+            _gone, alive = psutil.wait_procs(targets, timeout=_ORPHAN_TASK_RUNNER_TERMINATE_GRACE_SEC)
+        except psutil.Error:
+            alive = targets
+        if not alive:
+            return
+
+        terminate_pid(pid, force=True, include_children=True)
+        for target in alive:
+            try:
+                target.kill()
+            except psutil.Error:
+                continue
 
     def _cleanup_orphaned_claude_processes(self) -> None:
         """Terminate stale Claude CLI descendants of this process.

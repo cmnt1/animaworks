@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import get_env, server_url_env
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -325,32 +323,10 @@ class GrokCLIExecutor(CLIStreamExecutor):
         ]
 
     def _mcp_servers(self) -> list[dict[str, Any]]:
-        from core.paths import PROJECT_DIR
+        from core.execution.mcp_env import build_mcp_env
 
-        # ACP expects EnvVariable objects, not a plain mapping. The MCP child
-        # receives only this list, so explicitly propagate the active trigger
-        # used by the shared tool-surface resolver.
-        env = [
-            {"name": "ANIMAWORKS_ANIMA_DIR", "value": str(self._anima_dir)},
-            {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
-            {"name": "PYTHONPATH", "value": str(PROJECT_DIR)},
-            {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
-            *({"name": name, "value": value} for name, value in server_url_env().items()),
-            *(
-                {"name": key, "value": get_env(key)}
-                for key in (
-                    "ANIMAWORKS_EMBED_URL",
-                    "ANIMAWORKS_VECTOR_URL",
-                    "ANIMAWORKS_RERANK_URL",
-                )
-                if get_env(key)
-            ),
-        ]
-        from core.execution.session.session_context import current_runtime_session
-
-        runtime_ctx = current_runtime_session()
-        if runtime_ctx is not None:
-            env.extend({"name": key, "value": value} for key, value in runtime_ctx.to_env().items())
+        # ACP expects EnvVariable objects, not a plain mapping.
+        env = [{"name": name, "value": value} for name, value in build_mcp_env(self._anima_dir).items()]
         return [
             {
                 "name": "aw",

@@ -29,7 +29,7 @@ FastAPI의 OpenAPI 정의, WebSocket, `server/app.py` 직접 작성 라우트에
 
 | GET | `/api/animas` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 사용 가능한 anima 목록을 가져옵니다. | `server/routes/animas.py:list_animas` |
 | POST | `/api/animas/reload-all` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 실행 중인 모든 anima의 ModelConfig를 핫 리로드합니다. | `server/routes/animas.py:reload_all_anima_configs` |
-| DELETE | `/api/animas/{name}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | anima를 완전히 중지하고 삭제합니다 (프로세스 + 파일). | `server/routes/animas.py:delete_anima` |
+| DELETE | `/api/animas/{name}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | 정지 여부를 확인한 뒤 anima를 삭제합니다 (`archive=true`가 기본값이며, 정지를 확인하지 못하면 409를 반환합니다). 아카이브 경로와 상사 참조 경고를 반환합니다. | `server/routes/animas.py:delete_anima` |
 | GET | `/api/animas/{name}` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | — | `server/routes/animas.py:get_anima_detail` |
 | GET | `/api/animas/{name}/aliases` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | config.json에서 anima의 별칭을 반환합니다. | `server/routes/animas.py:get_anima_aliases` |
 | PUT | `/api/animas/{name}/aliases` | 세션 필수 (local_trust 모드, 또는 localhost 신뢰가 활성화된 경우 생략 가능) | config.json에서 anima의 별칭을 업데이트합니다. | `server/routes/animas.py:update_anima_aliases` |

@@ -7,11 +7,11 @@ import json
 import logging
 import os
 from datetime import UTC, datetime
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from core.config.io import get_config_path
 from core.config.model_catalog import validate_chat_model  # noqa: F401
 from core.config.model_discovery import discover_models
 from core.config.models import CredentialConfig, load_config, update_config
@@ -112,7 +112,7 @@ def create_config_router() -> APIRouter:
     @router.get("/system/config")
     async def get_config(request: Request):
         """Read and return the AnimaWorks config with masked secrets."""
-        config_path = Path.home() / ".animaworks" / "config.json"
+        config_path = get_config_path()
         if not config_path.exists():
             raise HTTPException(status_code=404, detail="Config file not found")
 

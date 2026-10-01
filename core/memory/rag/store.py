@@ -20,6 +20,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
+from core.memory.rag.direct_access import _DirectAccessCapability, require_direct_chroma_allowed
+
 logger = logging.getLogger("animaworks.rag.store")
 _persistent_client_init_lock = threading.Lock()
 _missing_collection_warned: set[str] = set()
@@ -212,29 +214,22 @@ class ChromaVectorStore(VectorStore):
 
     def __init__(
         self,
-        persist_dir: Path | None = None,
+        persist_dir: Path,
         anima_name: str | None = None,
         *,
-        allow_direct: bool = False,
+        allow_direct: _DirectAccessCapability | None = None,
     ) -> None:
-        """Initialize ChromaDB client.
+        """Initialize ChromaDB at an explicit persistent directory.
 
         Args:
-            persist_dir: Directory for ChromaDB persistence
-                        (defaults to ~/.animaworks/vectordb)
+            persist_dir: Explicit per-anima or staging directory for ChromaDB.
             anima_name: Owner anima for repair signal attribution.
         """
-        from core.memory.rag.direct_access import require_direct_chroma_allowed
-
-        if not allow_direct:
-            require_direct_chroma_allowed()
+        require_direct_chroma_allowed(allow_direct)
+        if persist_dir is None:
+            raise ValueError("persist_dir is required for direct ChromaDB access")
 
         import chromadb
-
-        if persist_dir is None:
-            from core.paths import get_data_dir
-
-            persist_dir = get_data_dir() / "vectordb"
 
         if persist_dir.parent.exists():
             persist_dir.mkdir(exist_ok=True)
@@ -776,9 +771,9 @@ def _clear_chroma_system_cache() -> None:
 
 def create_chroma_vector_store(
     *,
-    persist_dir: Path | None = None,
+    persist_dir: Path,
     anima_name: str | None = None,
-    allow_direct: bool = False,
+    allow_direct: _DirectAccessCapability | None = None,
 ) -> ChromaVectorStore:
     """Create a guarded direct Chroma vector store."""
     return ChromaVectorStore(

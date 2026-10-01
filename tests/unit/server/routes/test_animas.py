@@ -698,3 +698,80 @@ class TestStartAnimaEndpoint:
         assert "disabled" in detail or "refused" in detail
         assert "alice" not in app.state.anima_names
         supervisor.start_anima.assert_awaited_once_with("alice")
+
+
+class TestDeleteAnima:
+    async def test_running_anima_that_cannot_be_stopped_returns_409_without_deleting(self, tmp_path):
+        data_dir = tmp_path / "runtime"
+        animas_dir = data_dir / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        (data_dir / "config.json").write_text(
+            json.dumps({"version": 1, "animas": {"alice": {}}}),
+            encoding="utf-8",
+        )
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        supervisor = app.state.supervisor
+        handle = MagicMock()
+        handle.process.poll.return_value = None
+        supervisor.processes = {"alice": handle}
+        supervisor.stop_anima = AsyncMock()
+
+        with patch("core.anima.roster.refresh_anima_roster"):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.delete("/api/animas/alice")
+
+        assert resp.status_code == 409
+        assert alice_dir.is_dir()
+        assert (alice_dir / "identity.md").is_file()
+        assert not (data_dir / "archive").exists()
+        assert "alice" in app.state.anima_names
+        supervisor.stop_anima.assert_awaited_once_with("alice")
+
+    async def test_success_archives_unregisters_and_reports_supervisor_warning(self, tmp_path):
+        data_dir = tmp_path / "runtime"
+        animas_dir = data_dir / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        bob_dir = animas_dir / "bob"
+        bob_dir.mkdir()
+        (bob_dir / "status.json").write_text(json.dumps({"supervisor": "alice"}), encoding="utf-8")
+        config_path = data_dir / "config.json"
+        config_path.write_text(json.dumps({"version": 1, "animas": {"alice": {}}}), encoding="utf-8")
+
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice", "bob"])
+        supervisor = app.state.supervisor
+        handle = MagicMock()
+        handle.process.poll.return_value = None
+        supervisor.processes = {"alice": handle}
+
+        async def _stop(name: str) -> None:
+            supervisor.processes.pop(name, None)
+
+        supervisor.stop_anima = AsyncMock(side_effect=_stop)
+
+        with patch("core.anima.roster.refresh_anima_roster"):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                resp = await client.delete("/api/animas/alice")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "deleted"
+        assert data["archive_path"]
+        assert Path(data["archive_path"]).is_file()
+        assert data["supervisor_warnings"] == ["Anima 'bob' has deleted anima 'alice' as supervisor"]
+        assert not alice_dir.exists()
+        assert app.state.anima_names == ["bob"]
+        assert "alice" not in json.loads(config_path.read_text(encoding="utf-8"))["animas"]
+        supervisor.stop_anima.assert_awaited_once_with("alice")

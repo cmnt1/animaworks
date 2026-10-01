@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 # Skip the entire module if ChromaDB or sentence-transformers are missing
 chromadb = pytest.importorskip("chromadb", reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'")
 pytest.importorskip(
@@ -132,7 +134,7 @@ def vector_store(temp_dirs):
     vectordb_dir = anima_dir.parent.parent / "vectordb"
     vectordb_dir.mkdir(parents=True, exist_ok=True)
 
-    return ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+    return ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
 
 
 # ── Test 1: Shared Knowledge Indexing and Retrieval ─────────────────

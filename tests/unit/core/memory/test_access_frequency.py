@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.memory.rag.retriever import (
     WEIGHT_FREQUENCY,
     AccessBatch,
@@ -475,7 +476,7 @@ class TestUpdateMetadataOnVectorStore:
         vectordb_dir = tmp_path / "vectordb"
         vectordb_dir.mkdir()
 
-        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         store.create_collection("test_col")
 
         # Upsert a document

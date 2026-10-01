@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -38,19 +39,29 @@ _active_sessions: dict[str, WebSocket] = {}
 # ── STT singleton ───────────────────────────────────────────────
 
 _stt_instance: VoiceSTT | None = None
+_stt_instance_config: tuple[str, str, str, str | None] | None = None
+_stt_lock = threading.Lock()
 
 
 def _get_stt(voice_config: VoiceConfig) -> VoiceSTT:
-    """Lazy-load VoiceSTT singleton."""
-    global _stt_instance
-    if _stt_instance is None:
-        _stt_instance = VoiceSTT(
-            model_name=voice_config.stt_model,
-            device=voice_config.stt_device,
-            compute_type=voice_config.stt_compute_type,
-            language=voice_config.stt_language,
-        )
-    return _stt_instance
+    """Return the thread-safe STT singleton for the current voice settings."""
+    global _stt_instance, _stt_instance_config
+    config = (
+        voice_config.stt_model,
+        voice_config.stt_device,
+        voice_config.stt_compute_type,
+        voice_config.stt_language,
+    )
+    with _stt_lock:
+        if _stt_instance is None or _stt_instance_config != config:
+            _stt_instance = VoiceSTT(
+                model_name=voice_config.stt_model,
+                device=voice_config.stt_device,
+                compute_type=voice_config.stt_compute_type,
+                language=voice_config.stt_language,
+            )
+            _stt_instance_config = config
+        return _stt_instance
 
 
 def _load_per_anima_voice(

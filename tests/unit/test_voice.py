@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -242,10 +245,112 @@ class TestVoiceSTT:
         assert config.stt_language == "ja"
         assert "audio_format" not in config.model_dump()
 
+    def test_concurrent_first_calls_load_whisper_model_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from core.voice import stt as stt_module
+        from core.voice.stt import VoiceSTT
+
+        monkeypatch.setattr(stt_module, "_whisper_model", None)
+        monkeypatch.setattr(stt_module, "_whisper_model_config", None, raising=False)
+        created: list[tuple[str, str, str]] = []
+        created_lock = threading.Lock()
+
+        class FakeWhisperModel:
+            def __init__(self, model_name: str, *, device: str, compute_type: str) -> None:
+                with created_lock:
+                    created.append((model_name, device, compute_type))
+                time.sleep(0.05)
+
+        monkeypatch.setattr(stt_module, "_load_whisper_model_class", lambda: FakeWhisperModel)
+        stt = VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")
+        barrier = threading.Barrier(3)
+
+        def _ensure_model():
+            barrier.wait()
+            return stt._ensure_model()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_ensure_model) for _ in range(2)]
+            barrier.wait()
+            models = [future.result(timeout=5) for future in futures]
+
+        assert created == [("tiny", "cpu", "int8")]
+        assert models[0] is models[1]
+
+    @pytest.mark.parametrize(
+        ("model_name", "device", "compute_type"),
+        [("base", "cpu", "int8"), ("tiny", "cuda", "float16"), ("tiny", "cpu", "float32")],
+    )
+    def test_changed_model_settings_reload_whisper_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        model_name: str,
+        device: str,
+        compute_type: str,
+    ) -> None:
+        from core.voice import stt as stt_module
+        from core.voice.stt import VoiceSTT
+
+        monkeypatch.setattr(stt_module, "_whisper_model", None)
+        monkeypatch.setattr(stt_module, "_whisper_model_config", None, raising=False)
+        created: list[tuple[str, str, str]] = []
+
+        class FakeWhisperModel:
+            def __init__(self, name: str, *, device: str, compute_type: str) -> None:
+                created.append((name, device, compute_type))
+
+        monkeypatch.setattr(stt_module, "_load_whisper_model_class", lambda: FakeWhisperModel)
+        VoiceSTT(model_name="tiny", device="cpu", compute_type="int8")._ensure_model()
+        VoiceSTT(model_name=model_name, device=device, compute_type=compute_type)._ensure_model()
+
+        assert created == [("tiny", "cpu", "int8"), (model_name, device, compute_type)]
+
+    def test_get_stt_singleton_creation_is_thread_safe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from server.routes import voice as voice_routes
+
+        monkeypatch.setattr(voice_routes, "_stt_instance", None)
+        monkeypatch.setattr(voice_routes, "_stt_instance_config", None, raising=False)
+        created: list[dict[str, object]] = []
+        created_lock = threading.Lock()
+
+        class FakeSTT:
+            def __init__(self, **kwargs: object) -> None:
+                with created_lock:
+                    created.append(kwargs)
+                time.sleep(0.05)
+
+        monkeypatch.setattr(voice_routes, "VoiceSTT", FakeSTT)
+        config = VoiceConfig(stt_language="ja")
+        barrier = threading.Barrier(3)
+
+        def _get_stt():
+            barrier.wait()
+            return voice_routes._get_stt(config)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_get_stt) for _ in range(2)]
+            barrier.wait()
+            instances = [future.result(timeout=5) for future in futures]
+
+        assert len(created) == 1
+        assert instances[0] is instances[1]
+
+    def test_get_stt_recreates_wrapper_when_settings_change(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from server.routes import voice as voice_routes
+
+        monkeypatch.setattr(voice_routes, "_stt_instance", None)
+        monkeypatch.setattr(voice_routes, "_stt_instance_config", None, raising=False)
+        first = voice_routes._get_stt(VoiceConfig(stt_model="tiny"))
+        second = voice_routes._get_stt(VoiceConfig(stt_model="base"))
+
+        assert first is not second
+        assert first._model_name == "tiny"
+        assert second._model_name == "base"
+
     def test_get_stt_passes_configured_language(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from server.routes import voice as voice_routes
 
         monkeypatch.setattr(voice_routes, "_stt_instance", None)
+        monkeypatch.setattr(voice_routes, "_stt_instance_config", None, raising=False)
         instance = voice_routes._get_stt(VoiceConfig(stt_language="ja"))
         assert instance._language == "ja"
 

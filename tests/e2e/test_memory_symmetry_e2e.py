@@ -19,6 +19,8 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 chromadb = pytest.importorskip(
     "chromadb",
     reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'",
@@ -141,7 +143,7 @@ def test_knowledge_lifecycle_report_and_protection(anima_dir):
     assert meta["last_used"] != ""
 
     # Step 4: Index and verify ChromaDB metadata
-    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=True)
+    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=OWNER_CAPABILITY)
     indexer = MemoryIndexer(store, "test_anima", anima_dir)
     total = indexer.index_directory(anima_dir / "knowledge", "knowledge").chunks_indexed
     assert total > 0

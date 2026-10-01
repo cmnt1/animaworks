@@ -23,6 +23,19 @@ def _validate_anima_name(name: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid anima name")
 
 
+def _process_handle_is_alive(handle: object) -> bool:
+    """Fail closed unless a retained supervisor handle is known to be dead."""
+    process = getattr(handle, "process", None)
+    poll = getattr(process, "poll", None)
+    if callable(poll):
+        try:
+            return poll() is None
+        except Exception:
+            return True
+    state = getattr(getattr(handle, "state", None), "value", None)
+    return state not in {"stopped", "failed"}
+
+
 def _read_appearance(anima_dir: Path) -> dict | None:
     """Read appearance.json from an anima directory."""
     path = anima_dir / "appearance.json"
@@ -679,49 +692,56 @@ def create_animas_router() -> APIRouter:
         return {"status": "ok", "results": results}
 
     @router.delete("/animas/{name}")
-    async def delete_anima(name: str, request: Request):
+    async def delete_anima(name: str, request: Request, archive: bool = True):
         """Stop and delete an anima entirely (process + files)."""
-        import shutil
-
+        _validate_anima_name(name)
         supervisor = request.app.state.supervisor
         animas_dir: Path = request.app.state.animas_dir
         anima_names: list[str] = request.app.state.anima_names
         anima_dir = animas_dir / name
+        if not anima_dir.is_dir() or not (anima_dir / "identity.md").is_file():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        # Stop the process if running
+        stop_error: Exception | None = None
         if name in supervisor.processes:
             try:
                 await supervisor.stop_anima(name)
-            except Exception:
+            except Exception as exc:
+                stop_error = exc
                 logger.warning("Failed to stop anima '%s' before delete", name, exc_info=True)
 
-        # Remove from anima_names list
-        if name in anima_names:
-            anima_names.remove(name)
+            handle = supervisor.processes.get(name)
+            if handle is not None and _process_handle_is_alive(handle):
+                detail = f"Could not stop anima '{name}' before delete"
+                if stop_error is not None:
+                    detail = f"{detail}: {stop_error}"
+                raise HTTPException(status_code=409, detail=detail)
 
-        # Delete directory from disk
-        if anima_dir.exists():
+        from server.services.anima_admin import delete_anima_files
+
+        result = delete_anima_files(animas_dir.parent, name, archive=archive)
+        if result.deleted:
+            if name in anima_names:
+                anima_names.remove(name)
             try:
-                shutil.rmtree(anima_dir)
-                logger.info("Deleted anima directory: %s", name)
-            except Exception as exc:
-                # If locked files, strip identity.md so it won't appear
-                try:
-                    (anima_dir / "identity.md").unlink(missing_ok=True)
-                    (anima_dir / "status.json").unlink(missing_ok=True)
-                except Exception:
-                    logger.debug("Best-effort operation failed", exc_info=True)
-                logger.warning("Partial delete for '%s': %s", name, exc)
-                return {"status": "partial", "name": name, "detail": str(exc)}
+                from core.anima.roster import refresh_anima_roster
 
-        try:
-            from core.anima.roster import refresh_anima_roster
+                refresh_anima_roster()
+            except Exception:
+                logger.debug("Failed to refresh anima roster after delete", exc_info=True)
 
-            refresh_anima_roster()
-        except Exception:
-            logger.debug("Failed to refresh anima roster after delete", exc_info=True)
+        if result.error:
+            raise HTTPException(status_code=500, detail=f"Failed to delete anima '{name}': {result.error}")
 
-        return {"status": "deleted", "name": name}
+        return {
+            "status": "deleted",
+            "name": name,
+            "archive_path": str(result.archive_path) if result.archive_path is not None else None,
+            "supervisor_warnings": [
+                f"Anima '{other_name}' has deleted anima '{name}' as supervisor"
+                for other_name in result.supervisor_references
+            ],
+        }
 
     # ── Interactive call_human resolve (authenticated UI) ──
 

@@ -29,7 +29,7 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 | GET | `/api/animas` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Retrieves the list of available animas. | `server/routes/animas.py:list_animas` |
 | POST | `/api/animas/reload-all` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Hot-reload ModelConfig for all running animas. | `server/routes/animas.py:reload_all_anima_configs` |
-| DELETE | `/api/animas/{name}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Stop and delete an anima entirely (process + files). | `server/routes/animas.py:delete_anima` |
+| DELETE | `/api/animas/{name}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Stops and deletes an anima after confirming it has stopped (`archive=true` by default; returns 409 if stopping cannot be confirmed). Returns the archive path and supervisor-reference warnings. | `server/routes/animas.py:delete_anima` |
 | GET | `/api/animas/{name}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | — | `server/routes/animas.py:get_anima_detail` |
 | GET | `/api/animas/{name}/aliases` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return aliases for an anima from config.json. | `server/routes/animas.py:get_anima_aliases` |
 | PUT | `/api/animas/{name}/aliases` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Update aliases for an anima in config.json. | `server/routes/animas.py:update_anima_aliases` |

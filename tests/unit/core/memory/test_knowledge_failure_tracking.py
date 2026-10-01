@@ -20,6 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 # ── Fixtures ────────────────────────────────────────────────────
 
 
@@ -369,7 +371,7 @@ class TestIndexerMetadataExtraction:
             from core.memory.rag.indexer import MemoryIndexer
             from core.memory.rag.store import ChromaVectorStore
 
-            store = ChromaVectorStore(persist_dir=a_dir / "vectordb", allow_direct=True)
+            store = ChromaVectorStore(persist_dir=a_dir / "vectordb", allow_direct=OWNER_CAPABILITY)
             indexer = MemoryIndexer(store, "idx_test", a_dir)
             total = indexer.index_directory(a_dir / "knowledge", "knowledge").chunks_indexed
             assert total > 0

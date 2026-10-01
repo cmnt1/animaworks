@@ -52,7 +52,13 @@ def _contract(identity: IPCV2Identity) -> IPCV2Envelope:
             "request_id": "run-1",
             "method": "run",
             "params": {
-                "environment": {"urls": {"ANIMAWORKS_EMBED_URL": "http://embed.test"}},
+                "environment": {
+                    "urls": {
+                        "ANIMAWORKS_EMBED_URL": "http://embed.test",
+                        "ANIMAWORKS_VECTOR_URL": "http://vector.test",
+                        "ANIMAWORKS_RERANK_URL": "http://rerank.test",
+                    }
+                },
                 "task": {
                     "name": "daily",
                     "schedule": "0 9 * * *",
@@ -80,13 +86,19 @@ def args() -> argparse.Namespace:
     return argparse.Namespace(anima="sakura", lane="cron", job="job-1")
 
 
+def _set_task_runner_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://embed.test")
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://vector.test")
+    monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://rerank.test")
+
+
 @pytest.mark.asyncio
 async def test_normal_execution_returns_result_and_exit_zero(
     monkeypatch: pytest.MonkeyPatch,
     identity: IPCV2Identity,
     args: argparse.Namespace,
 ) -> None:
-    monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://embed.test")
+    _set_task_runner_urls(monkeypatch)
     connection = FakeConnection()
     monkeypatch.setattr(
         task_runner,
@@ -119,7 +131,7 @@ async def test_execution_exception_returns_error_result(
     identity: IPCV2Identity,
     args: argparse.Namespace,
 ) -> None:
-    monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://embed.test")
+    _set_task_runner_urls(monkeypatch)
     connection = FakeConnection()
     monkeypatch.setattr(
         task_runner,
@@ -155,7 +167,15 @@ def _heartbeat_contract(identity: IPCV2Identity) -> IPCV2Envelope:
         body={
             "request_id": "run-hb-1",
             "method": "run",
-            "params": {"environment": {"urls": {"ANIMAWORKS_EMBED_URL": "http://embed.test"}}},
+            "params": {
+                "environment": {
+                    "urls": {
+                        "ANIMAWORKS_EMBED_URL": "http://embed.test",
+                        "ANIMAWORKS_VECTOR_URL": "http://vector.test",
+                        "ANIMAWORKS_RERANK_URL": "http://rerank.test",
+                    }
+                }
+            },
         },
     )
 
@@ -172,7 +192,7 @@ async def test_heartbeat_lane_execution_returns_result(
         display_lane="background",
     )
     args = argparse.Namespace(anima="sakura", lane="heartbeat", job="job-hb")
-    monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://embed.test")
+    _set_task_runner_urls(monkeypatch)
     connection = FakeConnection()
     monkeypatch.setattr(
         task_runner,

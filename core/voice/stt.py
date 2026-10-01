@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 # ── Whisper singleton ──────────────────────────────────────────
 
 _whisper_model: Any | None = None
+_whisper_model_config: tuple[str, str, str] | None = None
+_whisper_model_lock = threading.Lock()
 
 
 def _load_whisper_model_class():
@@ -57,18 +60,23 @@ class VoiceSTT:
         self._model: Any | None = None
 
     def _ensure_model(self) -> Any:
-        """Lazy-load WhisperModel singleton."""
-        global _whisper_model
-        if _whisper_model is None:
-            whisper_model_class = _load_whisper_model_class()
-            device = self._device
-            if device == "auto":
-                device = "cuda" if shutil.which("nvidia-smi") else "cpu"
-            compute = self._compute_type
-            if compute == "default":
-                compute = "float16" if device == "cuda" else "int8"
-            _whisper_model = whisper_model_class(self._model_name, device=device, compute_type=compute)
-        return _whisper_model
+        """Load the shared Whisper model once for the active model settings."""
+        global _whisper_model, _whisper_model_config
+        config = (self._model_name, self._device, self._compute_type)
+        with _whisper_model_lock:
+            if _whisper_model is None or _whisper_model_config != config:
+                whisper_model_class = _load_whisper_model_class()
+                device = self._device
+                if device == "auto":
+                    device = "cuda" if shutil.which("nvidia-smi") else "cpu"
+                compute = self._compute_type
+                if compute == "default":
+                    compute = "float16" if device == "cuda" else "int8"
+                model = whisper_model_class(self._model_name, device=device, compute_type=compute)
+                _whisper_model = model
+                _whisper_model_config = config
+            self._model = _whisper_model
+            return _whisper_model
 
     def transcribe_buffer(
         self,

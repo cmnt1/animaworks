@@ -36,7 +36,6 @@ from core.execution.events import done_event, text_delta_event, tool_end_event, 
 from core.execution.process_runner import ProcessRunner
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
-from core.platform.env import server_url_env
 from core.platform.gemini import find_gemini_binary as _find_gemini_binary
 from core.platform.gemini import is_gemini_cli_available
 from core.platform.subprocess_entries import SubprocessEntry, module_args
@@ -128,7 +127,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
         """Write .gemini/settings.json merging MCP config with existing auth."""
         import sys
 
-        from core.paths import PROJECT_DIR
+        from core.execution.mcp_env import build_mcp_env
 
         settings_path = self._workspace / ".gemini" / "settings.json"
 
@@ -149,18 +148,7 @@ class GeminiCLIExecutor(CLIStreamExecutor):
                 except (json.JSONDecodeError, OSError):
                     pass
 
-        mcp_env = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        }
-        mcp_env.update(server_url_env())
-        from core.execution.session.session_context import current_runtime_session
-
-        runtime_ctx = current_runtime_session()
-        if runtime_ctx is not None:
-            mcp_env.update(runtime_ctx.to_env())
+        mcp_env = build_mcp_env(self._anima_dir)
         existing["mcpServers"] = {
             "aw": {
                 "command": sys.executable,

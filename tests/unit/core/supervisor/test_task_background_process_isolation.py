@@ -368,7 +368,11 @@ async def test_background_pool_limit_caps_concurrent_children(tmp_path: Path) ->
         patch.object(
             TaskRunnerSupervisor,
             "_required_url_environment",
-            return_value={"ANIMAWORKS_EMBED_URL": "http://embed.test"},
+            return_value={
+                "ANIMAWORKS_EMBED_URL": "http://embed.test",
+                "ANIMAWORKS_VECTOR_URL": "http://vector.test",
+                "ANIMAWORKS_RERANK_URL": "http://rerank.test",
+            },
         ),
     ):
         first = asyncio.create_task(supervisor.run_background(kind="command", payload={"tool_name": "a"}))
