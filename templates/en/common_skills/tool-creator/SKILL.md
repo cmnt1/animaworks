@@ -188,7 +188,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
 
 #### `cli_main` (for animaworks-tool)
 
-`animaworks-tool <tool_name> …` requires **the `cli_main` module to be present in core, common, and personal modules alike for CLI execution to be possible** (the `cli_dispatch` of `cli/tool_dispatch.py`). The common pattern is to parse subcommands in `argparse` and call `dispatch(f"{tool}_{action}", args_dict)` internally. If you want to generate usage from a schema, also refer to `auto_cli_guide` in `core/integrations/_base.py`.
+`animaworks-tool <tool_name> …` cannot run the CLI for core, common, or personal modules unless the module has `cli_main` (see `cli_dispatch` in `cli/tool_dispatch.py`). The typical pattern is to parse subcommands with `argparse` and call `dispatch(f"{tool}_{action}", args_dict)` internally. If you want to generate usage from a schema, also refer to `auto_cli_guide` in `core/integrations/_base.py`.
 
 ### Step 3: Saving the File
 
@@ -259,8 +259,8 @@ The Markdown "Tool Creation" section (`個人ツール` / `共有ツール` line
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` registers the input from `task_type="command"` in the TaskStore, and `PendingTaskExecutor` retrieves and executes the attempt (the `_handle_submit` of `cli/tool_dispatch.py`). Execution results are also saved to `state/background_tasks/{task_id}.json`. Profile references are only performed against **importable core modules** (file tools are less likely to be flagged as warnings at submit time).
-- **`gated: True`**: For the corresponding core tool actions, explicit permission for `tool_action` must be granted in permissions.
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` registers the input from `task_type="command"` into the TaskStore, and `PendingTaskExecutor` retrieves and executes the attempt (see `_handle_submit` in `cli/tool_dispatch.py`). Execution results are also saved to `state/background_tasks/{task_id}.json`. Profile references are only applied to **importable core modules** (file tools are less likely to be flagged as warnings at submit time).
+- **`gated: True`**: For the corresponding core tool actions, explicit permission for `tool_action` must be granted via permissions.
 
 ```python
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
@@ -299,8 +299,8 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 
 - Thin entry + `_client` / `_cli` split: `core/integrations/chatwork.py`, `slack.py`, `discord.py`
 - Authentication and API: `core/integrations/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
-- Long-running and pipelines: `core/integrations/image_gen.py` (facade, `image/` subpackage + `EXECUTION_PROFILE`)
-- Search and local LLM: `core/integrations/web_search.py` (when `get_tool_schemas` is empty → no match in the core path of `ExternalToolDispatcher.dispatch`. `use_tool` is possible with `dispatch`), `x_search.py`, `local_llm.py`
+- Long-running and pipeline: `core/integrations/image_gen.py` (facade, `image/` subpackage + `EXECUTION_PROFILE`)
+- Search and local LLM: `core/integrations/web_search.py` (if `get_tool_schemas` is empty, it will not match via the core path in `ExternalToolDispatcher.dispatch`; `use_tool` is possible with `dispatch`), `x_search.py`, `local_llm.py`
 - Dispatcher and CLI entry: `core/tooling/dispatch.py`, `cli/tool_dispatch.py` (`cli_dispatch` / `_handle_submit`)
 
 ## Notes

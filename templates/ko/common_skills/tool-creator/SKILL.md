@@ -259,8 +259,8 @@ Markdown의 「도구 생성」 섹션(`個人ツール` / `共有ツール` 행
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …`는 `task_type="command"`의 입력을 TaskStore에 등록하고, `PendingTaskExecutor`가 시도를 가져와 실행한다（`cli/tool_dispatch.py`의 `_handle_submit`）. 실행 결과는 `state/background_tasks/{task_id}.json`에도 저장된다. 프로필 참조는 **import 가능한 코어 모듈**에 대해서만 실시（파일 도구는 submit 시 경고 대상이 되기 쉬움）.
-- **`gated: True`**: 코어 도구의 해당 액션에 대해, permissions에서 `tool_action`의 명시적 허가가 필요.
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …`는 `task_type="command"`의 입력을 TaskStore에 등록하고, `PendingTaskExecutor`가 시도를 가져와 실행한다（`cli/tool_dispatch.py`의 `_handle_submit`）。실행 결과는 `state/background_tasks/{task_id}.json`에도 저장된다. 프로필 참조는 **import 가능한 코어 모듈**에 대해서만 실시（파일 도구는 submit 시 경고 대상이 되기 쉬움).
+- **`gated: True`**: 코어 도구의 해당 액션에 대해 permissions에서 `tool_action`의 명시적 허가가 필요.
 
 ```python
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
