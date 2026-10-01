@@ -1,11 +1,14 @@
-from __future__ import annotations
+"""Server-level supervision APIs for managing Anima processes."""
 
-"""Process-level Anima supervisor APIs."""
+from __future__ import annotations
 
 from importlib import import_module
 from typing import Any
 
-_EXPORTS = {"ProcessSupervisor": "core.supervisor.manager"}
+_EXPORTS = {
+    "HealthConfig": "server.supervisor.manager",
+    "ProcessSupervisor": "server.supervisor.manager",
+}
 
 
 def __getattr__(name: str) -> Any:
@@ -17,4 +20,4 @@ def __getattr__(name: str) -> Any:
     return value
 
 
-__all__ = ["ProcessSupervisor"]
+__all__ = ["HealthConfig", "ProcessSupervisor"]

@@ -118,7 +118,7 @@ def _open_owner_access(
 ) -> tuple[VectorAccess, Callable[[], None]]:
     from core.memory.rag.vector_client import VectorClient
     from core.memory.rag.vector_ops import bridge_transport
-    from core.supervisor.memory_service import MemoryService
+    from core.runtime.memory_service import MemoryService
 
     loop = asyncio.new_event_loop()
     ready = threading.Event()

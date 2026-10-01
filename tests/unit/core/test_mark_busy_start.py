@@ -204,9 +204,9 @@ class TestHealthCheckWithFreshProgress:
         After _mark_busy_start(), the health check should see a fresh timestamp
         and NOT trigger a kill.
         """
-        from core.supervisor._mgr_health import HealthMixin
-        from core.supervisor.manager import HealthConfig
-        from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+        from server.supervisor._mgr_health import HealthMixin
+        from server.supervisor.manager import HealthConfig
+        from server.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -237,7 +237,7 @@ class TestHealthCheckWithFreshProgress:
         sup.health_config = HealthConfig()
         sup._shutdown = False
         sup._restarting = set()
-        from core.supervisor.restart_state import RestartController
+        from server.supervisor.restart_state import RestartController
 
         sup._restart_ctl = RestartController(
             failed_threshold=5,
@@ -269,9 +269,9 @@ class TestHealthCheckWithFreshProgress:
         """Engine-side watchdog, not supervisor progress age, owns stream timeouts."""
         from unittest.mock import AsyncMock
 
-        from core.supervisor._mgr_health import HealthMixin
-        from core.supervisor.manager import HealthConfig
-        from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+        from server.supervisor._mgr_health import HealthMixin
+        from server.supervisor.manager import HealthConfig
+        from server.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 
         handle = ProcessHandle(
             anima_name="test-anima",
@@ -299,7 +299,7 @@ class TestHealthCheckWithFreshProgress:
         sup.health_config = HealthConfig()
         sup._shutdown = False
         sup._restarting = set()
-        from core.supervisor.restart_state import RestartController
+        from server.supervisor.restart_state import RestartController
 
         sup._restart_ctl = RestartController(
             failed_threshold=5,
@@ -339,7 +339,7 @@ class TestPingReturnsBusySince:
 
         dp._mark_busy_start()
 
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = object.__new__(AnimaRunner)
         runner.anima = dp

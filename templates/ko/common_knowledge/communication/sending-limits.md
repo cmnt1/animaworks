@@ -35,9 +35,9 @@ Inbox의 새 JSON 파일을 파일 변경 알림으로 감지하고, 읽지 않�
 
 | 역할 | 모듈 |
 |------|------------|
-| 수신자 해결·Slack / Chatwork로의 외부 배달 | `core/messaging/outbound.py` |
-| 내부 DM 배달·activity log 기록·깊이 진단 로그 | `core/messaging/messenger.py` |
-| DM 중복 방지·Board의 run 내 중복 방지 | `core/tooling/handler_comms.py` |
-| Inbox의 파일 wake·단일 실행·provider backoff | `core/supervisor/inbox_rate_limiter.py` |
+| 수신처 해결 · Slack / Chatwork 외부 전송 | `core/messaging/outbound.py` |
+| 내부 DM 배송 · activity log 기록 · 깊이 진단 로그 | `core/messaging/messenger.py` |
+| DM 중복 방지 · Board의 run 내 중복 방지 | `core/tooling/handler_comms.py` |
+| Inbox의 파일 wake · 단일 실행 · provider backoff | `core/runtime/inbox_rate_limiter.py` |
 | Inbox 용량 보호의 overflow | `core/anima/inbox_overflow.py` |
 | 최근 전송의 프롬프트 주입 | `core/memory/priming/outbound.py` |

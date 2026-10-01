@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.supervisor.manager import ProcessSupervisor
+    from server.supervisor.manager import ProcessSupervisor
 
 logger = logging.getLogger("animaworks.auto_updater")
 

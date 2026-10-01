@@ -109,9 +109,9 @@ class TestCoreModuleImports:
         [
             "core.execution.engines.claude.executor",
             "core.execution.engines.litellm.executor",
-            "core.supervisor.manager",
-            "core.supervisor.runner",
-            "core.supervisor.ipc",
+            "server.supervisor.manager",
+            "core.runtime.runner",
+            "core.runtime.ipc",
             "core.tooling.handler",
             "core.tooling.dispatch",
             "core.anima.digital_anima",

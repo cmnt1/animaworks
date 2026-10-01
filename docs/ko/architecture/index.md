@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/index.md -->
-<!-- i18n: source-sha256=d5f5c722e32a0301241507fea380830cb22ca5f7f0e766c2095ee93ab74f9881 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=18da910af6fa2d8159875d19dec5df901e0d3af2207b6c79d7b4b968ac8a1571 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 
@@ -30,31 +30,32 @@ flowchart TD
 
 | 패키지 | 역할 |
 |---|---|
-| `core.agent` | 에이전트 대화 주기, 실행기, 사전 컨텍스트 구성 |
-| `core.anima` | Anima 런타임 객체, 메시지, 하트비트, 라이프사이클 |
-| `core.auth` | 사용자 인증 및 세션 |
+| `core.agent` | 에이전트의 대화 사이클, executor, 사전 컨텍스트 구축 |
+| `core.anima` | Anima의 런타임 객체, 메시지, heartbeat, 라이프사이클 |
+| `core.auth` | 사용자 인증과 세션 |
 | `core.config` | 설정 스키마, 로드, 해결, 마이그레이션 |
-| `core.execution` | 엔진 공통 이벤트, 세션, 프로세스, 감시자, 도구 증거 |
-| `core.i18n` | 현지화 문자열 및 번역 함수 |
+| `core.execution` | 엔진 공통 이벤트, 세션, 프로세스, watchdog, tool evidence |
+| `core.i18n` | 로컬라이즈 문자열과 번역 함수 |
 | `core.infra` | 시작 준비, 로그, 런타임 기반 |
-| `core.integrations` | 외부 서비스 연동 및 animaworks-tool 구현 |
-| `core.lifecycle` | 공통 라이프사이클 처리 및 Anima 통합 |
-| `core.mcp` | AnimaWorks 도구를 MCP를 통해 공개하는 서버 |
-| `core.memory` | 대화 기록, 장기 기억, 검색, 기억 유지 관리 |
+| `core.integrations` | 외부 서비스 연동과 animaworks-tool의 구현 |
+| `core.lifecycle` | 공통 라이프사이클 처리와 Anima 통합 |
+| `core.mcp` | AnimaWorks의 도구를 MCP 경유로 공개하는 서버 |
+| `core.memory` | 대화 기록, 장기 기억, 검색, 기억의 유지보수 |
 | `core.messaging` | 내부 메시지, 공유 채널, 외부 대상 전송 |
 | `core.migrations` | 런타임 데이터의 단계적 마이그레이션 |
-| `core.notification` | 사람을 위한 알림 및 대화형 확인 |
-| `core.org` | 회사, 조직, 워크스페이스 해결 |
+| `core.notification` | 인간 대상 알림과 대화형 확인 |
+| `core.org` | 회사, 조직, workspace의 해결 |
 | `core.platform` | OS·프로세스·잠금·파일 작업의 차이 흡수 |
-| `core.prompt` | 시스템 프롬프트 및 도구 가이드 구성 |
-| `core.skills` | 스킬 색인, 선택, 라이프사이클 |
-| `core.supervisor` | Anima 및 작업 실행기의 프로세스 관리, IPC, 스케줄러 |
-| `core.tasks` | 영구 작업, 실행 큐, 위임, 외부 작업 수집 |
-| `core.tooling` | 내부 도구 정의, 실행 핸들러, 권한 검사 |
-| `core.usage` | 사용량 및 비용 집계 |
-| `core.voice` | 음성 입출력 및 음성 대화 |
+| `core.prompt` | system prompt와 tool guide의 조립 |
+| `core.runtime` | anima 메인의 런타임 컴포넌트, 프로세스 간 통신, 작업 실행 |
+| `core.skills` | 스킬의 인덱스, 선택, 라이프사이클 |
+| `server.supervisor` | 서버 측에서의 anima 프로세스 감독, 복구, 스케줄링 |
+| `core.tasks` | 영속 작업, 실행 큐, 위임, 외부 작업 수집 |
+| `core.tooling` | 내부 도구의 정의, 실행 핸들러, 권한 검사 |
+| `core.usage` | 사용량과 비용의 집계 |
+| `core.voice` | 음성 입출력과 음성 대화 |
 
-`server/`에는 FastAPI 애플리케이션, 라우트, 게이트웨이, 제공되는 웹 UI를 둔다. `cli/`에는 `animaworks` 명령 및 터미널 UI를 둔다. `templates/`에는 로케일별 프롬프트, Anima 템플릿, 공유 설정 템플릿을 보관한다.
+`server/`는 FastAPI 애플리케이션, 라우트, 게이트웨이, 배포하는 Web UI를 둔다. `cli/`은 `animaworks` 명령과 터미널 UI를 둔다. `templates/`은 로케일별 prompt, Anima 템플릿, 공유 설정 템플릿을 보관한다.
 
 ## 런타임 데이터
 

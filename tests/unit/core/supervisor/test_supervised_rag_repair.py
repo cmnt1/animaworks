@@ -10,7 +10,7 @@ import pytest
 
 
 def _make_supervisor(tmp_path: Path):
-    from core.supervisor.manager import ProcessSupervisor
+    from server.supervisor.manager import ProcessSupervisor
 
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir(parents=True, exist_ok=True)

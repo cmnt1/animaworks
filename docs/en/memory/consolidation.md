@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/memory/consolidation.md -->
-<!-- i18n: source-sha256=a37f02007d7805fe953c270b8af001c64b43c90d4e8873ce436a204a197977f9 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=a05463694132540a497b99625f9dc933a6b34890c941860e8c6bc5269d5e45a0 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: 193a5e72
 
@@ -9,14 +9,14 @@ Memory consolidation consists of judgment by Anima and candidate collection and 
 
 ## Daily Processing
 
-`core/supervisor/_mgr_scheduler.py` registers the daily job, and `core/lifecycle/system_consolidation.py`'s `_handle_daily_consolidation` selects the target Anima. Execution may be skipped based on inactivity periods or the number of records in the last 24 hours.
+`server/supervisor/_mgr_scheduler.py` registers a daily job, and `core/lifecycle/system_consolidation.py`'s `_handle_daily_consolidation` selects the target Anima. Depending on the period of inactivity or the number of records in the last 24 hours, execution may be skipped.
 
-Anima's `run_consolidation` summarizes the previous day's activity log into dated episodes and extracts atomic facts from the summaries. Subsequent framework post-processing proceeds in the following order:
+Anima's `run_consolidation` summarizes the previous day's activity log into dated episodes and extracts atomic facts from the summary. Subsequent framework post-processing proceeds in the following order:
 
 1. `ForgettingEngine.synaptic_downscaling` marks low-activity candidates on the index.
-2. `knowledge_self_correction` reviews the relevant knowledge and procedures with an LLM and creates procedures from resolved issues.
+2. `knowledge_self_correction` reviews the relevant knowledge and procedures with an LLM, and creates procedures from resolved issues.
 
-This correction runs while `core/lifecycle/knowledge_correction.py` manages the upper limit. Detailed reconsolidation conditions are described later.
+This correction is executed by `core/lifecycle/knowledge_correction.py` while managing the upper limit. Detailed re-fixation conditions are described later.
 
 ## Weekly Processing
 
@@ -36,6 +36,6 @@ After using a procedure, `report_procedure_outcome` records success or failure. 
 
 `core/memory/maintenance/reconsolidation.py` marks a procedure as a reconsolidation candidate if it meets `failure_count >= 1` **or** `confidence < 0.6`. When the LLM revises it, the old version is archived, `version` is advanced, and the success and failure counters and confidence are reset to initial values.
 
-## Periodic RAG Index Updates
+## Periodic Update of the RAG Index
 
-RAG index updates follow a single schedule separate from weekly consolidation. `core/supervisor/_mgr_scheduler.py`'s daily indexing job runs by default at 04:00, reflecting memory files, facts, and shared data, and also updates the BM25 and entity indexes. There is no separate path where weekly post-processing rebuilds the entire RAG. For index and recovery paths, see [Intentional Recall and Search](retrieval.md).
+The RAG index update is a single schedule separate from the weekly integration. `server/supervisor/_mgr_scheduler.py`'s daily indexing job reflects memory files, facts, and shared data at the default time of 04:00, and also updates the BM25 and entity indexes. There is no path where weekly post-processing separately rebuilds the entire RAG. For the index and recovery paths, refer to [Intentional Recall and Search](retrieval.md).

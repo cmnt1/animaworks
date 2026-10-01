@@ -1171,7 +1171,7 @@ class TestResponseDoneGuarantee:
 
     @pytest.mark.asyncio
     async def test_response_done_on_interrupt(self) -> None:
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
         from core.voice.session import VoiceSession
 
         ws = AsyncMock()
@@ -1334,7 +1334,7 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_sentences_synthesized_in_order(self) -> None:
         """Multiple sentences are synthesized and sent in enqueue order."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
@@ -1396,7 +1396,7 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_producer_does_not_wait_for_synthesis(self) -> None:
         """IPC consumer enqueues sentences while first synthesis is still running."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
@@ -1461,7 +1461,7 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_interrupt_discards_queued_sentences(self) -> None:
         """Barge-in clears the queue; later sentences must not be synthesized."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
@@ -1527,7 +1527,7 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_response_done_after_all_tts(self) -> None:
         """response_done is emitted only after the TTS queue is fully drained."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
 
         ws = AsyncMock()
         stt = MagicMock()
@@ -1628,7 +1628,7 @@ class TestTTSPrefetchPipeline:
     @pytest.mark.asyncio
     async def test_pipeline_tts_failure_counter(self) -> None:
         """Failure counter / health invalidation still work via the worker path."""
-        from core.supervisor.ipc import IPCResponse
+        from core.runtime.ipc import IPCResponse
         from core.voice.tts_base import TTSSynthesisError
 
         ws = AsyncMock()

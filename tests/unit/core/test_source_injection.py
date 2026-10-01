@@ -176,7 +176,7 @@ class TestSupervisorSourcePassthrough:
 
     async def test_runner_passes_source(self):
         """_handle_process_message forwards source in the payload to the child."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         mock_anima = MagicMock()
@@ -198,7 +198,7 @@ class TestSupervisorSourcePassthrough:
 
     async def test_runner_default_source_empty(self):
         """When source is not in params, payload is forwarded as-is."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         mock_anima = MagicMock()

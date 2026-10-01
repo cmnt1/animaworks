@@ -22,8 +22,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.exceptions import AnimaNotRunningError, ProcessError
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.ipc import IPCRequest
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 # ── A2: StreamingIPCHandler BaseException safety valve ──────────
 
@@ -34,7 +34,7 @@ class TestStreamingHandlerBaseException:
     @pytest.mark.asyncio
     async def test_system_exit_in_stream_yields_fatal_error(self):
         """SystemExit in process_message_stream -> FATAL_STREAM_ERROR queued."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         handler = StreamingIPCHandler(
             anima=MagicMock(),
@@ -74,7 +74,7 @@ class TestStreamingHandlerBaseException:
         The producer task re-raises it (contained within the task), and the
         stream ends gracefully via SENTINEL without a FATAL_STREAM_ERROR.
         """
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         handler = StreamingIPCHandler(
             anima=MagicMock(),
@@ -108,7 +108,7 @@ class TestStreamingHandlerBaseException:
     @pytest.mark.asyncio
     async def test_keyboard_interrupt_in_stream_yields_fatal_error(self):
         """KeyboardInterrupt in process_message_stream -> FATAL_STREAM_ERROR."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         handler = StreamingIPCHandler(
             anima=MagicMock(),
@@ -143,7 +143,7 @@ class TestStreamingHandlerBaseException:
     @pytest.mark.asyncio
     async def test_cycle_done_drains_generator_in_its_context(self):
         """The upstream generator finalizes in the producer Context."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         scoped = contextvars.ContextVar("stream_scope", default="outer")
         finalized = asyncio.Event()
@@ -198,8 +198,8 @@ class TestHandleProcessFailureSetsRestarting:
     @pytest.mark.asyncio
     async def test_state_set_to_restarting(self, tmp_path: Path):
         """After _handle_process_failure is called, handle.state is RESTARTING."""
-        from core.supervisor.manager import ProcessSupervisor
-        from core.supervisor.restart_state import RestartController
+        from server.supervisor.manager import ProcessSupervisor
+        from server.supervisor.restart_state import RestartController
 
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._shutdown = False
@@ -234,8 +234,8 @@ class TestHandleProcessFailureSetsRestarting:
     @pytest.mark.asyncio
     async def test_health_check_skips_restarting(self, tmp_path: Path):
         """_check_process_health returns early for RESTARTING state."""
-        from core.supervisor.manager import ProcessSupervisor
-        from core.supervisor.restart_state import RestartController
+        from server.supervisor.manager import ProcessSupervisor
+        from server.supervisor.restart_state import RestartController
 
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._restarting = set()

@@ -12,7 +12,7 @@ import pytest
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
 from core.memory.rag.vector_client import VectorClient, VectorStoreRetryableError
 from core.memory.rag.vector_ops import bridge_transport
-from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
+from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
 
 
 def _store() -> MagicMock:
@@ -126,7 +126,7 @@ async def test_memory_service_other_read_errors_still_raise(tmp_path: Path) -> N
 async def test_memory_service_logs_queue_and_execution_times(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
 
-    with caplog.at_level("INFO", logger="core.supervisor.memory_service"):
+    with caplog.at_level("INFO", logger="core.runtime.memory_service"):
         await service.handle(
             "memory.query",
             {"collection": "sakura_knowledge", "embedding": [0.1], "top_k": 1},
@@ -694,7 +694,7 @@ async def test_memory_service_owner_busy_does_not_request_startup_repair(tmp_pat
 
 @pytest.mark.asyncio
 async def test_memory_service_retries_owner_after_backoff(tmp_path: Path, monkeypatch) -> None:
-    import core.supervisor.memory_service as memory_service_module
+    import core.runtime.memory_service as memory_service_module
     from core.memory.rag.owner_lock import VectorOwnerLock
 
     anima_dir = tmp_path / "sakura"

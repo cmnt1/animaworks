@@ -1137,7 +1137,7 @@ class TestActivityScheduleAPI:
                 side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
             ) as update_mock,
             patch(
-                "core.supervisor.scheduler_manager.SchedulerManager.resolve_scheduled_level",
+                "core.runtime.scheduler_manager.SchedulerManager.resolve_scheduled_level",
                 return_value=100,
             ),
         ):

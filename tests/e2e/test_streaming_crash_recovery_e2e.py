@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor.manager import HealthConfig, ProcessSupervisor
-from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+from server.supervisor.manager import HealthConfig, ProcessSupervisor
+from server.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 from core.time_utils import now_jst
 
 

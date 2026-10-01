@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.supervisor import task_runner
-from core.supervisor.ipc_v2 import IPCV2Envelope, IPCV2Identity
+from core.runtime import task_runner
+from core.runtime.ipc_v2 import IPCV2Envelope, IPCV2Identity
 
 
 class FakeConnection:

@@ -27,6 +27,7 @@ from core.platform.process import (
 from core.platform.process import (
     is_process_alive as is_pid_alive,
 )
+from core.platform.subprocess_entries import SubprocessEntry
 
 logger = logging.getLogger("animaworks")
 
@@ -275,7 +276,10 @@ def _stop_server(
 
 # ── Orphan runner cleanup ─────────────────────────────────
 
-_RUNNER_CMD_MARKER = "core.supervisor.runner"
+_RUNNER_CMD_MARKER = (
+    SubprocessEntry.SUPERVISOR_RUNNER.value,
+    "core.supervisor.runner",  # legacy name until 2026-11 (S3a)
+)
 
 
 def _kill_orphan_runners() -> int:
@@ -291,7 +295,7 @@ def _kill_orphan_runners() -> int:
 
     data_prefix = str(get_data_dir())
     killed = terminate_matching_processes(
-        (_RUNNER_CMD_MARKER,),
+        _RUNNER_CMD_MARKER,
         path_contains=data_prefix,
         exclude_pids={os.getpid(), os.getppid()},
         force=False,
@@ -456,6 +460,9 @@ def _pin_native_threads() -> None:
 
 def _start_foreground(args: argparse.Namespace) -> None:
     """Run the server in the foreground (blocking, with log output)."""
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("root")
     _pin_native_threads()
 
     import uvicorn

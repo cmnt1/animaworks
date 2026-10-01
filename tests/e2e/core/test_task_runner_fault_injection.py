@@ -18,8 +18,8 @@ from core.anima.digital_anima import DigitalAnima
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.schemas import CronTask
-from core.supervisor import task_runner_supervisor
-from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner_supervisor
+from core.runtime.task_runner_supervisor import TaskRunnerError, TaskRunnerJob, TaskRunnerSupervisor
 from core.tasks.queue import TaskQueueManager
 
 pytestmark = [

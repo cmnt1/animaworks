@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.anima.factory import create_blank
-from core.supervisor.manager import (
+from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,

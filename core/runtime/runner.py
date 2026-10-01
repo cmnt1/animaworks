@@ -5,7 +5,7 @@
 Child process entry point for Anima subprocess.
 
 Usage:
-    python -m core.supervisor.runner \\
+    python -m core.runtime.runner \\
         --anima-name sakura \\
         --socket-path ~/.animaworks/run/sockets/sakura.sock \\
         --animas-dir ~/.animaworks/animas \\
@@ -37,11 +37,11 @@ from core.platform.locks import acquire_file_lock, release_file_lock
 from core.platform.process import kill_tree, snapshot_descendants, task_runner_subtree_pids, terminate_pid
 from core.platform.subprocess_entries import SubprocessEntry
 from core.platform.tasks import spawn
-from core.supervisor.event_bus import RootEventBus
-from core.supervisor.inbox_rate_limiter import InboxRateLimiter
-from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
-from core.supervisor.scheduler_manager import SchedulerManager
-from core.supervisor.streaming_handler import StreamingIPCHandler
+from core.runtime.event_bus import RootEventBus
+from core.runtime.inbox_rate_limiter import InboxRateLimiter
+from core.runtime.ipc import IPCRequest, IPCResponse, IPCServer
+from core.runtime.scheduler_manager import SchedulerManager
+from core.runtime.streaming_handler import StreamingIPCHandler
 from core.tasks.pending_executor import PendingTaskExecutor
 from core.time_utils import ensure_aware, now_local
 
@@ -50,6 +50,10 @@ logger = logging.getLogger(__name__)
 _ORPHAN_CHECK_INTERVAL_SEC = 300  # 5 minutes
 _ORPHAN_MAX_AGE_SEC = 7200  # 2 hours
 _ORPHAN_TASK_RUNNER_TERMINATE_GRACE_SEC = 2.0
+_TASK_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.TASK_RUNNER.value,
+    "core.supervisor.task_runner",  # legacy name until 2026-11 (S3a)
+)
 
 
 # ── AnimaRunner ──────────────────────────────────────────────────
@@ -399,9 +403,9 @@ class AnimaRunner:
             await asyncio.gather(ack_task, shutdown_task, return_exceptions=True)
 
     def _configure_owner_vector_transport(self) -> None:
-        """Let the phase3 root reach its own MemoryService directly.
+        """Let the phase3 Anima main reach its own MemoryService directly.
 
-        The root owns the native Chroma handle, so inbox/tool retrieval is
+        The Anima main owns the native Chroma handle, so inbox/tool retrieval is
         routed to the owner MemoryService in-process (no loop-back HTTP).
         Children that inherit this process's URLs still talk to it over HTTP.
         """
@@ -415,9 +419,9 @@ class AnimaRunner:
 
         async def handle_memory(method: str, params: dict[str, Any]) -> dict[str, Any]:
             if self.shutdown_event.is_set():
-                from core.supervisor.memory_service import MemoryServiceUnavailable
+                from core.runtime.memory_service import MemoryServiceUnavailable
 
-                raise MemoryServiceUnavailable("root memory service is shutting down")
+                raise MemoryServiceUnavailable("Anima main memory service is shutting down")
             # A first inbox query can beat the asynchronous startup task.
             # start() is idempotent and serializes native DB initialization.
             await supervisor.start()
@@ -438,7 +442,7 @@ class AnimaRunner:
         ):
             spawn(
                 self._scheduler_mgr._task_runner_supervisor.start(),
-                name=f"root-memory-start-{self.anima_name}",
+                name=f"anima-main-memory-start-{self.anima_name}",
             )
         self.inbox_watcher_task = asyncio.create_task(self._inbox_limiter.inbox_watcher_loop())
         self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
@@ -719,7 +723,7 @@ class AnimaRunner:
                     if pid == current_pid or pid in own_descendant_pids:
                         continue
                     cmdline = process.cmdline()
-                    if SubprocessEntry.TASK_RUNNER.value not in cmdline:
+                    if not any(marker in cmdline for marker in _TASK_RUNNER_CMDLINE_MARKERS):
                         continue
                     if not any(
                         argument == "--anima" and index + 1 < len(cmdline) and cmdline[index + 1] == self.anima_name
@@ -773,10 +777,10 @@ class AnimaRunner:
         descendants.
 
         Task-runner subtrees (registered job pids and running
-        ``core.supervisor.task_runner`` processes plus all their descendants)
+        ``core.runtime.task_runner`` processes plus all their descendants)
         are excluded: they are managed by ``TaskRunnerSupervisor`` (liveness
         watchdog and child exit cleanup), so this sweep only targets Claude
-        CLIs the root itself launched (e.g. idle compaction via the SDK).
+        CLIs the Anima main itself launched (e.g. idle compaction via the SDK).
 
         Individual process errors are ignored so one bad PID does not block
         the rest. Failures in the overall walk are logged at DEBUG only.
@@ -836,7 +840,7 @@ class AnimaRunner:
     # ── Event Emission ─────────────────────────────────────────────
 
     def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Publish a root event for the parent process to broadcast."""
+        """Publish an Anima main event for the parent process to broadcast."""
         self._event_bus.publish({"event": event_type, "data": data})
 
     # ── IPC Handlers ──────────────────────────────────────────────
@@ -891,7 +895,7 @@ class AnimaRunner:
         *,
         keepalive_interval: float = 20.0,
     ) -> AsyncIterator[IPCResponse]:
-        """Stream root events and keepalives until runner shutdown."""
+        """Stream Anima main events and keepalives until runner shutdown."""
         events = self._event_bus.subscribe()
         event_task = asyncio.create_task(anext(events))
         shutdown_task = asyncio.create_task(self.shutdown_event.wait())
@@ -953,20 +957,20 @@ class AnimaRunner:
         return handlers.get(method)
 
     async def _handle_memory(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Expose the phase3 root MemoryService to server-side schedulers."""
+        """Expose the phase3 Anima main MemoryService to server-side schedulers."""
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
         method = params.get("method")
         request_params = params.get("params")
         if supervisor is None or not isinstance(method, str) or not isinstance(request_params, dict):
-            raise ValueError("root memory service is unavailable")
+            raise ValueError("Anima main memory service is unavailable")
         return await supervisor.handle_memory(method, request_params)
 
     async def _handle_repair_memory(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Run phase3 RAG repair in this root instead of the global worker."""
+        """Run phase3 RAG repair in this Anima main instead of the global worker."""
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
         include_shared = params.get("include_shared", True)
         if supervisor is None or not isinstance(include_shared, bool):
-            raise ValueError("root memory service is unavailable")
+            raise ValueError("Anima main memory service is unavailable")
         return await supervisor.repair_memory(include_shared=include_shared)
 
     async def _handle_process_message(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -1269,6 +1273,9 @@ def _install_signal_diagnostics(anima_name: str) -> None:
 
 async def main() -> None:
     """Main entry point."""
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("anima")
     args = parse_args()
 
     from core.config import load_config

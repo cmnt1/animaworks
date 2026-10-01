@@ -1,4 +1,4 @@
-"""In-process event buffer for events emitted by an anima root runner."""
+"""In-process event buffer for events emitted by an Anima main runner."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 
 class RootEventBus:
-    """Buffer root events and deliver them to one active async subscriber.
+    """Buffer Anima main events and deliver them to one active async subscriber.
 
     Events remain buffered while there is no subscriber. When the bounded
     buffer fills, the oldest event is discarded and the loss count is attached

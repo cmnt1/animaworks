@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor, RestartPolicy
+from server.supervisor.manager import ProcessSupervisor, RestartPolicy
 
 
 class FakeTime:
@@ -67,7 +67,7 @@ def _patch_sleep(ft: FakeTime):
     async def _fast_sleep(duration: float) -> None:
         ft.t += duration
 
-    return patch("core.supervisor._mgr_health.asyncio.sleep", _fast_sleep)
+    return patch("server.supervisor._mgr_health.asyncio.sleep", _fast_sleep)
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_worker_is_singleton(supervisor):
 
     with (
         _patch_sleep(ft),
-        patch("core.supervisor._mgr_health.asyncio.create_task") as mk,
+        patch("server.supervisor._mgr_health.asyncio.create_task") as mk,
     ):
 
         def _consume(coro):
@@ -159,7 +159,7 @@ async def test_failure_broadcast_error_still_ensures_one_worker(supervisor):
     s._restart_ctl.failed_threshold = 1
     s._broadcast_event = AsyncMock(side_effect=RuntimeError("broadcast unavailable"))  # type: ignore[method-assign]
 
-    with patch("core.supervisor._mgr_health.asyncio.create_task") as create_task:
+    with patch("server.supervisor._mgr_health.asyncio.create_task") as create_task:
         create_task.side_effect = lambda coro: coro.close() or MagicMock()
         with pytest.raises(RuntimeError, match="broadcast unavailable"):
             await s._handle_process_failure("a", MagicMock(), reason="crash")
@@ -199,7 +199,7 @@ async def test_manual_restart_cancels_worker_waiting_in_backoff(supervisor):
         waiting.set()
         await asyncio.Future()
 
-    with patch("core.supervisor._mgr_health.asyncio.sleep", blocked_sleep):
+    with patch("server.supervisor._mgr_health.asyncio.sleep", blocked_sleep):
         s._ensure_restart_worker("a")
         worker = s._restart_worker_tasks["a"]
         await asyncio.wait_for(waiting.wait(), timeout=1.0)
@@ -230,7 +230,7 @@ async def test_worker_forgets_disabled_anima_during_backoff(supervisor):
         waiting.set()
         await real_sleep(0.01)
 
-    with patch("core.supervisor._mgr_health.asyncio.sleep", polling_sleep):
+    with patch("server.supervisor._mgr_health.asyncio.sleep", polling_sleep):
         s._ensure_restart_worker("a")
         worker = s._restart_worker_tasks["a"]
         await asyncio.wait_for(waiting.wait(), timeout=1.0)

@@ -9,8 +9,8 @@ class SubprocessEntry(StrEnum):
     """Canonical ``python -m`` entry points used by runtime launchers."""
 
     MCP_SERVER = "core.mcp.server"
-    SUPERVISOR_RUNNER = "core.supervisor.runner"
-    TASK_RUNNER = "core.supervisor.task_runner"
+    SUPERVISOR_RUNNER = "core.runtime.runner"
+    TASK_RUNNER = "core.runtime.task_runner"
     RAG_REPAIR_REBUILD = "core.memory.rag.repair.rebuild"
     CODEX_COMMAND_HOOK = "cli.codex_command_hook"
 

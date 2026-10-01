@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from core.platform.tasks import spawn
-from core.supervisor._manager_protocols import _HealthMixinHost
-from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
+from server.supervisor._manager_protocols import _HealthMixinHost
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 logger = logging.getLogger(__name__)
 

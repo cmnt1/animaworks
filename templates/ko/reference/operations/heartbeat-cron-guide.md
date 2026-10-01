@@ -173,12 +173,12 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 - **정리 `cleanup_old_tasks(max_age_hours=24)`**: `status`이 `completed` / `failed`에서 `completed_at`가 **인수로 지정한 시간(기본값 24시간)보다 오래된** JSON을 삭제합니다. 또한 `running` 상태로 `created_at`부터 **48시간 초과** 경과한 파일은 크래시 고아 파일로 삭제합니다. 반환값은 삭제한 항목 수입니다.
 - **보존 시간**: `cleanup_old_tasks`의 완료 작업 보존 시간은 인수 `max_age_hours`(기본값 24시간)으로 지정합니다. 이에 대응하는 `config.json` 설정 키는 없습니다.
 
-#### rotate_dm_logs(시스템 Cron)
+#### rotate_dm_logs（시스템 Cron）
 
-- **실행 타이밍**: 라이프사이클(`core/lifecycle/system_crons.py` 등)의 시스템 Cron에서 **매일 04:30**(서버 설정 타임존). `core/supervisor/_mgr_scheduler.py` 측에서도 같은 ID의 작업이 등록되는 구성.
-- **대상**: `shared/dm_logs/*.jsonl`(파일명에 `.archive.`을 포함하는 것은 스킵).
-- **동작**: `core.time_utils`의 로컬 현재 시각 기준으로, 각 행 JSON의 `ts`(ISO 형식)을 파싱하고, **기본 7일**보다 오래된 엔트리를 `{stem}.{YYYYMMDD}.archive.jsonl`에 추가 아카이브한 후, 현재 파일에서 제거한다. `ts`의 해석에 실패한 행은 **현재 파일에 남긴다**(데이터 손실 방지).
-- **그 외 서버 정시 작업**: Anima 단위의 `cron.md`과는 별도로, 라이프사이클이 메모리 보수·RAG 등의 시스템 Cron을 등록한다(예: 일일 통합 02:00, 일일 인덱스 04:00). 시각은 설정 타임존 기준. DM 로테이션은 위 04:30.
+- **실행 시점**: 라이프사이클(`core/lifecycle/system_crons.py` 등)의 시스템 Cron에서 **매일 04:30**(서버 설정 타임존). `server/supervisor/_mgr_scheduler.py` 쪽에서도 동일 ID의 작업이 등록되는 구성.
+- **대상**: `shared/dm_logs/*.jsonl`(파일명에 `.archive.`을 포함하는 것은 건너뜀).
+- **동작**: `core.time_utils`의 로컬 현재 시간 기준으로, 각 행 JSON의 `ts`(ISO 형식)을 파싱하여, **기본 7일**보다 오래된 항목을 `{stem}.{YYYYMMDD}.archive.jsonl`에 추가 아카이브한 후, 현재 파일에서 제거. `ts`의 해석에 실패한 행은 **현재 파일에 유지**(데이터 손실 방지).
+- **기타 서버 정기 작업**: Anima 단위의 `cron.md`와 별도로, 라이프사이클이 메모리 유지보수·RAG 등의 시스템 Cron을 등록(예: 일일 통합 02:00, 일일 인덱스 04:00). 시간은 설정 타임존 기준. DM 로테이션은 위 04:30.
 
 ### 하트비트 설정의 핫 리로드
 

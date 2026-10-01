@@ -15,13 +15,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.manager import (
+from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     ReconciliationConfig,
     RestartPolicy,
 )
-from core.supervisor.process_handle import ProcessHandle
+from server.supervisor.process_handle import ProcessHandle
 
 
 @pytest.fixture

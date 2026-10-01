@@ -29,17 +29,23 @@ from core.exceptions import (  # noqa: F401
 )
 from core.platform.atomic_io import atomic_write_json
 from core.platform.process import kill_tree, snapshot_descendants
+from core.platform.subprocess_entries import SubprocessEntry
 from core.platform.tasks import spawn
-from core.supervisor._mgr_health import HealthMixin
-from core.supervisor._mgr_rag_repair import RAGRepairMixin
-from core.supervisor._mgr_reconcile import ReconcileMixin
-from core.supervisor._mgr_scheduler import SchedulerMixin
-from core.supervisor.ipc import IPCResponse
-from core.supervisor.process_handle import INTERNAL_AUTH_ENV, ProcessHandle, ProcessState
-from core.supervisor.restart_state import RestartController
+from core.runtime.ipc import IPCResponse
 from core.time_utils import ensure_aware, now_local
+from server.supervisor._mgr_health import HealthMixin
+from server.supervisor._mgr_rag_repair import RAGRepairMixin
+from server.supervisor._mgr_reconcile import ReconcileMixin
+from server.supervisor._mgr_scheduler import SchedulerMixin
+from server.supervisor.process_handle import INTERNAL_AUTH_ENV, ProcessHandle, ProcessState
+from server.supervisor.restart_state import RestartController
 
 logger = logging.getLogger(__name__)
+
+_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.SUPERVISOR_RUNNER.value,
+    "core.supervisor.runner",  # legacy name until 2026-11 (S3a)
+)
 
 
 # ── Configuration ──────────────────────────────────────────────────
@@ -283,6 +289,16 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                         raise _psutil.NoSuchProcess(pid)
                 except _psutil.NoSuchProcess:
                     logger.debug("Stale pidfile for %s (pid=%d, already dead)", anima_name, pid)
+                    pid_file.unlink(missing_ok=True)
+                    continue
+
+                cmdline = proc.cmdline()
+                if not any(marker in token for marker in _RUNNER_CMDLINE_MARKERS for token in cmdline):
+                    logger.warning(
+                        "PID file for %s does not match a known Anima runner (pid=%d); skipping",
+                        anima_name,
+                        pid,
+                    )
                     pid_file.unlink(missing_ok=True)
                     continue
 

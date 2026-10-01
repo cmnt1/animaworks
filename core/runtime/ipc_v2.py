@@ -1,4 +1,4 @@
-"""Persistent duplex IPC v2 used between an anima root and task runners."""
+"""Persistent duplex IPC v2 used between an Anima main and task runners."""
 
 from __future__ import annotations
 

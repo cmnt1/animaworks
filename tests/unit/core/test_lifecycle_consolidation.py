@@ -25,7 +25,7 @@ class TestLifecycleConsolidationIntegration:
         """System-wide crons are registered by ProcessSupervisor."""
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
         from core.time_utils import get_app_timezone
 
         supervisor = ProcessSupervisor(

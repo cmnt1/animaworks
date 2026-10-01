@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import IPCConnectionError
-from core.supervisor.transport import (
+from core.runtime.transport import (
     cleanup_ipc_endpoint,
     open_ipc_connection,
     resolve_client_endpoint,

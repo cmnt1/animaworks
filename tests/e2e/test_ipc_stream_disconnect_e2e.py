@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
+from core.runtime.ipc import IPCRequest, IPCResponse, IPCServer
 
 
 @pytest.mark.asyncio

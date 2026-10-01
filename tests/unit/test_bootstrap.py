@@ -22,13 +22,13 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from core.schemas import CycleResult
-from core.supervisor.ipc import IPCResponse
-from core.supervisor.manager import (
+from core.runtime.ipc import IPCResponse
+from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import now_jst
 from core.tooling.handler import active_session_type
 from server.stream_registry import StreamRegistry
@@ -227,7 +227,7 @@ class TestAnimaRunnerBootstrap:
     @pytest.mark.asyncio
     async def test_runner_run_bootstrap_handler(self, tmp_path: Path):
         """AnimaRunner should have 'run_bootstrap' in its handler dispatch."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="test-anima",
@@ -243,7 +243,7 @@ class TestAnimaRunnerBootstrap:
     @pytest.mark.asyncio
     async def test_runner_run_bootstrap_calls_anima(self, tmp_path: Path):
         """_handle_run_bootstrap should call dp.run_bootstrap() and return result."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="test-anima",
@@ -274,7 +274,7 @@ class TestAnimaRunnerBootstrap:
     @pytest.mark.asyncio
     async def test_runner_get_status_includes_needs_bootstrap(self, tmp_path: Path):
         """get_status response should include needs_bootstrap field."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="test-anima",
@@ -297,7 +297,7 @@ class TestAnimaRunnerBootstrap:
     @pytest.mark.asyncio
     async def test_runner_get_status_needs_bootstrap_false(self, tmp_path: Path):
         """get_status should show needs_bootstrap=False when no bootstrap.md."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="test-anima",

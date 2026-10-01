@@ -15,7 +15,7 @@ class TestSupervisorSchedulerInit:
     """Tests for ProcessSupervisor scheduler initialization."""
 
     def _make_supervisor(self, tmp_path: Path):
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)

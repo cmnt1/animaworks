@@ -21,12 +21,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.platform.process import subprocess_session_kwargs
-from core.supervisor.manager import (
+from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -95,7 +95,7 @@ class TestProcessGroupIsolation:
             log_dir=tmp_path / "logs",
         )
 
-        with patch("core.supervisor.process_handle.subprocess.Popen") as mock_popen:
+        with patch("server.supervisor.process_handle.subprocess.Popen") as mock_popen:
             mock_process = MagicMock()
             mock_process.pid = 99999
             mock_process.poll.return_value = None
@@ -135,7 +135,7 @@ class TestProcessGroupIsolation:
             assert proc is handle.process
             assert force is False
 
-        with patch("core.supervisor.process_handle.terminate_subprocess", side_effect=terminate_side_effect):
+        with patch("server.supervisor.process_handle.terminate_subprocess", side_effect=terminate_side_effect):
             await handle.stop(timeout=2.0)
 
         assert terminate_called
@@ -165,7 +165,7 @@ class TestProcessGroupIsolation:
             if force:
                 handle.process.poll.side_effect = lambda: 0
 
-        with patch("core.supervisor.process_handle.terminate_subprocess", side_effect=terminate_side_effect):
+        with patch("server.supervisor.process_handle.terminate_subprocess", side_effect=terminate_side_effect):
             await handle.stop(timeout=2.0)
 
         assert call_forces == [False, True]
@@ -178,7 +178,7 @@ class TestProcessGroupIsolation:
         handle.process.returncode = -9
         handle.process.poll.return_value = -9
 
-        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
+        with patch("server.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle.kill()
 
         assert mock_terminate.call_args_list[0].args == (mock_process,)
@@ -194,7 +194,7 @@ class TestProcessGroupIsolation:
         mock_process.wait.return_value = -9
         mock_process.returncode = -9
 
-        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
+        with patch("server.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle.kill()
 
         assert mock_terminate.call_count >= 1
@@ -208,7 +208,7 @@ class TestProcessGroupIsolation:
         handle.process.poll.return_value = None  # Still alive
         handle.process.wait.side_effect = [None]  # Exits after SIGTERM
 
-        with patch("core.supervisor.process_handle.terminate_subprocess") as mock_terminate:
+        with patch("server.supervisor.process_handle.terminate_subprocess") as mock_terminate:
             await handle._cleanup()
 
         mock_terminate.assert_called_with(mock_process, force=False)
@@ -222,7 +222,7 @@ class TestFailedLogSpamSuppression:
 
     def test_restart_controller_initialized(self, supervisor: ProcessSupervisor):
         """Verify the RestartController is initialized and empty."""
-        from core.supervisor.restart_state import RestartController
+        from server.supervisor.restart_state import RestartController
 
         assert isinstance(supervisor._restart_ctl, RestartController)
         assert len(supervisor._restart_ctl.names()) == 0

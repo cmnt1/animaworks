@@ -82,7 +82,7 @@ class TestReconciliationStatusJsonGuard:
     @pytest.fixture
     def supervisor(self, temp_dirs):
         """Create a ProcessSupervisor instance."""
-        from core.supervisor.manager import (
+        from server.supervisor.manager import (
             HealthConfig,
             ProcessSupervisor,
             RestartPolicy,

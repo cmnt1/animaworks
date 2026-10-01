@@ -10,11 +10,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.activity.logger import ActivityLogger, set_live_event_sink
-from core.supervisor.event_bus import RootEventBus
-from core.supervisor.ipc import IPCRequest, IPCResponse
-from core.supervisor.manager import HealthConfig, ProcessSupervisor
-from core.supervisor.process_handle import ProcessHandle, ProcessState
-from core.supervisor.runner import AnimaRunner
+from core.runtime.event_bus import RootEventBus
+from core.runtime.ipc import IPCRequest, IPCResponse
+from server.supervisor.manager import HealthConfig, ProcessSupervisor
+from server.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.runner import AnimaRunner
 
 
 async def _next_or_none(events):

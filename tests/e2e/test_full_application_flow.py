@@ -24,7 +24,7 @@ from core.memory import MemoryManager
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.memory.priming import PrimingEngine, format_priming_section
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -671,7 +671,7 @@ async def test_supervisor_anima_heartbeat_registration(tmp_path: Path):
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     from core.schemas import ModelConfig
-    from core.supervisor.scheduler_manager import SchedulerManager
+    from core.runtime.scheduler_manager import SchedulerManager
     from core.time_utils import get_app_timezone
 
     anima = MagicMock()
@@ -683,7 +683,7 @@ async def test_supervisor_anima_heartbeat_registration(tmp_path: Path):
     mgr.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
 
     with patch(
-        "core.supervisor.scheduler_manager.load_config",
+        "core.runtime.scheduler_manager.load_config",
         return_value=SimpleNamespace(
             heartbeat=SimpleNamespace(interval_minutes=30),
             activity_level=100,

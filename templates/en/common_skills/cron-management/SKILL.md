@@ -8,9 +8,9 @@ description: >-
 
 ## Framework-side implementation (for reference)
 
-### cron (scheduled tasks)
+### cron (Scheduled Tasks)
 
-The **parsing** of cron is handled by `core/supervisor/schedule_parser.py` (`parse_cron_md` / `parse_schedule`), while **registration, execution, and reloading** are handled by `core/supervisor/scheduler_manager.py` (APScheduler, `AsyncIOScheduler(timezone=get_app_timezone())`).
+Parsing of cron is handled by `core/runtime/schedule_parser.py` (`parse_cron_md` / `parse_schedule`), while registration, execution, and reloading are handled by `core/runtime/scheduler_manager.py` (APScheduler, `AsyncIOScheduler(timezone=get_app_timezone())`).
 
 ### `core/tasks/background.py` (a separate system from cron)
 
@@ -361,12 +361,12 @@ Before updating cron.md, **always** verify the following:
 
 ### Validation Method
 
-After writing, you can verify that the file parses correctly with the following command:
+After writing, you can verify that parsing works correctly with the following command:
 
 ```bash
 # プロジェクトルートで実行。ANIMAWORKS_ANIMA_DIR 未設定時は ~/.animaworks/animas/default を使用
 python -c "
-from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
+from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 import os
 from pathlib import Path
 
@@ -380,7 +380,7 @@ for t in tasks:
 "
 ```
 
-If all tasks show ✅, it is normal. If ❌ appears, fix the schedule expression.
+If all tasks show ✅, everything is normal. If ❌ appears, correct the schedule expression.
 
 ---
 

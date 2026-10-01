@@ -23,9 +23,9 @@ from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.schemas import CronTask
-from core.supervisor.memory_service import MemoryService
-from core.supervisor.process_handle import ProcessHandle
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime.memory_service import MemoryService
+from server.supervisor.process_handle import ProcessHandle
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 pytestmark = [
     pytest.mark.timeout(90),
@@ -406,7 +406,7 @@ async def test_phase3_task_runner_process_smoke(
 def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
     repo = Path(__file__).resolve().parents[3]
     direct_factory_callers = {
-        "core/supervisor/memory_service.py",
+        "core/runtime/memory_service.py",
         "core/memory/rag/repair/rebuild.py",
     }
     persistent_client_callers: set[str] = set()

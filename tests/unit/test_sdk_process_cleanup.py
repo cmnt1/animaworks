@@ -182,7 +182,7 @@ class TestCleanupOrphanedClaudeProcesses:
     """Tests for AnimaRunner._cleanup_orphaned_claude_processes."""
 
     def _make_runner(self) -> AnimaRunner:  # noqa: F821
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         runner.anima_name = "test-anima"
@@ -201,8 +201,8 @@ class TestCleanupOrphanedClaudeProcesses:
         current.children.return_value = [old_claude]
 
         with (
-            patch("core.supervisor.runner.psutil.Process", return_value=current),
-            patch("core.supervisor.runner.kill_tree") as kill_tree,
+            patch("core.runtime.runner.psutil.Process", return_value=current),
+            patch("core.runtime.runner.kill_tree") as kill_tree,
         ):
             runner._cleanup_orphaned_claude_processes()
 
@@ -221,8 +221,8 @@ class TestCleanupOrphanedClaudeProcesses:
         current.children.return_value = [young_claude]
 
         with (
-            patch("core.supervisor.runner.psutil.Process", return_value=current),
-            patch("core.supervisor.runner.kill_tree") as kill_tree,
+            patch("core.runtime.runner.psutil.Process", return_value=current),
+            patch("core.runtime.runner.kill_tree") as kill_tree,
         ):
             runner._cleanup_orphaned_claude_processes()
 
@@ -240,8 +240,8 @@ class TestCleanupOrphanedClaudeProcesses:
         current.children.return_value = [python_proc]
 
         with (
-            patch("core.supervisor.runner.psutil.Process", return_value=current),
-            patch("core.supervisor.runner.kill_tree") as kill_tree,
+            patch("core.runtime.runner.psutil.Process", return_value=current),
+            patch("core.runtime.runner.kill_tree") as kill_tree,
         ):
             runner._cleanup_orphaned_claude_processes()
 
@@ -259,8 +259,8 @@ class TestCleanupOrphanedClaudeProcesses:
         current.children.return_value = [old_claude]
 
         with (
-            patch("core.supervisor.runner.psutil.Process", return_value=current),
-            patch("core.supervisor.runner.kill_tree") as kill_tree,
+            patch("core.runtime.runner.psutil.Process", return_value=current),
+            patch("core.runtime.runner.kill_tree") as kill_tree,
         ):
             runner._cleanup_orphaned_claude_processes()
 
@@ -276,13 +276,13 @@ class TestCleanupOrphanedClaudeProcesses:
         current = MagicMock()
         current.children.return_value = [vanishing]
 
-        with patch("core.supervisor.runner.psutil.Process", return_value=current):
+        with patch("core.runtime.runner.psutil.Process", return_value=current):
             runner._cleanup_orphaned_claude_processes()
 
     def test_handles_overall_exception(self) -> None:
         runner = self._make_runner()
 
-        with patch("core.supervisor.runner.psutil.Process", side_effect=RuntimeError("unexpected")):
+        with patch("core.runtime.runner.psutil.Process", side_effect=RuntimeError("unexpected")):
             runner._cleanup_orphaned_claude_processes()
 
     @staticmethod
@@ -296,7 +296,7 @@ class TestCleanupOrphanedClaudeProcesses:
 
     def test_does_not_kill_claude_under_registered_task_runner_job(self) -> None:
         """Task-runner (registered job pid) descendant Claude CLIs must survive."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         runner.anima_name = "test-anima"
@@ -325,8 +325,8 @@ class TestCleanupOrphanedClaudeProcesses:
             return current
 
         with (
-            patch("core.supervisor.runner.psutil.Process", side_effect=proc_for),
-            patch("core.supervisor.runner.kill_tree") as kill_tree,
+            patch("core.runtime.runner.psutil.Process", side_effect=proc_for),
+            patch("core.runtime.runner.kill_tree") as kill_tree,
         ):
             runner._cleanup_orphaned_claude_processes()
 
@@ -334,7 +334,7 @@ class TestCleanupOrphanedClaudeProcesses:
 
     def test_does_not_kill_claude_under_cmdline_task_runner(self) -> None:
         """Task-runner roots found by cmdline (spawned but not yet registered) are excluded too."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         runner.anima_name = "test-anima"
@@ -348,7 +348,7 @@ class TestCleanupOrphanedClaudeProcesses:
         task_runner_root.cmdline.return_value = [
             "python",
             "-m",
-            "core.supervisor.task_runner",
+            "core.runtime.task_runner",
             "--anima",
             "sakura",
         ]
@@ -366,8 +366,8 @@ class TestCleanupOrphanedClaudeProcesses:
             return current
 
         with (
-            patch("core.supervisor.runner.psutil.Process", side_effect=proc_for),
-            patch("core.supervisor.runner.kill_tree") as kill_tree,
+            patch("core.runtime.runner.psutil.Process", side_effect=proc_for),
+            patch("core.runtime.runner.kill_tree") as kill_tree,
         ):
             runner._cleanup_orphaned_claude_processes()
 
@@ -384,7 +384,7 @@ class TestOrphanCleanupLoop:
     async def test_exits_on_shutdown_event(self) -> None:
         import asyncio
 
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         runner.anima_name = "test-anima"
@@ -400,8 +400,8 @@ class TestOrphanCleanupLoop:
     async def test_calls_cleanup_on_timeout(self) -> None:
         import asyncio
 
-        from core.supervisor import runner as runner_module
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime import runner as runner_module
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
         runner.anima_name = "test-anima"

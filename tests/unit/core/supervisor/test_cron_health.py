@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.schemas import CronTask
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ class TestCheckCronParseHealth:
     def test_template_documentation_does_not_trigger_warning(
         self, scheduler_mgr: SchedulerManager, tmp_path: Path
     ) -> None:
-        from core.supervisor.schedule_parser import parse_cron_md
+        from core.runtime.schedule_parser import parse_cron_md
 
         template_path = Path(__file__).parents[4] / "templates" / "ja" / "anima_templates" / "_blank" / "cron.md"
         raw = template_path.read_text(encoding="utf-8").replace("{name}", "test_anima")
@@ -215,7 +215,7 @@ class TestSetupCronTasksHealthIntegration:
         )
         scheduler_mgr.scheduler = MagicMock()
 
-        with patch("core.supervisor.scheduler_manager.atomic_write_json", side_effect=OSError("read-only")):
+        with patch("core.runtime.scheduler_manager.atomic_write_json", side_effect=OSError("read-only")):
             scheduler_mgr._setup_cron_tasks()
 
         scheduler_mgr.scheduler.add_job.assert_called_once()

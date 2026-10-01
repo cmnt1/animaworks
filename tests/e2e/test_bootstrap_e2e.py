@@ -21,7 +21,7 @@ def _make_test_app_with_bootstrap():
     """Build a test FastAPI app with a mock bootstrapping anima."""
     from fastapi import FastAPI
     from server.routes.chat import create_chat_router
-    from core.supervisor.ipc import IPCResponse
+    from core.runtime.ipc import IPCResponse
 
     app = FastAPI()
     app.state.ws_manager = MagicMock()

@@ -29,7 +29,7 @@ from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
 
 if TYPE_CHECKING:
-    from core.supervisor.runner import AnimaRunner
+    from core.runtime.runner import AnimaRunner
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -418,7 +418,7 @@ def _make_runner(anima_dir: Path) -> AnimaRunner:
 
     Reuses the pattern from tests/test_streaming_journal.py.
     """
-    from core.supervisor.runner import AnimaRunner
+    from core.runtime.runner import AnimaRunner
 
     runner = AnimaRunner(
         anima_name=anima_dir.name,
@@ -583,7 +583,7 @@ class TestStartupTmpCleanup:
         """
         import inspect
 
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         source = inspect.getsource(AnimaRunner.run)
         assert "cleanup_tmp_files" in source, "AnimaRunner.run() must call cleanup_tmp_files()"

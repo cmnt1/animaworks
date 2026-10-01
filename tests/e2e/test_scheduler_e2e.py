@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ class TestSchedulerManagerE2E:
         cfg.activity_level = 100
         cfg.heartbeat.interval_minutes = 30
         cfg.heartbeat.anima_overrides = {}
-        with patch("core.supervisor.scheduler_manager.load_config", return_value=cfg):
+        with patch("core.runtime.scheduler_manager.load_config", return_value=cfg):
             yield
 
     @pytest.mark.asyncio
@@ -153,7 +153,7 @@ class TestProcessSupervisorSystemCronE2E:
     """E2E: ProcessSupervisor sets up system cron with real config."""
 
     def _make_supervisor(self, tmp_path: Path):
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)

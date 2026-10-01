@@ -34,11 +34,11 @@ from core.config import load_config
 from core.i18n import t
 from core.infra import startup_progress
 from core.platform.tasks import spawn
-from core.supervisor import ProcessSupervisor
 from server.localhost import _is_safe_localhost_request
 from server.routes import create_router
 from server.routes.setup import create_setup_router
 from server.stream_registry import StreamRegistry
+from server.supervisor import HealthConfig, ProcessSupervisor
 from server.websocket import WebSocketManager
 
 logger = logging.getLogger("animaworks.server")
@@ -795,7 +795,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     )
 
     # ── Claude CLI / SDK auto-update ─────────────────
-    from core.infra.auto_updater import run_update_check
+    from server.supervisor.auto_updater import run_update_check
 
     async def _auto_update_claude() -> None:
         try:
@@ -984,8 +984,6 @@ def create_app(
     log_dir = get_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    from core.supervisor.manager import HealthConfig
-
     health_cfg = HealthConfig()
     try:
         health_cfg.health_check_warmup_seconds = float(config.server.health_check_warmup_seconds)
@@ -1003,7 +1001,7 @@ def create_app(
     )
 
     # Discover anima names from disk (respect status.json)
-    from core.supervisor.manager import ProcessSupervisor as _PS
+    from server.supervisor.manager import ProcessSupervisor as _PS
 
     anima_names: list[str] = []
     if animas_dir.exists():

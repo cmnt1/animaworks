@@ -175,10 +175,10 @@ Otherwise (e.g., effective 61 minutes, or an interval like 43 minutes that does 
 
 #### rotate_dm_logs (System Cron)
 
-- **Execution timing**: In the lifecycle (`core/lifecycle/system_crons.py`, etc.) system Cron, **daily at 04:30** (server configured timezone). The same job ID is also registered on the `core/supervisor/_mgr_scheduler.py` side.
-- **Target**: `shared/dm_logs/*.jsonl` (files whose names contain `.archive.` are skipped).
-- **Behavior**: Based on the local current time of `core.time_utils`, parse `ts` (ISO format) of each line's JSON, append entries **older than the default 7 days** to `{stem}.{YYYYMMDD}.archive.jsonl` as an archive, then remove them from the current file. Lines where `ts` parsing fails are **kept in the current file** (to prevent data loss).
-- **Other server scheduled jobs**: Separately from per-Anima `cron.md`, the lifecycle registers system Cron jobs for memory maintenance, RAG, etc. (e.g., daily consolidation at 02:00, daily index at 04:00). Times are based on the configured timezone. DM rotation is at 04:30 as above.
+- **Execution timing**: Runs **daily at 04:30** (server-configured timezone) via the lifecycle (e.g., `core/lifecycle/system_crons.py`) system cron. The same job ID is also registered on the `server/supervisor/_mgr_scheduler.py` side.
+- **Target**: `shared/dm_logs/*.jsonl` (entries whose filenames contain `.archive.` are skipped).
+- **Behavior**: Based on the local current time of `core.time_utils`, parse the `ts` (ISO format) in each line of JSON, append entries older than the **default 7 days** to `{stem}.{YYYYMMDD}.archive.jsonl` as an archive, then remove them from the current file. Lines where `ts` parsing fails are **kept in the current file** (to prevent data loss).
+- **Other server scheduled jobs**: In addition to the per-Anima `cron.md`, the lifecycle registers system cron jobs for memory maintenance, RAG, etc. (e.g., daily consolidation at 02:00, daily indexing at 04:00). Times are based on the configured timezone. DM rotation runs at 04:30 as described above.
 
 ### Heartbeat configuration hot reload
 

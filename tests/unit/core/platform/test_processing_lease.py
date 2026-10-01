@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.platform.processing_lease import (
+    _cmdline_matches_v1,
+    _cmdline_matches_v2,
     classify_processing_lease,
     is_processing_lease_live,
     processing_lease_path,
@@ -34,7 +36,7 @@ def test_v1_round_trip_and_live_with_runner_cmdline(tmp_path: Path) -> None:
 
     with patch(
         "core.platform.processing_lease._read_proc_cmdline",
-        return_value="python -m core.supervisor.runner --anima-name sakura",
+        return_value="python -m core.runtime.runner --anima-name sakura",
     ):
         assert is_processing_lease_live(descriptor, expected_anima="sakura")
         assert classify_processing_lease(descriptor, expected_anima="sakura") == "live"
@@ -91,7 +93,7 @@ def test_v2_live_with_task_runner_cmdline(tmp_path: Path) -> None:
         ),
         patch(
             "core.platform.processing_lease._read_proc_cmdline",
-            return_value="python -m core.supervisor.task_runner --anima sakura --job job-xyz",
+            return_value="python -m core.runtime.task_runner --anima sakura --job job-xyz",
         ),
     ):
         assert is_processing_lease_live(descriptor, expected_anima="sakura")
@@ -120,7 +122,7 @@ def test_v2_pid_reuse_fence_marks_dead(tmp_path: Path) -> None:
         ),
         patch(
             "core.platform.processing_lease._read_proc_cmdline",
-            return_value="python -m core.supervisor.task_runner --anima sakura --job job-reuse",
+            return_value="python -m core.runtime.task_runner --anima sakura --job job-reuse",
         ),
     ):
         assert classify_processing_lease(descriptor, expected_anima="sakura") == "dead"
@@ -173,9 +175,19 @@ def test_legacy_v1_still_readable_without_schema_version(tmp_path: Path) -> None
     )
     with patch(
         "core.platform.processing_lease._read_proc_cmdline",
-        return_value="python -m core.supervisor.runner --anima-name sakura",
+        return_value="python -m core.runtime.runner --anima-name sakura",
     ):
         assert is_processing_lease_live(descriptor, expected_anima="sakura")
+
+
+def test_legacy_runner_module_names_remain_detectable() -> None:
+    legacy_runner_cmdline = "python -m core.supervisor.runner --anima-name sakura"  # legacy name until 2026-11 (S3a)
+    legacy_task_runner_cmdline = (
+        "python -m core.supervisor.task_runner --anima sakura --job job-legacy"  # legacy name until 2026-11 (S3a)
+    )
+
+    assert _cmdline_matches_v1(legacy_runner_cmdline, "sakura")
+    assert _cmdline_matches_v2(legacy_task_runner_cmdline, "sakura", "job-legacy")
 
 
 def test_unreadable_proc_is_unknown_treated_as_live(tmp_path: Path) -> None:

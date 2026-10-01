@@ -1,6 +1,7 @@
 {
   "include": [
-    "core/supervisor",
+    "core/runtime",
+    "server/supervisor",
     "core/tasks",
     "core/config"
   ],

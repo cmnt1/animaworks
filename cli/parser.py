@@ -606,6 +606,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cli_main() -> None:
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("cli")
+
     from dotenv import load_dotenv
 
     load_dotenv()

@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor.inbox_rate_limiter import InboxRateLimiter
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.inbox_rate_limiter import InboxRateLimiter
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 def _make_limiter(tmp_path: Path) -> InboxRateLimiter:

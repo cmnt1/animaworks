@@ -17,6 +17,9 @@ from core.tooling.codex_command_hook import decide
 
 def main(argv: list[str] | None = None) -> int:
     """Read Codex's hook request on stdin and emit a deny response if needed."""
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("cli")
     parser = argparse.ArgumentParser()
     parser.add_argument("--anima-dir", required=True, type=Path)
     parser.add_argument("--global-permissions", type=Path, default=None)

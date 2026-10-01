@@ -18,7 +18,7 @@ class FakeReconcileMixin:
         pass
 
     # Import the method from the actual mixin
-    from core.supervisor._mgr_reconcile import ReconcileMixin
+    from server.supervisor._mgr_reconcile import ReconcileMixin
     _check_config_freshness = ReconcileMixin._check_config_freshness
 
 

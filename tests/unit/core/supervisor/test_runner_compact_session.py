@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.runner import AnimaRunner
+from core.runtime.runner import AnimaRunner
 
 
 def _make_runner(tmp_path: Path) -> AnimaRunner:

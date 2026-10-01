@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.runner import AnimaRunner
+from core.runtime.runner import AnimaRunner
 
 
 def _runner(tmp_path: Path, *, run_chat_result: object) -> AnimaRunner:

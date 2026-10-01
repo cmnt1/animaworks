@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
+from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
 
 
 @pytest.mark.parametrize("fail_verification", [False, True])

@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor._mgr_health import HealthMixin
-from core.supervisor.manager import HealthConfig
-from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+from server.supervisor._mgr_health import HealthMixin
+from server.supervisor.manager import HealthConfig
+from server.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 from core.time_utils import now_jst
 
 
@@ -37,7 +37,7 @@ def _make_supervisor(health_config: HealthConfig | None = None) -> HealthMixin:
     supervisor.health_config = health_config or HealthConfig()
     supervisor._shutdown = False
     supervisor._restarting = set()
-    from core.supervisor.restart_state import RestartController
+    from server.supervisor.restart_state import RestartController
 
     supervisor._restart_ctl = RestartController(
         failed_threshold=5,

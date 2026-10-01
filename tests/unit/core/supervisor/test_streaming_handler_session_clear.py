@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.streaming_handler import StreamingIPCHandler
+from core.runtime.ipc import IPCRequest
+from core.runtime.streaming_handler import StreamingIPCHandler
 
 # ── Helpers ───────────────────────────────────────────────────
 

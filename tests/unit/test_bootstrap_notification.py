@@ -302,8 +302,8 @@ class TestStreamingHandlerBootstrapNotification:
     async def test_bootstrap_start_emitted(self, tmp_path: Path):
         """When needs_bootstrap is True at stream start, a bootstrap_start
         chunk should be emitted before any anima stream chunks."""
-        from core.supervisor.ipc import IPCRequest
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.ipc import IPCRequest
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         mock_anima = MagicMock()
         mock_anima.needs_bootstrap = True
@@ -338,8 +338,8 @@ class TestStreamingHandlerBootstrapNotification:
     async def test_bootstrap_complete_emitted_when_finished(self, tmp_path: Path):
         """When needs_bootstrap transitions from True to False during the
         stream, a bootstrap_complete chunk should be emitted."""
-        from core.supervisor.ipc import IPCRequest
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.ipc import IPCRequest
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         mock_anima = MagicMock()
         # Start as True, then switch to False after stream
@@ -383,8 +383,8 @@ class TestStreamingHandlerBootstrapNotification:
 
     async def test_no_bootstrap_events_when_not_bootstrapping(self, tmp_path: Path):
         """When needs_bootstrap is False, no bootstrap events should appear."""
-        from core.supervisor.ipc import IPCRequest
-        from core.supervisor.streaming_handler import StreamingIPCHandler
+        from core.runtime.ipc import IPCRequest
+        from core.runtime.streaming_handler import StreamingIPCHandler
 
         mock_anima = MagicMock()
         mock_anima.needs_bootstrap = False

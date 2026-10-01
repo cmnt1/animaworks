@@ -6,7 +6,7 @@
 
 ## 日次処理
 
-`core/supervisor/_mgr_scheduler.py` が日次 job を登録し、`core/lifecycle/system_consolidation.py` の `_handle_daily_consolidation` が対象 Anima を選ぶ。無活動期間や直近 24 時間の記録数に応じて、実行を見送ることがある。
+`server/supervisor/_mgr_scheduler.py` が日次 job を登録し、`core/lifecycle/system_consolidation.py` の `_handle_daily_consolidation` が対象 Anima を選ぶ。無活動期間や直近 24 時間の記録数に応じて、実行を見送ることがある。
 
 Anima の `run_consolidation` は前日の活動ログを日付付きのエピソードへ要約し、要約から atomic facts を抽出する。その後の framework post-processing は次の順に進む。
 
@@ -35,4 +35,4 @@ Anima の `run_consolidation` は前日の活動ログを日付付きのエピ�
 
 ## RAG 索引の定期更新
 
-RAG 索引更新は週次統合とは別の単一スケジュールである。`core/supervisor/_mgr_scheduler.py` の日次 indexing job が既定 04:00 に記憶ファイル、facts、共有データを反映し、BM25 と entity 索引も更新する。週次 post-processing が別途 RAG 全体を再構築する経路はない。索引と復旧経路は[意図的想起と検索](retrieval.md)を参照する。
+RAG 索引更新は週次統合とは別の単一スケジュールである。`server/supervisor/_mgr_scheduler.py` の日次 indexing job が既定 04:00 に記憶ファイル、facts、共有データを反映し、BM25 と entity 索引も更新する。週次 post-processing が別途 RAG 全体を再構築する経路はない。索引と復旧経路は[意図的想起と検索](retrieval.md)を参照する。

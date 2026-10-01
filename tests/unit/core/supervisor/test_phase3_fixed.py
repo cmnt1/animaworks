@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.schemas import CronTask
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.scheduler_manager import SchedulerManager
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime.runner import AnimaRunner
+from core.runtime.scheduler_manager import SchedulerManager
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 from core.tasks.pending_executor import PendingTaskExecutor
 
 

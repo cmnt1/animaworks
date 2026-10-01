@@ -27,7 +27,7 @@ import psutil
 from core.exceptions import AnimaNotRunningError, IPCConnectionError, ProcessError
 from core.platform.process import kill_tree, snapshot_descendants, subprocess_session_kwargs, terminate_subprocess
 from core.platform.subprocess_entries import SubprocessEntry, module_args
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger(__name__)

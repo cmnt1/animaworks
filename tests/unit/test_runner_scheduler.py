@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 class TestSchedulerManagerSetup:
@@ -135,7 +135,7 @@ New task description
     @pytest.mark.asyncio
     async def test_get_status_includes_scheduler_info(self, tmp_path):
         """AnimaRunner.get_status should include scheduler_running and scheduler_jobs."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)

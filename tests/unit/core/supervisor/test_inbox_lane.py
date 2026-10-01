@@ -21,8 +21,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.schemas import Message
-from core.supervisor.inbox_rate_limiter import InboxRateLimiter
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.inbox_rate_limiter import InboxRateLimiter
+from core.runtime.scheduler_manager import SchedulerManager
 
 
 def _default_config():
@@ -84,7 +84,7 @@ class TestRunInboxCall:
     @pytest.mark.asyncio
     async def test_calls_supervisor_run_inbox_once(self) -> None:
         limiter = _make_limiter([_make_message(intent="question")])
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
 
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_awaited_once()
@@ -97,7 +97,7 @@ class TestRunInboxCall:
         limiter = _make_limiter([_make_message(intent="question")])
         # An expired retry window (in the past on any host's monotonic clock).
         limiter._failure_retry_until = time.monotonic() - 1.0
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until == 0
 
@@ -111,7 +111,7 @@ class TestRecordProcessingFailure:
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(
             return_value={"task_type": "inbox", "result": {"action": "interrupted", "reason": "x"}, "success": False}
         )
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until != 0
 
@@ -121,7 +121,7 @@ class TestRecordProcessingFailure:
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(
             return_value={"task_type": "inbox", "result": {"action": "error", "reason": "network"}, "success": False}
         )
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until != 0
 
@@ -131,7 +131,7 @@ class TestRecordProcessingFailure:
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(
             return_value={"task_type": "inbox", "result": {"action": "responded", "reason": "budget"}, "success": False}
         )
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until != 0
 
@@ -139,7 +139,7 @@ class TestRecordProcessingFailure:
     async def test_exception_records_failure(self) -> None:
         limiter = _make_limiter([_make_message(intent="question")])
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(side_effect=RuntimeError("boom"))
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until != 0
 
@@ -151,7 +151,7 @@ class TestNotRunConditions:
     async def test_heartbeat_running_defers(self) -> None:
         limiter = _make_limiter([_make_message(intent="question")])
         limiter._scheduler_mgr.heartbeat_running = True
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox.assert_not_called()
         assert limiter._pending_trigger is False
@@ -172,7 +172,7 @@ class TestHeartbeatRunningFlag:
             return {"task_type": "inbox", "result": {"action": "responded", "reason": ""}, "success": True}
 
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(side_effect=side_effect)
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert observed == [True]
         assert limiter._scheduler_mgr.heartbeat_running is False
@@ -181,7 +181,7 @@ class TestHeartbeatRunningFlag:
     async def test_flag_reset_on_exception(self) -> None:
         limiter = _make_limiter([_make_message(intent="question")])
         limiter._scheduler_mgr._task_runner_supervisor.run_inbox = AsyncMock(side_effect=RuntimeError("boom"))
-        with patch("core.supervisor.inbox_rate_limiter.load_config", return_value=_default_config()):
+        with patch("core.runtime.inbox_rate_limiter.load_config", return_value=_default_config()):
             await limiter.message_triggered_inbox()
         assert limiter._scheduler_mgr.heartbeat_running is False
 
@@ -191,7 +191,7 @@ class TestPrepareExecutionInbox:
 
     @staticmethod
     def _identity():
-        from core.supervisor.ipc_v2 import IPCV2Identity
+        from core.runtime.ipc_v2 import IPCV2Identity
 
         return IPCV2Identity(
             job_id="job-inbox",
@@ -203,7 +203,7 @@ class TestPrepareExecutionInbox:
 
     @pytest.mark.asyncio
     async def test_returns_inbox_contract_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from core.supervisor import task_runner
+        from core.runtime import task_runner
 
         identity = self._identity()
         args = argparse.Namespace(anima="sakura", lane="inbox", job="job-inbox")
@@ -222,7 +222,7 @@ class TestIPCAndRecovery:
     """The inbox lane must pass IPC validation and be recovered on exit."""
 
     def test_ipc_identity_accepts_inbox(self) -> None:
-        from core.supervisor.ipc_v2 import IPCV2Identity
+        from core.runtime.ipc_v2 import IPCV2Identity
 
         identity = IPCV2Identity(
             job_id="job-inbox",
@@ -234,7 +234,7 @@ class TestIPCAndRecovery:
         identity.validate()  # must not raise
 
     def test_recover_task_journals_defaults_include_inbox(self) -> None:
-        from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+        from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
         sig = inspect.signature(TaskRunnerSupervisor._recover_task_journals)
         default = sig.parameters["session_types"].default

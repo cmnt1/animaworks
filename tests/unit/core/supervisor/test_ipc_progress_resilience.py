@@ -17,17 +17,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.supervisor import task_runner, task_runner_supervisor
-from core.supervisor.ipc import IPCServer
-from core.supervisor.ipc_v2 import (
+from core.runtime import task_runner, task_runner_supervisor
+from core.runtime.ipc import IPCServer
+from core.runtime.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
     IPCV2Connection,
     IPCV2ConnectionError,
     IPCV2ConnectionState,
     IPCV2Identity,
 )
-from core.supervisor.task_runner import _progress_loop, _RootLink
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime.task_runner import _progress_loop, _RootLink
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 # ── child: _progress_loop never dies ───────────────────────────────────
 

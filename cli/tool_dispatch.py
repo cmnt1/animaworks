@@ -240,6 +240,9 @@ def _handle_submit(argv: list[str]) -> None:
 
 def cli_dispatch() -> None:
     """Dispatch external tools and main CLI aliases from the CLI layer."""
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("cli")
     common = discover_common_tools()
     anima_dir_str = anima_dir_env() or ""
     personal = discover_personal_tools(Path(anima_dir_str)) if anima_dir_str else {}

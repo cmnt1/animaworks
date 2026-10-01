@@ -26,7 +26,7 @@ class TestOnMessageSentCallback:
         etc.), we extract the callback closure's logic and test it directly by
         constructing a minimal AnimaRunner and calling the callback pattern.
         """
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="alice",
@@ -65,7 +65,7 @@ class TestOnMessageSentCallback:
 
     def test_callback_truncates_long_content(self, tmp_path: Path):
         """The callback should truncate content to 200 characters."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="alice",
@@ -100,7 +100,7 @@ class TestOnMessageSentCallback:
         Patches DigitalAnima to avoid heavy initialization and verifies that
         set_on_message_sent is invoked with a callable.
         """
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = AnimaRunner(
             anima_name="alice",
@@ -147,7 +147,7 @@ class TestOnMessageSentCallback:
     @pytest.mark.asyncio
     async def test_emit_event_publishes_to_event_bus(self, tmp_path: Path):
         """Verify root events are buffered for the IPC subscriber."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()

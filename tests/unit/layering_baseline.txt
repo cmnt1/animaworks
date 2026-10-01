@@ -26,7 +26,7 @@ core.memory.maintenance.consolidation -> core.prompt.context
 core.memory.maintenance.housekeeping -> core.agent.prompt_log
 core.memory.priming.channel_a -> core.integrations._async_compat
 core.memory.priming.channel_b -> core.integrations._async_compat
-core.memory.rag.cli_access -> core.supervisor.memory_service
+core.memory.rag.cli_access -> core.runtime.memory_service
 core.memory.rag.embedding -> core.infra.gpu
 core.memory.rag.embedding -> core.infra.gpu
 core.memory.rag.embedding -> core.infra.gpu
@@ -86,9 +86,9 @@ core.tasks.external.sources.chatwork -> core.integrations._chatwork_client
 core.tasks.external.sources.gmail -> core.integrations.gmail
 core.tasks.external.sources.slack -> core.integrations._slack_cache
 core.tasks.external.sources.slack -> core.integrations._slack_client
-core.tasks.pending_executor -> core.supervisor.task_runner_supervisor
-core.tasks.pending_executor -> core.supervisor.task_runner_supervisor
-core.tasks.pending_executor -> core.supervisor.task_runner_supervisor
+core.tasks.pending_executor -> core.runtime.task_runner_supervisor
+core.tasks.pending_executor -> core.runtime.task_runner_supervisor
+core.tasks.pending_executor -> core.runtime.task_runner_supervisor
 core.tooling.org_helpers -> core.tooling.handler_base
 core.tooling.skill_promotion_tool -> core.tooling.handler_base
 core.tooling.standalone -> core.tooling.handler

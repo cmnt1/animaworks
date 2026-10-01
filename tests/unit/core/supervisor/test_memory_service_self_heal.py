@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory.rag.store import Document, SearchResult
-from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
+from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
 
 
 class _QueryStore:

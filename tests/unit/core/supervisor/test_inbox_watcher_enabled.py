@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.messaging.messenger import Messenger
-from core.supervisor.inbox_rate_limiter import InboxRateLimiter
+from core.runtime.inbox_rate_limiter import InboxRateLimiter
 
 
 def _make_limiter(
@@ -73,7 +73,7 @@ async def test_failed_inbox_keeps_unread_and_waits_for_retry_guard(tmp_path: Pat
             "success": False,
         }
 
-    with patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=100.0):
+    with patch("core.runtime.inbox_rate_limiter.time.monotonic", return_value=100.0):
         await limiter.message_triggered_inbox()
         assert limiter._failure_retry_until >= 130.0
         await limiter.message_triggered_inbox()
@@ -87,7 +87,7 @@ async def test_failed_inbox_keeps_unread_and_waits_for_retry_guard(tmp_path: Pat
         "result": {"action": "responded", "reason": "", "summary": "ok"},
         "success": True,
     }
-    with patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=131.0):
+    with patch("core.runtime.inbox_rate_limiter.time.monotonic", return_value=131.0):
         await limiter.message_triggered_inbox()
         assert run_inbox.await_count == 2
         assert limiter._failure_retry_until == 0
@@ -105,7 +105,7 @@ def test_inbox_failure_waits_for_all_provider_guards_to_expire(tmp_path: Path) -
         patch("core.config.model_config.resolve_effective_model_config", return_value=config),
         patch("core.config.model_config._guard_key_for_model_config", return_value="test:blocked"),
         patch("core.llm.guard.rate_guard.get_rate_guard") as guard,
-        patch("core.supervisor.inbox_rate_limiter.time.monotonic", return_value=100.0),
+        patch("core.runtime.inbox_rate_limiter.time.monotonic", return_value=100.0),
     ):
         guard.return_value.blocked_remaining.return_value = 1800.0
         limiter._record_processing_failure()
@@ -166,7 +166,7 @@ class TestInboxWatcherEnabledGuard:
             limiter._pending_trigger = False
 
         with (
-            patch("core.supervisor.inbox_rate_limiter._INBOX_RECHECK_INTERVAL_SEC", 0.05),
+            patch("core.runtime.inbox_rate_limiter._INBOX_RECHECK_INTERVAL_SEC", 0.05),
             patch.object(limiter, "message_triggered_inbox", side_effect=fake_triggered),
         ):
             task = asyncio.create_task(limiter.inbox_watcher_loop())
@@ -250,7 +250,7 @@ class TestReadAnimaEnabledMalformed:
     """Non-object status.json must default to enabled without raising."""
 
     def test_list_status_json_defaults_true(self, tmp_path: Path) -> None:
-        from core.supervisor.inbox_rate_limiter import _read_anima_enabled
+        from core.runtime.inbox_rate_limiter import _read_anima_enabled
 
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
@@ -258,7 +258,7 @@ class TestReadAnimaEnabledMalformed:
         assert _read_anima_enabled(anima_dir) is True
 
     def test_null_status_json_defaults_true(self, tmp_path: Path) -> None:
-        from core.supervisor.inbox_rate_limiter import _read_anima_enabled
+        from core.runtime.inbox_rate_limiter import _read_anima_enabled
 
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
@@ -266,7 +266,7 @@ class TestReadAnimaEnabledMalformed:
         assert _read_anima_enabled(anima_dir) is True
 
     def test_manager_read_anima_enabled_non_dict_defaults_true(self, tmp_path: Path) -> None:
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor.manager import ProcessSupervisor
 
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()

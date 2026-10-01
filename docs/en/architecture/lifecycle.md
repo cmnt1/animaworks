@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/lifecycle.md -->
-<!-- i18n: source-sha256=fc15ebd7f7ff4e9d39caf9e22e42c6aac67d6fbda00a162a69943b1044a4f2bd generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=a54dd376217892ef7eb74b7522d4964a1a1b39ce2da9bc26a72d05224c6d3fed generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -22,9 +22,9 @@ Chat uses a per-thread conversation lock to prevent conflicts within the same co
 
 ## Heartbeat and cron
 
-The default heartbeat interval is 30 minutes in the global configuration, and can be overridden per Anima via `status.json` in `heartbeat_interval_minutes`. The valid range is 1–1440 minutes. The global `activity_level` defaults to 100%, with an allowable range of 10–400%; higher values shorten the effective interval. `activity_schedule` can be used to switch activity levels by time of day. Active time windows are configured from `heartbeat.md`.
+The basic interval for heartbeat is set to 30 minutes by default in the global configuration, and can be overridden per Anima via `status.json` in `heartbeat_interval_minutes`. The valid range is 1 to 1440 minutes. The global `activity_level` defaults to 100%, with an allowable range of 10–400%; higher values shorten the effective interval. `activity_schedule` can be used to switch activity levels by time of day. Active time periods are configured from `heartbeat.md`.
 
-`cron.md` is a heading-level definition, where `schedule` holds a standard 5-field cron expression. `type`, a description, and optionally command/tool with arguments are set, and `core/supervisor/schedule_parser.py` parses them. During setup or hot-reload, only schedules that could not be parsed or registered are reported as `cron_health_*.md` notifications. There is no periodic monitoring of registered cron execution frequency or failures.
+`cron.md` is a heading-level definition, where a standard 5-field cron expression is written in `schedule`. `type`, a description, and, if needed, command/tool with arguments are configured, and `core/runtime/schedule_parser.py` parses them. During setup or hot-reload, only schedules that could not be parsed or registered are reported as `cron_health_*.md` notifications. There is no feature for periodically monitoring the execution frequency or failures of registered cron jobs.
 
 ## Initial Startup and One Cycle
 

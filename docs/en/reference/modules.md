@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/modules.md -->
-<!-- i18n: source-sha256=2a3ba11ba3b156dc0f927d9aff76e0d241417e5ed17fc03e33a1b1a8477a04f3 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=8fe5023d8f81aad0dcad7cdb916a50832a4642ac9ae63cfef1a5a9db8777b58e generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 # Module List
 
@@ -9,21 +9,21 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 
 —
 
-| Module | Lines | Docstring first line |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `cli` | 9 | — |
 | `cli.__main__（非公開）` | 9 | — |
 | `cli._gateway（非公開）` | 93 | — |
-| `cli.codex_command_hook` | 61 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
+| `cli.codex_command_hook` | 64 | CLI adapter for Codex's ``PreToolUse`` command-policy hook. |
 | `cli.demo` | 394 | Native ``animaworks demo`` command. |
-| `cli.parser` | 842 | — |
-| `cli.tool_dispatch` | 365 | CLI dispatch for external tools, submit tasks, and command aliases. |
+| `cli.parser` | 846 | — |
+| `cli.tool_dispatch` | 368 | CLI dispatch for external tools, submit tasks, and command aliases. |
 
 ## `cli.commands`
 
 —
 
-| Module | Lines | Docstring first line |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `cli.commands` | 5 | — |
 | `cli.commands.anima` | 214 | — |
@@ -47,7 +47,7 @@ Lists the Python files tracked in `git ls-files core cli server`. Private module
 | `cli.commands.rag_repair_status` | 147 | Status reporting for persistent RAG repair state. |
 | `cli.commands.remake_cmd` | 272 | — |
 | `cli.commands.repair_rag_cmd` | 135 | — |
-| `cli.commands.server` | 826 | — |
+| `cli.commands.server` | 833 | — |
 | `cli.commands.skills` | 211 | — |
 | `cli.commands.supervisor_cmd` | 110 | — |
 | `cli.commands.task_cmd` | 569 | — |
@@ -137,9 +137,9 @@ LLM agent execution, conversation control, and engine integration.
 
 ## `core.anima`
 
-Digital Anima lifecycle and runtime objects.
+Lifecycle and runtime objects of Digital Anima.
 
-| Module | Lines | Docstring first line |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.anima` | 23 | — |
 | `core.anima._mixin_protocols（非公開）` | 128 | Structural host protocols for the compositional mixins. |
@@ -185,7 +185,7 @@ Common send clients and token resolution for Slack, Discord, and Chatwork.
 
 Application configuration schema, loading, validation, and migration.
 
-| Module | Lines | Docstring first line |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.config` | 36 | — |
 | `core.config.anima_registry` | 313 | Anima registration in config.json: register, unregister, rename. |
@@ -209,7 +209,7 @@ Application configuration schema, loading, validation, and migration.
 
 Tool execution, command execution, and safety controls.
 
-| Module | Lines | Docstring first line |
+| Module | Lines | First docstring line |
 |---|---:|---|
 | `core.execution` | 57 | — |
 | `core.execution._shortterm_handoff（非公開）` | 112 | — |
@@ -359,7 +359,6 @@ Infrastructure features such as logs, databases, and caches.
 | Module | Lines | First docstring line |
 |---|---:|---|
 | `core.infra` | 6 | — |
-| `core.infra.auto_updater` | 198 | — |
 | `core.infra.event_export` | 389 | — |
 | `core.infra.execution_sdk_preflight` | 126 | — |
 | `core.infra.gpu` | 173 | — |
@@ -372,7 +371,7 @@ Infrastructure features such as logs, databases, and caches.
 
 External service integration and implementation of animaworks-tool.
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.integrations` | 72 | Core integration tool discovery and registry. |
 | `core.integrations._anima_icon_url（非公開）` | 310 | Anima icon URL resolution — dashboard, outbound, Slack, notifications, tools, etc. |
@@ -471,7 +470,7 @@ Model Context Protocol server and client.
 | Module | Lines | First docstring line |
 |---|---:|---|
 | `core.mcp` | 0 | — |
-| `core.mcp.server` | 704 | — |
+| `core.mcp.server` | 708 | — |
 
 ## `core.memory`
 
@@ -541,7 +540,6 @@ Storage, search, and organization of conversation and episode memories.
 | `core.memory.rag.owner_lock` | 84 | Exclusive ownership lock for an anima's native vector database. |
 | `core.memory.rag.repair.detect` | 743 | — |
 | `core.memory.rag.repair.rebuild` | 401 | — |
-| `core.memory.rag.repair.service` | 269 | Supervised RAG repair mixin for ProcessSupervisor. |
 | `core.memory.rag.repair.state` | 191 | Persistent repair-state helpers for RAG auto-repair. |
 | `core.memory.rag.repair.types` | 27 | — |
 | `core.memory.rag.retriever` | 809 | — |
@@ -699,7 +697,7 @@ Organization models such as companies, departments, and roles.
 
 ## `core.platform`
 
-Integration layer that absorbs differences across execution engines and operating systems.
+Integration layer that absorbs differences across runtime engines and operating systems.
 
 | Module | Lines | First docstring line |
 |---|---:|---|
@@ -714,8 +712,9 @@ Integration layer that absorbs differences across execution engines and operatin
 | `core.platform.grok` | 40 | — |
 | `core.platform.locks` | 125 | — |
 | `core.platform.pid` | 32 | — |
-| `core.platform.process` | 320 | — |
-| `core.platform.processing_lease` | 336 | — |
+| `core.platform.process` | 327 | — |
+| `core.platform.process_role` | 21 | Low-level environment access for process-role metadata. |
+| `core.platform.processing_lease` | 344 | — |
 | `core.platform.status_store` | 51 | — |
 | `core.platform.subprocess_entries` | 23 | — |
 | `core.platform.tasks` | 35 | — |
@@ -733,6 +732,28 @@ System prompt and context construction.
 | `core.prompt.messaging` | 147 | — |
 | `core.prompt.org_context` | 378 | — |
 | `core.prompt.sections` | 52 | — |
+
+## `core.runtime`
+
+Anima main runtime components, inter-process communication, and task execution.
+
+| Module | Lines | First docstring line |
+|---|---:|---|
+| `core.runtime` | 1 | Runtime components owned by an individual Anima process. |
+| `core.runtime.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
+| `core.runtime.event_bus` | 88 | In-process event buffer for events emitted by an Anima main runner. |
+| `core.runtime.inbox_rate_limiter` | 270 | Event-driven inbox wakeups and deferred trigger management. |
+| `core.runtime.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
+| `core.runtime.ipc_v2` | 414 | Persistent duplex IPC v2 used between an Anima main and task runners. |
+| `core.runtime.memory_service` | 774 | Anima-main-owned vector memory service. |
+| `core.runtime.process_role` | 35 | Process role metadata shared by AnimaWorks process entry points. |
+| `core.runtime.runner` | 1327 | Child process entry point for Anima subprocess. |
+| `core.runtime.schedule_parser` | 484 | — |
+| `core.runtime.scheduler_manager` | 885 | APScheduler management for heartbeat and cron tasks. |
+| `core.runtime.streaming_handler` | 438 | Streaming IPC message handler. |
+| `core.runtime.task_runner` | 963 | Disposable task runner entry point. |
+| `core.runtime.task_runner_supervisor` | 1119 | Anima-main-side lifecycle manager for disposable task runner processes. |
+| `core.runtime.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.skills`
 
@@ -792,35 +813,6 @@ Skill discovery, loading, and execution support.
 | Module | Lines | First line of docstring |
 |---|---:|---|
 | `core.skills.sources` | 1 | Skill source adapters; import specific modules directly. |
-
-## `core.supervisor`
-
-Supervision, delegation, and execution coordination for anima.
-
-| Module | Lines | First docstring line |
-|---|---:|---|
-| `core.supervisor` | 20 | — |
-| `core.supervisor._manager_protocols（非公開）` | 84 | Structural host protocols for the compositional mixins. |
-| `core.supervisor._mgr_health（非公開）` | 470 | Health check mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_rag_repair（非公開）` | 9 | Supervisor entry point for the RAG repair lifecycle mixin. |
-| `core.supervisor._mgr_reconcile（非公開）` | 319 | Reconciliation mixin for ProcessSupervisor. |
-| `core.supervisor._mgr_scheduler（非公開）` | 1035 | System scheduler mixin for ProcessSupervisor. |
-| `core.supervisor.cron_followup` | 45 | Shared command-cron follow-up policy for legacy and isolated runners. |
-| `core.supervisor.event_bus` | 88 | In-process event buffer for events emitted by an anima root runner. |
-| `core.supervisor.inbox_rate_limiter` | 270 | Event-driven inbox wakeups and deferred trigger management. |
-| `core.supervisor.ipc` | 508 | IPC communication layer using JSON Lines over a platform-specific transport. |
-| `core.supervisor.ipc_v2` | 414 | Persistent duplex IPC v2 used between an anima root and task runners. |
-| `core.supervisor.manager` | 1104 | Process Supervisor - Manages lifecycle of Anima child processes. |
-| `core.supervisor.memory_service` | 774 | Root-owned vector memory service. |
-| `core.supervisor.process_handle` | 768 | Process handle for managing child Anima processes. |
-| `core.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |
-| `core.supervisor.runner` | 1320 | Child process entry point for Anima subprocess. |
-| `core.supervisor.schedule_parser` | 484 | — |
-| `core.supervisor.scheduler_manager` | 885 | APScheduler management for heartbeat and cron tasks. |
-| `core.supervisor.streaming_handler` | 439 | Streaming IPC message handler. |
-| `core.supervisor.task_runner` | 960 | Disposable task runner entry point. |
-| `core.supervisor.task_runner_supervisor` | 1119 | Root-side lifecycle manager for disposable task runner processes. |
-| `core.supervisor.transport` | 240 | Transport helpers for IPC server/client communication. |
 
 ## `core.tasks`
 
@@ -982,10 +974,10 @@ Audio input/output and voice interaction.
 
 —
 
-| Module | Lines | First docstring line |
+| Module | Lines | First line of docstring |
 |---|---:|---|
 | `server` | 7 | — |
-| `server.app` | 1385 | — |
+| `server.app` | 1383 | — |
 | `server.events` | 56 | — |
 | `server.internal_auth` | 232 | — |
 | `server.localhost` | 86 | — |
@@ -1056,3 +1048,20 @@ Audio input/output and voice interaction.
 |---|---:|---|
 | `server.services` | 5 | Server application services. |
 | `server.services.anima_admin` | 7 | — |
+
+## `server.supervisor`
+
+—
+
+| Module | Lines | First docstring line |
+|---|---:|---|
+| `server.supervisor` | 23 | Server-level supervision APIs for managing Anima processes. |
+| `server.supervisor._manager_protocols（非公開）` | 84 | Structural host protocols for the compositional mixins. |
+| `server.supervisor._mgr_health（非公開）` | 470 | Health check mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_rag_repair（非公開）` | 268 | Supervised RAG repair mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_reconcile（非公開）` | 319 | Reconciliation mixin for ProcessSupervisor. |
+| `server.supervisor._mgr_scheduler（非公開）` | 1035 | System scheduler mixin for ProcessSupervisor. |
+| `server.supervisor.auto_updater` | 198 | — |
+| `server.supervisor.manager` | 1120 | Process Supervisor - Manages lifecycle of Anima child processes. |
+| `server.supervisor.process_handle` | 768 | Process handle for managing child Anima processes. |
+| `server.supervisor.restart_state` | 169 | Unified restart state machine for ProcessSupervisor. |

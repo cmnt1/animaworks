@@ -11,14 +11,14 @@ from pathlib import Path
 import pytest
 
 from core.memory.conversation import streaming_journal
-from core.supervisor import task_runner
-from core.supervisor import task_runner_supervisor as trs
-from core.supervisor.ipc_v2 import (
+from core.runtime import task_runner
+from core.runtime import task_runner_supervisor as trs
+from core.runtime.ipc_v2 import (
     IPCV2BackpressureTimeout,
     IPCV2ConnectionState,
     IPCV2Identity,
 )
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 
 def _supervisor(tmp_path: Path) -> TaskRunnerSupervisor:

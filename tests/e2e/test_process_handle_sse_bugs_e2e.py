@@ -21,8 +21,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.exceptions import IPCConnectionError
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 
 
 # ── Test 1: stop() sends shutdown via IPC while still RUNNING ────────
@@ -98,7 +98,7 @@ async def test_health_check_recovers_stuck_stopping_e2e():
     change the state to FAILED, and trigger _handle_process_failure for
     automatic recovery.
     """
-    from core.supervisor.manager import HealthConfig, ProcessSupervisor
+    from server.supervisor.manager import HealthConfig, ProcessSupervisor
 
     with TemporaryDirectory() as tmpdir:
         supervisor = ProcessSupervisor(

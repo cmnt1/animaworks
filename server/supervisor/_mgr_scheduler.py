@@ -19,9 +19,9 @@ from apscheduler.triggers.cron import CronTrigger
 
 from core.memory.rag.store import CollectionExistence
 from core.platform.tasks import spawn
-from core.supervisor._manager_protocols import _SchedulerMixinHost
-from core.supervisor.process_handle import ProcessState
 from core.time_utils import get_app_timezone, now_local
+from server.supervisor._manager_protocols import _SchedulerMixinHost
+from server.supervisor.process_handle import ProcessState
 
 logger = logging.getLogger(__name__)
 

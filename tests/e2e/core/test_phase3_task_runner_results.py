@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from core.schemas import CronTask
-from core.supervisor import ipc_v2
-from core.supervisor.memory_service import MemoryService
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.runtime import ipc_v2
+from core.runtime.memory_service import MemoryService
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 
 class _MockEngineHandler(BaseHTTPRequestHandler):

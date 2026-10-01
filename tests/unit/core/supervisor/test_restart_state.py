@@ -9,7 +9,7 @@ time can be advanced deterministically.
 
 from __future__ import annotations
 
-from core.supervisor.restart_state import RestartController, RestartPhase
+from server.supervisor.restart_state import RestartController, RestartPhase
 
 
 class FakeClock:

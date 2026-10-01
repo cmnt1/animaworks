@@ -13,7 +13,7 @@ from core.memory.rag.vector_ops import (
     request_payload,
     to_owner_interaction,
 )
-from core.supervisor.memory_service import MemoryServiceUnavailable
+from core.runtime.memory_service import MemoryServiceUnavailable
 
 
 def test_all_supported_endpoints_map_to_memory_methods() -> None:
