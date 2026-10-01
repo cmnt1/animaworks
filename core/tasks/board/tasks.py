@@ -171,6 +171,22 @@ class TaskStore:
                 "anima TEXT NOT NULL, task_id TEXT NOT NULL, holder TEXT NOT NULL, "
                 "acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(anima, task_id))"
             )
+            self._leave_wal_mode(db)
+
+    def _leave_wal_mode(self, db: sqlite3.Connection) -> None:
+        """Keep the DB in rollback-journal mode so read-only sandboxes can read it.
+
+        A WAL database without its -shm file cannot be opened from a read-only
+        directory (SQLITE_CANTOPEN). Older TaskBoardStore databases persist WAL.
+        Only the host can switch modes; sandboxed callers just skip it.
+        """
+        if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
+            return
+        try:
+            db.execute("PRAGMA journal_mode=DELETE")
+            logger.info("Switched task DB out of WAL mode: %s", self.db_path)
+        except sqlite3.OperationalError as exc:
+            logger.debug("Could not leave WAL mode for %s: %s", self.db_path, exc)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
