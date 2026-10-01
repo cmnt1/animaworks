@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/README.md -->
-<!-- i18n: source-sha256=f8aaf89f6ee3cbd29ec838248713af7577971b8e143099b9f338222db2ced552 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=df0e128261907cf072e1bb4be78e42f169d16bd831d89973514acb6a83670977 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 # 참조
 

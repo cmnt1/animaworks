@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/README.md -->
-<!-- i18n: source-sha256=a5297c2ff72c9be7aec9d207d2f8113a17146031ef722919d65bce4bf015b42f generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=a5297c2ff72c9be7aec9d207d2f8113a17146031ef722919d65bce4bf015b42f generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: 193a5e72
 

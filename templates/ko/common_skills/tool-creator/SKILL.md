@@ -186,9 +186,9 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
 
 **Per-Anima 인증** (Chatwork 등): `args.get("anima_dir")`에서 Anima 이름을 가져와 `CHATWORK_API_TOKEN__{anima_name}`와 같은 **Anima 전용 키**를 `resolve_env_style_credential(...)`로 해결하는 패턴이 있다 (`core/integrations/_chatwork_identity.py`의 `resolve_identity` 등. 미등록이면 폴백하지 않고 오류로 처리). 동일한 키 명명 방식을 커스텀 툴에서도 사용할 수 있다.
 
-#### `cli_main`(animaworks-tool용)
+#### `cli_main`（animaworks-tool 용）
 
-`animaworks-tool <tool_name> …`는 코어·공통·개인 모두 **모듈에 `cli_main`가 없으면 CLI 실행 불가**(`cli/tool_dispatch.py`의 `cli_dispatch`). `argparse`로 서브커맨드를 파싱하고, 내부에서 `dispatch(f"{tool}_{action}", args_dict)`을 호출하는 형태가 일반적. 스키마에서 용법을 생성하고 싶다면 `core/integrations/_base.py`의 `auto_cli_guide`도 참조.
+`animaworks-tool <tool_name> …`는 코어·공통·개인 모두 **모듈에 `cli_main`가 없으면 CLI 실행 불가**（`cli/tool_dispatch.py`의 `cli_dispatch`）。`argparse`에서 서브커맨드를 파싱하고, 내부에서 `dispatch(f"{tool}_{action}", args_dict)`를 호출하는 형태가 일반적. 스키마에서 사용법을 생성하려면 `core/integrations/_base.py`의 `auto_cli_guide`도 참조.
 
 ### Step 3: 파일 저장
 
@@ -259,8 +259,8 @@ Markdown의 「도구 생성」 섹션(`個人ツール` / `共有ツール` 행
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …`는 `task_type="command"`의 입력을 TaskStore에 등록하고, `PendingTaskExecutor`가 시도를 가져와 실행한다(`cli/tool_dispatch.py`의 `_handle_submit`). 실행 결과는 `state/background_tasks/{task_id}.json`에도 저장된다. 프로필 참조는 **import 가능한 코어 모듈**에 대해서만 수행(파일 도구는 submit 시 경고 대상이 되기 쉽다).
-- **`gated: True`**: 코어 도구의 해당 액션에 대해 permissions에서 `tool_action`의 명시적 허가가 필요하다.
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …`는 `task_type="command"`의 입력을 TaskStore에 등록하고, `PendingTaskExecutor`가 시도를 가져와 실행한다（`cli/tool_dispatch.py`의 `_handle_submit`）. 실행 결과는 `state/background_tasks/{task_id}.json`에도 저장된다. 프로필 참조는 **import 가능한 코어 모듈**에 대해서만 실시（파일 도구는 submit 시 경고 대상이 되기 쉬움）.
+- **`gated: True`**: 코어 도구의 해당 액션에 대해, permissions에서 `tool_action`의 명시적 허가가 필요.
 
 ```python
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
@@ -300,7 +300,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 - 얇은 엔트리 + `_client` / `_cli` 분할: `core/integrations/chatwork.py`, `slack.py`, `discord.py`
 - 인증·API: `core/integrations/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
 - 장시간·파이프라인: `core/integrations/image_gen.py`（파사드, `image/` 서브패키지 + `EXECUTION_PROFILE`）
-- 검색·로컬 LLM: `core/integrations/web_search.py`（`get_tool_schemas`가 비어 있음 → `ExternalToolDispatcher.dispatch`의 코어 경로에서는 매치되지 않음. `use_tool`는 `dispatch`로 가능）, `x_search.py`, `local_llm.py`
+- 검색·로컬 LLM: `core/integrations/web_search.py`（`get_tool_schemas`가 비어 있음 → `ExternalToolDispatcher.dispatch`의 코어 경로에서는 매치하지 않음. `use_tool`는 `dispatch`에서 가능）, `x_search.py`, `local_llm.py`
 - 디스패처·CLI 엔트리: `core/tooling/dispatch.py`, `cli/tool_dispatch.py`（`cli_dispatch` / `_handle_submit`）
 
 ## 주의사항

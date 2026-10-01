@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/cli.md -->
-<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=4664f91ec413fd0c5801926343080bcde18c2d8040d7b4e9e64f83b848c76d99 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 # CLI reference: `animaworks`
 

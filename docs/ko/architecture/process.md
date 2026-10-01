@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/process.md -->
-<!-- i18n: source-sha256=c13b2a6ee7d7489c293fb54000a394e0170b3a4c9fac8f7cc3ddbee4cc825829 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=c13b2a6ee7d7489c293fb54000a394e0170b3a4c9fac8f7cc3ddbee4cc825829 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: b304b7dc
 
