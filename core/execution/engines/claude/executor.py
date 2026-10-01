@@ -492,7 +492,12 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         elif session_type in _RESUMABLE_SESSION_TYPES:
             session_id_to_resume = _load_session_id(self._anima_dir, session_type, thread_id=thread_id)
         else:
-            _sdk_session.clear_session_id_for_type(self._anima_dir, session_type, thread_id=thread_id)
+            await asyncio.to_thread(
+                _sdk_session.clear_session_id_for_type,
+                self._anima_dir,
+                session_type,
+                thread_id=thread_id,
+            )
             session_id_to_resume = None
 
         options, _temp_files = self._build_sdk_options(
@@ -520,7 +525,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
         last_result_message: Any = None
 
-        def _snapshot_execution_state() -> None:
+        async def _snapshot_execution_state() -> None:
             nonlocal last_result_message
             if _execution_snapshot is None:
                 return
@@ -530,6 +535,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 and state.result_message is not last_result_message
             ):
                 tracker.update_from_result_message(getattr(state.result_message, "usage", None))
+                await tracker.persist_session_measurement()
                 last_result_message = state.result_message
             _execution_snapshot.update(
                 response_text="\n".join(state.response_text),
@@ -541,7 +547,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 interrupted=state.interrupted,
             )
 
-        _snapshot_execution_state()
+        await _snapshot_execution_state()
         sdk_pid: int | None = None
         sdk_pid_create_time: float | None = None
 
@@ -578,10 +584,10 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                             flush_unterminated_messages=_aggregate_result,
                             update_context_tracker=not _aggregate_result,
                         ):
-                            _snapshot_execution_state()
+                            await _snapshot_execution_state()
                             yield ev
                     finally:
-                        _snapshot_execution_state()
+                        await _snapshot_execution_state()
                         if self._active_client is fc:
                             self._active_client = None
             except BaseException as exc:
@@ -623,24 +629,34 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                         except TimeoutError:
                             logger.warning("Resume timed out (session_id=%s)", session_id_to_resume)
                             await gen.aclose()
-                            _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                            await asyncio.to_thread(
+                                _sdk_session._clear_session_id,
+                                self._anima_dir,
+                                session_type,
+                                thread_id=thread_id,
+                            )
                             raise
                         except StopAsyncIteration:
                             logger.warning("Resume stream empty (session_id=%s)", session_id_to_resume)
-                            _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                            await asyncio.to_thread(
+                                _sdk_session._clear_session_id,
+                                self._anima_dir,
+                                session_type,
+                                thread_id=thread_id,
+                            )
                             raise
                         else:
                             if first.get("type") == "text_delta":
                                 emitted_text_delta = True
-                            _snapshot_execution_state()
+                            await _snapshot_execution_state()
                             yield first
                     async for ev in gen:
                         if ev.get("type") == "text_delta":
                             emitted_text_delta = True
-                        _snapshot_execution_state()
+                        await _snapshot_execution_state()
                         yield ev
                 finally:
-                    _snapshot_execution_state()
+                    await _snapshot_execution_state()
                     if self._active_client is client:
                         self._active_client = None
 
@@ -655,7 +671,12 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     fell_back = True
                 except (ProcessError, ClaudeSDKError) as e:
                     logger.warning("SDK resume failed (session_id=%s): %s", session_id_to_resume, e)
-                    _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                    await asyncio.to_thread(
+                        _sdk_session._clear_session_id,
+                        self._anima_dir,
+                        session_type,
+                        thread_id=thread_id,
+                    )
                     fell_back = True
                 except Exception as e:
                     if isinstance(e, (asyncio.CancelledError, GeneratorExit)):
@@ -663,7 +684,12 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                     logger.warning(
                         "SDK resume failed with unexpected error (session_id=%s): %s", session_id_to_resume, e
                     )
-                    _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                    await asyncio.to_thread(
+                        _sdk_session._clear_session_id,
+                        self._anima_dir,
+                        session_type,
+                        thread_id=thread_id,
+                    )
                     fell_back = True
                 if fell_back:
                     if resume_session_id:
@@ -686,7 +712,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 partial_text="\n".join(state.response_text),
             ) from e
         finally:
-            _snapshot_execution_state()
+            await _snapshot_execution_state()
             _kill_sdk_process(sdk_pid, sdk_pid_create_time)
             _cleanup_tool_outputs(self._anima_dir)
             _cleanup_prompt_files(_prompt_files)
@@ -702,11 +728,16 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         ):
             logger.warning("Claude SDK returned auth failure text during streaming; retrying fresh session once")
             if session_type in _RESUMABLE_SESSION_TYPES:
-                _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                await asyncio.to_thread(
+                    _sdk_session._clear_session_id,
+                    self._anima_dir,
+                    session_type,
+                    thread_id=thread_id,
+                )
             state = StreamingState(usage_acc=TokenUsage())
             if _execution_snapshot is not None:
                 _execution_snapshot["auth_retry_started"] = True
-            _snapshot_execution_state()
+            await _snapshot_execution_state()
             ctx = StreamingContext(
                 prompt=prompt,
                 images=images,
@@ -726,7 +757,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                         emitted_text_delta = True
                     yield ev
             finally:
-                _snapshot_execution_state()
+                await _snapshot_execution_state()
                 _kill_sdk_process(sdk_pid, sdk_pid_create_time)
                 _cleanup_tool_outputs(self._anima_dir)
                 _cleanup_prompt_files(_prompt_files)

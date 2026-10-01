@@ -413,6 +413,7 @@ async def process_stream_messages(
                 usage = event.get("message", {}).get("usage", {})
                 if usage and update_context_tracker:
                     ctx.tracker.update_from_message_start(usage)
+                    await ctx.tracker.persist_session_measurement()
                     ctx.session_stats["last_context_tokens"] = ctx.tracker._input_tokens
                     state.usage_acc.cache_read_tokens += usage.get("cache_read_input_tokens", 0) or 0
                     state.usage_acc.cache_write_tokens += usage.get("cache_creation_input_tokens", 0) or 0
@@ -475,7 +476,13 @@ async def process_stream_messages(
             state.result_message = message
             session_id = getattr(message, "session_id", "")
             if session_id and ctx.session_type in _RESUMABLE_SESSION_TYPES:
-                _save_session_id(ctx.anima_dir, session_id, ctx.session_type, thread_id=ctx.thread_id)
+                await asyncio.to_thread(
+                    _save_session_id,
+                    ctx.anima_dir,
+                    session_id,
+                    ctx.session_type,
+                    thread_id=ctx.thread_id,
+                )
             if message.usage:
                 u = message.usage
                 state.usage_acc.input_tokens = u.get("input_tokens", 0) or 0

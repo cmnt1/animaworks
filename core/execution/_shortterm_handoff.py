@@ -22,13 +22,14 @@ if TYPE_CHECKING:
 
 from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.prompt.context import ContextTracker
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.execution.session")
 
 
-def save_threshold_shortterm(
+async def asave_threshold_shortterm(
     tracker: ContextTracker,
     shortterm: ShortTermMemory | None,
     *,
@@ -52,7 +53,7 @@ def save_threshold_shortterm(
     if current_text:
         full_accumulated = f"{accumulated_response}\n{current_text}" if accumulated_response else current_text
 
-    shortterm.save(
+    await shortterm.asave(
         SessionState(
             session_id=session_id,
             timestamp=now_iso(),
@@ -65,6 +66,38 @@ def save_threshold_shortterm(
         )
     )
     return True
+
+
+def save_threshold_shortterm(
+    tracker: ContextTracker,
+    shortterm: ShortTermMemory | None,
+    *,
+    session_id: str,
+    trigger: str,
+    original_prompt: str,
+    accumulated_response: str,
+    current_text: str,
+    turn_count: int,
+    tool_uses: list[dict],
+) -> bool:
+    """Synchronous compatibility adapter for local callers and tests."""
+    if shortterm is None or not tracker.threshold_exceeded:
+        return False
+    writer = get_state_writer(shortterm.anima_dir)
+    return run_writer_sync(
+        writer,
+        asave_threshold_shortterm(
+            tracker,
+            shortterm,
+            session_id=session_id,
+            trigger=trigger,
+            original_prompt=original_prompt,
+            accumulated_response=accumulated_response,
+            current_text=current_text,
+            turn_count=turn_count,
+            tool_uses=tool_uses,
+        ),
+    )
 
 
 def build_stream_retry_prompt(checkpoint: StreamCheckpoint) -> str:

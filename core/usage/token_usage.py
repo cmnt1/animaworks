@@ -10,6 +10,7 @@ Writes to ``{anima_dir}/token_usage/{date}.jsonl``.  Each entry represents
 one execution cycle (chat, heartbeat, cron, inbox, task).
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core.memory.facts.observability import warn_rate_limited
-from core.platform.atomic_io import atomic_write_text
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.token_usage")
@@ -138,7 +139,7 @@ class TokenUsageLogger:
         self._anima_dir = anima_dir
         self._anima_name = anima_dir.name
         self._dir = anima_dir / "token_usage"
-        self._dir.mkdir(parents=True, exist_ok=True)
+        self._state_writer = get_state_writer(anima_dir)
         self._pricing: dict[str, dict[str, float]] | None = None
         self._start_event_exporter()
 
@@ -153,22 +154,21 @@ class TokenUsageLogger:
         except Exception:
             logger.warning("Failed to start token usage event exporter", exc_info=True)
 
-    def log(
+    def _build_entry(
         self,
         *,
         model: str,
         trigger: str,
         mode: str,
-        auth: str = "",
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        cache_read_tokens: int = 0,
-        cache_write_tokens: int = 0,
-        turns: int = 0,
-        chains: int = 0,
-        duration_ms: int = 0,
-    ) -> None:
-        """Log a single session's token usage."""
+        auth: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int,
+        cache_write_tokens: int,
+        turns: int,
+        chains: int,
+        duration_ms: int,
+    ) -> dict[str, Any]:
         now = now_local()
         cost = self.estimate_cost(
             model,
@@ -200,15 +200,76 @@ class TokenUsageLogger:
             entry["cache_write_tokens"] = cache_write_tokens
         if chains:
             entry["chains"] = chains
+        return entry
 
-        path = self._dir / f"{now.strftime('%Y-%m-%d')}.jsonl"
+    async def alog(
+        self,
+        *,
+        model: str,
+        trigger: str,
+        mode: str,
+        auth: str = "",
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        turns: int = 0,
+        chains: int = 0,
+        duration_ms: int = 0,
+    ) -> None:
+        """Asynchronously log a session's token usage through StateWriter."""
+        entry = self._build_entry(
+            model=model,
+            trigger=trigger,
+            mode=mode,
+            auth=auth,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+            turns=turns,
+            chains=chains,
+            duration_ms=duration_ms,
+        )
         try:
-            with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            await self._state_writer.log_token_usage(entry)
         except OSError:
             logger.warning("Failed to write token usage log", exc_info=True)
         else:
             self._export_event(entry)
+
+    def log(
+        self,
+        *,
+        model: str,
+        trigger: str,
+        mode: str,
+        auth: str = "",
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        turns: int = 0,
+        chains: int = 0,
+        duration_ms: int = 0,
+    ) -> None:
+        """Synchronous compatibility adapter for CLI and existing tests."""
+        run_writer_sync(
+            self._state_writer,
+            self.alog(
+                model=model,
+                trigger=trigger,
+                mode=mode,
+                auth=auth,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+                turns=turns,
+                chains=chains,
+                duration_ms=duration_ms,
+            ),
+        )
 
     def _export_event(self, entry: dict[str, Any]) -> None:
         """Best-effort export after the local token usage write succeeds."""
@@ -323,14 +384,7 @@ class TokenUsageLogger:
                     pass
         return entries
 
-    def monthly_total(self, now: datetime) -> int:
-        """Return total tokens consumed in the month containing *now*.
-
-        Completed days are cached as daily totals in ``rollup.json``.  The
-        current day's JSONL remains mutable, so it is always read directly.
-        JSONL files are authoritative: a missing, malformed, or incomplete
-        rollup is rebuilt from the corresponding completed-day logs.
-        """
+    def _monthly_total_snapshot(self, now: datetime) -> tuple[int, dict[str, int] | None]:
         current_day = now.date()
         month_prefix = current_day.strftime("%Y-%m-")
         rollup_path = self._dir / "rollup.json"
@@ -353,11 +407,23 @@ class TokenUsageLogger:
             if day not in rollup:
                 rollup[day] = self._read_daily_total(path)
 
-        if cached is None or rollup != cached:
-            self._write_rollup(rollup_path, rollup)
-
+        rollup_to_write = rollup if cached is None or rollup != cached else None
         today_total = self._read_daily_total(self._dir / f"{current_day.isoformat()}.jsonl")
-        return sum(rollup.values()) + today_total
+        return sum(rollup.values()) + today_total, rollup_to_write
+
+    def monthly_total(self, now: datetime) -> int:
+        """Synchronous compatibility API for local reporting callers."""
+        total, rollup = self._monthly_total_snapshot(now)
+        if rollup is not None:
+            try:
+                run_writer_sync(self._state_writer, self._state_writer.save_token_usage_rollup(rollup))
+            except Exception:
+                logger.warning("Failed to write token usage rollup", exc_info=True)
+        return total
+
+    async def monthly_total_async(self, now: datetime) -> int:
+        """Return the monthly total without blocking the task-runner loop."""
+        return await asyncio.to_thread(self.monthly_total, now)
 
     @staticmethod
     def _read_daily_total(path: Path) -> int:
@@ -401,14 +467,6 @@ class TokenUsageLogger:
         ):
             return None
         return data
-
-    @staticmethod
-    def _write_rollup(path: Path, rollup: dict[str, int]) -> None:
-        """Persist daily totals without allowing cache I/O to break callers."""
-        try:
-            atomic_write_text(path, json.dumps(dict(sorted(rollup.items())), ensure_ascii=False, indent=2) + "\n")
-        except Exception:
-            logger.warning("Failed to write token usage rollup", exc_info=True)
 
     def summarize(
         self,

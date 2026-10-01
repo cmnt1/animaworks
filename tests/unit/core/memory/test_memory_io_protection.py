@@ -53,9 +53,11 @@ def test_shortterm_save_raises_memory_write_error_on_oserror(tmp_path: Path) -> 
         accumulated_response="",
     )
 
-    with patch("core.memory.conversation.shortterm.atomic_write_json", side_effect=OSError("disk full")):
-        with pytest.raises(MemoryWriteError, match="Short-term memory save failed"):
-            st.save(state)
+    with (
+        patch("core.platform.state_writer.atomic_write_json", side_effect=OSError("disk full")),
+        pytest.raises(MemoryWriteError, match="Short-term memory save failed"),
+    ):
+        st.save(state)
 
 
 # ── Test 8: shortterm.load() handles OSError gracefully ───────────────────

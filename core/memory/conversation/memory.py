@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 from dataclasses import asdict
 from pathlib import Path
@@ -69,9 +68,8 @@ from core.memory.conversation.prompt import (
 from core.memory.conversation.prompt import (
     build_structured_messages as _build_structured_messages,
 )
-from core.memory.io import atomic_write_text
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.schemas import ModelConfig
-from core.time_utils import today_local
 
 logger = logging.getLogger("animaworks.conversation_memory")
 
@@ -95,9 +93,7 @@ class ConversationMemory:
         if thread_id == "default":
             self._state_path = self._state_dir / "conversation.json"
         else:
-            conv_dir = self._state_dir / "conversations"
-            conv_dir.mkdir(parents=True, exist_ok=True)
-            self._state_path = conv_dir / f"{thread_id}.json"
+            self._state_path = self._state_dir / "conversations" / f"{thread_id}.json"
         self._transcript_dir = anima_dir / "transcripts"
         self._state: ConversationState | None = None
 
@@ -151,19 +147,24 @@ class ConversationMemory:
 
         return self._state
 
-    def save(self) -> None:
+    def _serialized_state(self) -> dict[str, Any]:
         state = self.load()
-        data = {
+        return {
             "anima_name": state.anima_name,
             "turns": [asdict(t) for t in state.turns],
             "compressed_summary": state.compressed_summary,
             "compressed_turn_count": state.compressed_turn_count,
             "last_finalized_turn_index": state.last_finalized_turn_index,
         }
-        atomic_write_text(
-            self._state_path,
-            json.dumps(data, ensure_ascii=False, indent=2),
-        )
+
+    async def asave(self) -> None:
+        """Persist the current conversation through the process state writer."""
+        await get_state_writer(self.anima_dir).save_conversation(self.thread_id, self._serialized_state())
+
+    def save(self) -> None:
+        """Synchronous compatibility adapter for local callers and tests."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, self.asave())
 
     @staticmethod
     def _valid_date(date: str) -> bool:
@@ -192,7 +193,7 @@ class ConversationMemory:
                 logger.warning("Skipping malformed transcript line in %s", path)
         return messages
 
-    def write_transcript(
+    async def awrite_transcript(
         self,
         role: str,
         content: str,
@@ -203,10 +204,6 @@ class ConversationMemory:
         tool_names: list[str] | None = None,
     ) -> None:
         from core.time_utils import now_iso
-
-        self._transcript_dir.mkdir(parents=True, exist_ok=True)
-        today = today_local().isoformat()
-        path = self._transcript_dir / f"{today}.jsonl"
 
         entry: dict[str, Any] = {
             "ts": now_iso(),
@@ -222,14 +219,34 @@ class ConversationMemory:
         if tool_names:
             entry["tool_names"] = tool_names
 
-        line = json.dumps(entry, ensure_ascii=False) + "\n"
         try:
-            with path.open("a", encoding="utf-8") as f:
-                f.write(line)
-                f.flush()
-                os.fsync(f.fileno())
+            await get_state_writer(self.anima_dir).append_transcript(entry)
         except OSError:
-            logger.warning("Failed to write transcript entry to %s", path, exc_info=True)
+            logger.warning("Failed to write transcript entry", exc_info=True)
+
+    def write_transcript(
+        self,
+        role: str,
+        content: str,
+        *,
+        from_person: str = "",
+        thread_id: str = "default",
+        attachments: list[str] | None = None,
+        tool_names: list[str] | None = None,
+    ) -> None:
+        """Synchronous compatibility adapter for local callers and tests."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(
+            writer,
+            self.awrite_transcript(
+                role,
+                content,
+                from_person=from_person,
+                thread_id=thread_id,
+                attachments=attachments,
+                tool_names=tool_names,
+            ),
+        )
 
     def append_turn(
         self,
@@ -258,11 +275,15 @@ class ConversationMemory:
         )
         state.turns.append(turn)
 
-    def clear(self) -> None:
+    async def aclear(self) -> None:
         self._state = ConversationState(anima_name=self.anima_name)
-        if self._state_path.exists():
-            self._state_path.unlink()
+        await get_state_writer(self.anima_dir).clear_conversation(self.thread_id)
         logger.info("Conversation memory cleared for %s", self.anima_name)
+
+    def clear(self) -> None:
+        """Synchronous compatibility adapter for local callers and tests."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, self.aclear())
 
     def build_chat_prompt(
         self,
@@ -278,7 +299,7 @@ class ConversationMemory:
         return _build_structured_messages(state, content, fmt, self.model_config)
 
     async def _compress(self) -> CompressionResult:
-        return await _compress_fn(self.load(), self.model_config, self.save, self.anima_name)
+        return await _compress_fn(self.load(), self.model_config, self.asave, self.anima_name)
 
     def needs_compression(self) -> bool:
         state = self.load()
@@ -289,7 +310,7 @@ class ConversationMemory:
             self.load(),
             self.model_config,
             self._load_context_window_overrides,
-            self.save,
+            self.asave,
             self.anima_name,
         )
 
@@ -298,7 +319,7 @@ class ConversationMemory:
             self.load(),
             self.model_config,
             self._load_context_window_overrides,
-            self.save,
+            self.asave,
             self.anima_name,
         )
 
@@ -306,20 +327,20 @@ class ConversationMemory:
         async def _compress_inner() -> CompressionResult:
             from core.memory.conversation.compression import _compress
 
-            return await _compress(self.load(), self.model_config, self.save, self.anima_name)
+            return await _compress(self.load(), self.model_config, self.asave, self.anima_name)
 
         async def _finalize_inner() -> bool:
             return await _finalize_session(
                 self.anima_dir,
                 self.load(),
                 self.model_config,
-                self.save,
+                self.asave,
             )
 
         return await _finalize_if_session_ended(
             self._finalize_lock,
             self.load,
-            self.save,
+            self.asave,
             self.needs_compression,
             _compress_inner,
             _finalize_inner,

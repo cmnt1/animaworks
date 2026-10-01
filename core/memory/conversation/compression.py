@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -212,7 +213,7 @@ async def compress_if_needed(
     state: ConversationState,
     model_config: Any,
     load_context_window_overrides_fn: Callable[[], dict[str, int] | None],
-    save_fn: Callable[[], None],
+    save_fn: Callable[[], Any],
     anima_name: str = "",
 ) -> bool:
     """Compress older conversation turns if the threshold is exceeded.
@@ -233,7 +234,7 @@ async def compress_if_needed_detailed(
     state: ConversationState,
     model_config: Any,
     load_context_window_overrides_fn: Callable[[], dict[str, int] | None],
-    save_fn: Callable[[], None],
+    save_fn: Callable[[], Any],
     anima_name: str = "",
 ) -> CompressionResult:
     """Compress older turns if needed and return a detailed outcome."""
@@ -251,7 +252,7 @@ async def compress_if_needed_detailed(
 async def _compress(
     state: ConversationState,
     model_config: Any,
-    save_fn: Callable[[], None],
+    save_fn: Callable[[], Any],
     anima_name: str = "",
 ) -> CompressionResult:
     """Perform LLM-based compression of older conversation turns."""
@@ -291,7 +292,9 @@ async def _compress(
             state.last_finalized_turn_index - removed_count,
         )
 
-    save_fn()
+    saved = save_fn()
+    if inspect.isawaitable(saved):
+        await saved
 
     logger.info(
         (

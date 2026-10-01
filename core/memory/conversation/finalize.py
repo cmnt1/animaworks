@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -39,6 +40,12 @@ from core.time_utils import ensure_aware, now_local, today_local
 
 logger = logging.getLogger("animaworks.conversation_memory")
 _FACT_EXTRACTION_TASKS: set[asyncio.Task[tuple[int, int]]] = set()
+
+
+async def _persist_state(save_fn: Callable[[], Any]) -> None:
+    result = save_fn()
+    if inspect.isawaitable(result):
+        await result
 
 
 def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> str:
@@ -296,7 +303,7 @@ async def finalize_session(
     anima_dir: Path,
     state: ConversationState,
     model_config: Any,
-    save_fn: Callable[[], None],
+    save_fn: Callable[[], Any],
     min_turns: int = 3,
     injected_procedures: list[str] | None = None,
     session_id: str = "",
@@ -352,7 +359,7 @@ async def finalize_session(
     turns_to_compress = state.turns if state.last_finalized_turn_index > 0 else new_turns
     state.last_finalized_turn_index = len(state.turns)
     try:
-        save_fn()
+        await _persist_state(save_fn)
     except Exception:
         # Edge case F8: cursor persistence itself failed. The duplicate window
         # is unchanged from the legacy behavior, but this is worth surfacing.
@@ -403,7 +410,7 @@ async def finalize_session(
 
     if compression_succeeded:
         try:
-            save_fn()
+            await _persist_state(save_fn)
         except Exception:
             # Persistence failure is distinct from compression failure: the
             # in-memory state was compressed but never written, so the raw
@@ -430,7 +437,7 @@ async def finalize_session(
 async def finalize_if_session_ended(
     lock: Any,
     load_fn: Callable[[], ConversationState],
-    save_fn: Callable[[], None],
+    save_fn: Callable[[], Any],
     needs_compression_fn: Callable[[], bool],
     compress_fn: Callable[[], Awaitable[Any]],
     finalize_session_fn: Callable[..., Awaitable[bool]],
@@ -452,7 +459,7 @@ async def finalize_if_session_ended(
                 len(state.turns),
             )
             state.last_finalized_turn_index = len(state.turns)
-            save_fn()
+            await _persist_state(save_fn)
 
         last_turn_ts = datetime.fromisoformat(state.turns[-1].timestamp)
         idle_seconds = (now_local() - ensure_aware(last_turn_ts)).total_seconds()

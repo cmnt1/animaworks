@@ -14,6 +14,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 
 import asyncio
 import contextvars
+import inspect
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -50,6 +51,29 @@ from core.time_utils import now_local, today_local
 from core.trust import ORIGIN_HUMAN, ORIGIN_SYSTEM
 
 logger = logging.getLogger("animaworks.anima")
+
+
+async def _persist_conversation(conversation: Any) -> None:
+    """Await StateWriter persistence while supporting synchronous test doubles."""
+    async_save = getattr(conversation, "asave", None)
+    result = async_save() if callable(async_save) else None
+    if inspect.isawaitable(result):
+        await result
+        return
+    sync_save = getattr(conversation, "save", None)
+    if callable(sync_save):
+        await asyncio.to_thread(sync_save)
+
+
+async def _write_conversation_transcript(conversation: Any, *args: Any, **kwargs: Any) -> None:
+    async_write = getattr(conversation, "awrite_transcript", None)
+    result = async_write(*args, **kwargs) if callable(async_write) else None
+    if inspect.isawaitable(result):
+        await result
+        return
+    sync_write = getattr(conversation, "write_transcript", None)
+    if callable(sync_write):
+        await asyncio.to_thread(sync_write, *args, **kwargs)
 
 
 def _record_chat_user_turn(owner: Any) -> None:
@@ -127,8 +151,20 @@ def _resolve_voice_model_config(model_config: Any, voice_mode: bool) -> Any:
 
 
 def _build_chat_background_notification_context(owner: Any) -> str:
-    """Drain completed background-task notices for the next chat turn."""
+    """Drain completed notices synchronously for local compatibility tests."""
     notifications = owner.drain_chat_background_notifications()
+    if not notifications:
+        return ""
+    return load_prompt("fragments/bg_task_notification") + "\n\n" + "\n\n".join(notifications)
+
+
+async def _build_chat_background_notification_context_async(owner: Any) -> str:
+    """Drain completed task notices through the process state writer."""
+    async_drain = getattr(owner, "adrain_chat_background_notifications", None)
+    if callable(async_drain):
+        notifications = await async_drain()
+    else:
+        notifications = owner.drain_chat_background_notifications()
     if not notifications:
         return ""
     return load_prompt("fragments/bg_task_notification") + "\n\n" + "\n\n".join(notifications)
@@ -368,19 +404,20 @@ async def _inject_chat_message(
     state = conversation.load()
     conversation.append_turn("human", content, attachments=attachment_paths or [])
     injected_turn = state.turns[-1]
-    conversation.save()
+    await _persist_conversation(conversation)
     try:
         injected = await owner.agent.inject_message(content)
     except Exception:
         state.turns[:] = [turn for turn in state.turns if turn is not injected_turn]
-        conversation.save()
+        await _persist_conversation(conversation)
         raise
     if not injected:
         state.turns[:] = [turn for turn in state.turns if turn is not injected_turn]
-        conversation.save()
+        await _persist_conversation(conversation)
         return False
 
-    conversation.write_transcript(
+    await _write_conversation_transcript(
+        conversation,
         "human",
         content,
         from_person=from_person,
@@ -506,15 +543,16 @@ class MessagingMixin:
             attachment_paths=attachment_paths,
         )
 
-    def _sync_interactive_bootstrap_state(self: _MessagingHost) -> None:
+    async def _sync_interactive_bootstrap_state(self: _MessagingHost) -> None:
         """Persist completed/repair state after chat-driven bootstrap changes."""
         try:
-            from core.anima.bootstrap_state import get_bootstrap_status, write_bootstrap_state
+            from core.anima.bootstrap_state import get_bootstrap_status
+            from core.platform.state_writer import get_state_writer
 
             status = get_bootstrap_status(self.anima_dir)
             if status.get("state") in {"completed", "needs_repair"}:
                 payload = {k: v for k, v in status.items() if not k.startswith("needs_")}
-                write_bootstrap_state(self.anima_dir, payload)
+                await get_state_writer(self.anima_dir).write_bootstrap_state(payload)
         except Exception:
             logger.debug("[%s] Failed to sync interactive bootstrap state", self.name, exc_info=True)
 
@@ -690,7 +728,8 @@ class MessagingMixin:
                 self._mark_busy_start()
                 self._status_slots["conversation:default"] = "bootstrapping"
                 self._task_slots["conversation:default"] = "Initial bootstrap"
-                mark_bootstrap_running(
+                await asyncio.to_thread(
+                    mark_bootstrap_running,
                     self.anima_dir,
                     mode="character_sheet" if (self.anima_dir / "character_sheet.md").exists() else "interactive",
                 )
@@ -709,7 +748,7 @@ class MessagingMixin:
                         self.agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                         result = await self.agent.run_cycle(prompt, trigger="bootstrap")
                     self._last_activity = now_local()
-                    bootstrap_status = finalize_bootstrap_run(self.anima_dir)
+                    bootstrap_status = await asyncio.to_thread(finalize_bootstrap_run, self.anima_dir)
                     if bootstrap_status.get("state") != "completed":
                         logger.warning(
                             "[%s] bootstrap did not pass validation: state=%s errors=%s",
@@ -726,7 +765,7 @@ class MessagingMixin:
                     return result
                 except Exception:
                     logger.exception("[%s] run_bootstrap FAILED", self.name)
-                    mark_bootstrap_failed(self.anima_dir, "run_bootstrap_exception")
+                    await asyncio.to_thread(mark_bootstrap_failed, self.anima_dir, "run_bootstrap_exception")
                     raise
                 finally:
                     active_session_type.reset(_session_token)
@@ -902,7 +941,7 @@ class MessagingMixin:
                 # Drain completed background-task notices at the start of this
                 # chat turn. Keep them out of persisted human content and add
                 # them only to the prompt sent to the agent.
-                bg_notification_context = _build_chat_background_notification_context(self)
+                bg_notification_context = await _build_chat_background_notification_context_async(self)
 
                 # Build history-aware prompt via conversation memory
                 conv_memory = ConversationMemory(self.anima_dir, base_model_config, thread_id=thread_id)
@@ -930,10 +969,11 @@ class MessagingMixin:
                     content,
                     attachments=attachment_paths or [],
                 )
-                conv_memory.save()
+                await _persist_conversation(conv_memory)
 
                 # Transcript: record human message
-                conv_memory.write_transcript(
+                await _write_conversation_transcript(
+                    conv_memory,
                     "human",
                     content,
                     from_person=from_person,
@@ -1079,10 +1119,11 @@ class MessagingMixin:
                                 display_summary,
                                 tool_records=tool_records,
                             )
-                            conv_memory.save()
+                            await _persist_conversation(conv_memory)
 
                             # Transcript: record assistant response
-                            conv_memory.write_transcript(
+                            await _write_conversation_transcript(
+                                conv_memory,
                                 "assistant",
                                 display_summary,
                                 thread_id=thread_id,
@@ -1105,7 +1146,9 @@ class MessagingMixin:
                             )
 
                             if bootstrap_before:
-                                self._sync_interactive_bootstrap_state()
+                                bootstrap_sync = self._sync_interactive_bootstrap_state()
+                                if inspect.isawaitable(bootstrap_sync):
+                                    await bootstrap_sync
 
                             # Finalize streaming journal (deletes the file)
                             await asyncio.to_thread(journal.finalize, summary=display_summary[:500])
@@ -1137,7 +1180,7 @@ class MessagingMixin:
                             safe=True,
                         )
                         conv_memory.append_turn("assistant", t("anima.agent_error"))
-                        conv_memory.save()
+                        await _persist_conversation(conv_memory)
                         raise
 
                     logger.exception("[%s] process_message_stream FAILED", self.name)
@@ -1185,7 +1228,7 @@ class MessagingMixin:
                         else:
                             saved_text = t("anima.response_interrupted")
                         conv_memory.append_turn("assistant", saved_text)
-                        conv_memory.save()
+                        await _persist_conversation(conv_memory)
                     # Close journal (no-op if already finalized)
                     await asyncio.to_thread(journal.close)
                     if _meeting_context_token is not None:
@@ -1267,7 +1310,7 @@ class MessagingMixin:
             # Record the event marker before greeting.
             marker = t("anima.first_meeting_marker") if is_first_meeting else t("anima.visit_desk")
             conv_memory.append_turn("system", marker)
-            conv_memory.save()
+            await _persist_conversation(conv_memory)
 
             try:
                 async with _agent_session_context(self):
@@ -1285,7 +1328,7 @@ class MessagingMixin:
 
                 # Record assistant turn in conversation memory
                 conv_memory.append_turn("assistant", clean_text)
-                conv_memory.save()
+                await _persist_conversation(conv_memory)
 
                 # The chat UI builds its history from the activity log, so a
                 # first-meeting greeting must be recorded there as well or the
@@ -1318,7 +1361,7 @@ class MessagingMixin:
                 logger.exception("[%s] process_greet FAILED", self.name)
                 # Save error marker in conversation memory
                 conv_memory.append_turn("assistant", t("anima.greeting_error"))
-                conv_memory.save()
+                await _persist_conversation(conv_memory)
                 raise
             finally:
                 active_session_type.reset(_session_token)

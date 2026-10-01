@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import LLMAPIError
-from core.execution._shortterm_handoff import save_threshold_shortterm
+from core.execution._shortterm_handoff import asave_threshold_shortterm
 from core.execution._streaming import (
     parse_accumulated_tool_calls,
     stream_error_boundary,
@@ -287,7 +287,7 @@ class ToolLoop:
             logger.exception("LiteLLM API error")
             raise LLMAPIError(f"LiteLLM API error: {exc}") from exc
 
-    def _account_usage(self, data: dict[str, int] | None) -> dict[str, Any] | None:
+    async def _account_usage(self, data: dict[str, int] | None) -> dict[str, Any] | None:
         if not data:
             return None
 
@@ -321,7 +321,7 @@ class ToolLoop:
                 if self._current_response is not None:
                     raw_content = getattr(self._current_response.message, "content", None) or ""
                     _, current_text = strip_thinking_tags(str(raw_content))
-                save_threshold_shortterm(
+                await asave_threshold_shortterm(
                     self.tracker,
                     self.shortterm,
                     session_id="litellm-a",
@@ -571,7 +571,7 @@ class ToolLoop:
             ):
                 iter_text += "\n\n[Response truncated: repetition detected]"
                 self.response_text.append(iter_text)
-                context_event = self._account_usage(usage_data)
+                context_event = await self._account_usage(usage_data)
                 if iter_text:
                     yield text_delta_event(iter_text)
                 if context_event is not None:
@@ -637,7 +637,7 @@ class ToolLoop:
                 if iter_text:
                     yield text_delta_event(iter_text)
 
-            context_event = self._account_usage(usage_data)
+            context_event = await self._account_usage(usage_data)
             if result is not None and result.finish_reason == "length":
                 self.executor.reminder_queue.push_sync(msg_output_truncated())
 

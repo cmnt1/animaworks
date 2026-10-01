@@ -39,7 +39,7 @@ from core.execution.events import (
     tool_start_event,
 )
 from core.execution.process_runner import ProcessRunner
-from core.execution.session.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
+from core.execution.session.engine_session import MAX_RESUME_TURNS, aload_turn_limited_session, next_turn_count
 from core.execution.session.session_context import _resolve_session_type
 from core.execution.session.session_ids import EngineSessionIds
 from core.i18n import t
@@ -940,7 +940,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
 
         self._ensure_workspace()
         session_type = _resolve_session_type(trigger)
-        decision = load_turn_limited_session(self._anima_dir, "grok", trigger, thread_id)
+        decision = await aload_turn_limited_session(self._anima_dir, "grok", trigger, thread_id)
         is_resumable = decision.resumable
         resume_session_id = decision.session_id
         rotated_during_run = False
@@ -959,7 +959,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 "Grok session/load failed for %s; retrying with a fresh session",
                 resume_session_id[:12],
             )
-            _GROK_SESSION_IDS.clear(self._anima_dir, session_type, thread_id)
+            await _GROK_SESSION_IDS.aclear(self._anima_dir, session_type, thread_id)
             state = _RunState()
             rotated_during_run = True
             async for event in self._run_acp(
@@ -1009,7 +1009,7 @@ class GrokCLIExecutor(CLIStreamExecutor):
                 resumed=resume_session_id is not None,
                 rotated_during_run=rotated_during_run,
             )
-            _GROK_SESSION_IDS.save(
+            await _GROK_SESSION_IDS.asave(
                 self._anima_dir,
                 state.session_id,
                 session_type,

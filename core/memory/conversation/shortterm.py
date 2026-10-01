@@ -20,10 +20,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.exceptions import MemoryWriteError
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
-from core.time_utils import now_local
+from core.platform.state_writer import get_state_writer, is_task_runner_process, run_writer_sync
 
 logger = logging.getLogger("animaworks.shortterm_memory")
 
@@ -82,12 +80,13 @@ class ShortTermMemory:
             self.shortterm_dir = base / thread_id
         else:
             self.shortterm_dir = base
-        self.shortterm_dir.mkdir(parents=True, exist_ok=True)
         self._archive_dir = self.shortterm_dir / "archive"
+        if not is_task_runner_process():
+            self.shortterm_dir.mkdir(parents=True, exist_ok=True)
 
-        # Migrate legacy files from shortterm/ to shortterm/chat/
-        if session_type == "chat" and thread_id == "default":
-            self._migrate_legacy_files()
+    async def ensure_ready(self) -> None:
+        """Migrate legacy paths through the active state writer before use."""
+        await get_state_writer(self.anima_dir).migrate_legacy_shortterm(self._session_type, self._thread_id)
 
     # ── Query ───────────────────────────────────────────────
 
@@ -97,39 +96,27 @@ class ShortTermMemory:
 
     # ── Save ────────────────────────────────────────────────
 
-    def save(self, state: SessionState) -> Path:
-        """Externalize session state to the shortterm folder.
-
-        Returns the path to the saved JSON file.
-        """
-        self.shortterm_dir.mkdir(parents=True, exist_ok=True)
-        self._archive_dir.mkdir(parents=True, exist_ok=True)
-
-        # Archive any existing state before overwriting
-        self._archive_existing()
-
-        # Write JSON (critical: raise MemoryWriteError on failure)
-        json_path = self.shortterm_dir / "session_state.json"
-        try:
-            atomic_write_json(json_path, asdict(state), indent=2, ensure_ascii=False, trailing_newline=False)
-        except OSError as exc:
-            raise MemoryWriteError(f"Short-term memory save failed: {exc}") from exc
-
-        # Write Markdown (non-critical: log warning only)
-        md_path = self.shortterm_dir / "session_state.md"
-        try:
-            md_path.write_text(self._render_markdown(state), encoding="utf-8")
-        except OSError:
-            logger.warning("Failed to write short-term memory markdown to %s", md_path, exc_info=True)
-
+    async def asave(self, state: SessionState) -> Path:
+        """Externalize short-term state through the process state writer."""
+        path = await get_state_writer(self.anima_dir).save_shortterm(
+            self._session_type,
+            self._thread_id,
+            asdict(state),
+            self._render_markdown(state),
+        )
         logger.info(
             "Short-term memory saved: %.1f%% context, %d turns",
             state.context_usage_ratio * 100,
             state.turn_count,
         )
-        return json_path
+        return path
 
-    def save_if_not_exists(self, state: SessionState) -> Path | None:
+    def save(self, state: SessionState) -> Path:
+        """Synchronous compatibility adapter for local callers and tests."""
+        writer = get_state_writer(self.anima_dir)
+        return run_writer_sync(writer, self.asave(state))
+
+    async def asave_if_not_exists(self, state: SessionState) -> Path | None:
         """Save only if the agent did not already write a state file.
 
         This acts as a framework-side fallback in case the agent
@@ -140,7 +127,11 @@ class ShortTermMemory:
         if agent_wrote:
             logger.info("Agent already wrote short-term memory; skipping fallback save")
             return None
-        return self.save(state)
+        return await self.asave(state)
+
+    def save_if_not_exists(self, state: SessionState) -> Path | None:
+        writer = get_state_writer(self.anima_dir)
+        return run_writer_sync(writer, self.asave_if_not_exists(state))
 
     # ── Load ────────────────────────────────────────────────
 
@@ -183,42 +174,50 @@ class ShortTermMemory:
 
     # ── Clear ───────────────────────────────────────────────
 
-    def clear(self) -> None:
-        """Archive and clear the current short-term memory."""
-        if not self.shortterm_dir.exists():
-            return
-        self._archive_existing()
+    async def aclear(self) -> None:
+        """Archive the current short-term state through the process writer."""
+        await get_state_writer(self.anima_dir).archive_shortterm(self._session_type, self._thread_id)
         logger.info("Short-term memory cleared")
 
-    def clear_for_clean_start(self) -> None:
+    def clear(self) -> None:
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, self.aclear())
+
+    async def aclear_for_clean_start(self) -> None:
         """Archive session state and remove retry checkpoint before a clean run."""
-        if self.shortterm_dir.exists():
-            self._archive_existing()
-        self.clear_checkpoint()
+        await get_state_writer(self.anima_dir).archive_shortterm(self._session_type, self._thread_id)
+        await get_state_writer(self.anima_dir).clear_stream_checkpoint(self._session_type, self._thread_id)
         logger.info(
             "Short-term clean-start state cleared (session_type=%s, thread_id=%s)",
             self._session_type,
             self._thread_id,
         )
 
+    def clear_for_clean_start(self) -> None:
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, self.aclear_for_clean_start())
+
     # ── Stream checkpoint ─────────────────────────────────
 
     _CHECKPOINT_FILE = "stream_checkpoint.json"
 
-    def save_checkpoint(self, checkpoint: StreamCheckpoint) -> Path:
-        """Persist a streaming checkpoint for retry-on-disconnect."""
-        self.shortterm_dir.mkdir(parents=True, exist_ok=True)
-        path = self.shortterm_dir / self._CHECKPOINT_FILE
-        try:
-            atomic_write_json(path, asdict(checkpoint), indent=2, ensure_ascii=False, trailing_newline=False)
-        except OSError:
-            logger.warning("Failed to write stream checkpoint to %s", path, exc_info=True)
+    async def asave_checkpoint(self, checkpoint: StreamCheckpoint) -> Path:
+        """Persist a streaming checkpoint through the process state writer."""
+        path = await get_state_writer(self.anima_dir).save_stream_checkpoint(
+            self._session_type,
+            self._thread_id,
+            asdict(checkpoint),
+        )
         logger.debug(
             "Stream checkpoint saved: %d completed tools, retry=%d",
             len(checkpoint.completed_tools),
             checkpoint.retry_count,
         )
         return path
+
+    def save_checkpoint(self, checkpoint: StreamCheckpoint) -> Path:
+        writer = get_state_writer(self.anima_dir)
+        return run_writer_sync(writer, self.asave_checkpoint(checkpoint))
 
     def load_checkpoint(self) -> StreamCheckpoint | None:
         """Load the current stream checkpoint, if any."""
@@ -232,72 +231,34 @@ class ShortTermMemory:
             logger.warning("Failed to parse stream checkpoint JSON")
             return None
 
+    async def aclear_checkpoint(self) -> None:
+        """Remove the stream checkpoint through the process state writer."""
+        await get_state_writer(self.anima_dir).clear_stream_checkpoint(self._session_type, self._thread_id)
+        logger.debug("Stream checkpoint cleared")
+
     def clear_checkpoint(self) -> None:
-        """Remove the stream checkpoint file."""
-        path = self.shortterm_dir / self._CHECKPOINT_FILE
-        if path.exists():
-            path.unlink()
-            logger.debug("Stream checkpoint cleared")
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, self.aclear_checkpoint())
 
     # ── Private ─────────────────────────────────────────────
 
     def _migrate_legacy_files(self) -> None:
-        """One-time migration: move files from shortterm/ to shortterm/chat/.
-
-        Before the session_type subdirectory was introduced, session state
-        files lived directly under ``{anima_dir}/shortterm/``.  This method
-        detects orphaned files at the old location and moves them into the
-        new ``shortterm/chat/`` directory so they become visible again.
-        """
-        legacy_dir = self.anima_dir / "shortterm"
-        # Check for legacy files directly in shortterm/ (not in subdirectories)
-        for name in ("session_state.json", "session_state.md", "stream_checkpoint.json"):
-            legacy_file = legacy_dir / name
-            if legacy_file.exists():
-                dest = self.shortterm_dir / name
-                if not dest.exists():
-                    legacy_file.rename(dest)
-                    logger.info(
-                        "Migrated legacy shortterm file: %s -> %s",
-                        legacy_file,
-                        dest,
-                    )
-        # Migrate archive directory
-        legacy_archive = legacy_dir / "archive"
-        new_archive = self.shortterm_dir / "archive"
-        if legacy_archive.exists() and not new_archive.exists():
-            legacy_archive.rename(new_archive)
-            logger.info("Migrated legacy shortterm archive directory")
-        elif legacy_archive.exists() and new_archive.exists():
-            # Move individual files from legacy archive to new archive
-            for f in legacy_archive.iterdir():
-                dest = new_archive / f.name
-                if not dest.exists():
-                    f.rename(dest)
-            # Remove legacy archive if empty
-            if not any(legacy_archive.iterdir()):
-                legacy_archive.rmdir()
+        """Synchronously migrate old shortterm files for local compatibility."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, writer.migrate_legacy_shortterm(self._session_type, self._thread_id))
 
     def _archive_existing(self) -> None:
-        """Move existing session_state files to archive/."""
-        self._archive_dir.mkdir(parents=True, exist_ok=True)
-        ts = now_local().strftime("%Y%m%d_%H%M%S")
-        for suffix in (".json", ".md"):
-            src = self.shortterm_dir / f"session_state{suffix}"
-            if src.exists():
-                src.rename(self._archive_dir / f"{ts}{suffix}")
-        self._prune_archive()
+        """Synchronously archive the current files for local compatibility."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, writer.archive_shortterm(self._session_type, self._thread_id))
 
     def _prune_archive(self, max_files: int = 100) -> None:
-        """Remove oldest archive files when count exceeds limit."""
-        if not self._archive_dir.exists():
-            return
-        files = sorted(self._archive_dir.iterdir(), key=lambda f: f.name)
-        excess = len(files) - max_files
-        if excess > 0:
-            for f in files[:excess]:
-                f.unlink()
-            logger.debug("Pruned %d old archive files", excess)
+        """Synchronously prune archived files for local compatibility."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(
+            writer,
+            writer.prune_shortterm_archive(self._session_type, self._thread_id, max_files=max_files),
+        )
 
     def _render_markdown(self, state: SessionState) -> str:
         """Render a human-readable markdown dump of the session state."""

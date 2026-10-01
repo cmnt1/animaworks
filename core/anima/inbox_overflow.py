@@ -15,10 +15,10 @@ at its own pace via ``read_memory_file`` / ``archive_memory_file``.
 """
 
 import logging
-import time
 from pathlib import Path
 from typing import Any
 
+from core.platform.state_writer import get_state_writer, is_task_runner_process, run_writer_sync
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.dedup")
@@ -45,7 +45,7 @@ class MessageDeduplicator:
         non_critical = [m for m in messages if getattr(m, "intent", "") != "delegation"]
         return critical, non_critical
 
-    def overflow_to_files(self, messages: list[Any]) -> tuple[list[Any], int]:
+    def overflow_to_files(self, messages: list[Any]) -> tuple[list[Any], int] | Any:
         """Keep first N messages, write the rest to overflow_inbox/ as individual files.
 
         Also runs auto-cleanup to prevent unbounded accumulation.
@@ -53,78 +53,48 @@ class MessageDeduplicator:
         Returns:
             Tuple of (kept_messages, overflow_count).
         """
-        self._cleanup_overflow()
+        if is_task_runner_process():
+            return self.aoverflow_to_files(messages)
+        return run_writer_sync(get_state_writer(self.anima_dir), self.aoverflow_to_files(messages))
 
+    async def aoverflow_to_files(self, messages: list[Any]) -> tuple[list[Any], int]:
+        """Async overflow persistence used by task-runner inbox contracts."""
+        writer = get_state_writer(self.anima_dir)
+        await writer.cleanup_inbox_overflow()
         if len(messages) <= _NON_CRITICAL_LIMIT:
             return messages, 0
 
         kept = messages[:_NON_CRITICAL_LIMIT]
         overflow = messages[_NON_CRITICAL_LIMIT:]
-
-        self._overflow_dir.mkdir(parents=True, exist_ok=True)
-        for m in overflow:
-            self._write_overflow_file(m)
-
+        for message in overflow:
+            await writer.write_inbox_overflow_file(
+                {
+                    "from_person": getattr(message, "from_person", "unknown"),
+                    "ts": now_iso(),
+                    "intent": getattr(message, "intent", ""),
+                    "type": getattr(message, "type", "message"),
+                    "content": getattr(message, "content", str(message)),
+                }
+            )
         return kept, len(overflow)
 
     def _write_overflow_file(self, msg: Any) -> None:
-        """Write a single message as an individual .md file."""
-        ts = now_iso()
-        ts_short = ts[:19].replace(":", "").replace("-", "").replace("T", "_")
-        sender = getattr(msg, "from_person", "unknown")
-        base = f"{ts_short}_{sender}"
-        path = self._overflow_dir / f"{base}.md"
-
-        counter = 2
-        while path.exists():
-            path = self._overflow_dir / f"{base}_{counter}.md"
-            counter += 1
-
-        content_parts = [
-            "---",
-            f"from: {sender}",
-            f"ts: {ts}",
-            f"intent: {getattr(msg, 'intent', '')}",
-            f"type: {getattr(msg, 'type', 'message')}",
-            "---",
-            "",
-            getattr(msg, "content", str(msg)),
-        ]
-        path.write_text("\n".join(content_parts), encoding="utf-8")
+        """Write one overflow item via the process state writer."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(
+            writer,
+            writer.write_inbox_overflow_file(
+                {
+                    "from_person": getattr(msg, "from_person", "unknown"),
+                    "ts": now_iso(),
+                    "intent": getattr(msg, "intent", ""),
+                    "type": getattr(msg, "type", "message"),
+                    "content": getattr(msg, "content", str(msg)),
+                }
+            ),
+        )
 
     def _cleanup_overflow(self) -> None:
-        """Remove overflow files older than _OVERFLOW_MAX_AGE_DAYS and cap total count."""
-        if not self._overflow_dir.exists():
-            return
-
-        files = sorted(self._overflow_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
-        if not files:
-            return
-
-        cutoff = time.time() - _OVERFLOW_MAX_AGE_DAYS * 86400
-        removed = 0
-        for f in files:
-            try:
-                if f.stat().st_mtime < cutoff:
-                    f.unlink()
-                    removed += 1
-            except OSError:
-                pass
-
-        remaining = sorted(self._overflow_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
-        if len(remaining) > _OVERFLOW_MAX_FILES:
-            excess = remaining[: len(remaining) - _OVERFLOW_MAX_FILES]
-            for f in excess:
-                try:
-                    f.unlink()
-                    removed += 1
-                except OSError:
-                    pass
-
-        if removed:
-            logger.info(
-                "Cleaned up %d overflow_inbox files (age>%dd or count>%d)",
-                removed,
-                _OVERFLOW_MAX_AGE_DAYS,
-                _OVERFLOW_MAX_FILES,
-            )
+        """Remove stale overflow files via the process state writer."""
+        writer = get_state_writer(self.anima_dir)
+        run_writer_sync(writer, writer.cleanup_inbox_overflow())

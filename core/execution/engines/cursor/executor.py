@@ -26,7 +26,7 @@ from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.engine_base import GRACEFUL_KILL_WAIT_SECONDS, engine_error_event
 from core.execution.events import done_event, text_delta_event, tool_end_event, tool_start_event
 from core.execution.process_runner import ProcessRunner
-from core.execution.session.engine_session import MAX_RESUME_TURNS, load_turn_limited_session, next_turn_count
+from core.execution.session.engine_session import MAX_RESUME_TURNS, aload_turn_limited_session, next_turn_count
 from core.execution.session.session_context import _resolve_session_type
 from core.execution.session.session_ids import EngineSessionIds
 from core.i18n import t
@@ -312,7 +312,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
         self._write_cursor_rules()
 
         session_type = _resolve_session_type(trigger)
-        decision = load_turn_limited_session(self._anima_dir, "cursor", trigger, thread_id)
+        decision = await aload_turn_limited_session(self._anima_dir, "cursor", trigger, thread_id)
         is_resumable = decision.resumable
         turn_count = decision.turn_count
         resume_chat_id = decision.session_id
@@ -350,7 +350,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
                 "Session resume failed (chat_id=%s), retrying with fresh session",
                 resume_chat_id[:12],
             )
-            _CURSOR_SESSION_IDS.clear(self._anima_dir, session_type, thread_id)
+            await _CURSOR_SESSION_IDS.aclear(self._anima_dir, session_type, thread_id)
             if system_prompt:
                 fresh_prompt = (
                     "<system_context>\n" + system_prompt + "\n</system_context>\n\n" + time_prefix + "\n\n" + prompt
@@ -372,7 +372,7 @@ class CursorAgentExecutor(CLIStreamExecutor):
         )
 
         if session_id and is_resumable:
-            _CURSOR_SESSION_IDS.save(self._anima_dir, session_id, session_type, thread_id, new_turn)
+            await _CURSOR_SESSION_IDS.asave(self._anima_dir, session_id, session_type, thread_id, new_turn)
             logger.debug(
                 "Saved cursor-agent chat_id %s turn=%d for %s/%s",
                 session_id[:12],

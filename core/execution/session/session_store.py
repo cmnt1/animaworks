@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from core.platform.atomic_io import atomic_write_json
+from core.platform.state_writer import StateWriterError, is_task_runner_process
 
 SessionEngine = Literal["agent_sdk", "codex", "cursor", "grok"]
 
@@ -113,6 +114,8 @@ class SessionStore:
 
     def write_text_record(self, record: SessionRecord, *, with_turn_count: bool) -> None:
         """Write a session ID using its pre-existing engine-specific text shape."""
+        if is_task_runner_process():
+            raise StateWriterError("task_runner session IDs must be saved through StateWriter")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         contents = f"{record.session_id}\n{record.turn_count}" if with_turn_count else record.session_id
         self.path.write_text(contents, encoding="utf-8")
@@ -123,8 +126,12 @@ class SessionStore:
 
     def write_json(self, data: dict[str, Any]) -> None:
         """Atomically write JSON state, preserving the SDK's durable format."""
+        if is_task_runner_process():
+            raise StateWriterError("task_runner session IDs must be saved through StateWriter")
         atomic_write_json(self.path, data, indent=None)
 
     def clear(self) -> None:
         """Remove this engine session file if it exists."""
+        if is_task_runner_process():
+            raise StateWriterError("task_runner session IDs must be cleared through StateWriter")
         self.path.unlink(missing_ok=True)

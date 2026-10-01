@@ -534,7 +534,7 @@ class AnimaRunner:
                 # Write recovery_note for crashed heartbeat sessions
                 if session_type == "heartbeat":
                     try:
-                        recovery_note_path = self._anima_dir / "state" / "recovery_note.md"
+                        from core.runtime.state_writer import get_state_writer, run_writer_sync
                         from core.time_utils import now_iso
 
                         note_content = t(
@@ -544,7 +544,8 @@ class AnimaRunner:
                             tool_calls=len(recovery.tool_calls),
                             trigger=recovery.trigger or "unknown",
                         )
-                        recovery_note_path.write_text(note_content, encoding="utf-8")
+                        _state_writer = get_state_writer(self._anima_dir)
+                        run_writer_sync(_state_writer, _state_writer.write_recovery_note(note_content))
                         logger.info("Recovery note saved for crashed heartbeat: %s", self.anima_name)
                     except Exception:
                         logger.debug(
@@ -944,6 +945,9 @@ class AnimaRunner:
             "run_consolidation": self._handle_run_consolidation,
             "memory": self._handle_memory,
             "repair_memory": self._handle_repair_memory,
+            "clear_conversation": self._handle_clear_conversation,
+            "compress_conversation": self._handle_compress_conversation,
+            "append_conversation_turns": self._handle_append_conversation_turns,
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
             "startup_ack": self._handle_startup_ack,
@@ -964,6 +968,54 @@ class AnimaRunner:
         if supervisor is None or not isinstance(method, str) or not isinstance(request_params, dict):
             raise ValueError("Anima main memory service is unavailable")
         return await supervisor.handle_memory(method, request_params)
+
+    async def _handle_clear_conversation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Clear conversation state through the Anima-main StateWriter."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        from core.memory.conversation.memory import ConversationMemory
+
+        await ConversationMemory(self._anima_dir, self.anima.model_config).aclear()
+        return {"status": "cleared", "anima": self.anima_name}
+
+    async def _handle_append_conversation_turns(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Append a small server-originated voice turn via the Anima main."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        thread_id = params.get("thread_id", "default")
+        turns = params.get("turns")
+        if not isinstance(thread_id, str) or not isinstance(turns, list) or not 1 <= len(turns) <= 2:
+            raise ValueError("append_conversation_turns requires a thread_id and one or two turns")
+        self.anima._validate_thread_id(thread_id)
+        from core.memory.conversation.memory import ConversationMemory
+
+        conversation = ConversationMemory(self._anima_dir, self.anima.model_config, thread_id=thread_id)
+        for turn in turns:
+            if (
+                not isinstance(turn, dict)
+                or not isinstance(turn.get("role"), str)
+                or not isinstance(turn.get("content"), str)
+            ):
+                raise ValueError("conversation turn requires string role and content")
+            conversation.append_turn(turn["role"], turn["content"])
+        await conversation.asave()
+        return {"status": "saved", "anima": self.anima_name}
+
+    async def _handle_compress_conversation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Compress conversation state through the Anima-main StateWriter."""
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+        from core.memory.conversation.memory import ConversationMemory
+
+        conversation = ConversationMemory(self._anima_dir, self.anima.model_config)
+        compressed = await conversation.compress_if_needed()
+        state = conversation.load()
+        return {
+            "compressed": compressed,
+            "anima": self.anima_name,
+            "total_turn_count": state.total_turn_count,
+            "total_token_estimate": state.total_token_estimate,
+        }
 
     async def _handle_repair_memory(self, params: dict[str, Any]) -> dict[str, Any]:
         """Run phase3 RAG repair in this Anima main instead of the global worker."""
