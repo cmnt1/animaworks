@@ -1,5 +1,5 @@
 <!-- 自動生成ファイル・編集禁止。再生成: uv run python scripts/gen_reference.py api -->
-<!-- generator: gen_reference/1  kind: api  source-sha256: b5ebb677b8b0d2e78e3ef00bd0d775789457585995c82088ea52e64534271f00 -->
+<!-- generator: gen_reference/1  kind: api  source-sha256: 8018b4f8cba4e63d8bb51092228bdda8f7631a40495b0da01dfe66792b783d54 -->
 
 # API リファレンス
 
@@ -33,6 +33,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/animas.py:get_anima_detail` |
 | GET | `/api/animas/{name}/aliases` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return aliases for an anima from config.json. | `server/routes/animas.py:get_anima_aliases` |
 | PUT | `/api/animas/{name}/aliases` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update aliases for an anima in config.json. | `server/routes/animas.py:update_anima_aliases` |
+| PUT | `/api/animas/{name}/background-model` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update heartbeat/cron model settings in root-owned status.json. | `server/routes/animas.py:update_anima_background_model` |
 | GET | `/api/animas/{name}/background-tasks` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | List background tasks for an anima (reads from state dir). | `server/routes/animas.py:list_background_tasks` |
 | GET | `/api/animas/{name}/background-tasks/{task_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Get a specific background task by ID. | `server/routes/animas.py:get_background_task` |
 | GET | `/api/animas/{name}/config` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return resolved model configuration for an anima. | `server/routes/animas.py:get_anima_config` |
@@ -48,7 +49,9 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/animas/{name}/permissions` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return permissions.json for an anima. | `server/routes/animas.py:get_anima_permissions` |
 | PUT | `/api/animas/{name}/permissions` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update permissions.json for an anima. | `server/routes/animas.py:update_anima_permissions` |
 | POST | `/api/animas/{name}/reload` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Hot-reload ModelConfig from status.json without process restart. | `server/routes/animas.py:reload_anima_config` |
+| POST | `/api/animas/{name}/rename` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Rename an Anima on root so the CLI never moves owned settings itself. | `server/routes/animas.py:rename_anima` |
 | POST | `/api/animas/{name}/restart` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Restart a specific anima process. | `server/routes/animas.py:restart_anima` |
+| PUT | `/api/animas/{name}/role` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update role settings and role permission template through root writers. | `server/routes/animas.py:update_anima_role` |
 | POST | `/api/animas/{name}/start` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Start a stopped anima process. | `server/routes/animas.py:start_anima` |
 | POST | `/api/animas/{name}/stop` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Stop a specific anima process. | `server/routes/animas.py:stop_anima` |
 | POST | `/api/animas/{name}/trigger` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/animas.py:trigger_heartbeat` |
@@ -118,6 +121,8 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | GET | `/api/system/available-models` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
 | GET | `/api/system/available-tools` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
 | GET | `/api/system/config` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
+| PUT | `/api/system/config/value` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Apply one validated CLI config-set operation through the root server. | `server/routes/config_routes.py:update_config_value` |
+| PUT | `/api/system/config/wizard` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Apply the interactive CLI wizard changes on the root server. | `server/routes/config_routes.py:save_config_wizard` |
 
 ## `server/routes/external_tasks.py`
 
@@ -126,8 +131,12 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 ## `server/routes/internal.py`
 
 | POST | `/api/internal/anima/create` | 内部 | Create an anima outside sandbox EROFS constraints. | `server/routes/internal.py:internal_anima_create` |
+| POST | `/api/internal/animas/{target}/control` | 内部 | Persist subordinate control settings after verifying the token owner. | `server/routes/internal.py:internal_anima_control` |
+| POST | `/api/internal/animas/{target}/prompt-settings` | 内部 | Apply an authorized identity/injection change through the root owner. | `server/routes/internal.py:internal_update_anima_prompt_setting` |
 | POST | `/api/internal/call-human/confirm` | 内部 | Check the CLI ``call_human`` confirmation key; keys live in server memory only. | `server/routes/internal.py:internal_call_human_confirm` |
+| POST | `/api/internal/company/assign` | 内部 | Apply CLI company assignments through the root-owned status writer. | `server/routes/internal.py:internal_company_assign` |
 | GET | `/api/internal/company/boundary` | 内部 | Resolve company membership on the host for sandboxed handlers. | `server/routes/internal.py:internal_company_boundary` |
+| POST | `/api/internal/company/split` | 内部 | Run a CLI company split on root when it mutates status/settings. | `server/routes/internal.py:internal_company_split` |
 | POST | `/api/internal/delegate-task` | 内部 | Persist a delegated task outside sandbox EROFS constraints. | `server/routes/internal.py:internal_delegate_task` |
 | POST | `/api/internal/embed` | 内部 | Centralized embedding inference for child processes. | `server/routes/internal.py:internal_embed` |
 | POST | `/api/internal/interaction/create` | 内部 | — | `server/routes/internal.py:internal_interaction_create` |
@@ -137,6 +146,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/post-channel` | 内部 | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | 内部 | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
 | POST | `/api/internal/send-message` | 内部 | Persist a DM outside sandbox EROFS constraints. | `server/routes/internal.py:internal_send_message` |
+| POST | `/api/internal/settings/anima-icon-template` | 内部 | Persist icon-template defaults on behalf of an authenticated worker. | `server/routes/internal.py:internal_persist_anima_icon_template` |
 | POST | `/api/internal/submit-tasks` | 内部 | Publish a complete batch on the host; no sandbox DB grant is needed. | `server/routes/internal.py:internal_submit_tasks` |
 | POST | `/api/internal/task-board-action` | 内部 | Run a lease-guarded task board write for a sandboxed anima CLI. | `server/routes/internal.py:internal_task_board_action` |
 | GET | `/api/internal/tasks` | 内部 | Read a task snapshot for workers without direct database access. | `server/routes/internal.py:internal_tasks` |
@@ -152,6 +162,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 | POST | `/api/internal/vector/query` | 内部 | 内部サービス向けのベクトル検索を実行します。 | `server/routes/internal.py:vector_query` |
 | POST | `/api/internal/vector/update-metadata` | 内部 | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | 内部 | — | `server/routes/internal.py:vector_upsert` |
+| POST | `/api/internal/workspace/grant` | 内部 | Apply a human-origin workspace grant through root-owned writers. | `server/routes/internal.py:internal_workspace_grant` |
 | GET | `/api/messages/{message_id}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
 
 ## `server/routes/logs_routes.py`
