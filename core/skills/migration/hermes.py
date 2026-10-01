@@ -71,9 +71,9 @@ def import_hermes(options: HermesImportOptions) -> MigrationReport:
     if options.apply:
         backup_targets = _planned_backup_targets(source, options, migration_dir)
         if options.target_anima:
-            from core.tasks.board.tasks import TaskStore, task_database_path
+            from core.tasks.queue import TaskQueueManager
 
-            task_store = TaskStore(task_database_path(_anima_dir(options)))
+            task_store = TaskQueueManager(_anima_dir(options)).store
             task_backup = migration_dir / f"{batch_id}_taskboard.sqlite3"
             task_store.backup(task_backup)
             backup_targets.append(task_backup)

@@ -111,7 +111,7 @@ async def channel_e_pending_tasks(
         from core.tasks.queue import TaskQueueManager
 
         try:
-            manager = TaskQueueManager(anima_dir)
+            manager = TaskQueueManager(anima_dir, read_only=True)
 
             def collect_pending() -> tuple[str, dict[str, str]]:
                 pending_tasks = [*manager.get_pending(), *manager.get_delegated_tasks()]
@@ -157,7 +157,9 @@ async def channel_e_pending_tasks(
             if queue_path is not None and task_store_path is not None:
                 from core.tasks.queue import TaskQueueManager
 
-                entries = await asyncio.to_thread(TaskQueueManager(anima_dir).store.read, anima_dir.name, archived=True)
+                entries = await asyncio.to_thread(
+                    TaskQueueManager(anima_dir, read_only=True).store.read, anima_dir.name, archived=True
+                )
                 for entry in entries.values():
                     token = entry.meta.get("last_attempt_token")
                     if entry.status != "done" or not isinstance(token, str):

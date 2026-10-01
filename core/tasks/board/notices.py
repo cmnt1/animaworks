@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.platform.atomic_io import append_jsonl_locked
 from core.platform.locks import locked_path
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,8 @@ def queue_task_notice(
     }
     try:
         queue_dir = _queue_dir()
-        with _locked(queue_dir), (queue_dir / f"{actor}__{to}.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with _locked(queue_dir):
+            append_jsonl_locked(queue_dir / f"{actor}__{to}.jsonl", record)
     except Exception as exc:
         # Task state is authoritative; notification delivery must not roll it back.
         return f"task changed, but notification to {to} could not be queued: {exc}"

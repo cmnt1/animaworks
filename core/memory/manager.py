@@ -22,6 +22,7 @@ from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.memory.skill_metadata import SkillMetadataService
 from core.memory.state_lock import StateFileLock
 from core.paths import get_common_knowledge_dir, get_common_skills_dir, get_company_dir, get_shared_dir
+from core.platform.locks import locked_path
 from core.schemas import ModelConfig, SkillMeta
 from core.time_utils import now_local, today_local
 
@@ -367,23 +368,25 @@ class MemoryManager:
     ) -> Path | None:
         path = self.episodes_dir / f"{today_local().isoformat()}.md"
         try:
-            if not path.exists():
-                path.write_text(
-                    t("manager.action_log_header", date=today_local().isoformat()),
-                    encoding="utf-8",
-                )
-            payload = f"\n{entry}\n".encode()
-            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-            try:
-                offset = 0
-                while offset < len(payload):
-                    written = os.write(fd, payload[offset:])
-                    if written <= 0:
-                        raise OSError("episode append made no progress")
-                    offset += written
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            lock_path = path.with_name(f"{path.name}.lock")
+            with locked_path(lock_path, exclusive=True, thread_lock=True):
+                if not path.exists():
+                    path.write_text(
+                        t("manager.action_log_header", date=today_local().isoformat()),
+                        encoding="utf-8",
+                    )
+                payload = f"\n{entry}\n".encode()
+                fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+                try:
+                    offset = 0
+                    while offset < len(payload):
+                        written = os.write(fd, payload[offset:])
+                        if written <= 0:
+                            raise OSError("episode append made no progress")
+                        offset += written
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         except OSError:
             logger.warning("Failed to append episode to %s", path, exc_info=True)
             return None

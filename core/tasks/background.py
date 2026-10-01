@@ -542,6 +542,8 @@ def _rotate_dm_logs_sync(
     """Synchronous implementation of dm_log rotation."""
     from datetime import datetime, timedelta
 
+    from core.platform.atomic_io import append_jsonl_locked, atomic_write_text
+    from core.platform.locks import locked_path
     from core.time_utils import ensure_aware, now_local
 
     dm_logs_dir = shared_dir / "dm_logs"
@@ -555,51 +557,48 @@ def _rotate_dm_logs_sync(
         if ".archive." in path.name:
             continue
 
-        recent_lines: list[str] = []
-        archive_lines: list[str] = []
-
+        lock_path = path.with_name(f"{path.name}.lock")
         try:
-            content = path.read_text(encoding="utf-8")
-        except OSError:
-            logger.warning("Failed to read dm_log: %s", path)
-            continue
+            with locked_path(lock_path, exclusive=True, thread_lock=True):
+                recent_lines: list[str] = []
+                archive_lines: list[str] = []
+                content = path.read_text(encoding="utf-8")
 
-        for line in content.splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-                ts = datetime.fromisoformat(entry["ts"])
-                if ensure_aware(ts) >= cutoff:
-                    recent_lines.append(line)
-                else:
-                    archive_lines.append(line)
-            except (json.JSONDecodeError, KeyError, ValueError):
-                recent_lines.append(line)
+                for line in content.splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        ts = datetime.fromisoformat(entry["ts"])
+                        if ensure_aware(ts) >= cutoff:
+                            recent_lines.append(line)
+                        else:
+                            archive_lines.append(line)
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        recent_lines.append(line)
 
-        if not archive_lines:
-            continue
+                if not archive_lines:
+                    continue
 
-        date_str = now_local().strftime("%Y%m%d")
-        archive_name = path.stem + f".{date_str}.archive.jsonl"
-        archive_path = dm_logs_dir / archive_name
-        try:
-            with archive_path.open("a", encoding="utf-8") as f:
-                f.write("\n".join(archive_lines) + "\n")
-            path.write_text(
-                "\n".join(recent_lines) + ("\n" if recent_lines else ""),
-                encoding="utf-8",
-            )
-            results[path.name] = {
-                "archived": len(archive_lines),
-                "kept": len(recent_lines),
-            }
-            logger.info(
-                "dm_log rotated: %s — %d archived, %d kept",
-                path.name,
-                len(archive_lines),
-                len(recent_lines),
-            )
+                date_str = now_local().strftime("%Y%m%d")
+                archive_name = path.stem + f".{date_str}.archive.jsonl"
+                archive_path = dm_logs_dir / archive_name
+                for line in archive_lines:
+                    append_jsonl_locked(archive_path, json.loads(line))
+                atomic_write_text(
+                    path,
+                    "\n".join(recent_lines) + ("\n" if recent_lines else ""),
+                )
+                results[path.name] = {
+                    "archived": len(archive_lines),
+                    "kept": len(recent_lines),
+                }
+                logger.info(
+                    "dm_log rotated: %s — %d archived, %d kept",
+                    path.name,
+                    len(archive_lines),
+                    len(recent_lines),
+                )
         except OSError:
             logger.exception("Failed to rotate dm_log: %s", path)
 

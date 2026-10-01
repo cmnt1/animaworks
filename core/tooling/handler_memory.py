@@ -947,18 +947,27 @@ class MemoryToolsMixin:
         return self._write_plain_memory_file(request)
 
     def _write_episode_memory_file(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
-        if request.mode == "overwrite" and request.was_existing:
-            try:
-                archive_episode_before_write(self._anima_dir, request.path)
-            except OSError as exc:
-                logger.warning("Failed to archive episode before overwrite: %s", request.path, exc_info=True)
-                return _MemoryWriteOutcome(
-                    error=_error_result(
-                        "WriteError",
-                        f"Failed to archive existing episode before overwrite: {exc}",
+        from core.platform.locks import locked_path
+
+        lock_path = request.path.with_name(f"{request.path.name}.lock")
+        with locked_path(lock_path, exclusive=True, thread_lock=True):
+            if request.mode == "overwrite" and request.path.exists():
+                try:
+                    archive_episode_before_write(self._anima_dir, request.path)
+                except OSError as exc:
+                    logger.warning("Failed to archive episode before overwrite: %s", request.path, exc_info=True)
+                    return _MemoryWriteOutcome(
+                        error=_error_result(
+                            "WriteError",
+                            f"Failed to archive existing episode before overwrite: {exc}",
+                        )
                     )
-                )
-        return self._write_plain_memory_file(request)
+            if request.mode == "overwrite":
+                from core.platform.atomic_io import atomic_write_text
+
+                atomic_write_text(request.path, request.content)
+                return _MemoryWriteOutcome()
+            return self._write_plain_memory_file(request)
 
     def _write_memory_scope(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         scope = next(

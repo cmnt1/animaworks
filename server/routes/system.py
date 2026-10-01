@@ -179,7 +179,7 @@ def _collect_running_background_tasks(
             sidecar = {}
 
         if isinstance(sidecar, dict) and sidecar.get("is_busy") is not False:
-            task_queue = TaskQueueManager(animas_dir / name)
+            task_queue = TaskQueueManager(animas_dir / name, read_only=True)
             started_at = str(sidecar.get("busy_since") or "")
             lanes = sidecar.get("lanes", [])
             workers_by_slot: dict[int, dict[str, object]] = {}

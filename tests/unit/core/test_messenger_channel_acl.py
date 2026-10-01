@@ -17,6 +17,7 @@ from core.messaging.messenger import (
     is_channel_member,
     load_channel_meta,
     save_channel_meta,
+    update_channel_meta,
 )
 
 
@@ -140,6 +141,21 @@ class TestSaveChannelMeta:
         loaded = load_channel_meta(shared_dir, "ch")
         assert loaded is not None
         assert loaded.members == ["alice", "bob"]
+
+    def test_update_channel_meta_modifies_the_locked_current_value(self, shared_dir: Path):
+        save_channel_meta(shared_dir, "team", ChannelMeta(members=["alice"], description="discussion"))
+
+        def add_member(meta: ChannelMeta | None) -> ChannelMeta | None:
+            assert meta is not None
+            meta.members.append("bob")
+            return meta
+
+        updated = update_channel_meta(shared_dir, "team", add_member)
+
+        assert updated is not None
+        assert updated.members == ["alice", "bob"]
+        assert updated.description == "discussion"
+        assert (shared_dir / "channels" / "team.meta.json.lock").is_file()
 
 
 # ── is_channel_member ────────────────────────────────────

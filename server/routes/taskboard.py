@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from core.tasks.board.board_actions import BoardActionError, find_task_matches, run_board_action
 from core.tasks.board.models import BoardColumn, BoardRow
-from core.tasks.board.tasks import TaskStore
+from core.tasks.board.tasks import TaskStore, open_task_store
 from core.tasks.board.view import list_board, summarize_board
 
 logger = logging.getLogger("animaworks.routes.taskboard")
@@ -66,7 +66,7 @@ def create_taskboard_router() -> APIRouter:
         """Return TaskBoard summary counts for dashboard use."""
         try:
             paths = _resolve_paths(request)
-            store = _store_for(paths["shared_dir"])
+            store = _store_for(paths["shared_dir"], read_only=True)
             return await asyncio.to_thread(summarize_board, store, paths["anima_names"])
         except Exception as exc:
             logger.exception("TaskBoard summary failed")
@@ -110,7 +110,7 @@ def _list_task_board(
     animas_dir = paths["animas_dir"]
     anima_names = paths["anima_names"]
     selected_names = _selected_anima_names(animas_dir, anima_names, assignee)
-    store = _store_for(paths["shared_dir"])
+    store = _store_for(paths["shared_dir"], read_only=True)
     limit = history_limit if include_archived else 0
     if assignee is None:
         rows = list_board(store, all_viewers=True, history_limit=limit, q=q)
@@ -143,7 +143,7 @@ def _list_task_board(
 def _cancel_task(request: Request, anima_name: str, task_id: str, payload: CancelTaskRequest) -> dict[str, Any]:
     paths = _resolve_paths(request)
     _ensure_known_anima(paths["animas_dir"], paths["anima_names"], anima_name)
-    store = _store_for(paths["shared_dir"])
+    store = _store_for(paths["shared_dir"], read_only=False)
     if not find_task_matches(store, task_id, owner=anima_name):
         raise HTTPException(status_code=404, detail={"error": "task_not_found", "task_id": task_id})
     actor = _resolve_actor(request, None, default="human")
@@ -184,8 +184,8 @@ def _resolve_paths(request: Request) -> dict[str, Any]:
     return {"animas_dir": animas_dir, "shared_dir": shared_dir, "anima_names": anima_names}
 
 
-def _store_for(shared_dir: Path) -> TaskStore:
-    return TaskStore(shared_dir / "taskboard.sqlite3")
+def _store_for(shared_dir: Path, *, read_only: bool) -> TaskStore:
+    return open_task_store(shared_dir / "taskboard.sqlite3", read_only=read_only)
 
 
 def _selected_anima_names(animas_dir: Path, anima_names: list[str], assignee: str | None) -> list[str]:
@@ -208,6 +208,8 @@ def _history_truncated(store: TaskStore, owner: str | None, limit: int) -> bool:
 
 
 def _count_terminal_rows(store: TaskStore, owner: str | None) -> int:
+    if not store.has_database:
+        return 0
     with store.reader() as db:
         where = "WHERE json_extract(t.entry_json,'$.status') IN ('done','cancelled')"
         params: list = []
@@ -230,6 +232,6 @@ def _count_corrupt_task_queue_lines(animas_dir: Path, anima_names: list[str]) ->
     from core.tasks.queue import TaskQueueManager
 
     return sum(
-        TaskQueueManager(animas_dir / name).store.maintenance_status(name)["invalid_import_rows"]
+        TaskQueueManager(animas_dir / name, read_only=True).store.maintenance_status(name)["invalid_import_rows"]
         for name in anima_names
     )

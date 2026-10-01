@@ -1039,8 +1039,11 @@ def _rename_dm_logs(shared_dir: Path, old_name: str, new_name: str) -> int:
         new_parts.sort()
         new_path = dm_dir / f"{new_parts[0]}-{new_parts[1]}.jsonl"
         if new_path.exists():
-            with new_path.open("a", encoding="utf-8") as dst:
-                dst.write(f.read_text(encoding="utf-8"))
+            from core.platform.atomic_io import append_jsonl_locked
+
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    append_jsonl_locked(new_path, line, raw_line=True)
             f.unlink()
         else:
             f.rename(new_path)

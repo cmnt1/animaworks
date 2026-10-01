@@ -32,15 +32,17 @@ class BoardActionError(Exception):
         self.payload = payload
 
 
-def get_task_store():
+def get_task_store(*, read_only: bool = False):
     from core.paths import get_taskboard_db_path
-    from core.tasks.board.tasks import TaskStore
+    from core.tasks.board.tasks import open_task_store
 
-    return TaskStore(get_taskboard_db_path())
+    return open_task_store(get_taskboard_db_path(), read_only=read_only)
 
 
 def find_task_matches(store, task_id: str, owner: str | None = None) -> list[dict[str, Any]]:
     """Resolve canonical IDs and viewer aliases without assuming a current anima."""
+    if not store.has_database:
+        return []
     matches: dict[tuple[str, str], dict[str, Any]] = {}
     with store.reader() as db:
         direct = db.execute("SELECT anima,task_id,entry_json FROM tasks WHERE task_id=?", (task_id,)).fetchall()

@@ -909,6 +909,9 @@ async def _activate_runtime_services(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.tasks.board.tasks import ensure_task_store_schema
+
+    ensure_task_store_schema(Path(app.state.shared_dir) / "taskboard.sqlite3")
     app.state.activate_runtime = lambda: _activate_runtime_services(app)
     if app.state.setup_complete:
         await app.state.activate_runtime()

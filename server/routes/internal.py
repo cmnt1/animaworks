@@ -754,7 +754,9 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=404, content={"detail": "Anima directory not found"})
 
         def _read():
-            store = TaskQueueManager(anima_dir).store
+            store = TaskQueueManager(anima_dir, read_only=True).store
+            if not store.has_database:
+                return {"tasks": [], "input_ids": []}
             with store.reader():
                 if task_id is not None:
                     entry = store.get(anima_name, task_id)

@@ -180,13 +180,16 @@ class ConsolidationEngine:
     def write_consolidated_episode(self, target_date: date, consolidated_timeline: str) -> Path:
         """Merge a consolidated timeline into the target daily episode file."""
         from core.memory.io import atomic_write_text
+        from core.platform.locks import locked_path
 
         episode_path = self.episode_path_for_date(target_date)
-        existing = self.read_episode_for_date(target_date)
-        merged = self.build_merged_episode_content(existing, consolidated_timeline)
-        if episode_path.exists():
-            self.archive_episode_before_write(episode_path)
-        atomic_write_text(episode_path, merged)
+        lock_path = episode_path.with_name(f"{episode_path.name}.lock")
+        with locked_path(lock_path, exclusive=True, thread_lock=True):
+            existing = self.read_episode_for_date(target_date)
+            merged = self.build_merged_episode_content(existing, consolidated_timeline)
+            if episode_path.exists():
+                self.archive_episode_before_write(episode_path)
+            atomic_write_text(episode_path, merged)
         return episode_path
 
     # ── Episode Collection ─────────────────────────────────────

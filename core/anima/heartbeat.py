@@ -123,7 +123,7 @@ def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
 
         now = now_local()
         rows: list[tuple[float, str]] = []
-        for task in TaskQueueManager(anima_dir).get_all_active():
+        for task in TaskQueueManager(anima_dir, read_only=True).get_all_active():
             try:
                 elapsed_seconds = max(
                     0.0,

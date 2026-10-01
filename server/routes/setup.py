@@ -353,6 +353,7 @@ def create_setup_router() -> APIRouter:
 
             # Create initial user profile in shared/users/
             from core.paths import get_shared_dir
+            from core.platform.atomic_io import atomic_write_text
 
             user_profile_dir = get_shared_dir() / "users" / body.user.username
             user_profile_dir.mkdir(parents=True, exist_ok=True)
@@ -361,7 +362,7 @@ def create_setup_router() -> APIRouter:
                 profile_lines = [f"# {body.user.display_name or body.user.username}\n"]
                 if body.user.bio:
                     profile_lines.append(f"\n{body.user.bio}\n")
-                profile_path.write_text("".join(profile_lines), encoding="utf-8")
+                atomic_write_text(profile_path, "".join(profile_lines))
                 logger.info("Created user profile for '%s'", body.user.username)
 
         # Re-scan animas and start processes

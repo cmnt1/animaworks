@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -24,7 +25,7 @@ from core.exceptions import (
     RecipientNotFoundError,
 )  # noqa: F401
 from core.i18n import t
-from core.platform.atomic_io import atomic_write_json
+from core.platform.atomic_io import append_jsonl_locked, atomic_write_json, update_json
 from core.platform.env import server_url
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 from core.time_utils import ensure_aware, now_iso, now_local
@@ -116,6 +117,32 @@ class ChannelMeta:
     company: str = ""
 
 
+def _channel_meta_from_data(data: dict[str, Any]) -> ChannelMeta:
+    return ChannelMeta(
+        members=data.get("members", []),
+        created_by=data.get("created_by", ""),
+        created_at=data.get("created_at", ""),
+        description=data.get("description", ""),
+        closed=bool(data.get("closed", False)),
+        slack_sync_disabled=bool(data.get("slack_sync_disabled", False)),
+        slack_deleted_at=data.get("slack_deleted_at", ""),
+        company=data.get("company", "") or "",
+    )
+
+
+def _channel_meta_to_data(meta: ChannelMeta) -> dict[str, Any]:
+    return {
+        "members": meta.members,
+        "created_by": meta.created_by,
+        "created_at": meta.created_at,
+        "description": meta.description,
+        "closed": meta.closed,
+        "slack_sync_disabled": meta.slack_sync_disabled,
+        "slack_deleted_at": meta.slack_deleted_at,
+        "company": meta.company,
+    }
+
+
 def load_channel_meta(shared_dir: Path, channel: str) -> ChannelMeta | None:
     """Load channel metadata from ``shared/channels/{channel}.meta.json``.
 
@@ -126,37 +153,37 @@ def load_channel_meta(shared_dir: Path, channel: str) -> ChannelMeta | None:
         return None
     try:
         data = json.loads(meta_path.read_text(encoding="utf-8"))
-        return ChannelMeta(
-            members=data.get("members", []),
-            created_by=data.get("created_by", ""),
-            created_at=data.get("created_at", ""),
-            description=data.get("description", ""),
-            closed=bool(data.get("closed", False)),
-            slack_sync_disabled=bool(data.get("slack_sync_disabled", False)),
-            slack_deleted_at=data.get("slack_deleted_at", ""),
-            company=data.get("company", "") or "",
-        )
+        return _channel_meta_from_data(data)
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to load channel meta for %s: %s", channel, exc)
         return None
 
 
 def save_channel_meta(shared_dir: Path, channel: str, meta: ChannelMeta) -> None:
-    """Persist channel metadata to ``shared/channels/{channel}.meta.json``."""
-    channels_dir = shared_dir / "channels"
-    channels_dir.mkdir(parents=True, exist_ok=True)
-    meta_path = channels_dir / f"{channel}.meta.json"
-    data = {
-        "members": meta.members,
-        "created_by": meta.created_by,
-        "created_at": meta.created_at,
-        "description": meta.description,
-        "closed": meta.closed,
-        "slack_sync_disabled": meta.slack_sync_disabled,
-        "slack_deleted_at": meta.slack_deleted_at,
-        "company": meta.company,
-    }
-    atomic_write_json(meta_path, data, indent=2, ensure_ascii=False, trailing_newline=False)
+    """Persist channel metadata atomically under its adjacent lock."""
+    meta_path = shared_dir / "channels" / f"{channel}.meta.json"
+    update_json(meta_path, lambda _current: _channel_meta_to_data(meta))
+
+
+def update_channel_meta(
+    shared_dir: Path,
+    channel: str,
+    update: Callable[[ChannelMeta | None], ChannelMeta | None],
+    *,
+    create_if_missing: bool = False,
+) -> ChannelMeta | None:
+    """Read, modify, and persist channel metadata under one flock."""
+    meta_path = shared_dir / "channels" / f"{channel}.meta.json"
+
+    def apply(current: dict[str, Any]) -> dict[str, Any] | None:
+        meta = _channel_meta_from_data(current) if meta_path.exists() else None
+        if meta is None and not create_if_missing:
+            return None
+        updated = update(meta)
+        return _channel_meta_to_data(updated) if updated is not None else None
+
+    data = update_json(meta_path, apply, write_if_missing=create_if_missing)
+    return _channel_meta_from_data(data) if meta_path.exists() else None
 
 
 def is_channel_member(
@@ -393,18 +420,16 @@ class Messenger:
                 )
                 return
         channels_dir.mkdir(parents=True, exist_ok=True)
-        entry = json.dumps(
-            {
-                "ts": now_iso(),
-                "from": poster,
-                "text": text,
-                "source": source,
-            },
-            ensure_ascii=False,
-        )
         try:
-            with filepath.open("a", encoding="utf-8") as f:
-                f.write(entry + "\n")
+            append_jsonl_locked(
+                filepath,
+                {
+                    "ts": now_iso(),
+                    "from": poster,
+                    "text": text,
+                    "source": source,
+                },
+            )
             logger.info("Channel post: %s -> #%s", poster, channel)
         except OSError as exc:
             # Sandbox EROFS: append via the host server (write-access charter).
@@ -656,9 +681,7 @@ class Messenger:
         }
         if intent:
             entry_dict["intent"] = intent
-        entry = json.dumps(entry_dict, ensure_ascii=False)
-        with filepath.open("a", encoding="utf-8") as f:
-            f.write(entry + "\n")
+        append_jsonl_locked(filepath, entry_dict)
 
     def receive(self) -> list[Message]:
         known_animas: set[str] | None = None

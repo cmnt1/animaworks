@@ -125,6 +125,49 @@ def task_database_path(anima_dir: Path) -> Path:
     return root / "shared" / "taskboard.sqlite3"
 
 
+def _leave_task_store_wal_mode(db: sqlite3.Connection, db_path: Path) -> None:
+    """Keep the DB readable from sandboxes that cannot create WAL sidecars.
+
+    A WAL database without its ``-shm`` file cannot be opened from a read-only
+    directory (SQLITE_CANTOPEN). Older TaskStore databases may persist WAL, so
+    writable startup/open paths switch them to rollback-journal mode.
+    """
+    if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
+        return
+    try:
+        db.execute("PRAGMA journal_mode=DELETE")
+        logger.info("Switched task DB out of WAL mode: %s", db_path)
+    except sqlite3.OperationalError as exc:
+        logger.debug("Could not leave WAL mode for %s: %s", db_path, exc)
+
+
+def ensure_task_store_schema(db_path: Path) -> None:
+    """Create or migrate the TaskStore schema for a writable runtime."""
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(db_path, timeout=30, isolation_level=None)
+    try:
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA synchronous=FULL")
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_claim_control'").fetchone():
+            db.executescript(_SCHEMA)
+        # Keep this migration independent from the older schema sentinel:
+        # databases that already have task_claim_control still need leases.
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS task_leases ("
+            "anima TEXT NOT NULL, task_id TEXT NOT NULL, holder TEXT NOT NULL, "
+            "acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(anima, task_id))"
+        )
+        _leave_task_store_wal_mode(db, db_path)
+    finally:
+        db.close()
+
+
+def connect_task_store_for_migration(db_path: Path) -> sqlite3.Connection:
+    """Open a raw taskboard connection for the one-time schema/data migration."""
+    return sqlite3.connect(db_path)
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -155,45 +198,36 @@ def identity_liveness(identity: dict[str, Any]) -> str:
 class TaskStore:
     """Short SQLite transactions; no connection is held during model work."""
 
-    def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+    def __init__(self, db_path: Path, *, read_only: bool = False) -> None:
+        self.db_path = Path(db_path)
+        self.read_only = read_only
         self._local = threading.local()
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as db:
-            if not db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_claim_control'"
-            ).fetchone():
-                db.executescript(_SCHEMA)
-            # Keep this migration independent from the older schema sentinel:
-            # databases that already have task_claim_control still need leases.
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS task_leases ("
-                "anima TEXT NOT NULL, task_id TEXT NOT NULL, holder TEXT NOT NULL, "
-                "acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(anima, task_id))"
-            )
-            self._leave_wal_mode(db)
+        if not self.read_only:
+            ensure_task_store_schema(self.db_path)
 
-    def _leave_wal_mode(self, db: sqlite3.Connection) -> None:
-        """Keep the DB in rollback-journal mode so read-only sandboxes can read it.
+    @classmethod
+    def open(cls, db_path: Path, *, read_only: bool) -> TaskStore:
+        """Open a store, ensuring schema only for writable access."""
+        return cls(db_path, read_only=read_only)
 
-        A WAL database without its -shm file cannot be opened from a read-only
-        directory (SQLITE_CANTOPEN). Older TaskBoardStore databases persist WAL.
-        Only the host can switch modes; sandboxed callers just skip it.
-        """
-        if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
-            return
-        try:
-            db.execute("PRAGMA journal_mode=DELETE")
-            logger.info("Switched task DB out of WAL mode: %s", self.db_path)
-        except sqlite3.OperationalError as exc:
-            logger.debug("Could not leave WAL mode for %s: %s", self.db_path, exc)
+    @property
+    def has_database(self) -> bool:
+        """Return whether a taskboard file exists without creating it."""
+        return self.db_path.is_file()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
+        if self.read_only:
+            if not self.has_database:
+                raise FileNotFoundError(self.db_path)
+            uri = f"{self.db_path.resolve().as_uri()}?mode=ro"
+            db = sqlite3.connect(uri, uri=True, timeout=30, isolation_level=None)
+        else:
+            db = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=30000")
-        db.execute("PRAGMA synchronous=FULL")
+        if not self.read_only:
+            db.execute("PRAGMA synchronous=FULL")
         try:
             yield db
         finally:
@@ -201,6 +235,8 @@ class TaskStore:
 
     @contextmanager
     def reader(self) -> Iterator[sqlite3.Connection]:
+        if not self.has_database:
+            raise FileNotFoundError(self.db_path)
         current = getattr(self._local, "connection", None)
         if current is not None:
             yield current
@@ -218,6 +254,8 @@ class TaskStore:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
+        if self.read_only:
+            raise RuntimeError("Cannot mutate a read-only TaskStore")
         current = getattr(self._local, "connection", None)
         if current is not None:
             if getattr(self._local, "read_only", False):
@@ -278,6 +316,8 @@ class TaskStore:
         return (anima, task_id)
 
     def read(self, anima: str, *, archived: bool = False) -> dict[str, TaskEntry]:
+        if not self.has_database:
+            return {}
         with self.reader() as db:
             rows = db.execute(
                 "SELECT entry_json FROM tasks WHERE anima=?" + ("" if archived else " AND archived=0"), (anima,)
@@ -354,6 +394,8 @@ class TaskStore:
 
     def get(self, anima: str, task_id: str) -> TaskEntry | None:
         """Primary-key lookup, including archived work and requester aliases."""
+        if not self.has_database:
+            return None
         with self.reader() as db:
             owner, resolved = self._resolve(db, anima, task_id)
             row = db.execute("SELECT entry_json FROM tasks WHERE anima=? AND task_id=?", (owner, resolved)).fetchone()
@@ -414,6 +456,8 @@ class TaskStore:
             return cursor.rowcount > 0
 
     def get_lease(self, anima: str, task_id: str) -> dict[str, str] | None:
+        if not self.has_database:
+            return None
         now = datetime.now(UTC)
         with self.reader() as db:
             row = db.execute("SELECT * FROM task_leases WHERE anima=? AND task_id=?", (anima, task_id)).fetchone()
@@ -437,6 +481,8 @@ class TaskStore:
         ``all_viewers`` returns alias rows for every viewer instead of restricting
         them to a single ``viewer``; canonical rows are unaffected.
         """
+        if not self.has_database:
+            return []
         rows: list[dict[str, Any]] = []
         with self.reader() as db:
             where = (
@@ -519,7 +565,7 @@ class TaskStore:
         dict shape matches the canonical rows of ``board_rows`` (``waiting`` is
         ``False`` and ``lease`` is ``None``).
         """
-        if limit <= 0:
+        if limit <= 0 or not self.has_database:
             return []
         rows: list[dict[str, Any]] = []
         with self.reader() as db:
@@ -636,6 +682,8 @@ class TaskStore:
     def pending(self, anima: str) -> list[dict[str, Any]]:
         """Return ready tasks in execution order: human-sourced first,
         then by submission order within the same source."""
+        if not self.has_database:
+            return []
         with self.reader() as db:
             rows = db.execute(
                 "SELECT input_json FROM tasks WHERE anima=? AND ready=1 AND current_attempt IS NULL "
@@ -646,6 +694,8 @@ class TaskStore:
             return [json.loads(row[0]) for row in rows]
 
     def executable_ids(self, anima: str) -> set[str]:
+        if not self.has_database:
+            return set()
         with self.reader() as db:
             return {
                 row[0]
@@ -729,6 +779,8 @@ class TaskStore:
             )
 
     def get_input(self, anima: str, task_id: str) -> dict[str, Any] | None:
+        if not self.has_database:
+            return None
         with self.reader() as db:
             owner, resolved = self._resolve(db, anima, task_id)
             row = db.execute("SELECT input_json FROM tasks WHERE anima=? AND task_id=?", (owner, resolved)).fetchone()
@@ -801,6 +853,8 @@ class TaskStore:
             return True
 
     def active_attempts(self, anima: str) -> list[dict[str, Any]]:
+        if not self.has_database:
+            return []
         with self.reader() as db:
             return [
                 dict(row)
@@ -808,6 +862,8 @@ class TaskStore:
             ]
 
     def wakeups(self, anima: str) -> list[dict[str, Any]]:
+        if not self.has_database:
+            return []
         with self.reader() as db:
             return [
                 dict(row)
@@ -834,6 +890,8 @@ class TaskStore:
 
     def reference_records(self, anima: str) -> dict[str, dict[str, Any]]:
         """Current unfinished task references, including their execution inputs."""
+        if not self.has_database:
+            return {}
         with self.reader() as db:
             rows = db.execute(
                 "SELECT task_id,entry_json,input_json FROM tasks WHERE anima=? AND archived=0 "
@@ -889,7 +947,16 @@ class TaskStore:
 
     def maintenance_status(self, anima: str) -> dict[str, Any]:
         """Expose counts for an operator without dumping task instructions."""
-        with self.transaction() as db:
+        if not self.has_database:
+            return {
+                "anima": anima,
+                "quiesced": False,
+                "invalid_import_rows": 0,
+                "active_attempts": 0,
+                "owned_tasks": 0,
+                "ready_tasks": 0,
+            }
+        with self.reader() as db:
             gate = db.execute("SELECT paused FROM task_claim_control WHERE anima=?", (anima,)).fetchone()
             imported = db.execute("SELECT report_json FROM task_imports WHERE anima=?", (anima,)).fetchone()
             return {
@@ -1247,3 +1314,8 @@ class TaskStore:
             }
             db.execute("INSERT INTO task_imports VALUES(?,?,?,?)", (anima, now_iso(), str(anima_dir), _json(report)))
             return report
+
+
+def open_task_store(db_path: Path, *, read_only: bool) -> TaskStore:
+    """Core/tasks API for opening TaskStore without bypassing its ownership."""
+    return TaskStore.open(db_path, read_only=read_only)

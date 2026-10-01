@@ -72,7 +72,7 @@ def _format_elapsed_from_sec(elapsed_sec: float | None) -> str:
 def _descriptor_ids(anima_dir: Path) -> set[str]:
     """Compatibility name: IDs with saved execution input, never a file scan."""
     try:
-        return TaskQueueManager(anima_dir).store.executable_ids(anima_dir.name)
+        return TaskQueueManager(anima_dir, read_only=True).store.executable_ids(anima_dir.name)
     except (OSError, sqlite3.OperationalError) as exc:
         from core.tasks.dispatch import is_task_permission_error, read_executable_ids_via_server
 
@@ -101,17 +101,18 @@ def mark_executability(items: list[dict[str, Any]], anima_dir: Path) -> None:
 class TaskQueueManager:
     """Stable task API over one durable task/attempt store."""
 
-    def __init__(self, anima_dir: Path) -> None:
+    def __init__(self, anima_dir: Path, *, read_only: bool = False) -> None:
         self.anima_dir = anima_dir
         self._queue_path = anima_dir / "state" / "task_queue.jsonl"
         self._store: TaskStore | None = None
+        self._read_only = read_only
 
     @property
     def store(self) -> TaskStore:
         from core.tasks.board.tasks import TaskStore, task_database_path
 
         if self._store is None:
-            self._store = TaskStore(task_database_path(self.anima_dir))
+            self._store = TaskStore.open(task_database_path(self.anima_dir), read_only=self._read_only)
         return self._store
 
     def submit(

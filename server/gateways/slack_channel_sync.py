@@ -31,7 +31,7 @@ from typing import Any
 
 import httpx
 
-from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta
+from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta, update_channel_meta
 from core.paths import get_shared_dir
 
 logger = logging.getLogger("animaworks.slack_channel_sync")
@@ -223,32 +223,44 @@ def _ensure_board(shared_dir: Path, board_name: str, slack_channel_name: str) ->
 
 def _mark_board_slack_deleted(shared_dir: Path, board_name: str) -> None:
     """Prevent a Board from being recreated in Slack after channel deletion."""
-    meta = load_channel_meta(shared_dir, board_name)
-    if meta is None:
-        meta = ChannelMeta(members=[])
-    if meta.slack_sync_disabled:
-        return
-    meta.slack_sync_disabled = True
-    meta.slack_deleted_at = datetime.now(UTC).isoformat()
-    save_channel_meta(shared_dir, board_name, meta)
-    logger.info(
-        "Marked board '%s' as Slack-deleted; reverse sync disabled",
-        board_name,
-    )
+    changed = False
+
+    def mark(meta: ChannelMeta | None) -> ChannelMeta:
+        nonlocal changed
+        meta = meta or ChannelMeta(members=[])
+        if not meta.slack_sync_disabled:
+            meta.slack_sync_disabled = True
+            meta.slack_deleted_at = datetime.now(UTC).isoformat()
+            changed = True
+        return meta
+
+    update_channel_meta(shared_dir, board_name, mark, create_if_missing=True)
+    if changed:
+        logger.info(
+            "Marked board '%s' as Slack-deleted; reverse sync disabled",
+            board_name,
+        )
 
 
 def _clear_board_slack_deleted(shared_dir: Path, board_name: str) -> None:
     """Re-enable Slack sync when a matching Slack channel becomes visible again."""
-    meta = load_channel_meta(shared_dir, board_name)
-    if meta is None or not meta.slack_sync_disabled:
-        return
-    meta.slack_sync_disabled = False
-    meta.slack_deleted_at = ""
-    save_channel_meta(shared_dir, board_name, meta)
-    logger.info(
-        "Cleared Slack-deleted tombstone for board '%s'",
-        board_name,
-    )
+    changed = False
+
+    def clear(meta: ChannelMeta | None) -> ChannelMeta | None:
+        nonlocal changed
+        if meta is None or not meta.slack_sync_disabled:
+            return None
+        meta.slack_sync_disabled = False
+        meta.slack_deleted_at = ""
+        changed = True
+        return meta
+
+    update_channel_meta(shared_dir, board_name, clear)
+    if changed:
+        logger.info(
+            "Cleared Slack-deleted tombstone for board '%s'",
+            board_name,
+        )
 
 
 def _list_local_boards(shared_dir: Path) -> list[str]:
