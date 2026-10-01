@@ -82,7 +82,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # MD section names used for parsing (基本情報, 人格, etc.)
     "core/anima/factory.py": 8,
     # deprecation warning message
-    "core/config/cli.py": 1,
+    "cli/commands/config_cmd.py": 1,
     # permissions.md section headers used by the legacy permissions fallback
     "core/config/migrate.py": 2,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
@@ -100,7 +100,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # Japanese field names in schema descriptions (上司, 基本情報)
     "core/tooling/policy/schemas/admin.py": 2,
     # user-facing message (バックグラウンドタスク投入)
-    "core/integrations/__init__.py": 1,
+    "cli/tool_dispatch.py": 1,
     # tool guide with Japanese content
     "core/integrations/_image_schemas.py": 1,
     "core/integrations/aws_collector.py": 1,

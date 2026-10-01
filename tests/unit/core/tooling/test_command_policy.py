@@ -28,7 +28,7 @@ from core.config.schemas import (
     SdkBashInjectionConfig,
 )
 from core.execution.engines.claude._sdk_security import _check_a1_bash_command
-from core.tooling import codex_command_hook as hook
+from cli import codex_command_hook as cli_hook
 from core.tooling.handler import ToolHandler
 from core.tooling.policy.command_policy import (
     CommandPolicyContext,
@@ -335,7 +335,7 @@ def test_three_paths_agree(shared_anima: Path, command: str, monkeypatch, capsys
 
     payload = {"tool_input": {"command": cmd}, "cwd": str(shared_anima)}
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
-    rc = hook.main(["--anima-dir", str(shared_anima)])
+    rc = cli_hook.main(["--anima-dir", str(shared_anima)])
     out = capsys.readouterr().out.strip()
     codex_allowed = rc == 0 and not out
 

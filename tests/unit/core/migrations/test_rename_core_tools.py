@@ -13,7 +13,7 @@ def _seed(data_dir: Path) -> tuple[Path, Path, Path]:
     tool.write_text("from core.tools._base import get_credential\nimport core.tools\n", encoding="utf-8")
     skill = data_dir / "animas" / "sakura" / "skills" / "demo" / "SKILL.md"
     skill.parent.mkdir(parents=True)
-    skill.write_text("Put modules under core/tools and call core.tools.cli_dispatch.\n", encoding="utf-8")
+    skill.write_text("Put modules under core/tools and call core.tools.discover_core_tools.\n", encoding="utf-8")
     untouched = data_dir / "common_tools" / "other.py"
     untouched.write_text("from mypkg.core.tools_x import y\n", encoding="utf-8")
     return tool, skill, untouched
@@ -36,7 +36,7 @@ def test_rewrites_and_backs_up(tmp_path: Path) -> None:
         "from core.integrations._base import get_credential\nimport core.integrations\n"
     )
     assert skill.read_text(encoding="utf-8") == (
-        "Put modules under core/integrations and call core.integrations.cli_dispatch.\n"
+        "Put modules under core/integrations and call core.integrations.discover_core_tools.\n"
     )
     assert untouched.read_text(encoding="utf-8") == "from mypkg.core.tools_x import y\n"
     backups = list((tmp_path / "backups").glob("*_tools_rename/common_tools/my_tool.py"))

@@ -11,6 +11,7 @@ import json
 import logging
 import threading
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -19,6 +20,7 @@ from core.config import load_config
 from core.config.models import VoiceConfig
 from core.voice.session import VoiceSession
 from core.voice.stt import VoiceSTT
+from core.voice.transport import VoiceTransport
 from core.voice.tts_base import TTSConfig
 from core.voice.tts_factory import create_tts_provider
 
@@ -31,6 +33,20 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+class FastAPIWebSocketVoiceTransport:
+    """Adapt a FastAPI WebSocket to the voice transport protocol."""
+
+    def __init__(self, websocket: WebSocket) -> None:
+        self._websocket = websocket
+
+    async def send_event(self, event: dict[str, Any]) -> None:
+        await self._websocket.send_json(event)
+
+    async def send_audio(self, data: bytes) -> None:
+        await self._websocket.send_bytes(data)
+
 
 # ── Active session tracking ─────────────────────────────────────
 
@@ -201,9 +217,10 @@ def create_voice_router() -> APIRouter:
                 tts_config.speed,
             )
 
+            transport: VoiceTransport = FastAPIWebSocketVoiceTransport(ws)
             session = VoiceSession(
                 anima_name=name,
-                ws=ws,
+                transport=transport,
                 stt=stt,
                 tts=tts,
                 tts_config=tts_config,

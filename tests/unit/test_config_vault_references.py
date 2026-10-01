@@ -113,7 +113,7 @@ def test_config_cli_updates_referenced_vault_key(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from core.config.cli import cmd_config_set
+    from cli.commands.config_cmd import cmd_config_set
 
     VaultManager(tmp_path).save_vault({"shared": {"AZURE_API_KEY": "initial-placeholder"}})
     config_path = _write_config(tmp_path, {"azure": {"api_key": {"$vault": "AZURE_API_KEY"}}})

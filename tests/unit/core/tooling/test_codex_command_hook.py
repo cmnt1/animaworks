@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from cli import codex_command_hook as cli_hook
 from core.tooling import codex_command_hook as hook
 
 
@@ -82,12 +83,12 @@ def test_main_emits_deny_json_and_fails_closed(anima_dir: Path, capsys, monkeypa
 
     payload = {"tool_input": {"command": "grep -R x " + str(anima_dir.parent.parent)}, "cwd": str(anima_dir)}
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
-    assert hook.main(["--anima-dir", str(anima_dir)]) == 0
+    assert cli_hook.main(["--anima-dir", str(anima_dir)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
     monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
     # Broken stdin must fail closed: emit a deny JSON and exit 0 (no command runs).
-    assert hook.main(["--anima-dir", str(anima_dir)]) == 0
+    assert cli_hook.main(["--anima-dir", str(anima_dir)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"

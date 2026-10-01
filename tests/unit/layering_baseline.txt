@@ -1,11 +1,6 @@
 cli.commands.server -> server.app
 core.config.anima_registry -> core.anima.roster
 core.config.anima_registry -> core.anima.roster
-core.config.cli -> core.infra.runtime_init
-core.config.cli -> core.infra.runtime_init
-core.config.cli -> core.infra.runtime_init
-core.config.cli -> core.infra.runtime_init
-core.config.cli -> core.infra.runtime_init
 core.config.file_access_policy -> core.org.company
 core.config.file_access_policy -> core.org.company
 core.config.file_access_policy -> core.org.company_resources

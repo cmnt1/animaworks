@@ -25,6 +25,7 @@ from core.prompt.builder import build_voice_front_prompt
 from core.voice.front import READ_MEMORY_TOOL, VoiceFrontLane, extract_emotion
 from core.voice.session import VoiceSession, read_memory_snippets
 from core.voice.tts_base import TTSConfig
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ def _make_voice_session(
     voice_config = VoiceConfig(stt_refine_enabled=False)
     sess = VoiceSession(
         "test",
-        ws,
+        MockVoiceTransport(ws),
         stt,
         tts,
         TTSConfig(provider="voicevox"),
@@ -404,7 +405,7 @@ class TestVoiceSessionFrontRouting:
         await sess.handle_speech_end()
         # Front lane handled the turn → legacy path must NOT run.
         supervisor.send_request_stream.assert_not_called()
-        sended = [c.args for c in sess._ws.send_json.call_args_list]
+        sended = [c.args for c in sess._transport.websocket.send_json.call_args_list]
         texts = [a[0]["text"] for a in sended if a[0].get("type") == "response_text"]
         assert any("こんにちは！" in t for t in texts)
         # emotion parsed from the front output

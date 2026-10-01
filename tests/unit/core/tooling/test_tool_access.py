@@ -339,7 +339,7 @@ class TestCliDispatch:
         )
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(cli_anima))
         monkeypatch.setattr(sys, "argv", ["animaworks-tool", "slack", "messages"])
-        from core.integrations import cli_dispatch
+        from cli.tool_dispatch import cli_dispatch
 
         with pytest.raises(SystemExit) as e:
             cli_dispatch()
@@ -349,7 +349,7 @@ class TestCliDispatch:
     def test_gated_action_with_option_val_not_smuggled(self, monkeypatch, cli_anima: Path, capsys) -> None:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(cli_anima))
         monkeypatch.setattr(sys, "argv", ["animaworks-tool", "gmail", "--account", "foo", "send"])
-        from core.integrations import cli_dispatch
+        from cli.tool_dispatch import cli_dispatch
 
         with pytest.raises(SystemExit) as e:
             cli_dispatch()
@@ -365,7 +365,7 @@ class TestCliDispatch:
         )
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(cli_anima))
         monkeypatch.setattr(sys, "argv", ["animaworks-tool", "mytool", "deploy"])
-        from core.integrations import cli_dispatch
+        from cli.tool_dispatch import cli_dispatch
 
         with pytest.raises(SystemExit) as e:
             cli_dispatch()
@@ -383,7 +383,7 @@ class TestCliDispatch:
 
         mock_cli = MagicMock()
         monkeypatch.setattr(gmail_mod, "cli_main", mock_cli)
-        from core.integrations import cli_dispatch
+        from cli.tool_dispatch import cli_dispatch
 
         cli_dispatch()  # must not raise SystemExit
         mock_cli.assert_called_once()

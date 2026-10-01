@@ -12,7 +12,7 @@ class SubprocessEntry(StrEnum):
     SUPERVISOR_RUNNER = "core.supervisor.runner"
     TASK_RUNNER = "core.supervisor.task_runner"
     RAG_REPAIR_REBUILD = "core.memory.rag.repair.rebuild"
-    CODEX_COMMAND_HOOK = "core.tooling.codex_command_hook"
+    CODEX_COMMAND_HOOK = "cli.codex_command_hook"
 
 
 PYTHON_MODULE_FLAG = "-m"

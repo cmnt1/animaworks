@@ -187,7 +187,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
 
 #### `cli_main`（animaworks-tool 用）
 
-`animaworks-tool <tool_name> …` はコア・共通・個人いずれも **モジュールに `cli_main` が無いと CLI 実行不可**（`core/integrations/__init__.py` の `cli_dispatch`）。`argparse` でサブコマンドをパースし、内部で `dispatch(f"{tool}_{action}", args_dict)` を呼ぶ形が一般的。スキーマから用法を生成したい場合は `core/integrations/_base.py` の `auto_cli_guide` も参照。
+`animaworks-tool <tool_name> …` はコア・共通・個人いずれも **モジュールに `cli_main` が無いと CLI 実行不可**（`cli/tool_dispatch.py` の `cli_dispatch`）。`argparse` でサブコマンドをパースし、内部で `dispatch(f"{tool}_{action}", args_dict)` を呼ぶ形が一般的。スキーマから用法を生成したい場合は `core/integrations/_base.py` の `auto_cli_guide` も参照。
 
 ### Step 3: ファイルの保存
 
@@ -258,7 +258,7 @@ Markdown の「ツール作成」セクション（`個人ツール` / `共有�
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` は `task_type="command"` の入力を TaskStore に登録し、`PendingTaskExecutor` が試行を取得して実行する（`core/integrations/__init__.py` の `_handle_submit`）。実行結果は `state/background_tasks/{task_id}.json` にも保存される。プロファイル参照は **import 可能なコアモジュール**に対してのみ実施（ファイルツールは submit 時の警告対象外になりやすい）。
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` は `task_type="command"` の入力を TaskStore に登録し、`PendingTaskExecutor` が試行を取得して実行する（`cli/tool_dispatch.py` の `_handle_submit`）。実行結果は `state/background_tasks/{task_id}.json` にも保存される。プロファイル参照は **import 可能なコアモジュール**に対してのみ実施（ファイルツールは submit 時の警告対象外になりやすい）。
 - **`gated: True`**: コアツールの該当アクションに対し、permissions で `tool_action` の明示許可が必要。
 
 ```python
@@ -300,7 +300,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 - 認証・API: `core/integrations/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
 - 長時間・パイプライン: `core/integrations/image_gen.py`（ファサード、`image/` サブパッケージ + `EXECUTION_PROFILE`）
 - 検索・ローカル LLM: `core/integrations/web_search.py`（`get_tool_schemas` が空 → `ExternalToolDispatcher.dispatch` のコア経路ではマッチしない。`use_tool` は `dispatch` で可）、`x_search.py`, `local_llm.py`
-- ディスパッチャ・CLI エントリ: `core/tooling/dispatch.py`, `core/integrations/__init__.py`（`cli_dispatch` / `_handle_submit`）
+- ディスパッチャ・CLI エントリ: `core/tooling/dispatch.py`, `cli/tool_dispatch.py`（`cli_dispatch` / `_handle_submit`）
 
 ## 注意事項
 

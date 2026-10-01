@@ -9,7 +9,7 @@ def test_subprocess_modules_are_centralized() -> None:
         "core.supervisor.runner",
         "core.supervisor.task_runner",
         "core.memory.rag.repair.rebuild",
-        "core.tooling.codex_command_hook",
+        "cli.codex_command_hook",
     }
 
 

@@ -188,7 +188,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
 
 #### `cli_main` (for animaworks-tool)
 
-For `animaworks-tool <tool_name> …`, whether core, common, or personal, **CLI execution is impossible without `cli_main` in the module** (`cli_dispatch` of `core/integrations/__init__.py`). A common pattern is to parse subcommands via `argparse` and call `dispatch(f"{tool}_{action}", args_dict)` internally. To generate usage from the schema, see also `auto_cli_guide` of `core/integrations/_base.py`.
+For `animaworks-tool <tool_name> …`, whether core, common, or personal, **CLI execution is impossible without `cli_main` in the module** (`cli_dispatch` of `cli/tool_dispatch.py`). A common pattern is to parse subcommands via `argparse` and call `dispatch(f"{tool}_{action}", args_dict)` internally. To generate usage from the schema, see also `auto_cli_guide` of `core/integrations/_base.py`.
 
 ### Step 3: Saving the File
 
@@ -259,7 +259,7 @@ The Markdown "Tool Creation" section (`個人ツール` / `共有ツール` line
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` registers the input of `task_type="command"` into the TaskStore, and `PendingTaskExecutor` retrieves and executes the attempt (`_handle_submit` of `core/integrations/__init__.py`). Execution results are also saved to `state/background_tasks/{task_id}.json`. Profile references are only applied to **importable core modules** (file tools are less likely to be flagged as warnings at submission time).
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` registers the input of `task_type="command"` into the TaskStore, and `PendingTaskExecutor` retrieves and executes the attempt (`_handle_submit` of `cli/tool_dispatch.py`). Execution results are also saved to `state/background_tasks/{task_id}.json`. Profile references are only applied to **importable core modules** (file tools are less likely to be flagged as warnings at submission time).
 - **`gated: True`**: For the corresponding actions of core tools, explicit permission for `tool_action` is required in permissions.
 
 ```python
@@ -301,7 +301,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 - Authentication and API: `core/integrations/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
 - Long-running and pipeline: `core/integrations/image_gen.py` (facade, `image/` subpackage + `EXECUTION_PROFILE`)
 - Search and local LLM: `core/integrations/web_search.py` (if `get_tool_schemas` is empty, it won't match in `ExternalToolDispatcher.dispatch`'s core path; `use_tool` is possible with `dispatch`), `x_search.py`, `local_llm.py`
-- Dispatcher and CLI entry: `core/tooling/dispatch.py`, `core/integrations/__init__.py` (`cli_dispatch` / `_handle_submit`)
+- Dispatcher and CLI entry: `core/tooling/dispatch.py`, `cli/tool_dispatch.py` (`cli_dispatch` / `_handle_submit`)
 
 ## Notes
 

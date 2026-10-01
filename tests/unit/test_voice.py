@@ -26,6 +26,7 @@ from core.voice.tts_factory import create_tts_provider
 from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 # ── TestSplitSentences ──────────────────────────────────────────
 
@@ -583,7 +584,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session.handle_audio_chunk(b"\x00\x01\x02\x03")
         assert len(session._audio_buffer) == 4
 
@@ -598,7 +599,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._audio_buffer.extend(b"\x00\x01")
         await session.handle_interrupt()
         assert session._interrupted is True
@@ -615,7 +616,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session.handle_speech_end()
         ws.send_json.assert_not_called()
 
@@ -632,7 +633,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         result = await session._check_tts_health()
         assert result is False
         ws.send_json.assert_called_with({"type": "error", "message": "TTS unavailable"})
@@ -656,7 +657,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         result = await session._check_tts_health()
         assert result is True
         ws.send_json.assert_not_called()
@@ -674,7 +675,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._check_tts_health()
         assert session._tts_available is True
         session.invalidate_tts_health()
@@ -692,7 +693,7 @@ class TestVoiceSession:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._processing = True
         session._audio_buffer.extend(b"\x00" * 100)
         await session.handle_speech_end()
@@ -1012,7 +1013,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._consecutive_tts_failures = 2
         await session._synthesize_and_send("hello")
         assert session._consecutive_tts_failures == 0
@@ -1035,7 +1036,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize_fail
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._synthesize_and_send("hello")
         assert session._consecutive_tts_failures == 1
 
@@ -1060,7 +1061,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize_fail
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._tts_available = True
 
         for _ in range(3):
@@ -1088,7 +1089,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize_fail
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._synthesize_and_send("hello")
 
         tts_error_calls = [
@@ -1119,7 +1120,7 @@ class TestConsecutiveTTSFailures:
 
         tts.synthesize = mock_synthesize
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         await session._synthesize_and_send("hello")
         assert session._consecutive_tts_failures == 0
 
@@ -1154,7 +1155,7 @@ class TestResponseDoneGuarantee:
 
         supervisor.send_request_stream = mock_stream_error
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         import numpy as np
 
         pcm = np.random.randint(-1000, 1000, 16000, dtype=np.int16).tobytes()
@@ -1196,7 +1197,7 @@ class TestResponseDoneGuarantee:
 
         supervisor.send_request_stream = mock_stream
 
-        session = VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+        session = VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
         session._interrupted = True
         import numpy as np
 
@@ -1231,7 +1232,7 @@ def _make_session(*, ws=None, stt=None, tts=None, supervisor=None):
     tts_config = TTSConfig(provider="voicevox")
     supervisor = supervisor or MagicMock()
     voice_config = MagicMock(stt_refine_enabled=False)
-    return VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+    return VoiceSession("test", MockVoiceTransport(ws), stt, tts, tts_config, supervisor, voice_config)
 
 
 class TestBargeProbe:

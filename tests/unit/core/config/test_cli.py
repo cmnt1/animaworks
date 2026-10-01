@@ -1,4 +1,4 @@
-"""Unit tests for core/config/cli.py — config CLI subcommands."""
+"""Unit tests for CLI configuration commands and core configuration operations."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,16 +11,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.config.cli import (
-    _coerce_value,
-    _flatten_dict,
-    _mask_secret,
-    _set_nested,
+from cli.commands.config_cmd import (
     cmd_config_dispatch,
     cmd_config_get,
     cmd_config_list,
     cmd_config_set,
 )
+from core.config.ops import _coerce_value, _flatten_dict, _mask_secret, _set_nested
 from core.config.models import invalidate_cache
 
 # ── _flatten_dict ─────────────────────────────────────────
@@ -149,7 +146,7 @@ class TestCmdConfigDispatch:
 
     def test_interactive_flag(self, data_dir):
         args = argparse.Namespace(interactive=True)
-        with patch("core.config.cli._interactive_setup") as mock_wizard:
+        with patch("cli.commands.config_cmd._interactive_setup") as mock_wizard:
             cmd_config_dispatch(args)
             mock_wizard.assert_called_once()
 

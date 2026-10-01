@@ -24,6 +24,7 @@ from core.config.schemas import VoiceConfig
 from core.voice.front import ASK_ANIMA_TOOL, VoiceFrontLane
 from core.voice.session import MAX_ASK_ANIMA_CONCURRENT, VoiceSession
 from core.voice.tts_base import TTSConfig
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 
 def _make_session(supervisor: MagicMock, *, front_model: str | None = None) -> VoiceSession:
@@ -40,7 +41,7 @@ def _make_session(supervisor: MagicMock, *, front_model: str | None = None) -> V
     voice_config = VoiceConfig(stt_refine_enabled=False)
     return VoiceSession(
         "test",
-        ws,
+        MockVoiceTransport(ws),
         stt,
         tts,
         TTSConfig(provider="voicevox"),
