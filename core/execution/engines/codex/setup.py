@@ -17,7 +17,9 @@ import inspect
 import logging
 import os
 import shutil
+import stat
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -420,12 +422,42 @@ async def _close_codex_client(client: Any) -> None:
         logger.warning("Failed to finish Codex SDK transport cleanup", exc_info=True)
 
 
+def _repair_codex_daemon_dir() -> None:
+    """Restore 0700 on Codex's per-user app-server socket directory.
+
+    Codex refuses to start a thread ("app-server socket directory must be a
+    user-owned directory with mode 0700") when ``/tmp/codex-daemon-<uid>`` was
+    created with a looser mode by another Codex process on the host; every Codex
+    anima then fails until it is fixed (2026-10-01, sora/sumire/mio).
+    """
+    if os.name != "posix":
+        return
+    path = Path(tempfile.gettempdir()) / f"codex-daemon-{os.getuid()}"
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError:
+        logger.debug("Could not stat %s", path, exc_info=True)
+        return
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        return
+    if stat.S_IMODE(info.st_mode) != 0o700:
+        try:
+            path.chmod(0o700)
+            logger.warning("Reset %s to mode 0700 (was %o)", path, stat.S_IMODE(info.st_mode))
+        except OSError:
+            logger.warning("Could not reset %s to mode 0700", path, exc_info=True)
+
+
 class CodexSetupMixin:
     # ── Environment / config helpers ─────────────────────────
 
     def _build_env(self) -> dict[str, str]:
         """Build env dict for the Codex CLI child process."""
         from core.execution.session.session_context import current_runtime_session
+
+        _repair_codex_daemon_dir()
         from core.paths import PROJECT_DIR
 
         env: dict[str, str] = {
