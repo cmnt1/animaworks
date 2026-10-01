@@ -27,9 +27,9 @@ Workspaces are registered in the organization-shared registry (the workspaces se
 
 ## Operations
 
-### Register
+### Registration
 
-A top-level Anima with an explicit human instruction uses `grant_workspace_access`:
+A top-level Anima that has received explicit instruction from a human uses `grant_workspace_access`:
 
 ```json
 {
@@ -39,10 +39,10 @@ A top-level Anima with an explicit human instruction uses `grant_workspace_acces
 }
 ```
 
-This tool asks the root host to update the shared workspace registry and the target Anima's root-owned `permissions.json` / `status.json`; it does not write those settings from the Anima process.
+This tool requests the root host to update the organization-shared registry and the root-owned `permissions.json` / `status.json`. Do not write configuration files directly from the Anima process.
 
-**Note**: Registration fails if the directory does not exist.
-**Note**: `read_memory_file(path="config.json")` reads the Anima-local `config.json`. Do not use it for the shared workspace registry.
+**Note**: An error occurs if the directory does not exist.
+**Note**: `read_memory_file(path="config.json")` reads the `config.json` in its own Anima directory. It is not used for registering in the organization-shared registry.
 
 ### List
 

@@ -452,9 +452,9 @@ animaworks anima set-model --all <モデル名>
 
 슈퍼바이저가 부하의 모델을 변경하는 경우 `set_subordinate_model` 도구를 사용합니다.
 
-### 설정의 리로드
+### 설정 리로드
 
-root/CLI가 허가된 `status.json` 설정을 변경한 뒤 재시작 없이 모델 설정을 반영하려면 `reload` 명령을 사용합니다. `set-model` 명령은 실행 중인 Anima에 reload를 요청합니다:
+root/CLI가 허용된 `status.json` 설정을 변경한 후, 프로세스를 재시작하지 않고 모델 설정을 반영하려면 `reload` 명령을 사용한다. `set-model` 명령은 시작 중인 Anima에 reload를 요청한다:
 
 ```bash
 # 単一 Anima のリロード
@@ -464,14 +464,14 @@ animaworks anima reload <anima名>
 animaworks anima reload --all
 ```
 
-리로드는 IPC를 통해 즉시 반영됩니다 (다운타임 없음). 실행 중인 세션은 이전 설정으로 완료되고, 다음 세션부터 새 설정이 적용됩니다.
+리로드는 IPC를 통해 즉시 반영된다(다운타임 없음). 실행 중인 세션은 이전 설정으로 완료되고, 다음 세션부터 새 설정이 적용된다.
 
 **일반적인 설정 변경 워크플로우**:
 
-1. `animaworks anima set-model <name> <model>`로 모델을 변경합니다(root API가 `status.json`을 갱신하고 실행 중인 Anima에 reload를 요청).
-2. 자동 알림이 없는 root/CLI 변경 뒤에는 `animaworks anima reload <name>`을 사용합니다.
+1. `animaworks anima set-model <name> <model>`로 모델을 변경한다(root API가 `status.json`를 업데이트하고, 시작 중인 Anima에 reload를 요청한다)
+2. 자동 알림되지 않는 root/CLI 업데이트 후에는 `animaworks anima reload <name>`을 사용한다
 
-Anima 프로세스는 `status.json`을 직접 편집하지 않습니다. root 소유 CLI/API 작업을 사용합니다.
+Anima 프로세스에서 `status.json`을 직접 편집하지 않는다. root 소유 CLI/API 작업을 사용한다.
 
 ### 기본값 목록 (anima_defaults)
 
@@ -491,24 +491,24 @@ Anima 프로세스는 `status.json`을 직접 편집하지 않습니다. root �
 
 계층은 메시징을 통한 지침·보고로 기능합니다. 상급자는 부하에게 작업을 위임할 수 있고, 부하는 상급자에게 결과를 보고합니다.
 
-## Anima 관리 명령 목록
+## Anima 관리 명령어 목록
 
-일상적인 Anima의 조작·관리에 사용하는 CLI 명령.
-서버가 시작 중 (`animaworks start` 완료) 상태에서 실행합니다.
+일상적인 Anima의 운영·관리에 사용하는 CLI 명령어.
+서버가 시작 중(`animaworks start` 완료)인 상태에서 실행한다.
 
-| 명령 | 설명 | 다운타임 |
+| 명령어 | 설명 | 다운타임 |
 |---------|------|-----------|
 | `animaworks anima list` | 전체 Anima의 목록과 상태를 표시 | 없음 |
-| `animaworks anima status [name]` | 지정 Anima (생략 시 전체)의 프로세스 상태를 표시 | 없음 |
-| `animaworks anima reload <name>` | status.json을 다시 읽어 모델 설정을 즉시 반영 (프로세스 재시작 없음) | 없음 |
+| `animaworks anima status [name]` | 지정 Anima(생략 시 전체)의 프로세스 상태를 표시 | 없음 |
+| `animaworks anima reload <name>` | status.json을 다시 로드하여 모델 설정을 즉시 반영(프로세스 재시작 없음) | 없음 |
 | `animaworks anima reload --all` | 전체 Anima의 설정을 일괄 리로드 | 없음 |
-| `animaworks anima restart <name>` | Anima 프로세스를 완전히 재시작 (코드 변경 반영 시 사용) | 15-30초 |
-| `animaworks anima set-model <name> <model>` | root 소유 status를 갱신하고 실행 중인 Anima의 모델 설정을 reload | 없음 |
+| `animaworks anima restart <name>` | Anima 프로세스를 완전히 재시작(코드 변경 반영 시 사용) | 15-30초 |
+| `animaworks anima set-model <name> <model>` | root 소유 status를 업데이트하고, 시작 중 Anima의 모델 설정을 reload | 없음 |
 | `animaworks anima set-model --all <model>` | 전체 Anima의 모델을 일괄 변경 | 없음 |
-| `animaworks anima enable <name>` | 휴지 중인 Anima를 활성화하여 프로세스 시작 | — |
-| `animaworks anima disable <name>` | Anima를 휴지 (프로세스 종료, status.json의 enabled=false) | — |
-| `animaworks anima create` | 새 Anima 생성 (`--from-md`, `--template`, `--blank`) | — |
-| `animaworks anima delete <name>` | Anima 삭제 (기본적으로 아카이브 보존) | — |
+| `animaworks anima enable <name>` | 휴지 중인 Anima를 활성화하여 프로세스를 시작 | — |
+| `animaworks anima disable <name>` | Anima를 휴지(프로세스 종료, status.json의 enabled=false) | — |
+| `animaworks anima create` | 새 Anima를 생성(`--from-md`, `--template`, `--blank`) | — |
+| `animaworks anima delete <name>` | Anima를 삭제(기본적으로 아카이브 저장) | — |
 
 ### 서버 관리 명령
 

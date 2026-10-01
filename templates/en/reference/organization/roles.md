@@ -230,7 +230,7 @@ Role templates are organized into `templates/_shared` and locale-specific paths:
 
 Valid role names must match `VALID_ROLES` (`engineer`, `researcher`, `manager`, `writer`, `ops`, `general`) in the code.
 
-### Available roles (actual values of `defaults.json`)
+### Available Roles (Actual Values for `defaults.json`)
 
 Model and execution parameters:
 
@@ -243,7 +243,7 @@ Model and execution parameters:
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-For `create_from_md` where `--role` is not specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the `templates/_shared/config_defaults/models.json` bundled with the templates, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, set `model` and `credential` with `animaworks anima set-model`; configure `background_model` with `animaworks anima set-background-model`. These commands use the root API while the server is running and the offline settings store otherwise; do not edit `status.json` from an Anima process.
+When `--role` is not specified, `create_from_md` uses `general`. The default for ops is `ollama/glm-4.7` for local use. In the template's bundled `templates/_shared/config_defaults/models.json`, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). If using vLLM, set `model` / `credential` via `animaworks anima set-model`, and use `animaworks anima set-background-model` for the background model. While the server is running, changes are reflected to the root-owned `status.json` via the root API; during shutdown, they are applied through the offline configuration store. Do not edit directly from the Anima process.
 
 ### Application flow
 

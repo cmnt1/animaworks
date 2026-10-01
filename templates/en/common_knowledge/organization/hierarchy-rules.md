@@ -61,19 +61,19 @@ Anima with subordinates have dedicated tools for organizational management autom
 
 ### Tool List
 
-| Tool | Scope | Summary | Main Parameters |
+| Tool | Scope | Overview | Main Parameters |
 |--------|---------|------|----------------|
-| `org_dashboard` | All descendants (recursive) | Displays the process status, last activity, current task, and task count for all descendants in a tree | None |
-| `ping_subordinate` | All descendants (recursive) | Checks whether descendants are alive. Omit `name` to check everyone at once; specify it to check a single Anima only | `name` (optional) |
-| `read_subordinate_state` | All descendants (recursive) | Reads a descendant's `state/current_state.md` | `name` (required) |
-| `delegate_task` | Direct subordinates only | Atomically registers the complete execution input and tracking reference, then notifies the subordinate | `name`, `instruction` (required), `summary`, `acceptance_criteria`, `workspace`, `model` (optional) |
-| `task_tracker` | Tasks delegated by you | Tracks the progress of tasks delegated with `delegate_task` from the descendant-side queue | `status` (optional: "all"/"active"/"completed", default "active") |
-| `audit_subordinate` | All descendants (recursive) | Generates an activity timeline or statistics summary. Omit `name` to audit all descendants at once (consolidated timeline) | `name` (optional), `mode` (optional: `"report"`/`"summary"`, default `"report"`), `hours` (optional: 1–168, default 24), `direct_only` (optional: boolean), `since` (optional: `"HH:MM"` start time for the current day; takes precedence over hours when specified) |
-| `disable_subordinate` | All descendants (recursive) | Suspends descendants (status.json enabled=false; processes stop after about 30 seconds) | `name` (required), `reason` (optional) |
-| `enable_subordinate` | All descendants (recursive) | Resumes suspended descendants | `name` (required) |
-| `set_subordinate_model` | All descendants (recursive) | Requests a root-owned status.json update and reloads a running main model | `name`, `model` (required), `reason` (optional) |
-| `set_subordinate_background_model` | All descendants (recursive) | Requests a root-owned background-model update for Heartbeat/Cron; new background jobs use it. Clear by setting an empty string | `name`, `model` (required), `credential`, `reason` (optional) |
-| `restart_subordinate` | All descendants (recursive) | Restarts descendant processes (sets the restart_requested flag; restarts after about 30 seconds) | `name` (required), `reason` (optional) |
+| `org_dashboard` | All subordinates (recursive) | Displays process status, last activity, current task, and task count for the entire subordinate tree | None |
+| `ping_subordinate` | All subordinates (recursive) | Checks whether subordinates are alive. If `name` is omitted, checks all at once; if specified, checks only a single Anima | `name` (optional) |
+| `read_subordinate_state` | All subordinates (recursive) | Reads the `state/current_state.md` of subordinates | `name` (required) |
+| `delegate_task` | Direct subordinates only | Atomically registers complete execution input and tracking reference, then notifies the subordinate | `name`, `instruction` (required), `summary`, `acceptance_criteria`, `workspace`, `model` (optional) |
+| `task_tracker` | Own delegated tasks | Tracks the progress of tasks delegated via `delegate_task` from the subordinate-side queue | `status` (optional: "all"/"active"/"completed", default "active") |
+| `audit_subordinate` | All subordinates (recursive) | Generates an activity timeline or statistical summary. If `name` is omitted, audits all subordinates at once (integrated timeline) | `name` (optional), `mode` (optional: `"report"`/`"summary"`, default `"report"`), `hours` (optional: 1–168, default 24), `direct_only` (optional: boolean), `since` (optional: `"HH:MM"` start time of the day; when specified, takes precedence over hours) |
+| `disable_subordinate` | All subordinates (recursive) | Puts subordinates into hibernation (status.json enabled=false, process stops in about 30 seconds) | `name` (required), `reason` (optional) |
+| `enable_subordinate` | All subordinates (recursive) | Resumes hibernated subordinates | `name` (required) |
+| `set_subordinate_model` | All subordinates (recursive) | Requests root to update status.json and reloads the running main model | `name`, `model` (required), `reason` (optional) |
+| `set_subordinate_background_model` | All subordinates (recursive) | Requests root to update the background model for Heartbeat/Cron. Applied from the next background task; cleared with an empty string | `name`, `model` (required), `credential`, `reason` (optional) |
+| `restart_subordinate` | All subordinates (recursive) | Restarts subordinate processes (restart_requested flag, restarts in about 30 seconds) | `name` (required), `reason` (optional) |
 
 `check_permissions` is available to all Anima (check your own permission list).
 

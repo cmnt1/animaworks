@@ -61,13 +61,13 @@ Mode A의 스키마에서는 **PascalCase 이름**입니다. `ToolHandler` 내�
 | **WebSearch** | `web_search` | 웹 검색. 외부 콘텐츠는 비신뢰 | `query` |
 | **WebFetch** | `web_fetch` | URL의 내용을 markdown으로 획득. 외부 콘텐츠는 비신뢰 | `url` |
 
-### 용도 구분 포인트
+### 사용 구분의 포인트
 
 - 파일 조작: Read / Write / Edit를 우선. Bash에서의 `cat` / `sed` / `awk`는 비권장.
 - 검색: Grep(내용), Glob(경로)를 우선. Bash의 `grep` / `find`는 비권장.
-- Anima의 기억 트리 내: **`read_memory_file` / `write_memory_file` / `archive_memory_file`**(상대 경로). 프로젝트 전체의 절대 경로 조작이 필요할 때 Read / Write를 사용하는 식의 역할 분담.
-- Anima가 편집할 수 있는 스케줄(`cron.md`, `heartbeat.md`)은 부하의 경우에도 **write memory 도구**로 `../{anima_name}/cron.md`처럼 지정해 편집합니다.
-- `config.json`, `status.json`, `identity.md`, `injection.md`, `permissions.json`은 root 소유라 Anima가 직접 쓰지 않습니다. bootstrap 중 identity 작성과 승인된 상급자의 injection 변경 요청은 `write_memory_file`에서 root로 전달되어 권한 확인을 거칩니다. 그 외 변경은 상급자 도구 또는 root CLI/API를 사용하고 Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트로 설정하지 마세요.
+- Anima의 기억 트리 내: **`read_memory_file` / `write_memory_file` / `archive_memory_file`**(상대 경로). 프로젝트 전체의 절대 경로 조작이 필요할 때 Read / Write를 사용하는 식의 구분.
+- Anima가 편집할 수 있는 스케줄(`cron.md` / `heartbeat.md`)은, 하위에 있는 경우에도 **write memory 도구**로 `../{anima_name}/cron.md`처럼 지정하여 편집한다.
+- `config.json` / `status.json` / `identity.md` / `injection.md` / `permissions.json`는 root 소유이며, Anima가 직접 쓰지 않는다. bootstrap 중의 identity 생성과 허가된 상급자의 injection 변경은 `write_memory_file`에서 root로 전송하여 인가한다. 다른 변경은 상급자용 도구 또는 root CLI/API을 사용하고, Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트로 설정하지 않는다.
 
 ### 탐색 범위의 상한(폭주 방지)
 

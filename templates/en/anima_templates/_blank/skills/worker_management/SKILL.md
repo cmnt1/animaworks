@@ -12,7 +12,7 @@ description: >-
 
 ## CLI Commands (Recommended)
 
-`animaworks` Individual Anima management is possible via CLI. **Prefer CLI over direct API calls.**
+`animaworks` Individual Anima management is possible via the CLI. **Prefer the CLI over direct API calls.**
 
 ```bash
 # 個別Animaのリスタート（設定変更の反映等）
@@ -39,7 +39,7 @@ animaworks anima enable <name>
 animaworks anima delete <name>
 ```
 
-### Common Usage
+### Common Use Cases
 
 ```bash
 # config.json変更後に特定Animaだけリスタート

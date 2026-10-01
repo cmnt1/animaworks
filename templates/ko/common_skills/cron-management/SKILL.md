@@ -299,9 +299,9 @@ cron.md 최초 등록 또는 `reload_schedule` 시점에 분석·등록 오류�
 
 ### 대상 경로와 하위 편집
 
-- 자신의 `cron.md`은 `read_memory_file(path="cron.md")`로 읽고, `write_memory_file(path="cron.md", ...)`로 업데이트한다.
-- 상급자는 부하의 `cron.md` / `heartbeat.md`를 write memory 도구로 `../{anima_name}/cron.md`처럼 지정해 편집할 수 있다(자식·손자 이하 전체 대상).
-- `status.json` / `identity.md` / `permissions.json`은 root 소유라 기억/파일 도구로 직접 쓸 수 없다. 상급자의 허가된 `injection.md` 변경과 bootstrap 중 identity 작성은 root API로 전달되어 권한 확인을 거친다. 직접 파일 조작은 하지 않는다.
+- 자신의 `cron.md` 는 `read_memory_file(path="cron.md")` 로 읽고, `write_memory_file(path="cron.md", ...)` 로 업데이트한다.
+- 상급자는 부하의 `cron.md` / `heartbeat.md` 를 write memory 도구로 `../{anima_name}/cron.md` 처럼 지정하여 편집할 수 있다 (자식·손자 이하의 모든 부하가 대상).
+- `status.json` / `identity.md` / `permissions.json` 는 root 소유이며, 기억·파일 도구에서 쓸 수 없다. 허가된 상급자의 `injection.md` 변경과 bootstrap 중의 identity 생성 요청은 root로 전송·인가된다. 직접 파일 조작은 하지 않는다.
 
 ### 새 작업 추가
 

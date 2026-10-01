@@ -297,11 +297,11 @@ When a parse or registration error is detected during the initial registration o
 
 ## cron.md Operating Procedures
 
-### Target Paths and Editing Subordinates
+### Target Paths and Subordinate Editing
 
-- Read your own `cron.md` via `read_memory_file(path="cron.md")` and update it via `write_memory_file(path="cron.md", ...)`.
-- A supervisor can edit a subordinate's `cron.md` / `heartbeat.md` with the write memory tool, using paths such as `../{anima_name}/cron.md`; this applies to all descendants.
-- `status.json`, `identity.md`, and `permissions.json` are root-owned and cannot be written with memory/file tools. Authorized subordinate `injection.md` and bootstrap identity writes are forwarded through root and checked there; never write these files directly.
+- Read your own `cron.md` via `read_memory_file(path="cron.md")`, and update it via `write_memory_file(path="cron.md", ...)`.
+- A supervisor can edit subordinates' `cron.md` / `heartbeat.md` using the write memory tool by specifying them as in `../{anima_name}/cron.md` (applies to all subordinates, including children, grandchildren, and below).
+- `status.json` / `identity.md` / `permissions.json` are owned by root and cannot be written to from memory or file tools. Authorized supervisor `injection.md` changes and identity creation requests during bootstrap are forwarded to and authorized by root. No direct file operations are performed.
 
 ### Adding a New Task
 

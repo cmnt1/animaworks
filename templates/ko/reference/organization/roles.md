@@ -244,15 +244,15 @@ Anima 생성 시 `--role`으로 전문 역할을 지정할 수 있는 것은 **M
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-`--role` 미지정의 `create_from_md`에서는 `general`가 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿에 포함된 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`가 실행 모드 **A**(LiteLLM + tool 루프)에 매치된다. vLLM 등을 사용하려면 `animaworks anima set-model`로 `model` / `credential`을 설정하고, 백그라운드 모델은 `animaworks anima set-background-model`을 사용한다. 서버 실행 중에는 root API, 중지 중에는 오프라인 설정 스토어를 통해 root 소유 `status.json`에 반영된다. Anima 프로세스에서 직접 편집하지 않는다.
+`--role` 미지정의 `create_from_md`에서는 `general`이 사용된다. ops의 기본값은 로컬용으로 `ollama/glm-4.7`. 템플릿에 포함된 `templates/_shared/config_defaults/models.json`에서는 `ollama/glm-4.7*`이 실행 모드 **A** (LiteLLM + tool 루프)에 매치된다. vLLM 등을 사용하는 경우에는 `animaworks anima set-model`에서 `model` / `credential`를 설정하고, 백그라운드 모델은 `animaworks anima set-background-model`을 사용한다. 서버 가동 중에는 root API, 종료 중에는 오프라인 설정 스토어를 통해 root 소유의 `status.json`에 반영된다. Anima 프로세스에서 직접 편집하지 않는다.
 
-### 적용 흐름
+### 적용 플로우
 
-1. **생성 시**(`create_from_md`) 순서는 다음과 같다:
-   - `_apply_defaults_from_sheet()` … 캐릭터 시트에서 `identity.md` / `injection.md` /（권한 섹션이 있으면)`permissions.md` → `permissions.json`로 마이그레이션
-   - `_apply_role_defaults()` … 역할의 `permissions.json`와 `specialty_prompt.md`를 **덮어쓰기 복사**(캐릭터 시트 유래의 `permissions.json`는 역할 쪽에서 덮어쓰기됨)
-   - `_create_status_json()` … `SHARED_ROLES_DIR`(`_shared/roles/<role>/defaults.json`)에서 위 표의 모델·컨텍스트 설정을 읽고, 캐릭터 시트의 "모델" "credential"이 있으면 그것으로 덮어써서 `status.json`를 작성한다. 캐릭터 시트의 "실행 모드"에 값이 있을 때만 `execution_mode`를 기록한다; 미지정이면 키 자체를 생략하고, `models.json` 등의 패턴 해결에 맡긴다(`core/anima/factory.py`의 `_create_status_json`).
-2. **역할 변경 시**(`animaworks anima set-role`): root가 `_apply_role_defaults()`로 `permissions.json`와 `specialty_prompt.md`를 적용. root 소유 `status.json`에는 `model`, `context_threshold`, `conversation_history_threshold`가 `defaults.json`에서 병합된다. `background_model`는 **set-role에서 변경되지 않는다**(`animaworks anima set-background-model` 사용). `--status-only`는 `role`만 업데이트하고 템플릿 파일에는 건드리지 않는다. `--no-restart`에서 API 경유 자동 재시작을 건너뛸 수 있다. CLI의 성공 출력에는 `permissions.json`가 포함된다(`cli/commands/anima_mgmt.py`의 `cmd_anima_set_role`).
+1. **생성 시** (`create_from_md`)의 순서는 다음과 같음:
+   - `_apply_defaults_from_sheet()` … 캐릭터 시트에서 `identity.md` / `injection.md` /（권한 섹션이 있으면) `permissions.md` → `permissions.json`로 마이그레이션
+   - `_apply_role_defaults()` … 역할의 `permissions.json`와 `specialty_prompt.md`를 **덮어쓰기 복사** (캐릭터 시트 유래의 `permissions.json`는 역할 쪽에서 덮어쓰기됨)
+   - `_create_status_json()` … `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`)에서 위 표의 모델·컨텍스트 설정을 읽고, 캐릭터 시트의 "모델", "credential"이 있으면 그것으로 덮어써서 `status.json`을 작성한다. 캐릭터 시트의 "실행 모드"에 값이 있을 때만 `execution_mode`를 기록한다; 미지정이면 키 자체를 생략하고, `models.json` 등의 패턴 해결에 맡긴다 (`core/anima/factory.py`의 `_create_status_json`).
+2. **역할 변경 시** (`animaworks anima set-role`): root가 `_apply_role_defaults()`에서 `permissions.json`와 `specialty_prompt.md`를 적용. root 소유의 `status.json`에는 `model`, `context_threshold`, `conversation_history_threshold`가 `defaults.json`에서 병합된다. `background_model`는 **set-role에서는 업데이트되지 않는다** (`animaworks anima set-background-model`를 사용). `--status-only`는 `role`만 업데이트하고 템플릿 파일에는 건드리지 않는다. `--no-restart`에서 API를 통한 자동 재시작을 건너뛸 수 있다. CLI의 성공 출력에는 `permissions.json`가 포함된다 (`cli/commands/anima_mgmt.py`의 `cmd_anima_set_role`).
 
 ### 프롬프트 주입
 

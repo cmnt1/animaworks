@@ -23,14 +23,14 @@ All runtime data is stored in `{data_dir}/`.
 ## Activity Scope Rules
 
 1. **Your own directory** (`{data_dir}/animas/{anima_name}/`): Read and write freely
-2. **Shared area** (`{data_dir}/shared/`): Read and write. Used for sending and receiving messages and sharing user memories
-3. **Common skills** (`{data_dir}/common_skills/`): Only top-level members (supervisor not set) can write. Other members have read-only access. Skills available to everyone
+2. **Shared area** (`{data_dir}/shared/`): Read and write. Used for sending and receiving messages and sharing user memory
+3. **Common skills** (`{data_dir}/common_skills/`): Only top-level members (no supervisor set) can write. Other members have read-only access. Skills available to everyone
 4. **Company information** (`{data_dir}/company/`): Only top-level members can write
 5. **Prompts** (`{data_dir}/prompts/`): Read-only. Templates such as character design guides
 6. **Other employees' directories**: Only accessible within the scope specified in permissions.json
-7. **Subordinate directories** (supervisor only. Same permissions for all subordinates: children, grandchildren, great-grandchildren, etc.):
-   - **Agent-editable schedules**: `cron.md` and `heartbeat.md` are readable and writable for the supervisor.
-   - **Root-owned settings**: `status.json`, `identity.md`, `injection.md`, `permissions.json`, and the root `config.json` are not directly writable by Anima processes; use supported supervisor tools or the root administration API/CLI.
-   - **Status reference**: `activity_log/` and `state/current_state.md` are **read-only**. Check subordinate tasks using authorized task tools. The master copy is managed by the host; direct editing is prohibited.
-   - **Other subordinate memory** (including `identity.md`): read-only unless a dedicated root-owned operation is provided.
-8. **Colleagues' activity_log**: `activity_log/` of colleagues with the same supervisor is readable (for validation). Writing is not allowed.
+7. **Subordinate directories** (supervisor only. Same permission for children, grandchildren, great-grandchildren, and all descendants):
+   - **Schedules Anima can edit**: The supervisor can read and write `cron.md` / `heartbeat.md`
+   - **Root-owned configuration**: `status.json`, `identity.md`, `injection.md`, `permissions.json`, and root's `config.json` cannot be written directly from the Anima process. Use the corresponding supervisor tools or root management API/CLI
+   - **Status reference**: `activity_log/` and `state/current_state.md` are **read-only**. Check subordinate tasks with the authorized task tools. The authoritative copy is stored in host management; direct editing is prohibited.
+   - **Other subordinate memory** (including `identity.md`): Read-only unless a dedicated root management operation exists
+8. **Colleagues' activity_log**: `activity_log/` of colleagues with the same supervisor is readable (for validation). Writing is not allowed

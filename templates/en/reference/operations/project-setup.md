@@ -452,9 +452,9 @@ animaworks anima set-model --all <モデル名>
 
 When a supervisor changes a subordinate's model, use the `set_subordinate_model` tool.
 
-### Configuration reload
+### Configuration Reload
 
-To reload model settings after an authorized root/CLI status update without restarting the process, use the `reload` command. The `set-model` CLI command already requests a reload for a running Anima:
+After root/CLI has changed the allowed `status.json` configuration, use the `reload` command to apply the model configuration without restarting the process. The `set-model` command requests a reload from the running Anima:
 
 ```bash
 # 単一 Anima のリロード
@@ -464,14 +464,14 @@ animaworks anima reload <anima名>
 animaworks anima reload --all
 ```
 
-The reload is applied immediately via IPC (no downtime). Running sessions complete with the old configuration, and new sessions use the new configuration.
+The reload is applied immediately via IPC (no downtime). Running sessions complete with the old configuration, and new sessions use the new configuration starting from the next session.
 
 **Typical configuration change workflow**:
 
-1. Change the model with `animaworks anima set-model <name> <model>`; the root API updates `status.json` and reloads a running Anima.
-2. Use `animaworks anima reload <name>` after a root/CLI update that does not automatically notify the process.
+1. Change the model with `animaworks anima set-model <name> <model>` (the root API updates `status.json` and requests a reload from the running Anima)
+2. After root/CLI updates that are not automatically notified, use `animaworks anima reload <name>`
 
-Anima processes must not edit `status.json` directly. Use root-owned CLI/API operations instead.
+Do not edit `status.json` directly from the Anima process. Use the root-owned CLI/API operation.
 
 ### Default values list (anima_defaults)
 
@@ -491,24 +491,24 @@ Defines the organization hierarchy using only the `supervisor` field (listed in 
 
 The hierarchy functions through instruction and reporting via messaging. Supervisors can delegate tasks to subordinates, and subordinates report results to supervisors.
 
-## Anima management command list
+## Anima Management Command List
 
 CLI commands for daily Anima operations and management.
-Run while the server is running (`animaworks start`).
+Run these while the server is running (`animaworks start` completed).
 
 | Command | Description | Downtime |
 |---------|------|-----------|
-| `animaworks anima list` | Displays list and status of all Anima | None |
-| `animaworks anima status [name]` | Displays process status of specified Anima (or all if omitted) | None |
-| `animaworks anima reload <name>` | Reloads status.json and immediately applies model configuration (no process restart) | None |
-| `animaworks anima reload --all` | Reloads configuration for all Anima at once | None |
-| `animaworks anima restart <name>` | Fully restarts Anima processes (used when applying code changes) | 15-30 seconds |
-| `animaworks anima set-model <name> <model>` | Updates root-owned status and reloads the running Anima's model configuration | None |
-| `animaworks anima set-model --all <model>` | Changes models for all Anima at once | None |
-| `animaworks anima enable <name>` | Activates dormant Anima and starts the process | — |
-| `animaworks anima disable <name>` | Dormants Anima (stops process, sets enabled=false in status.json) | — |
-| `animaworks anima create` | Creates a new Anima (`--from-md`, `--template`, `--blank`) | — |
-| `animaworks anima delete <name>` | Deletes Anima (archived by default) | — |
+| `animaworks anima list` | Display a list and status of all Anima | None |
+| `animaworks anima status [name]` | Display the process status of a specified Anima (or all if omitted) | None |
+| `animaworks anima reload <name>` | Reload status.json and apply the model configuration immediately (no process restart) | None |
+| `animaworks anima reload --all` | Reload the configuration of all Anima at once | None |
+| `animaworks anima restart <name>` | Fully restart the Anima process (used when reflecting code changes) | 15-30 seconds |
+| `animaworks anima set-model <name> <model>` | Update the root-owned status and reload the model configuration of running Anima | None |
+| `animaworks anima set-model --all <model>` | Change the model of all Anima at once | None |
+| `animaworks anima enable <name>` | Activate a dormant Anima and start its process | — |
+| `animaworks anima disable <name>` | Put Anima into dormancy (process shutdown, status.json enabled=false) | — |
+| `animaworks anima create` | Create a new Anima (`--from-md`, `--template`, `--blank`) | — |
+| `animaworks anima delete <name>` | Delete an Anima (archived by default) | — |
 
 ### Server management commands
 

@@ -12,20 +12,20 @@ A set of supervisor tools automatically enabled for Anima instances with subordi
 
 ## Available Tools
 
-### Operable on All Descendants (Children, Grandchildren, Great-Grandchildren, etc.)
+### Operable on all subordinates (children, grandchildren, great-grandchildren, etc.)
 
 | Tool | Purpose |
-|------|---------|
-| `disable_subordinate` | Ask root to set `status.json` `enabled: false` → process stop + automatic resume prevention |
-| `enable_subordinate` | Resume a suspended subordinate |
-| `set_subordinate_model` | Ask root to update the subordinate's main model in `status.json` and reload a running process |
-| `set_subordinate_background_model` | Ask root to change the heartbeat/cron model in `status.json`; new background jobs use it. Clear with an empty string |
-| `restart_subordinate` | Restart a subordinate process (status.json `restart_requested` flag. Reconciliation restarts within about 30 seconds) |
-| `delegate_task` | Delegate a task to a direct subordinate (queue addition + DM send + tracking entry creation on your side) |
+|--------|------|
+| `disable_subordinate` | Request root to configure status.json `enabled: false` (process shutdown + prevent automatic restart) |
+| `enable_subordinate` | Restore dormant subordinates |
+| `set_subordinate_model` | Request root to update the main model for status.json and reload running processes |
+| `set_subordinate_background_model` | Request root to update the model for heartbeat/cron. Applied from the next background task (clear with empty string) |
+| `restart_subordinate` | Restart subordinate processes (status.json `restart_requested` flag. Reconciliation restarts within about 30 seconds) |
+| `delegate_task` | Delegate tasks to direct subordinates (queue addition + DM send + create tracking entry on your side) |
 | `org_dashboard` | Display process status, last activity, current task, and task count for all subordinates in a tree view |
-| `ping_subordinate` | Check subordinate liveness (`name` omitted for batch check of all, specified for a single one) |
-| `read_subordinate_state` | Read a subordinate's `current_state.md` |
-| `audit_subordinate` | Comprehensive audit of a subordinate's recent activity (activity summary, task status, error frequency, tool usage statistics, communication patterns) |
+| `ping_subordinate` | Check subordinate liveness (all at once if `name` is omitted, single if specified) |
+| `read_subordinate_state` | Read subordinate's `current_state.md` |
+| `audit_subordinate` | Comprehensive audit of subordinate's recent activity (activity summary, task status, error frequency, tool usage statistics, communication patterns) |
 
 ### Delegated Task Tracking
 
@@ -52,27 +52,27 @@ disable_subordinate(name="taro", reason="業務縮小のため一時休止")
 enable_subordinate(name="aoi")
 ```
 
-### Model Change and Restart
+### Model changes and restart
 
-These tools request root to update the root-owned `status.json`; Anima processes must not edit it directly. A running main model is reloaded by root, while stopped Animas use the setting on their next start:
+These tools request root to update root-owned `status.json`. Do not edit directly from the Anima process. The main model is reloaded into running processes, and stopped Anima instances read the new configuration at next startup:
 
 ```
 set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
 ```
 
-When changing the background model (for heartbeat/cron), the next background task runner uses the new value; an already-running task is allowed to finish:
+The background model (for heartbeat/cron) is applied from the next task runner startup, and running tasks continue to completion:
 
 ```
 set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
 ```
 
-When clearing the background model and reverting to the main model:
+To clear the background model and revert to the main model:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")
 ```
 
-Use `restart_subordinate` separately when a full process restart is actually required.
+Only use `restart_subordinate` separately when a full process restart is truly necessary.
 
 ### Status Check and Audit
 

@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/reference/api.md -->
-<!-- i18n: source-sha256=f369c6dcfdbdd7a840b46018630e53fc3baa21ce283a14b755228f872d1c5211 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=ffd4e55c9f710d5db03d871b019afd3e778e6580f0cb290e834db1891e4ac029 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 # API Reference
 
@@ -29,10 +29,11 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 | GET | `/api/animas` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Retrieves the list of available animas. | `server/routes/animas.py:list_animas` |
 | POST | `/api/animas/reload-all` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Hot-reload ModelConfig for all running animas. | `server/routes/animas.py:reload_all_anima_configs` |
-| DELETE | `/api/animas/{name}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Stops and deletes an anima after confirming it has stopped (`archive=true` by default; returns 409 if stopping cannot be confirmed). Returns the archive path and supervisor-reference warnings. | `server/routes/animas.py:delete_anima` |
+| DELETE | `/api/animas/{name}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Stop and delete an anima entirely (process + files). | `server/routes/animas.py:delete_anima` |
 | GET | `/api/animas/{name}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | — | `server/routes/animas.py:get_anima_detail` |
 | GET | `/api/animas/{name}/aliases` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return aliases for an anima from config.json. | `server/routes/animas.py:get_anima_aliases` |
 | PUT | `/api/animas/{name}/aliases` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Update aliases for an anima in config.json. | `server/routes/animas.py:update_anima_aliases` |
+| PUT | `/api/animas/{name}/background-model` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Update heartbeat/cron model settings in root-owned status.json. | `server/routes/animas.py:update_anima_background_model` |
 | GET | `/api/animas/{name}/background-tasks` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | List background tasks for an anima (reads from state dir). | `server/routes/animas.py:list_background_tasks` |
 | GET | `/api/animas/{name}/background-tasks/{task_id}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Get a specific background task by ID. | `server/routes/animas.py:get_background_task` |
 | GET | `/api/animas/{name}/config` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return resolved model configuration for an anima. | `server/routes/animas.py:get_anima_config` |
@@ -48,7 +49,9 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | GET | `/api/animas/{name}/permissions` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return permissions.json for an anima. | `server/routes/animas.py:get_anima_permissions` |
 | PUT | `/api/animas/{name}/permissions` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Update permissions.json for an anima. | `server/routes/animas.py:update_anima_permissions` |
 | POST | `/api/animas/{name}/reload` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Hot-reload ModelConfig from status.json without process restart. | `server/routes/animas.py:reload_anima_config` |
+| POST | `/api/animas/{name}/rename` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Rename an Anima on root so the CLI never moves owned settings itself. | `server/routes/animas.py:rename_anima` |
 | POST | `/api/animas/{name}/restart` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Restart a specific anima process. | `server/routes/animas.py:restart_anima` |
+| PUT | `/api/animas/{name}/role` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Update role settings and role permission template through root writers. | `server/routes/animas.py:update_anima_role` |
 | POST | `/api/animas/{name}/start` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Start a stopped anima process. | `server/routes/animas.py:start_anima` |
 | POST | `/api/animas/{name}/stop` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Stop a specific anima process. | `server/routes/animas.py:stop_anima` |
 | POST | `/api/animas/{name}/trigger` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | — | `server/routes/animas.py:trigger_heartbeat` |
@@ -108,16 +111,18 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 
 ## `server/routes/config_routes.py`
 
-| GET | `/api/discord/channel-members` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return all Discord channel membership mappings. | `server/routes/config_routes.py:get_discord_channel_members` |
-| PUT | `/api/discord/channel-members/{channel_id}` | Session required (local_trust mode, or optional if localhost trust is enabled) | Update Anima members for a Discord channel. | `server/routes/config_routes.py:put_discord_channel_members` |
-| GET | `/api/discord/channels` | Session required (local_trust mode, or optional if localhost trust is enabled) | List Discord guild channels with membership info. | `server/routes/config_routes.py:get_discord_channels` |
-| GET | `/api/settings/anthropic-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return current Anthropic auth mode and runtime availability. | `server/routes/config_routes.py:get_anthropic_auth` |
-| PUT | `/api/settings/anthropic-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Persist Anthropic auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_anthropic_auth` |
-| GET | `/api/settings/openai-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return current OpenAI auth mode and runtime availability. | `server/routes/config_routes.py:get_openai_auth` |
-| PUT | `/api/settings/openai-auth` | Session required (local_trust mode, or optional if localhost trust is enabled) | Persist OpenAI auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_openai_auth` |
-| GET | `/api/system/available-models` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
-| GET | `/api/system/available-tools` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
-| GET | `/api/system/config` | Session required (local_trust mode, or optional if localhost trust is enabled) | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
+| GET | `/api/discord/channel-members` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return all Discord channel membership mappings. | `server/routes/config_routes.py:get_discord_channel_members` |
+| PUT | `/api/discord/channel-members/{channel_id}` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Update Anima members for a Discord channel. | `server/routes/config_routes.py:put_discord_channel_members` |
+| GET | `/api/discord/channels` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | List Discord guild channels with membership info. | `server/routes/config_routes.py:get_discord_channels` |
+| GET | `/api/settings/anthropic-auth` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return current Anthropic auth mode and runtime availability. | `server/routes/config_routes.py:get_anthropic_auth` |
+| PUT | `/api/settings/anthropic-auth` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Persist Anthropic auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_anthropic_auth` |
+| GET | `/api/settings/openai-auth` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return current OpenAI auth mode and runtime availability. | `server/routes/config_routes.py:get_openai_auth` |
+| PUT | `/api/settings/openai-auth` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Persist OpenAI auth mode in config.json for the settings UI. | `server/routes/config_routes.py:update_openai_auth` |
+| GET | `/api/system/available-models` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return all available models (cloud + local) for UI dropdowns. | `server/routes/config_routes.py:get_available_models` |
+| GET | `/api/system/available-tools` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Return available external tool module names (minus disabled services). | `server/routes/config_routes.py:get_available_tools` |
+| GET | `/api/system/config` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Read and return the AnimaWorks config with masked secrets. | `server/routes/config_routes.py:get_config` |
+| PUT | `/api/system/config/value` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Apply one validated CLI config-set operation through the root server. | `server/routes/config_routes.py:update_config_value` |
+| PUT | `/api/system/config/wizard` | Session required (can be omitted in local_trust mode, or if localhost trust is enabled) | Apply the interactive CLI wizard changes on the root server. | `server/routes/config_routes.py:save_config_wizard` |
 
 ## `server/routes/external_tasks.py`
 
@@ -126,8 +131,12 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 ## `server/routes/internal.py`
 
 | POST | `/api/internal/anima/create` | Internal | Create an anima outside sandbox EROFS constraints. | `server/routes/internal.py:internal_anima_create` |
+| POST | `/api/internal/animas/{target}/control` | Internal | Persist subordinate control settings after verifying the token owner. | `server/routes/internal.py:internal_anima_control` |
+| POST | `/api/internal/animas/{target}/prompt-settings` | Internal | Apply an authorized identity/injection change through the root owner. | `server/routes/internal.py:internal_update_anima_prompt_setting` |
 | POST | `/api/internal/call-human/confirm` | Internal | Check the CLI ``call_human`` confirmation key; keys live in server memory only. | `server/routes/internal.py:internal_call_human_confirm` |
+| POST | `/api/internal/company/assign` | Internal | Apply CLI company assignments through the root-owned status writer. | `server/routes/internal.py:internal_company_assign` |
 | GET | `/api/internal/company/boundary` | Internal | Resolve company membership on the host for sandboxed handlers. | `server/routes/internal.py:internal_company_boundary` |
+| POST | `/api/internal/company/split` | Internal | Run a CLI company split on root when it mutates status/settings. | `server/routes/internal.py:internal_company_split` |
 | POST | `/api/internal/delegate-task` | Internal | Persist a delegated task outside sandbox EROFS constraints. | `server/routes/internal.py:internal_delegate_task` |
 | POST | `/api/internal/embed` | Internal | Centralized embedding inference for child processes. | `server/routes/internal.py:internal_embed` |
 | POST | `/api/internal/interaction/create` | Internal | — | `server/routes/internal.py:internal_interaction_create` |
@@ -137,6 +146,7 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | POST | `/api/internal/post-channel` | Internal | Append a channel post outside sandbox EROFS constraints. | `server/routes/internal.py:internal_post_channel` |
 | POST | `/api/internal/rerank` | Internal | Centralized cross-encoder reranking for child processes. | `server/routes/internal.py:internal_rerank` |
 | POST | `/api/internal/send-message` | Internal | Persist a DM outside sandbox EROFS constraints. | `server/routes/internal.py:internal_send_message` |
+| POST | `/api/internal/settings/anima-icon-template` | Internal | Persist icon-template defaults on behalf of an authenticated worker. | `server/routes/internal.py:internal_persist_anima_icon_template` |
 | POST | `/api/internal/submit-tasks` | Internal | Publish a complete batch on the host; no sandbox DB grant is needed. | `server/routes/internal.py:internal_submit_tasks` |
 | POST | `/api/internal/task-board-action` | Internal | Run a lease-guarded task board write for a sandboxed anima CLI. | `server/routes/internal.py:internal_task_board_action` |
 | GET | `/api/internal/tasks` | Internal | Read a task snapshot for workers without direct database access. | `server/routes/internal.py:internal_tasks` |
@@ -149,10 +159,11 @@ Generated from FastAPI's OpenAPI definitions, WebSocket, and `server/app.py`'s d
 | POST | `/api/internal/vector/get-by-ids` | Internal | — | `server/routes/internal.py:vector_get_by_ids` |
 | POST | `/api/internal/vector/get-by-metadata` | Internal | — | `server/routes/internal.py:vector_get_by_metadata` |
 | POST | `/api/internal/vector/list-collections` | Internal | — | `server/routes/internal.py:vector_list_collections` |
-| POST | `/api/internal/vector/query` | Internal | Execute vector search for internal services. | `server/routes/internal.py:vector_query` |
+| POST | `/api/internal/vector/query` | Internal | Run vector search for internal services. | `server/routes/internal.py:vector_query` |
 | POST | `/api/internal/vector/update-metadata` | Internal | — | `server/routes/internal.py:vector_update_metadata` |
 | POST | `/api/internal/vector/upsert` | Internal | — | `server/routes/internal.py:vector_upsert` |
-| GET | `/api/messages/{message_id}` | Session required (local_trust mode, or optional if localhost trust is enabled) | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
+| POST | `/api/internal/workspace/grant` | Internal | Apply a human-origin workspace grant through root-owned writers. | `server/routes/internal.py:internal_workspace_grant` |
+| GET | `/api/messages/{message_id}` | Session required (optional in local_trust mode, or when localhost trust is enabled) | Return the full JSON of a stored message by its ID. | `server/routes/internal.py:get_message` |
 
 ## `server/routes/logs_routes.py`
 

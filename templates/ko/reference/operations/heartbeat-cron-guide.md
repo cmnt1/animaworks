@@ -189,7 +189,7 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 
 ### status.json에서의 설정
 
-root 관리자는 root CLI/API로 Anima별 `heartbeat_interval_minutes`를 설정할 수 있다. 값은 root 소유 `status.json`에 저장되며 Anima 프로세스는 편집하지 않는다.
+root 관리자는 root CLI/API에서 Anima 개별의 `heartbeat_interval_minutes`을 설정할 수 있습니다. 값은 root 소유 `status.json`에 저장되며, Anima 프로세스에서는 편집하지 않습니다.
 
 ```json
 {
@@ -197,9 +197,9 @@ root 관리자는 root CLI/API로 Anima별 `heartbeat_interval_minutes`를 설�
 }
 ```
 
-- 설정 가능 범위: 1~1440분(1일)
-- 미설정 시: `config.json`의 `heartbeat.interval_minutes`(기본 30분)로 폴백
-- `status.json`은 root 소유입니다. 관리자는 서버 중지 중 `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>`로 개별 오버라이드를 설정할 수 있습니다. 서버 실행 중에는 CLI가 root API를 통해 반영합니다. Anima 프로세스는 이 파일을 편집하지 않습니다.
+- 설정 가능 범위: 1〜1440분 (1일)
+- 미설정 시: `config.json`의 `heartbeat.interval_minutes` (기본 30분)로 폴백
+- `status.json`는 root 소유입니다. 관리자는 서버 종료 중에 `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>`로 개별 오버라이드를 설정할 수 있습니다. 서버 시작 중에는 CLI가 root API를 통해 반영합니다. Anima 프로세스는 이 파일을 편집하지 않습니다.
 
 ### 권장 가이드라인
 
@@ -257,7 +257,7 @@ Activity Level을 시간대에 따라 자동으로 전환하는 메커니즘.
 
 - **Settings UI**: 나이트 모드 체크박스 + 시간대·레벨 설정
 - **API**: `PUT /api/settings/activity-schedule`에 위 JSON을 전송
-- **root 설정 API**: Settings UI를 사용하거나 위 JSON을 `PUT /api/settings/activity-schedule`로 전송한다. Anima 프로세스에서 `config.json`을 직접 편집하지 않는다
+- **root 설정 API**: Settings UI를 사용하거나, 위 JSON을 `PUT /api/settings/activity-schedule`에 전송합니다. Anima 프로세스에서 `config.json`를 직접 편집하지 않습니다
 
 #### 주의점
 
@@ -538,16 +538,16 @@ type: llm
 
 ## Cron 설정의 핫 리로드
 
-cron.md를 업데이트하면 heartbeat.md과 동일하게 스케줄이 자동 리로드된다.
-Anima 자신이 cron.md을 다시 쓴 경우에도 즉시 반영된다(self-modify 패턴).
-상급자는 부하의 `cron.md` / `heartbeat.md`를 write memory 도구로 편집할 수 있다. 권한이 있는 상급자의 `injection.md` 변경 요청도 root로 전달되어 승인된다. `status.json` 변경에는 해당 상급자 도구 또는 root CLI/API를 사용한다. root 소유 파일을 Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트로 직접 쓰지 않는다.
+cron.md를 업데이트하면, heartbeat.md과 동일하게 스케줄이 자동 리로드됩니다.
+Anima 자신이 cron.md을 다시 쓴 경우에도 즉시 반영됩니다 (self-modify 패턴).
+상급자는 산하의 `cron.md` / `heartbeat.md`을 write memory 도구로 편집할 수 있습니다. 허가된 상급자로부터의 `injection.md` 변경 요청도 root로 전송·인가됩니다. `status.json`의 변경에는 대응하는 상급자용 도구 또는 root CLI/API을 사용합니다. root 소유 파일을 Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트 등으로 직접 쓰지 않습니다.
 
 리로드 시 동작:
 1. 해당 Anima의 기존 cron 작업을 모두 삭제
-2. 업데이트된 cron.md를 파싱하고 새 작업을 등록
-3. 로그에 `Schedule reloaded for '{name}'`이 출력된다
+2. 업데이트 후의 cron.md를 파싱하고, 새 작업을 등록
+3. 로그에 `Schedule reloaded for '{name}'`가 출력됨
 
 자신이 cron.md을 업데이트할 때의 주의점:
-- 제목(`## タスク名`)의 바로 뒤에 `schedule:` 디렉티브를 배치한다(MUST)
-- 스케줄은 표준 5필드 cron식으로 기재한다(MUST)
-- type 행은 schedule의 바로 뒤에 배치한다(SHOULD)
+- 제목 (`## タスク名`) 직후에 `schedule:` 디렉티브를 배치 (MUST)
+- 스케줄은 표준 5필드 cron 식으로 기재 (MUST)
+- type 행은 schedule 직후에 배치 (SHOULD)

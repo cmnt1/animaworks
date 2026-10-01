@@ -187,9 +187,9 @@ No server restart is required (MAY skip restart). APScheduler jobs are re-regist
 
 ## Per-anima Heartbeat interval configuration
 
-### Configuration with status.json
+### Configuration at status.json
 
-A root administrator can set `heartbeat_interval_minutes` per Anima with the root CLI/API; it is stored in root-owned `status.json` and is never edited by an Anima process.
+The root administrator can configure Anima-specific `heartbeat_interval_minutes` at root CLI/API. Values are stored in root-owned `status.json` and are not edited from the Anima process.
 
 ```json
 {
@@ -197,9 +197,9 @@ A root administrator can set `heartbeat_interval_minutes` per Anima with the roo
 }
 ```
 
-- Configurable range: 1 to 1440 minutes (1 day)
+- Configurable range: 1–1440 minutes (1 day)
 - If not set: falls back to `heartbeat.interval_minutes` of `config.json` (default 30 minutes)
-- `status.json` is root-owned. An administrator can set a per-Anima override while the server is stopped with `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>`; while it is running, the CLI routes the update through the root API. Anima processes must not edit this file.
+- `status.json` is root-owned. Administrators can set individual overrides via `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>` while the server is stopped. During server startup, the CLI applies them through the root API. The Anima process does not edit this file.
 
 ### Recommended guidelines
 
@@ -253,11 +253,11 @@ Each entry has three fields: `start` (start time), `end` (end time), and `level`
 - Up to 24 entries
 - An empty array `[]` disables schedule mode (returns to a fixed Activity Level)
 
-#### Configuration methods
+#### Configuration Method
 
-- **Settings UI**: night mode checkbox + time period and level settings
-- **API**: send the above JSON to `PUT /api/settings/activity-schedule`
-- **Root settings API**: use the settings UI or send the above JSON to `PUT /api/settings/activity-schedule`; Anima processes must not edit `config.json` directly
+- **Settings UI**: Night mode checkbox + time range and level settings
+- **API**: Send the above JSON to `PUT /api/settings/activity-schedule`
+- **Root configuration API**: Use the Settings UI, or send the above JSON to `PUT /api/settings/activity-schedule`. Do not edit `config.json` directly from the Anima process.
 
 #### Notes
 
@@ -536,18 +536,18 @@ type: llm
 
 The `## ` heading inside the comment is ignored by the parser.
 
-## Cron configuration hot reload
+## Hot Reload of Cron Configuration
 
-When cron.md is updated, the schedule is automatically reloaded in the same way as heartbeat.md.
-If Anima itself rewrites cron.md, it is also reflected immediately (self-modify pattern).
-A supervisor may edit subordinate `cron.md` / `heartbeat.md` with the write memory tool, specifying paths such as `../{anima_name}/cron.md`. An authorized supervisor may request an `injection.md` change through the same tool, which is forwarded to root and checked; `status.json` changes use supported supervisor tools or root CLI/API. Never write root-owned files directly with Read / Write / Edit / apply_patch / `Path.write_text` or shell redirection.
+When cron.md is updated, the schedule is automatically reloaded, just like heartbeat.md.
+If Anima itself rewrites cron.md, the change is reflected immediately (self-modify pattern).
+Supervisors can edit the `cron.md` / `heartbeat.md` of their subordinates using the write memory tool. Change requests for `injection.md` from authorized supervisors are also forwarded to root and authorized. For changes to `status.json`, use the corresponding supervisor tool or root CLI/API. Do not write directly to root-owned files via Read / Write / Edit / apply_patch / `Path.write_text` / shell redirection, etc.
 
 Behavior on reload:
-1. Delete all existing cron jobs of the relevant Anima
+1. Delete all existing cron jobs for the relevant Anima
 2. Parse the updated cron.md and register new jobs
 3. `Schedule reloaded for '{name}'` is output to the log
 
 Notes when updating cron.md yourself:
 - Place the `schedule:` directive immediately after the heading (`## タスク名`) (MUST)
-- Write the schedule in standard 5-field cron expression (MUST)
+- Write the schedule as a standard 5-field cron expression (MUST)
 - Place the type line immediately after the schedule (SHOULD)

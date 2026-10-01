@@ -6,27 +6,27 @@ AnimaWorks에서 조직 구조는 각 Anima의 `status.json`(또는 `identity.md
 
 ## 데이터 소스와 우선순위
 
-### supervisor(상급자)
+### supervisor（상급자）
 
 조직의 상하 관계는 각 Anima의 `supervisor`에서 정의된다. 읽기 우선순위:
 
 1. **status.json** — `"supervisor"` 키(권장)
-2. **identity.md** — 표 형식 `| 上司 | name |`의 행(일본어만. `core/config/models.py`의 `read_anima_supervisor`가 분석)
+2. **identity.md** — 표 형식 `| 上司 | name |`의 행(일본어만. `core/config/models.py`의 `read_anima_supervisor`가 해석)
 
-`supervisor`가 미설정·비어 있음·「없음」「(없음)」「（없음）」「-」「---」인 경우는 최상위(가장 위)가 된다.
-`animaworks config set animas.<name>.supervisor <supervisor>`는 root 소유 status/config를 함께 갱신한다. `config.json`만 직접 변경하면 org_sync가 디스크 값으로 덮어쓸 수 있으므로 CLI/API를 사용한다.
+`supervisor`가 미설정·비어 있음·「없음」「(없음)」「（없음）」「-」「---」인 경우는 최상위 레벨이 된다.
+`animaworks config set animas.<name>.supervisor <supervisor>`은 root 소유 status/config를 일괄 업데이트한다. `config.json`만 직접 변경하면 org_sync에 의해 디스크에서 덮어써지므로 CLI/API를 사용한다.
 
-### speciality(전문 분야)
+### speciality（전문）
 
-전문 영역은 `core/prompt/builder.py`의 `_scan_all_animas()`에 의해 다음 우선순위로 해결된다:
+전문 영역은 `core/prompt/builder.py`의 `_scan_all_animas()`에 따라 다음 우선순위로 해결된다:
 
 1. **status.json** — `"speciality"` 키(자유 텍스트)
 2. **config.json** — `animas.<name>.speciality`(status.json에 `speciality` 키가 없는 경우의 폴백)
 3. **status.json** — `"role"` 키(위에서 해결되지 않는 경우의 최종 폴백. 역할 이름: engineer, researcher, manager, writer, ops, general)
 
-**주의:** org_sync는 **speciality를 동기화하지 않는다**. speciality는 프롬프트 구축 시에 디스크와 config에서 그때그때 해결된다.
-`animaworks anima create --from-md`에서 생성한 Anima는 `status.json`에 `role`이 들어가지만 `speciality`는 들어가지 않는다.
-커스텀 표시(예: 「개발 리드」)는 `animaworks config set animas.<name>.speciality "개발 리드"`로 설정한다. root 소유 status/config가 함께 갱신된다.
+**주의:** org_sync는 **speciality를 동기화하지 않는다**. speciality는 프롬프트 구축 시 디스크와 config에서 그때마다 해결된다.
+`animaworks anima create --from-md`로 생성한 Anima는 `status.json`에 `role`가 들어가지만 `speciality`는 들어가지 않는다.
+커스텀 표시(예: 「개발 리드」)로 하고 싶은 경우는 `animaworks config set animas.<name>.speciality "開発リード"`를 사용한다. root 소유 status/config의 양쪽이 모두 업데이트된다.
 
 ## org_sync에 의한 config.json 동기화
 
@@ -46,10 +46,10 @@ AnimaWorks에서 조직 구조는 각 Anima의 `status.json`(또는 `identity.md
 
 ## supervisor에 의한 계층 정의
 
-- `supervisor: null` 또는 미설정 → 그 Anima는 최상위(가장 위)
+- `supervisor: null` 또는 미설정 → 해당 Anima는 최상위 레벨
 - `supervisor: "alice"` → alice가 상급자
 
-root 소유 status 값의 예(표시용. 직접 편집하지 말고 CLI/API로 설정):
+root 소유의 status 값 예(표시용. 직접 편집하지 말고 CLI/API로 설정):
 
 ```json
 {
@@ -78,8 +78,8 @@ alice（経営戦略・全体統括）
 
 중요한 제약:
 - supervisor에 지정하는 이름은 알려진 Anima 이름(영문 이름)이어야 한다
-- 순환 참조(alice → bob → alice)는 검출되어 동기화 대상 외가 된다
-- 1명의 Anima가 가질 수 있는 supervisor는 1명뿐
+- 순환 참조(alice → bob → alice)는 감지되어 동기화 대상에서 제외된다
+- 1명의 Anima가 가질 수 있는 supervisor는 1명뿐이다
 
 ## 조직 컨텍스트 구축 프로세스
 
@@ -118,21 +118,21 @@ alice（経営戦略・全体統括）
 - 부하가 「(없음)」이라면, 당신은 작업 실행자로서 스스로 움직인다
 - 동료가 있으면, 관련 업무에서 직접 조정할 수 있다
 
-## 조직 변경 시의 동작
+## 조직 변경 시 동작
 
 조직 구조의 변경은 다음 절차로 반영된다:
 
-1. 조직 설정은 root 소유 CLI/API로 변경한다(예: `animaworks config set animas.<name>.supervisor <supervisor>` / `animaworks config set animas.<name>.speciality <speciality>`).
-2. CLI/API가 `status.json`과 `config.json`을 함께 갱신하고 org_sync가 계층을 동기화한다. 다음 reconciliation / prompt에서 새 값이 사용된다.
-3. **speciality 변경:** 프롬프트 구축 시 읽으므로 Anima 재시작은 필요 없다. 다음 채팅/하트비트에 반영된다.
+1. 조직 설정은 root 소유의 CLI/API에서 변경한다(예: `animaworks config set animas.<name>.supervisor <supervisor>` / `animaworks config set animas.<name>.speciality <speciality>`).
+2. CLI/API은 `status.json`와 `config.json`의 양쪽을 업데이트하고, org_sync가 계층을 동기화한다. 다음 reconciliation / prompt에서 새 값이 사용된다.
+3. **speciality의 변경:** 프롬프트 구축 시 읽히므로 Anima의 재시작은 불필요. 다음 채팅/하트비트에서 반영된다.
 
 주의점:
-- Anima 프로세스에서 `status.json` / `config.json`을 직접 편집하지 않는다. root와 서버 중지 중 CLI만 작성자다.
-- 조직 변경 후에는 영향을 받는 Anima에 메시지로 알릴 것을 SHOULD(권장)
+- Anima 프로세스에서 `status.json` / `config.json`를 직접 편집하지 않는다. 작성자는 root와 서버 정지 중의 CLI뿐이다.
+- 조직 변경 후에는 영향을 받는 Anima에 메시지로 알림을 보내는 것을 SHOULD(권장)
 
 ## 조직 구조의 패턴 예
 
-다음은 조직 설정의 예다. root 소유 CLI/API로 설정하며 org_sync가 `supervisor`를 동기화한다. `speciality`는 프롬프트 구축 시 해결된다.
+다음은 조직 설정의 예. root 소유 CLI/API에서 설정하고, org_sync가 `supervisor`을 동기화한다. `speciality`은 프롬프트 구축 시 해결된다.
 
 ### 패턴 1: 플랫 조직
 
@@ -160,7 +160,7 @@ carol（デザイン）
 
 명확한 상하 관계가 있다. 가장 일반적인 패턴.
 
-각 계층 필드는 root 소유 CLI/API로 설정한다(예: `animaworks config set animas.dave.supervisor bob`):
+각 계층 필드는 root 소유 CLI/API에서 설정한다(예: `animaworks config set animas.dave.supervisor bob`):
 
 ```
 alice（CEO・全体統括）
@@ -195,20 +195,20 @@ manager（プロジェクト管理）
 
 ## speciality의 활용
 
-`speciality`은 root 소유 `status.json`에 자유 텍스트로 저장된다. `animaworks config set animas.<name>.speciality <value>`로 설정한다. 미설정 시에는 `role`(역할 이름)이 폴백으로 표시된다.
+`speciality`은 root 소유의 `status.json`에 자유 텍스트로 저장된다. `animaworks config set animas.<name>.speciality <value>`로 설정한다. 미설정 시 `role`(역할 이름)이 폴백으로 표시된다.
 
 - 조직 컨텍스트에서 각 Anima의 이름 옆에 표시된다(예: `bob (開発リード)` 또는 `bob (engineer)`)
 - 다른 Anima가 작업의 상담 대상이나 위임 대상을 판단하는 단서가 된다
 - 미설정인 경우는 「(미설정)」으로 표시된다
 
-**Anima 생성 시의 동작(`core/anima/factory.py`):**
-- `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]`에서 생성하면 `status.json`에 `supervisor`와 `role`이 쓰여진다
-- **supervisor**: `--supervisor` 옵션이 지정되어 있으면 그것을 우선. 미지정인 경우는 캐릭터 시트의 기본 정보 테이블(`| 上司 | name |`)에서 분석
-- **speciality**: 캐릭터 시트의 기본 정보 테이블에는 포함되지 않고, `_create_status_json`도 speciality를 쓰지 않으므로, 생성 시에 자동 설정되지 않는다
-- 커스텀 전문 표시가 필요하면 생성 후 `animaworks config set animas.<name>.speciality "개발 리드"`로 설정한다. 설정 파일을 직접 편집하지 않는다
-- `create_from_template` / `create_blank`에서 생성한 경우도 마찬가지로, speciality는 status.json에 자동 설정되지 않는다(템플릿에 status.json가 포함되는 경우는 그 내용이 복사된다)
+**Anima 생성 시 동작(`core/anima/factory.py`):**
+- `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]`로 생성하면 `status.json`에 `supervisor`와 `role`이 기록된다
+- **supervisor**: `--supervisor` 옵션이 지정되어 있으면 그것을 우선. 미지정인 경우는 캐릭터 시트의 기본 정보 테이블(`| 上司 | name |`)에서 해석
+- **speciality**: 캐릭터 시트의 기본 정보 테이블에는 포함되지 않고, `_create_status_json`도 speciality를 기록하지 않으므로 생성 시 자동 설정되지 않는다
+- 커스텀 전문 표시가 필요한 경우는 생성 후 `animaworks config set animas.<name>.speciality "開発リード"`로 설정한다. 설정 파일을 직접 편집하지 않는다
+- `create_from_template` / `create_blank`로 생성한 경우도 마찬가지로 speciality는 status.json에 자동 설정되지 않는다(템플릿에 status.json가 포함되는 경우는 그 내용이 복사된다)
 
 효과적인 speciality 작성법:
 - 구체적이고 짧게: `バックエンド開発` `顧客サポート` `データ分析`
 - 너무 모호하지 않게: `いろいろ` → `企画・調整・進行管理`
-- 복수의 전문이 있는 경우는 가운뎃점으로 구분: `UI設計・フロントエンド開発`
+- 여러 전문이 있는 경우는 가운뎃점으로 구분: `UI設計・フロントエンド開発`

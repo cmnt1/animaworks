@@ -31,20 +31,20 @@ Use when: checking "what is this file for" or "can I change it myself."
 
 ### Encapsulation Boundaries
 
-Based on Anima's design principle of "encapsulated individual," files are classified into three layers.
-This classification is the basis for "who is allowed to modify which file."
+Based on Anima's design principle of "encapsulated individuals," files are classified into three layers.
+This classification serves as the basis for "who is allowed to modify which file."
 
-| Category | Files | Reason |
+| Classification | Files | Reason |
 |------|---------|------|
-| **Inside the capsule** (thoughts and memory) | `identity.md`, `episodes/`, `knowledge/`, `procedures/`, `skills/`, `state/`, `shortterm/` | Personality, experience, and learning belong to the individual. Cannot be modified externally |
-| **Boundary of the capsule** (interface between organization and individual) | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | Root-owned organizational settings. Supervisors can edit `cron.md` / `heartbeat.md`; changes to the other files go through root administration APIs/CLI |
-| **Outside the capsule** (management information) | `status.json`, `specialty_prompt.md` | System configuration owned by the root server and offline CLI; Anima processes do not write it directly |
+| **Inside the capsule** (thoughts, memories) | `identity.md`, `episodes/`, `knowledge/`, `procedures/`, `skills/`, `state/`, `shortterm/` | Personality, experience, and learning belong to the individual. Cannot be modified externally |
+| **Boundary of the capsule** (interface between organization and individual) | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | Organization settings owned by root. Supervisors can edit `cron.md` / `heartbeat.md`; other files are changed via root-managed API/CLI |
+| **Outside the capsule** (administrative information) | `status.json`, `specialty_prompt.md` | Settings handled by the root server and the CLI during shutdown. Cannot be written directly from the Anima process |
 
-- Changing the **inside** means "becoming a different person" or "losing memory." This is not allowed
-- Changing the **boundary** means "changing jobs" or "changing the scope of work." It is legitimate organizational management, performed through root-owned APIs/tools rather than direct Anima file writes
-- Changing the **outside** does not directly affect the individual's personality or behavior
+- Changing the **inside** means "becoming a different person" or "losing memories." This is not permitted
+- Changing the **boundary** means "changing jobs" or "changing the scope of work." This is legitimate for organizational operations, but is done via root-owned APIs/tools
+- Changing the **outside** has no direct effect on the individual's personality or behavior
 
-> **Relationship between growth and identity.md**: identity.md is the immutable baseline of personality (temperament) and cannot be rewritten by an Anima. "Growth" is expressed through accumulation in `knowledge/` (learned lessons), `procedures/` (acquired procedures), and `skills/` (refined skills). Even if identity.md is fixed, behavior certainly changes through memory accumulation—this is the model of "the same person growing." Rewriting identity.md means "replacement with a different person" rather than "growth." A human administrator can change it through root administration APIs/CLI; a bootstrap write request is also validated and persisted by root.
+> **Relationship between growth and identity.md**: identity.md is the immutable baseline of personality (temperament) and cannot be rewritten by Anima itself. "Growth" is expressed through accumulation in `knowledge/` (lessons learned), `procedures/` (procedures acquired), and `skills/` (skills refined). Even if identity.md is fixed, behavior reliably changes through the accumulation of memories—this is the model of "the same person growing." If changes are needed, a human administrator uses root-managed API/CLI. Write requests during bootstrap are also authorized and saved by root.
 
 ---
 
@@ -81,22 +81,22 @@ Saved for reference purposes; normally not modified.
 
 ## Your Job (injection)
 
-### injection.md — What You Do
+### injection.md — What you do
 
 **Your professional duties, responsibilities, and approach to work.**
 
-- Scope of duties and responsibilities
-- Attitude toward work, prioritization method
+- Scope of responsibilities and accountability
+- Attitude toward work, how priorities are set
 - Reporting obligations, escalation criteria
-- **Procedures that must never be skipped** (e.g., not sharing confidential information externally, confirming before operating in production)
+- **Procedures that must never be skipped** (e.g., not disclosing confidential information externally, confirming before operating in production environments)
 
-injection.md is your **mutable behavioral guideline**. An authorized supervisor or human administrator can request policy changes through root; bootstrap writes are also root-mediated. Anima processes never write the file directly.
+injection.md is your **mutable behavioral guideline**. Authorized supervisors or human administrators can request changes via root, and writes during bootstrap are also authorized by root. Do not write directly from the Anima process.
 
 | Item | Value |
 |------|-----|
-| Modification permission | You can update it yourself. Supervisor can also edit |
-| Modification frequency | As needed (when business changes) |
-| Impact of modification | Behavioral policy changes = something like changing jobs |
+| Change permission | You can update it yourself. Supervisors can also edit it |
+| Change frequency | As needed (when work changes) |
+| Impact of change | Changing behavioral guidelines is like changing jobs |
 
 ### Difference Between identity and injection
 

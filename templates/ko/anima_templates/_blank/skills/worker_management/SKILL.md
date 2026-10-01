@@ -12,7 +12,7 @@ description: >-
 
 ## CLI 명령어 (권장)
 
-`animaworks` CLI로 개별 Anima 관리가 가능. **API 직접 호출보다 CLI를 우선할 것.**
+`animaworks` CLI에서 개별 Anima 관리를 할 수 있습니다. **API를 직접 호출하는 것보다 CLI를 우선 사용하세요.**
 
 ```bash
 # 個別Animaのリスタート（設定変更の反映等）
@@ -22,7 +22,7 @@ animaworks anima restart <name>
 animaworks anima status
 animaworks anima status <name>
 
-# 모델 변경(root API로 status를 갱신하고 실행 중이면 reload)
+# モデル変更（root APIでstatusを更新 + 起動中ならreload）
 animaworks anima set-model <name> <model>
 
 # ロール変更
@@ -45,7 +45,7 @@ animaworks anima delete <name>
 # config.json変更後に特定Animaだけリスタート
 animaworks anima restart aoi
 
-# 모델을 변경하고 실행 중 프로세스에 자동 reload
+# モデルを変更して起動中プロセスに自動reload
 animaworks anima set-model aoi claude-sonnet-4-6
 ```
 
