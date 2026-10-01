@@ -35,8 +35,9 @@ class MemoryManager:
     Delegates memory operations to specialised sub-services.
     """
 
-    def __init__(self, anima_dir: Path, base_dir: Path | None = None) -> None:
+    def __init__(self, anima_dir: Path, base_dir: Path | None = None, *, read_only: bool = False) -> None:
         self.anima_dir = anima_dir
+        self.read_only = read_only
         self.company_dir = get_company_dir()
         self.common_skills_dir = get_common_skills_dir()
         self.common_knowledge_dir = get_common_knowledge_dir()
@@ -46,19 +47,21 @@ class MemoryManager:
         self.facts_dir = anima_dir / "facts"
         self.skills_dir = anima_dir / "skills"
         self.state_dir = anima_dir / "state"
-        for d in (
-            self.episodes_dir,
-            self.knowledge_dir,
-            self.procedures_dir,
-            self.facts_dir,
-            self.skills_dir,
-            self.state_dir,
-        ):
-            d.mkdir(parents=True, exist_ok=True)
+        if not self.read_only:
+            for d in (
+                self.episodes_dir,
+                self.knowledge_dir,
+                self.procedures_dir,
+                self.facts_dir,
+                self.skills_dir,
+                self.state_dir,
+            ):
+                d.mkdir(parents=True, exist_ok=True)
         self.state_lock = StateFileLock(anima_dir)
 
-        self._migrate_current_task_to_state()
-        self._migrate_pending_to_state()
+        if not self.read_only:
+            self._migrate_current_task_to_state()
+            self._migrate_pending_to_state()
 
         # Eagerly initialize delegates (also available lazily via properties
         # for code that bypasses __init__ via __new__).
@@ -209,7 +212,9 @@ class MemoryManager:
             logger.warning("Failed to resolve host memory path %s", path, exc_info=True)
             return None
 
-        denied_root = find_denied_root(resolved, load_denied_roots(self.anima_dir))
+        denied_root = find_denied_root(
+            resolved, load_denied_roots(self.anima_dir, read_only=getattr(self, "read_only", False))
+        )
         if denied_root is not None:
             logger.warning("Host memory read denied for %s by %s", resolved, denied_root)
             return None
@@ -282,7 +287,7 @@ class MemoryManager:
         """
         from core.config.models import _format_permissions_for_prompt, load_permissions
 
-        config = load_permissions(self.anima_dir)
+        config = load_permissions(self.anima_dir, read_only=getattr(self, "read_only", False))
         return _format_permissions_for_prompt(config, self.anima_dir.name)
 
     def read_current_state(self) -> str:

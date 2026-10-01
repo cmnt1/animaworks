@@ -59,11 +59,11 @@ def test_cli_storage_denial_proxies_same_identity_and_declaration(task, failure,
     with (
         attempt_scope(identity),
         patch.object(task, "update_meta", side_effect=failure),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.internal_api.host_api.post", return_value=response) as post,
     ):
         _cmd_update(_args(), task)
     post.assert_called_once()
-    assert post.call_args.args[0].endswith("/api/internal/update-task")
+    assert post.call_args.args[0] == "/api/internal/update-task"
     payload = post.call_args.kwargs["json"]
     assert payload["attempt_identity"] == identity
     assert payload["anima_name"] == "worker"
@@ -144,7 +144,7 @@ def test_cli_real_readonly_sqlite_falls_back_to_host_update_endpoint(task, monke
         with (
             attempt_scope(identity),
             patch.object(store, "_connect", readonly_connection),
-            patch("httpx.post", side_effect=post_to_host) as proxy,
+            patch("core.internal_api.host_api.post", side_effect=post_to_host) as proxy,
         ):
             _cmd_update(_args(), task)
 

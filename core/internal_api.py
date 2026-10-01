@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import importlib
 import logging
 from pathlib import Path
 
@@ -17,6 +18,17 @@ def _operator_token_file() -> Path:
     from core.paths import get_data_dir
 
     return get_data_dir() / "run" / "internal_api.auth"
+
+
+class _HostAPIProxy:
+    """Lazy access to the centralized host client without widening core layers."""
+
+    def __getattr__(self, name: str):
+        client = importlib.import_module("core.host_api").host_api
+        return getattr(client, name)
+
+
+host_api = _HostAPIProxy()
 
 
 def internal_api_headers() -> dict[str, str]:

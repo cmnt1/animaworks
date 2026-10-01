@@ -26,7 +26,6 @@ from core.exceptions import (
 )  # noqa: F401
 from core.i18n import t
 from core.platform.atomic_io import append_jsonl_locked, atomic_write_json, update_json
-from core.platform.env import server_url
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 from core.time_utils import ensure_aware, now_iso, now_local
 
@@ -440,12 +439,11 @@ class Messenger:
         try:
             import httpx
 
-            from core.internal_api import internal_api_headers
+            from core.internal_api import host_api
 
-            resp = httpx.post(
-                f"{server_url()}/api/internal/send-message",
+            resp = host_api.post(
+                "/api/internal/send-message",
                 json={"message": msg.model_dump(mode="json")},
-                headers=internal_api_headers(),
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
             )
             resp.raise_for_status()
@@ -466,10 +464,10 @@ class Messenger:
         try:
             import httpx
 
-            from core.internal_api import internal_api_headers
+            from core.internal_api import host_api
 
-            resp = httpx.post(
-                f"{server_url()}/api/internal/post-channel",
+            resp = host_api.post(
+                "/api/internal/post-channel",
                 json={
                     "from_anima": self.anima_name,
                     "channel": channel,
@@ -477,7 +475,6 @@ class Messenger:
                     "source": source,
                     "from_name": poster,
                 },
-                headers=internal_api_headers(),
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
             )
             resp.raise_for_status()

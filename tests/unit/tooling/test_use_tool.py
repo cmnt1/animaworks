@@ -218,7 +218,7 @@ class TestUseToolHandlesDispatchException:
         with (
             patch("core.tooling.policy.registry.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
             patch(
-                "importlib.import_module",
+                "core.tooling.policy.registry.load_tool_module",
                 side_effect=ImportError("module not found"),
             ),
             pytest.raises(ToolExecutionError, match="module not found"),

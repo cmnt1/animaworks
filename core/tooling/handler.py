@@ -202,7 +202,7 @@ class ToolHandler(
             _all_descendants = self._get_all_descendants()
             for _desc_name in _all_descendants:
                 _desc_dir = (_animas_dir / _desc_name).resolve()
-                for _fname in ("cron.md", "heartbeat.md", "status.json", "injection.md"):
+                for _fname in ("cron.md", "heartbeat.md"):
                     self._subordinate_management_files.append(_desc_dir / _fname)
                 self._subordinate_root_dirs.append(_desc_dir)
                 self._descendant_activity_dirs.append(_desc_dir / "activity_log")

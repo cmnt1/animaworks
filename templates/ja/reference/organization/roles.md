@@ -244,7 +244,7 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-`--role` 未指定の `create_from_md` では `general` が使われる。ops のデフォルトはローカル向けに `ollama/glm-4.7`。テンプレ同梱の `templates/_shared/config_defaults/models.json` では `ollama/glm-4.7*` が実行モード **A**（LiteLLM + tool ループ）にマッチする。vLLM 等を使う場合は `status.json` の `model` と `credential`（例: `openai/glm-4.7-flash`）を編集する。engineer / manager は `background_model` によりハートビート・cron 等のバックグラウンド実行に軽量モデルを割り当てられる。
+`--role` 未指定の `create_from_md` では `general` が使われる。ops のデフォルトはローカル向けに `ollama/glm-4.7`。テンプレ同梱の `templates/_shared/config_defaults/models.json` では `ollama/glm-4.7*` が実行モード **A**（LiteLLM + tool ループ）にマッチする。vLLM 等を使う場合は `animaworks anima set-model` で `model` / `credential` を設定し、バックグラウンドモデルは `animaworks anima set-background-model` を使う。サーバー稼働中は root API、停止中はオフライン設定ストア経由で root 所有の `status.json` に反映される。Anima プロセスから直接編集しない。
 
 ### 適用フロー
 
@@ -252,7 +252,7 @@ Anima 作成時に `--role` で専門ロールを指定できるのは、**MD �
    - `_apply_defaults_from_sheet()` … キャラシートから `identity.md` / `injection.md` /（権限セクションがあれば）`permissions.md` → `permissions.json` へマイグレーション
    - `_apply_role_defaults()` … ロールの `permissions.json` と `specialty_prompt.md` を **上書きコピー**（キャラシート由来の `permissions.json` はロール側で上書きされる）
    - `_create_status_json()` … `SHARED_ROLES_DIR`（`_shared/roles/<role>/defaults.json`）から上表のモデル・コンテキスト設定を読み、キャラシートの「モデル」「credential」があればそれで上書きして `status.json` を書く。キャラシートの「実行モード」に値があるときだけ `execution_mode` を書き込む；未指定ならキー自体を省略し、`models.json` 等のパターン解決に任せる（`core/anima/factory.py` の `_create_status_json`）。
-2. **ロール変更時**（`animaworks anima set-role`）: `_apply_role_defaults()` で `permissions.json` と `specialty_prompt.md` を再コピー。`status.json` には `model`, `context_threshold`, `conversation_history_threshold` が `defaults.json` からマージされる。`background_model` は **set-role では更新されない**（必要なら手動で `status.json` を編集する）。`--status-only` は `role` のみ更新しテンプレートファイルには触れない。`--no-restart` で API 経由の自動再起動をスキップできる。CLI の成功出力には `permissions.json` が含まれる（`cli/commands/anima_mgmt.py` の `cmd_anima_set_role`）。
+2. **ロール変更時**（`animaworks anima set-role`）: root が `_apply_role_defaults()` で `permissions.json` と `specialty_prompt.md` を適用。root 所有の `status.json` には `model`, `context_threshold`, `conversation_history_threshold` が `defaults.json` からマージされる。`background_model` は **set-role では更新されない**（`animaworks anima set-background-model` を使う）。`--status-only` は `role` のみ更新しテンプレートファイルには触れない。`--no-restart` で API 経由の自動再起動をスキップできる。CLI の成功出力には `permissions.json` が含まれる（`cli/commands/anima_mgmt.py` の `cmd_anima_set_role`）。
 
 ### プロンプト注入
 

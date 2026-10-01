@@ -153,6 +153,11 @@ def _mode_s_file_access_error(
     if decision.reason == "global_permissions":
         return "permissions.global.json cannot be modified via Mode S tools"
     if decision.reason == "protected_file":
+        if str(decision.protected_path).endswith(("identity.md", "injection.md")):
+            return (
+                f"'{decision.protected_path}' is a protected file (root-owned setting); "
+                "use write_memory_file with this path to update it"
+            )
         return f"'{decision.protected_path}' is a protected file and cannot be modified"
     if decision.reason == "protected_directory":
         return f"'{decision.protected_path}/' is a protected directory and cannot be modified"

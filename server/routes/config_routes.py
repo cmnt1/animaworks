@@ -3,10 +3,12 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import json
 import logging
 import os
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -30,6 +32,17 @@ class UpdateAnthropicAuthRequest(BaseModel):
 class UpdateOpenAIAuthRequest(BaseModel):
     auth_mode: str = "api_key"
     api_key: str = ""
+
+
+class UpdateConfigValueRequest(BaseModel):
+    key: str
+    value: Any
+
+
+class SaveConfigWizardRequest(BaseModel):
+    credentials: dict[str, dict[str, Any]]
+    anima_names: list[str]
+    status_updates: dict[str, dict[str, str]]
 
 
 def _mask_secrets(obj: object) -> object:
@@ -122,6 +135,111 @@ def create_config_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=f"Invalid config JSON: {exc}") from exc
 
         return _mask_secrets(config)
+
+    @router.put("/system/config/value")
+    async def update_config_value(body: UpdateConfigValueRequest, request: Request):
+        """Apply one validated CLI config-set operation through the root server."""
+        from core.config.ops import legacy_model_status_target, set_config_value
+
+        if not body.key.strip() or any(not part for part in body.key.split(".")):
+            raise HTTPException(status_code=400, detail="key must be a non-empty dot-notation path")
+        activity_update = None
+        if body.key == "activity_level":
+            from server.supervisor.activity_schedule import apply_activity_schedule
+
+            if not isinstance(body.value, int) or isinstance(body.value, bool) or not 10 <= body.value <= 400:
+                raise HTTPException(status_code=400, detail="activity_level must be int 10-400")
+            activity_update = await asyncio.to_thread(apply_activity_schedule, activity_level=body.value)
+        elif body.key == "activity_schedule":
+            from core.config.models import ActivityScheduleEntry
+            from server.supervisor.activity_schedule import apply_activity_schedule
+
+            if not isinstance(body.value, list) or len(body.value) > 24:
+                raise HTTPException(status_code=400, detail="activity_schedule must be a list with at most 24 entries")
+            try:
+                entries = [ActivityScheduleEntry.model_validate(value) for value in body.value]
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            activity_update = await asyncio.to_thread(apply_activity_schedule, activity_schedule=entries)
+
+        target = legacy_model_status_target(body.key)
+        if target is not None:
+            from core.anima.factory import validate_anima_name
+
+            anima_name, _field = target
+            name_error = validate_anima_name(anima_name)
+            if name_error:
+                raise HTTPException(status_code=400, detail=name_error)
+        try:
+            if activity_update is None:
+                await asyncio.to_thread(set_config_value, body.key, body.value)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to update config value %s", body.key)
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if activity_update is not None and supervisor is not None:
+            methods: list[str] = []
+            if activity_update.activity_level_changed:
+                methods.append("reschedule_heartbeat")
+            if body.key == "activity_schedule" and activity_update.activity_schedule_changed:
+                methods.append("reload_activity_schedule")
+            for name in list(getattr(supervisor, "processes", {})):
+                for method in methods:
+                    try:
+                        await supervisor.send_request(name, method, {}, timeout=10.0)
+                    except Exception:
+                        logger.warning("Failed to send %s to %s after config update", method, name, exc_info=True)
+        elif body.key == "heartbeat.interval_minutes" and supervisor is not None:
+            for name in list(getattr(supervisor, "processes", {})):
+                try:
+                    await supervisor.send_request(name, "reschedule_heartbeat", {}, timeout=10.0)
+                except Exception:
+                    logger.warning("Failed to reschedule heartbeat for %s after config update", name, exc_info=True)
+        elif target is not None and supervisor is not None:
+            anima_name, status_field = target
+            if anima_name in getattr(supervisor, "processes", {}) and status_field not in {"supervisor", "speciality"}:
+                method = "reschedule_heartbeat" if status_field == "heartbeat_interval_minutes" else "reload_config"
+                try:
+                    await supervisor.send_request(anima_name, method, {}, timeout=10.0)
+                except Exception:
+                    logger.info("Settings reload deferred until next start for anima=%s", anima_name, exc_info=True)
+        return {"ok": True, "key": body.key, "status_target": target}
+
+    @router.put("/system/config/wizard")
+    async def save_config_wizard(body: SaveConfigWizardRequest, request: Request):
+        """Apply the interactive CLI wizard changes on the root server."""
+        from core.config.models import CredentialConfig
+        from core.config.ops import save_config_wizard as persist_config_wizard
+        from core.paths import get_animas_dir
+
+        try:
+            credentials = {name: CredentialConfig.model_validate(payload) for name, payload in body.credentials.items()}
+            await asyncio.to_thread(
+                persist_config_wizard,
+                credentials,
+                body.anima_names,
+                body.status_updates,
+                get_animas_dir(),
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to persist config wizard changes")
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None:
+            for anima_name in body.status_updates:
+                if anima_name not in getattr(supervisor, "processes", {}):
+                    continue
+                try:
+                    await supervisor.send_request(anima_name, "reload_config", {}, timeout=10.0)
+                except Exception:
+                    logger.info("Config reload deferred until next start for anima=%s", anima_name, exc_info=True)
+        return {"ok": True, "updated_animas": list(body.status_updates)}
 
     @router.get("/settings/anthropic-auth")
     async def get_anthropic_auth(request: Request):

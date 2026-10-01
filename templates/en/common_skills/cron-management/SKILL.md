@@ -300,8 +300,8 @@ When a parse or registration error is detected during the initial registration o
 ### Target Paths and Editing Subordinates
 
 - Read your own `cron.md` via `read_memory_file(path="cron.md")` and update it via `write_memory_file(path="cron.md", ...)`.
-- When a supervisor edits a subordinate Anima's `cron.md` / `heartbeat.md` / `injection.md` / `status.json`, do not use Read / Write / Edit / apply_patch / `Path.write_text` / shell redirection, or other direct file operations.
-- Edit subordinate management files by specifying them with the write memory tool as in `../{anima_name}/cron.md` (example: `../yuki/cron.md`). This applies to all direct and indirect subordinates (children, grandchildren, etc.). `identity.md` is read-only.
+- A supervisor can edit a subordinate's `cron.md` / `heartbeat.md` with the write memory tool, using paths such as `../{anima_name}/cron.md`; this applies to all descendants.
+- `status.json`, `identity.md`, and `permissions.json` are root-owned and cannot be written with memory/file tools. Authorized subordinate `injection.md` and bootstrap identity writes are forwarded through root and checked there; never write these files directly.
 
 ### Adding a New Task
 

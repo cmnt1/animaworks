@@ -1063,12 +1063,13 @@ class PermissionsConfig(BaseModel):
         return normalized
 
 
-def load_permissions(anima_dir: Path) -> PermissionsConfig:
-    """Load permissions from permissions.json, with migration fallback.
+def load_permissions(anima_dir: Path, *, read_only: bool = False) -> PermissionsConfig:
+    """Load permissions from permissions.json, with a read-only legacy fallback.
 
     Resolution order:
       1. permissions.json exists -> load and validate
-      2. permissions.md only -> auto-migrate, return config
+      2. permissions.md only -> parse without writes for read-only/worker calls;
+         root and offline CLI calls migrate and return config
       3. Neither exists -> return default (open)
       4. Existing but unreadable/invalid permissions.json -> raise (fail closed)
 
@@ -1107,8 +1108,17 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
             raise
 
     if md_path.is_file():
-        from core.config.migrate import migrate_permissions_md_to_json
+        from core.config.migrate import migrate_permissions_md_to_json, parse_permissions_md
+        from core.platform.pid import is_server_running
+        from core.platform.process_role import get_process_role
 
+        role = get_process_role()
+        if (
+            read_only
+            or role in {"anima", "task_runner", "mcp"}
+            or (role == "cli" and is_server_running(anima_dir.parent.parent))
+        ):
+            return parse_permissions_md(anima_dir)
         return migrate_permissions_md_to_json(anima_dir)
 
     return PermissionsConfig()

@@ -132,7 +132,7 @@ def create_sessions_router() -> APIRouter:
                     pass
 
         # Archived sessions — metadata only (no full content read)
-        stm = ShortTermMemory(anima_dir)
+        stm = ShortTermMemory(anima_dir, read_only=True)
         archived = []
         archive_dir = stm._archive_dir
         if archive_dir.exists():
@@ -161,7 +161,7 @@ def create_sessions_router() -> APIRouter:
                     pass
 
         # Episodes — partial read (first 200 chars only, no full file load)
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         episodes = []
         for stem in memory.list_episode_files():
             ep_path = memory.episodes_dir / f"{stem}.md"
@@ -247,7 +247,7 @@ def create_sessions_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        stm = ShortTermMemory(anima_dir)
+        stm = ShortTermMemory(anima_dir, read_only=True)
         archive_dir = stm._archive_dir
         json_path = archive_dir / f"{session_id}.json"
         md_path = archive_dir / f"{session_id}.md"

@@ -22,7 +22,7 @@ animaworks anima restart <name>
 animaworks anima status
 animaworks anima status <name>
 
-# モデル変更（status.jsonを更新 + 自動リスタート）
+# 모델 변경(root API로 status를 갱신하고 실행 중이면 reload)
 animaworks anima set-model <name> <model>
 
 # ロール変更
@@ -45,7 +45,7 @@ animaworks anima delete <name>
 # config.json変更後に特定Animaだけリスタート
 animaworks anima restart aoi
 
-# モデルを変更して自動リスタート
+# 모델을 변경하고 실행 중 프로세스에 자동 reload
 animaworks anima set-model aoi claude-sonnet-4-6
 ```
 

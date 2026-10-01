@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import server_url
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -29,14 +27,13 @@ def _post_tasks(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
     from core.tasks.board.tasks import current_attempt_identity
 
     payload = {**payload, "attempt_identity": current_attempt_identity()}
-    for attempt in range(2):
-        from core.internal_api import internal_api_headers
+    from core.internal_api import host_api
 
+    for attempt in range(2):
         try:
-            response = httpx.post(
-                f"{server_url()}/api/internal/{endpoint}",
+            response = host_api.post(
+                f"/api/internal/{endpoint}",
                 json=payload,
-                headers=internal_api_headers(),
                 timeout=60.0,
             )
             response.raise_for_status()
@@ -136,17 +133,14 @@ def read_tasks_via_server(
     anima_name: str, *, include_archived: bool = False, task_id: str | None = None
 ) -> dict[str, TaskEntry]:
     """Read a host-owned snapshot when the worker cannot access the task DB."""
-    import httpx
-
     params = {"anima_name": anima_name, "include_archived": include_archived}
     if task_id is not None:
         params["task_id"] = task_id
-    from core.internal_api import internal_api_headers
+    from core.internal_api import host_api
 
-    response = httpx.get(
-        f"{server_url()}/api/internal/tasks",
+    response = host_api.get(
+        "/api/internal/tasks",
         params=params,
-        headers=internal_api_headers(),
         timeout=30.0,
     )
     response.raise_for_status()
@@ -155,14 +149,11 @@ def read_tasks_via_server(
 
 def read_executable_ids_via_server(anima_name: str) -> set[str]:
     """Read execution-input availability without granting shared DB access."""
-    import httpx
+    from core.internal_api import host_api
 
-    from core.internal_api import internal_api_headers
-
-    response = httpx.get(
-        f"{server_url()}/api/internal/tasks",
+    response = host_api.get(
+        "/api/internal/tasks",
         params={"anima_name": anima_name},
-        headers=internal_api_headers(),
         timeout=30.0,
     )
     response.raise_for_status()

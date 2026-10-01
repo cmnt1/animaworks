@@ -113,7 +113,8 @@ class ReconcileMixin:
         rag_repairs_in_progress: set[str] = getattr(self, "_rag_repairs_in_progress", set())
         for name in list(on_disk.keys()):
             anima_dir = self.animas_dir / name
-            from core.platform.status_store import read_status, update_status
+            from core.anima.settings_store import update_status
+            from core.platform.status_store import read_status
 
             if not read_status(anima_dir).get("restart_requested"):
                 continue

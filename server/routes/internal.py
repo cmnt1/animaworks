@@ -29,6 +29,11 @@ _native_executor = concurrent.futures.ThreadPoolExecutor(
 )
 
 
+def _resolve_workspace_path(raw_path: str) -> Path:
+    """Resolve an untrusted workspace path off the async route event loop."""
+    return Path(raw_path).expanduser().resolve()
+
+
 class MessageSentNotification(BaseModel):
     from_person: str
     to_person: str
@@ -136,7 +141,44 @@ class AnimaCreateRequest(BaseModel):
     character_sheet_path: str | None = None
     name: str | None = None
     supervisor: str | None = None
+    role: str | None = None
     calling_anima: str = ""  # supervisor fallback when status.json has none
+    creation_type: Literal["character_sheet", "template", "blank"] = "character_sheet"
+    template: str | None = None
+
+
+class AnimaControlRequest(BaseModel):
+    action: Literal["enable", "disable", "set_model", "set_background_model", "request_restart"]
+    model: str = ""
+    credential: str = ""
+    background_model: str = ""
+    background_credential: str = ""
+
+
+class AnimaPromptSettingsRequest(BaseModel):
+    setting: Literal["identity", "injection"]
+    content: str
+    mode: Literal["overwrite", "append"] = "overwrite"
+
+
+class WorkspaceGrantRequest(BaseModel):
+    alias: str
+    path: str
+    target_anima: str
+    caller_anima: str = ""
+    make_default: bool = True
+    human_origin: bool = False
+
+
+class CompanyAssignRequest(BaseModel):
+    anima_names: list[str]
+    company_name: str | None = None
+    unassign: bool = False
+
+
+class CompanySplitRequest(BaseModel):
+    manifest_path: str
+    execute: bool = False
 
 
 class DelegateTaskPersistRequest(BaseModel):
@@ -203,6 +245,72 @@ def create_internal_router() -> APIRouter:
     router = APIRouter()
     internal = APIRouter(dependencies=[Depends(require_internal_caller)])
     _call_human_keys = CallHumanKeys()
+
+    def _verified_internal_caller(request: Request):
+        caller = getattr(request.state, "internal_caller", None)
+        if caller is not None:
+            return caller
+        auth = getattr(request.app.state, "internal_auth", None)
+        return auth.verify(request.headers.get("X-AnimaWorks-Internal-Auth")) if auth is not None else None
+
+    def _require_settings_caller(request: Request):
+        caller = _verified_internal_caller(request)
+        if caller is None:
+            return None, JSONResponse(
+                status_code=401, content={"detail": "Internal settings authentication is required"}
+            )
+        if caller.kind not in {"anima", "operator"}:
+            return None, JSONResponse(status_code=403, content={"detail": "Trusted internal caller required"})
+        return caller, None
+
+    @internal.post("/internal/company/assign")
+    async def internal_company_assign(body: CompanyAssignRequest, request: Request):
+        """Apply CLI company assignments through the root-owned status writer."""
+        caller = _verified_internal_caller(request)
+        if caller is None or caller.kind != "operator":
+            return JSONResponse(status_code=403, content={"detail": "Operator authentication required"})
+        from core.org.company import CompanyError, assign_animas
+        from core.paths import get_data_dir
+
+        try:
+            lines = await asyncio.to_thread(
+                assign_animas,
+                body.anima_names,
+                company_name=body.company_name,
+                unassign=body.unassign,
+                data_dir=get_data_dir(),
+            )
+        except CompanyError as exc:
+            return JSONResponse(status_code=400, content={"detail": str(exc)})
+        except Exception as exc:
+            logger.exception("internal company assignment failed")
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        return {"lines": lines}
+
+    @internal.post("/internal/company/split")
+    async def internal_company_split(body: CompanySplitRequest, request: Request):
+        """Run a CLI company split on root when it mutates status/settings."""
+        caller = _verified_internal_caller(request)
+        if caller is None or caller.kind != "operator":
+            return JSONResponse(status_code=403, content={"detail": "Operator authentication required"})
+        from core.org.company import CompanyError, SplitExecutionError, split_companies
+        from core.paths import get_data_dir
+
+        try:
+            lines = await asyncio.to_thread(
+                split_companies,
+                body.manifest_path,
+                execute=body.execute,
+                data_dir=get_data_dir(),
+            )
+        except SplitExecutionError as exc:
+            return JSONResponse(status_code=409, content={"detail": str(exc), "completed_lines": exc.completed_lines})
+        except CompanyError as exc:
+            return JSONResponse(status_code=400, content={"detail": str(exc)})
+        except Exception as exc:
+            logger.exception("internal company split failed")
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        return {"lines": lines}
 
     @internal.get("/internal/company/boundary")
     async def internal_company_boundary(from_anima: str, to_anima: str, request: Request):
@@ -581,7 +689,7 @@ def create_internal_router() -> APIRouter:
         Sandboxed Mode C MCP subprocesses cannot write to animas/ root.
         They fall back here so create_from_md runs on the host server.
         """
-        caller = getattr(request.state, "internal_caller", None)
+        caller = _verified_internal_caller(request)
         denied = ensure_self(caller, body.calling_anima, path=request.url.path)
         if denied is not None:
             return denied
@@ -603,32 +711,51 @@ def create_internal_router() -> APIRouter:
                 if denied is not None:
                     return denied
 
-        if not body.character_sheet_content and not body.character_sheet_path:
+        if body.name is not None:
+            from core.anima.factory import validate_anima_name
+
+            name_error = validate_anima_name(body.name)
+            if name_error:
+                return JSONResponse(status_code=422, content={"detail": name_error})
+        if body.creation_type == "blank" and not body.name:
+            return JSONResponse(status_code=422, content={"detail": "name is required for blank creation"})
+        if body.creation_type == "template":
+            if not body.template or Path(body.template).name != body.template or ".." in body.template:
+                return JSONResponse(status_code=422, content={"detail": "valid template is required"})
+        if (
+            body.creation_type == "character_sheet"
+            and not body.character_sheet_content
+            and not body.character_sheet_path
+        ):
             return JSONResponse(
                 status_code=422,
-                content={
-                    "detail": ("Either character_sheet_content or character_sheet_path is required"),
-                },
+                content={"detail": "Either character_sheet_content or character_sheet_path is required"},
             )
 
         def _create() -> Path:
-            from core.anima.factory import create_from_md
+            from core.anima.factory import create_blank, create_from_md, create_from_template
             from core.config import register_anima_in_config
             from core.paths import get_animas_dir, get_data_dir
 
             md_path = Path(body.character_sheet_path) if body.character_sheet_path else None
-            anima_dir = create_from_md(
-                get_animas_dir(),
-                md_path,
-                name=body.name,
-                content=body.character_sheet_content,
-                supervisor=body.supervisor,
-            )
+            if body.creation_type == "blank":
+                anima_dir = create_blank(get_animas_dir(), body.name or "")
+            elif body.creation_type == "template":
+                anima_dir = create_from_template(get_animas_dir(), body.template or "", anima_name=body.name)
+            else:
+                anima_dir = create_from_md(
+                    get_animas_dir(),
+                    md_path,
+                    name=body.name,
+                    content=body.character_sheet_content,
+                    supervisor=body.supervisor,
+                    role=body.role,
+                )
 
             # Supervisor fallback (same as _handle_create_anima local path)
             status_path = anima_dir / "status.json"
             if status_path.exists() and body.calling_anima:
-                from core.platform.status_store import update_status
+                from core.anima.settings_store import update_status
 
                 def set_fallback_supervisor(status_data: dict[str, Any]) -> None:
                     if not status_data.get("supervisor"):
@@ -668,6 +795,318 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=500, content={"detail": str(exc)})
 
         return {"status": "ok", "anima_dir": str(anima_dir)}
+
+    @internal.post("/internal/animas/{target}/control")
+    async def internal_anima_control(target: str, body: AnimaControlRequest, request: Request):
+        """Persist subordinate control settings after verifying the token owner."""
+        caller, denied = _require_settings_caller(request)
+        if denied is not None:
+            return denied
+
+        from core.anima.factory import validate_anima_name
+        from core.config.models import load_config
+        from core.org.hierarchy import descendants_of
+        from core.paths import get_animas_dir
+
+        if validate_anima_name(target):
+            return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
+        try:
+            config = load_config()
+        except Exception as exc:
+            logger.warning("Unable to load org hierarchy for anima control", exc_info=True)
+            return JSONResponse(status_code=503, content={"detail": str(exc)})
+        if caller.kind == "anima":
+            descendants = descendants_of(config.animas, caller.name)
+            if target == caller.name or target not in descendants:
+                logger.warning("internal_anima_control_denied caller=%s target=%s", caller.name, target)
+                return JSONResponse(status_code=403, content={"detail": "Target must be a descendant of the caller"})
+
+        target_dir = get_animas_dir() / target
+        if not target_dir.is_dir() or not (target_dir / "identity.md").is_file():
+            return JSONResponse(status_code=404, content={"detail": f"Anima not found: {target}"})
+
+        def _persist() -> dict[str, Any]:
+            from core.anima.settings_store import update_status
+
+            changed = False
+            result: dict[str, Any] = {}
+            if body.action in {"enable", "disable"}:
+                enabled = body.action == "enable"
+
+                def set_enabled(status: dict[str, Any]) -> None:
+                    nonlocal changed
+                    if status.get("enabled", True) != enabled:
+                        status["enabled"] = enabled
+                        changed = True
+
+                update_status(target_dir, set_enabled)
+            elif body.action == "request_restart":
+
+                def request_restart(status: dict[str, Any]) -> None:
+                    nonlocal changed
+                    changed = not bool(status.get("restart_requested"))
+                    status["restart_requested"] = True
+
+                update_status(target_dir, request_restart)
+                changed = True
+            elif body.action == "set_model":
+                if not body.model.strip():
+                    raise ValueError("model is required")
+                from core.config.model_config import smart_update_model
+
+                result = smart_update_model(
+                    target_dir,
+                    model=body.model.strip(),
+                    credential=body.credential.strip() or None,
+                )
+                changed = True
+            elif body.action == "set_background_model":
+                from core.config.model_config import update_status_model
+
+                update_status_model(
+                    target_dir,
+                    background_model=body.background_model.strip(),
+                    background_credential=body.background_credential.strip(),
+                )
+                result = {
+                    "background_model": body.background_model.strip(),
+                    "background_credential": body.background_credential.strip(),
+                }
+                changed = True
+            return {"changed": changed, "result": result}
+
+        try:
+            persisted = await asyncio.to_thread(_persist)
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"detail": str(exc)})
+        except FileNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"detail": str(exc)})
+        except (OSError, json.JSONDecodeError) as exc:
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        except Exception as exc:
+            logger.exception("internal anima control failed for %s", target)
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+        if body.action in {"set_model", "set_background_model"}:
+            supervisor = getattr(request.app.state, "supervisor", None)
+            if supervisor is not None and target in getattr(supervisor, "processes", {}):
+                try:
+                    await supervisor.send_request(target, "reload_config", {}, timeout=10.0)
+                except Exception:
+                    logger.info("Model reload deferred until next start for anima=%s", target, exc_info=True)
+        return {
+            "ok": True,
+            "action": body.action,
+            "target_anima": target,
+            "changed": persisted["changed"],
+            "result": persisted["result"],
+        }
+
+    @internal.post("/internal/animas/{target}/prompt-settings")
+    async def internal_update_anima_prompt_setting(
+        target: str,
+        body: AnimaPromptSettingsRequest,
+        request: Request,
+    ):
+        """Apply an authorized identity/injection change through the root owner."""
+        caller, denied = _require_settings_caller(request)
+        if denied is not None:
+            return denied
+        from core.anima.factory import validate_anima_name
+        from core.paths import get_animas_dir
+
+        if validate_anima_name(target):
+            return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
+        target_dir = get_animas_dir() / target
+        if not target_dir.is_dir() or not (target_dir / "identity.md").is_file():
+            return JSONResponse(status_code=404, content={"detail": f"Anima not found: {target}"})
+
+        if caller.kind == "anima":
+            if target == caller.name and body.setting == "injection":
+                # Animas have always maintained their own injection.md (aoi,
+                # natsume, sora in 2026-09); root performs the write.
+                pass
+            elif target == caller.name:
+                from core.anima.bootstrap_state import get_bootstrap_status
+
+                bootstrap = get_bootstrap_status(target_dir)
+                if not (bootstrap.get("needs_user_input") or bootstrap.get("needs_repair")):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Anima prompt settings are root-owned outside bootstrap/repair"},
+                    )
+            elif body.setting == "injection":
+                from core.config.models import load_config
+                from core.org.hierarchy import descendants_of
+
+                config = load_config()
+                if target not in descendants_of(config.animas, caller.name):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Only an ancestor may request subordinate injection changes"},
+                    )
+            else:
+                return JSONResponse(status_code=403, content={"detail": "Anima identity is root-owned"})
+
+        path = target_dir / ("identity.md" if body.setting == "identity" else "injection.md")
+        content = body.content
+        if body.mode == "append":
+            try:
+                existing = await asyncio.to_thread(path.read_text, encoding="utf-8") if path.is_file() else ""
+            except OSError as exc:
+                return JSONResponse(status_code=409, content={"detail": str(exc)})
+            content = existing + content
+        try:
+            from core.anima.settings_store import write_identity, write_injection
+
+            writer = write_identity if body.setting == "identity" else write_injection
+            await asyncio.to_thread(writer, target_dir, content)
+        except (OSError, ValueError) as exc:
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        except Exception as exc:
+            logger.exception("internal prompt setting update failed for %s/%s", target, body.setting)
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+        return {"ok": True, "target_anima": target, "setting": body.setting, "length": len(content)}
+
+    @internal.post("/internal/workspace/grant")
+    async def internal_workspace_grant(body: WorkspaceGrantRequest, request: Request):
+        """Apply a human-origin workspace grant through root-owned writers."""
+        caller, denied = _require_settings_caller(request)
+        if denied is not None:
+            return denied
+        if not body.human_origin:
+            return JSONResponse(status_code=403, content={"detail": "Human-origin instruction required"})
+        if not re.fullmatch(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$", body.alias):
+            return JSONResponse(status_code=400, content={"detail": "Invalid workspace alias"})
+
+        from core.config.file_access_policy import effective_write_roots
+        from core.config.models import load_config, load_permissions
+        from core.org.hierarchy import descendants_of
+        from core.org.workspace import qualified_alias
+        from core.paths import get_animas_dir
+
+        config = load_config()
+        caller_name = caller.name if caller.kind == "anima" else body.caller_anima
+        if caller.kind == "operator" and not caller_name:
+            return JSONResponse(status_code=400, content={"detail": "caller_anima is required for operator callers"})
+        caller_config = config.animas.get(caller_name)
+        if caller_config is None or caller_config.supervisor is not None:
+            return JSONResponse(status_code=403, content={"detail": "Only top-level Animas can grant workspaces"})
+        target = body.target_anima
+        target_config = config.animas.get(target)
+        if target_config is None:
+            return JSONResponse(status_code=404, content={"detail": f"Target Anima not found: {target}"})
+        if target != caller_name and target not in descendants_of(config.animas, caller_name):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Top-level Animas can grant workspaces only to themselves or descendants"},
+            )
+
+        try:
+            workspace_path = await asyncio.to_thread(_resolve_workspace_path, body.path)
+        except (OSError, RuntimeError) as exc:
+            return JSONResponse(status_code=400, content={"detail": f"Failed to resolve path: {exc}"})
+        if not workspace_path.is_dir():
+            return JSONResponse(
+                status_code=400, content={"detail": f"Workspace path is not an existing directory: {workspace_path}"}
+            )
+        if workspace_path == Path("/"):
+            return JSONResponse(status_code=403, content={"detail": "Filesystem root cannot be granted"})
+        try:
+            home = Path.home().resolve()
+            if workspace_path == home:
+                return JSONResponse(status_code=403, content={"detail": "Home directory root cannot be granted"})
+        except OSError:
+            pass
+        for root in (
+            Path("/etc"),
+            Path("/proc"),
+            Path("/dev"),
+            Path("/sys"),
+            Path("/run"),
+            Path("/boot"),
+            Path("/root"),
+        ):
+            try:
+                protected_root = root.resolve()
+            except OSError:
+                protected_root = root
+            if workspace_path == protected_root or workspace_path.is_relative_to(protected_root):
+                return JSONResponse(
+                    status_code=403, content={"detail": f"Protected system directory: {workspace_path}"}
+                )
+        animas_root = get_animas_dir().resolve()
+        if workspace_path == animas_root or workspace_path.is_relative_to(animas_root):
+            return JSONResponse(status_code=403, content={"detail": "Anima home directories cannot be workspaces"})
+
+        if not body.path.strip():
+            return JSONResponse(status_code=400, content={"detail": "path is required"})
+        target_dir = (animas_root / target).resolve()
+        if not target_dir.is_dir() or not (target_dir / "identity.md").is_file():
+            return JSONResponse(status_code=404, content={"detail": f"Target Anima directory not found: {target}"})
+
+        alias = body.alias.strip()
+        qualified = qualified_alias(alias, str(workspace_path))
+        try:
+            from core.anima.settings_store import update_config, update_status, write_permissions
+
+            update_config(lambda current: current.workspaces.__setitem__(alias, str(workspace_path)))
+            permissions = load_permissions(target_dir)
+            current_roots = effective_write_roots(target_dir, permissions.file_roots)
+            permissions_unrestricted = permissions.file_roots == ["/"]
+            permissions_changed = False
+            if not permissions_unrestricted:
+                allowed = any(workspace_path == root or workspace_path.is_relative_to(root) for root in current_roots)
+                if not allowed:
+                    effective_write_roots(target_dir, [str(workspace_path)])
+                    permissions.file_roots.append(str(workspace_path))
+                    write_permissions(target_dir, permissions)
+                    permissions_changed = True
+
+            status_changed = False
+            if body.make_default:
+
+                def set_workspace(status: dict[str, Any]) -> None:
+                    nonlocal status_changed
+                    if status.get("default_workspace") != qualified:
+                        status["default_workspace"] = qualified
+                        status_changed = True
+
+                update_status(target_dir, set_workspace)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning("internal workspace grant failed for %s", target, exc_info=True)
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        except Exception as exc:
+            logger.exception("internal workspace grant failed for %s", target)
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+        return {
+            "status": "ok",
+            "qualified_alias": qualified,
+            "alias": alias,
+            "path": str(workspace_path),
+            "target_anima": target,
+            "global_workspace_registered": True,
+            "permissions_changed": permissions_changed,
+            "permissions_unrestricted": permissions_unrestricted,
+            "default_workspace_changed": status_changed,
+            "effective_next_codex_run": True,
+        }
+
+    @internal.post("/internal/settings/anima-icon-template")
+    async def internal_persist_anima_icon_template(request: Request):
+        """Persist icon-template defaults on behalf of an authenticated worker."""
+        caller, denied = _require_settings_caller(request)
+        if denied is not None:
+            return denied
+        try:
+            from core.integrations._anima_icon_url import persist_anima_icon_path_template
+
+            await asyncio.to_thread(persist_anima_icon_path_template)
+        except Exception as exc:
+            logger.exception("internal icon-template persistence failed for caller=%s", caller.name)
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+        return {"ok": True}
 
     @internal.post("/internal/send-message")
     async def internal_send_message(body: InternalSendMessageRequest, request: Request):

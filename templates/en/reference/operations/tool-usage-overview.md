@@ -66,7 +66,8 @@ In the Mode A schema, they use **PascalCase names**. Inside `ToolHandler`, they 
 - File operations: Prefer Read / Write / Edit. Using `cat` / `sed` / `awk` via Bash is discouraged.
 - Search: Prefer Grep (content) and Glob (paths). Using `grep` / `find` via Bash is discouraged.
 - Within Anima's memory tree: Use **`read_memory_file` / `write_memory_file` / `archive_memory_file`** (relative paths). Use Read / Write when absolute path operations across the project are needed — this is the division of responsibility.
-- When a supervisor edits subordinate Anima management files (`cron.md`, `heartbeat.md`, `injection.md`, `status.json`), use the **write memory tool** rather than Read / Write / Edit / apply_patch / `Path.write_text`. Specify paths like `../{anima_name}/cron.md`.
+- Anima-owned schedules (`cron.md`, `heartbeat.md`) may be edited with the **write memory tool**, including subordinate paths such as `../{anima_name}/cron.md`.
+- Root-owned settings (`config.json`, `status.json`, `identity.md`, `injection.md`, `permissions.json`) are never written directly by an Anima. Bootstrap identity writes and authorized supervisor injection writes through `write_memory_file` are forwarded to root and checked there; other changes use supported supervisor tools or root CLI/API. Never use Read / Write / Edit / apply_patch / `Path.write_text` or shell redirection on these settings.
 
 ### Exploration Scope Limits (Runaway Prevention)
 

@@ -189,7 +189,7 @@ No server restart is required (MAY skip restart). APScheduler jobs are re-regist
 
 ### Configuration with status.json
 
-By setting `heartbeat_interval_minutes` in `status.json` of each Anima, you can specify an individual Heartbeat interval for each Anima.
+A root administrator can set `heartbeat_interval_minutes` per Anima with the root CLI/API; it is stored in root-owned `status.json` and is never edited by an Anima process.
 
 ```json
 {
@@ -199,7 +199,7 @@ By setting `heartbeat_interval_minutes` in `status.json` of each Anima, you can 
 
 - Configurable range: 1 to 1440 minutes (1 day)
 - If not set: falls back to `heartbeat.interval_minutes` of `config.json` (default 30 minutes)
-- Anima itself can update `status.json` via `write_memory_file` for self-adjustment
+- `status.json` is root-owned. An administrator can set a per-Anima override while the server is stopped with `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>`; while it is running, the CLI routes the update through the root API. Anima processes must not edit this file.
 
 ### Recommended guidelines
 
@@ -257,7 +257,7 @@ Each entry has three fields: `start` (start time), `end` (end time), and `level`
 
 - **Settings UI**: night mode checkbox + time period and level settings
 - **API**: send the above JSON to `PUT /api/settings/activity-schedule`
-- **Direct configuration file editing**: edit `activity_schedule` of `config.json`, then restart the server
+- **Root settings API**: use the settings UI or send the above JSON to `PUT /api/settings/activity-schedule`; Anima processes must not edit `config.json` directly
 
 #### Notes
 
@@ -540,7 +540,7 @@ The `## ` heading inside the comment is ignored by the parser.
 
 When cron.md is updated, the schedule is automatically reloaded in the same way as heartbeat.md.
 If Anima itself rewrites cron.md, it is also reflected immediately (self-modify pattern).
-When a supervisor edits the `cron.md` / `heartbeat.md` / `injection.md` / `status.json` of a subordinate Anima, specify it as `../{anima_name}/cron.md` with the write memory tool. Do not use direct file operations such as Read / Write / Edit / apply_patch / `Path.write_text` / shell redirection.
+A supervisor may edit subordinate `cron.md` / `heartbeat.md` with the write memory tool, specifying paths such as `../{anima_name}/cron.md`. An authorized supervisor may request an `injection.md` change through the same tool, which is forwarded to root and checked; `status.json` changes use supported supervisor tools or root CLI/API. Never write root-owned files directly with Read / Write / Edit / apply_patch / `Path.write_text` or shell redirection.
 
 Behavior on reload:
 1. Delete all existing cron jobs of the relevant Anima

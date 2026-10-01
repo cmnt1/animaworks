@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -430,6 +430,25 @@ class TestPersistGuard:
         ):
             persist_anima_icon_path_template()
         mock_update.assert_called_once()
+
+    def test_worker_process_delegates_template_persistence_to_root(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(_ICON_URL_TEMPLATE_ENV_KEY, raising=False)
+        monkeypatch.setenv("ANIMAWORKS_PROCESS_ROLE", "task_runner")
+        response = MagicMock(status_code=200)
+
+        with (
+            patch("core.host_api.host_api.post", return_value=response) as mock_post,
+            patch("core.config.update_config") as local_update,
+        ):
+            persist_anima_icon_path_template()
+
+        mock_post.assert_called_once_with(
+            "/api/internal/settings/anima-icon-template",
+            json={},
+            timeout=15.0,
+        )
+        response.raise_for_status.assert_called_once()
+        local_update.assert_not_called()
 
     def test_updates_internal_channel_without_template(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from core.config.models import ImageGenConfig

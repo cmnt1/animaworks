@@ -71,8 +71,16 @@ class ShortTermMemory:
           └── archive/            # Completed / superseded states
     """
 
-    def __init__(self, anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> None:
+    def __init__(
+        self,
+        anima_dir: Path,
+        session_type: str = "chat",
+        thread_id: str = "default",
+        *,
+        read_only: bool = False,
+    ) -> None:
         self.anima_dir = anima_dir
+        self.read_only = read_only
         self._session_type = session_type
         self._thread_id = thread_id
         base = anima_dir / "shortterm" / session_type
@@ -81,7 +89,7 @@ class ShortTermMemory:
         else:
             self.shortterm_dir = base
         self._archive_dir = self.shortterm_dir / "archive"
-        if not is_task_runner_process():
+        if not self.read_only and not is_task_runner_process():
             self.shortterm_dir.mkdir(parents=True, exist_ok=True)
 
     async def ensure_ready(self) -> None:

@@ -37,14 +37,14 @@ This classification is the basis for "who is allowed to modify which file."
 | Category | Files | Reason |
 |------|---------|------|
 | **Inside the capsule** (thoughts and memory) | `identity.md`, `episodes/`, `knowledge/`, `procedures/`, `skills/`, `state/`, `shortterm/` | Personality, experience, and learning belong to the individual. Cannot be modified externally |
-| **Boundary of the capsule** (interface between organization and individual) | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | The role and permission the organization expects of the individual. Can be modified by the supervisor |
-| **Outside the capsule** (management information) | `status.json`, `specialty_prompt.md` | Pure configuration and system management. Operated by CLI or administrators |
+| **Boundary of the capsule** (interface between organization and individual) | `injection.md`, `cron.md`, `heartbeat.md`, `permissions.json` | Root-owned organizational settings. Supervisors can edit `cron.md` / `heartbeat.md`; changes to the other files go through root administration APIs/CLI |
+| **Outside the capsule** (management information) | `status.json`, `specialty_prompt.md` | System configuration owned by the root server and offline CLI; Anima processes do not write it directly |
 
 - Changing the **inside** means "becoming a different person" or "losing memory." This is not allowed
-- Changing the **boundary** means "changing jobs" or "changing the scope of work." This is legitimate as organizational management
+- Changing the **boundary** means "changing jobs" or "changing the scope of work." It is legitimate organizational management, performed through root-owned APIs/tools rather than direct Anima file writes
 - Changing the **outside** does not directly affect the individual's personality or behavior
 
-> **Relationship between growth and identity.md**: identity.md is the immutable baseline of personality (temperament) and cannot be rewritten by yourself. "Growth" is expressed through accumulation in `knowledge/` (learned lessons), `procedures/` (acquired procedures), and `skills/` (refined skills). Even if identity.md is fixed, behavior certainly changes through memory accumulation—this is the model of "the same person growing." Rewriting identity.md means "replacement with a different person" rather than "growth." Direct editing by the user is possible.
+> **Relationship between growth and identity.md**: identity.md is the immutable baseline of personality (temperament) and cannot be rewritten by an Anima. "Growth" is expressed through accumulation in `knowledge/` (learned lessons), `procedures/` (acquired procedures), and `skills/` (refined skills). Even if identity.md is fixed, behavior certainly changes through memory accumulation—this is the model of "the same person growing." Rewriting identity.md means "replacement with a different person" rather than "growth." A human administrator can change it through root administration APIs/CLI; a bootstrap write request is also validated and persisted by root.
 
 ---
 
@@ -90,7 +90,7 @@ Saved for reference purposes; normally not modified.
 - Reporting obligations, escalation criteria
 - **Procedures that must never be skipped** (e.g., not sharing confidential information externally, confirming before operating in production)
 
-injection.md is your **mutable behavioral guideline**. It can be updated according to changes in business policy.
+injection.md is your **mutable behavioral guideline**. An authorized supervisor or human administrator can request policy changes through root; bootstrap writes are also root-mediated. Anima processes never write the file directly.
 
 | Item | Value |
 |------|-----|

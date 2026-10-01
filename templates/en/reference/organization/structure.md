@@ -14,7 +14,7 @@ The reporting hierarchy is defined in each Anima's `supervisor`. Read priority:
 2. **identity.md** — Rows in the table format `| 上司 | name |` (Japanese only. The `read_anima_supervisor` of `core/config/models.py` is parsed)
 
 If `supervisor` is unset, empty, "なし", "(なし)", "（なし）", "-", or "---", the Anima is at the top level (highest rank).
-The `animas.<name>.supervisor` of `config.json` is **synchronized from disk** by org_sync, so manual edits will be overwritten.
+The root-owned CLI/API operation `animaworks config set animas.<name>.supervisor <supervisor>` updates both status and config. Direct edits to only `config.json` are **synchronized from disk** by org_sync and may be overwritten.
 
 ### speciality (Specialty)
 
@@ -26,7 +26,7 @@ The specialty area is resolved from `_scan_all_animas()` of `core/prompt/builder
 
 **Note:** org_sync does **not synchronize speciality**. Speciality is resolved each time from disk and config during prompt construction.
 An Anima created via `animaworks anima create --from-md` will have `role` in `status.json` but not `speciality`.
-If you want a custom display (e.g., "開発リード"), manually add `"speciality": "開発リード"` to `status.json`.
+If you want a custom display (e.g., "開発リード"), use `animaworks config set animas.<name>.speciality "開発リード"`; it updates the root-owned status/config values together.
 
 ## config.json Synchronization via org_sync
 
@@ -49,7 +49,7 @@ The `sync_org_structure()` of `core/org/org_sync.py` performs the following:
 - `supervisor: null` or unset → that Anima is at the top level (highest rank)
 - `supervisor: "alice"` → alice is the supervisor
 
-Example configuration in status.json (recommended):
+Example root-owned status values (for illustration only; set them with the root config CLI/API):
 
 ```json
 {
@@ -122,23 +122,23 @@ From the "Your position in the organization" section of the system prompt, you c
 
 Changes to the organization structure are reflected in the following steps:
 
-1. Edit the `status.json` of the target Anima (change `supervisor` / `speciality`)
-2. **If you changed the supervisor:** Restart the server or wait for the next org_sync execution (org_sync synchronizes the supervisor to config.json)
-3. **If you changed the speciality:** It is read each time from status.json during prompt construction, so no server restart is needed. It will be reflected at the next chat/heartbeat
+1. Change organization fields through the root-owned setting interface, e.g. `animaworks config set animas.<name>.supervisor <supervisor>` or `animaworks config set animas.<name>.speciality <speciality>`.
+2. The CLI/API updates both `status.json` and `config.json`; `org_sync` keeps the hierarchy synchronized. The next reconciliation/prompt uses the updated value.
+3. **Speciality** is read during prompt construction, so it applies to the next chat/heartbeat without restarting the Anima.
 
 Notes:
-- Even if you directly edit the `animas.<name>.supervisor` of `config.json`, it will be overwritten with the disk value at the next org_sync execution (speciality is not overwritten)
+- Do not edit `status.json` or `config.json` directly from an Anima process. Root and the offline CLI are the only writers.
 - After an organization change, you SHOULD notify the affected Animas via message
 
 ## Example Organization Structure Patterns
 
-Below are examples to set in each Anima's `status.json`. org_sync synchronizes `supervisor` to config.json. `speciality` is resolved each time from status.json / config during prompt construction.
+Below are examples of organization fields. Set them through the root-owned config CLI/API; org_sync keeps `supervisor` synchronized, and `speciality` is resolved during prompt construction.
 
 ### Pattern 1: Flat Organization
 
 Everyone is at the top level. No reporting hierarchy.
 
-Each Anima's status.json:
+Root-owned status values (for illustration):
 ```json
 { "supervisor": null, "speciality": "企画" }
 { "supervisor": null, "speciality": "開発" }
@@ -160,7 +160,7 @@ Characteristics:
 
 There is a clear reporting hierarchy. This is the most common pattern.
 
-Set `supervisor` and `speciality` in each Anima's status.json:
+Set each hierarchy field through the root config CLI/API, for example `animaworks config set animas.dave.supervisor bob`:
 
 ```
 alice（CEO・全体統括）
@@ -195,7 +195,7 @@ Characteristics:
 
 ## Using speciality
 
-`speciality` is written as free text in the `speciality` of `status.json`. When unset, `role` (role name) is displayed as a fallback.
+`speciality` is root-owned free text stored in `status.json` (and mirrored in config for org sync). Set it with `animaworks config set animas.<name>.speciality <value>`. When unset, `role` (role name) is displayed as a fallback.
 
 - Displayed next to each Anima's name in the organization context (e.g., `bob (開発リード)` or `bob (engineer)`)
 - Serves as a clue for other Animas to decide who to consult or delegate tasks to
@@ -205,7 +205,7 @@ Characteristics:
 - When created via `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]`, `supervisor` and `role` are written to `status.json`
 - **supervisor**: If the `--supervisor` option is specified, it takes priority. If not specified, it is parsed from the basic information table of the character sheet (`| 上司 | name |`)
 - **speciality**: Not included in the basic information table of the character sheet, and `_create_status_json` also does not write speciality, so it is not automatically set at creation
-- If a custom specialty display is needed, manually add `"speciality": "開発リード"` etc. to `status.json` after creation
+- If a custom specialty display is needed, set it with `animaworks config set animas.<name>.speciality "開発リード"` after creation; do not edit the settings files directly
 - The same applies when created via `create_from_template` / `create_blank`: speciality is not automatically set in status.json (if the template contains status.json, its content is copied)
 
 How to write an effective speciality:

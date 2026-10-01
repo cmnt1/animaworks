@@ -708,7 +708,7 @@ def _make_handler_with_hierarchy(tmp_path: Path, *, anima_name: str = "sakura") 
 
 
 class TestDescendantManagementFilePermission:
-    """Grandchild management files (cron.md, heartbeat.md, status.json, injection.md) should be read/write."""
+    """Only cron.md and heartbeat.md remain direct-write management files."""
 
     def test_grandchild_cron_readable(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
@@ -730,15 +730,11 @@ class TestDescendantManagementFilePermission:
         result = handler._check_file_permission(str(animas_dir / "natsume" / "heartbeat.md"), write=True)
         assert result is None
 
-    def test_grandchild_injection_writable(self, tmp_path):
+    def test_grandchild_injection_and_status_are_not_directly_writable(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        result = handler._check_file_permission(str(animas_dir / "natsume" / "injection.md"), write=True)
-        assert result is None
-
-    def test_grandchild_status_json_writable(self, tmp_path):
-        handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        result = handler._check_file_permission(str(animas_dir / "natsume" / "status.json"), write=True)
-        assert result is None
+        for filename in ("injection.md", "status.json"):
+            result = handler._check_file_permission(str(animas_dir / "natsume" / filename), write=True)
+            assert result is not None
 
     def test_grandchild_identity_read_only(self, tmp_path):
         """identity.md must remain read-only even for descendants."""
@@ -753,12 +749,14 @@ class TestDescendantManagementFilePermission:
         result = handler._check_file_permission(str(animas_dir / "natsume"))
         assert result is None
 
-    def test_direct_child_still_has_management_rw(self, tmp_path):
-        """Direct child management files must remain read/write after refactor."""
+    def test_direct_child_management_files_match_root_ownership(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        for fname in ("cron.md", "heartbeat.md", "status.json", "injection.md"):
+        for fname in ("cron.md", "heartbeat.md"):
             result = handler._check_file_permission(str(animas_dir / "hinata" / fname), write=True)
             assert result is None, f"Write to direct child {fname} should be allowed"
+        for fname in ("status.json", "injection.md"):
+            result = handler._check_file_permission(str(animas_dir / "hinata" / fname), write=True)
+            assert result is not None, f"Write to root-owned {fname} should be denied"
 
 
 class TestDescendantOrgToolPermission:

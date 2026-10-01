@@ -10,6 +10,21 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "config.status_heartbeat_override": {
+        "ja": "status.json の {anima}.{field} に保存し、root のハートビートスケジュールに反映します。",
+        "en": "Saves {anima}.{field} to root-owned status.json and updates the root heartbeat schedule.",
+        "ko": "root 소유 status.json의 {anima}.{field}에 저장하고 root 하트비트 스케줄에 반영합니다.",
+    },
+    "config.status_org_setting": {
+        "ja": "root 所有の {anima}.{field} 組織設定を status.json と config.json に反映します。",
+        "en": "Updates root-owned organization field {anima}.{field} in status.json and config.json.",
+        "ko": "root 소유 {anima}.{field} 조직 설정을 status.json과 config.json에 반영합니다.",
+    },
+    "config.status_field_deprecated": {
+        "ja": "Warning: '{path}' は非推奨です。\n  status.json に書き込みます。今後は 'animaworks anima set-model' を使用してください。",
+        "en": "Warning: '{path}' is deprecated.\n  Writes to status.json. Use 'animaworks anima set-model' instead.",
+        "ko": "경고: '{path}' 경로는 더 이상 사용하지 않습니다.\n  status.json에 저장됩니다. 'animaworks anima set-model'을 사용하세요.",
+    },
     "anima.agent_error": {
         "ja": "[ERROR: エージェント実行中にエラーが発生しました]",
         "en": "[ERROR: An error occurred during agent execution]",

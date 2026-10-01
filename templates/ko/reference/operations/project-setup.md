@@ -454,7 +454,7 @@ animaworks anima set-model --all <モデル名>
 
 ### 설정의 리로드
 
-`status.json`을 변경한 후, 프로세스를 재시작하지 않고 설정을 반영하려면 `reload` 명령을 사용합니다:
+root/CLI가 허가된 `status.json` 설정을 변경한 뒤 재시작 없이 모델 설정을 반영하려면 `reload` 명령을 사용합니다. `set-model` 명령은 실행 중인 Anima에 reload를 요청합니다:
 
 ```bash
 # 単一 Anima のリロード
@@ -468,10 +468,10 @@ animaworks anima reload --all
 
 **일반적인 설정 변경 워크플로우**:
 
-1. `animaworks anima set-model <name> <model>`에서 모델 변경
-2. `animaworks anima reload <name>`로 즉시 반영
+1. `animaworks anima set-model <name> <model>`로 모델을 변경합니다(root API가 `status.json`을 갱신하고 실행 중인 Anima에 reload를 요청).
+2. 자동 알림이 없는 root/CLI 변경 뒤에는 `animaworks anima reload <name>`을 사용합니다.
 
-수동으로 `status.json`를 편집한 경우도 동일하게 `reload`로 반영할 수 있습니다.
+Anima 프로세스는 `status.json`을 직접 편집하지 않습니다. root 소유 CLI/API 작업을 사용합니다.
 
 ### 기본값 목록 (anima_defaults)
 
@@ -503,7 +503,7 @@ animaworks anima reload --all
 | `animaworks anima reload <name>` | status.json을 다시 읽어 모델 설정을 즉시 반영 (프로세스 재시작 없음) | 없음 |
 | `animaworks anima reload --all` | 전체 Anima의 설정을 일괄 리로드 | 없음 |
 | `animaworks anima restart <name>` | Anima 프로세스를 완전히 재시작 (코드 변경 반영 시 사용) | 15-30초 |
-| `animaworks anima set-model <name> <model>` | 모델을 변경 (status.json을 업데이트. 반영에는 `reload` 필요) | 없음 |
+| `animaworks anima set-model <name> <model>` | root 소유 status를 갱신하고 실행 중인 Anima의 모델 설정을 reload | 없음 |
 | `animaworks anima set-model --all <model>` | 전체 Anima의 모델을 일괄 변경 | 없음 |
 | `animaworks anima enable <name>` | 휴지 중인 Anima를 활성화하여 프로세스 시작 | — |
 | `animaworks anima disable <name>` | Anima를 휴지 (프로세스 종료, status.json의 enabled=false) | — |

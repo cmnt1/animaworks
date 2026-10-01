@@ -315,17 +315,14 @@ _HTTP_CLIENT_PID = None
 
 
 def _shared_http_client():
-    """Process-wide keep-alive client — per-call httpx.post() reopens a TCP
-    connection each time (measured ~12 calls/search)."""
+    """Process-wide authenticated client for batched internal API calls."""
     global _HTTP_CLIENT, _HTTP_CLIENT_PID
-
-    import httpx
 
     pid = os.getpid()
     if _HTTP_CLIENT is None or pid != _HTTP_CLIENT_PID:
-        from core.internal_api import internal_api_headers
+        from core.internal_api import host_api
 
-        _HTTP_CLIENT = httpx.Client(timeout=180.0, headers=internal_api_headers())
+        _HTTP_CLIENT = host_api.http_client(timeout=180.0)
         _HTTP_CLIENT_PID = pid
     return _HTTP_CLIENT
 

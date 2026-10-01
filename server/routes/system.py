@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import json
 import logging
 import re
@@ -248,9 +249,9 @@ async def _reschedule_all_heartbeats(supervisor) -> None:
         return
     for name in list(supervisor.processes.keys()):
         try:
-            await supervisor.send_request(name, "reschedule_heartbeat", {})
+            await supervisor.send_request(name, "reschedule_heartbeat", {}, timeout=10.0)
         except Exception:
-            logger.debug("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
+            logger.warning("Failed to send reschedule_heartbeat to %s", name, exc_info=True)
 
 
 async def _reload_activity_schedules(supervisor) -> None:
@@ -883,26 +884,13 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import update_config
+        from server.supervisor.activity_schedule import apply_activity_schedule
 
-        # When night mode is active, also update the matching schedule entry.
-        from core.runtime.scheduler_manager import _time_in_range
+        update = await asyncio.to_thread(apply_activity_schedule, activity_level=level)
 
-        now_hhmm = now_local().strftime("%H:%M")
-
-        def set_activity_level(config):
-            config.activity_level = level
-            for entry in config.activity_schedule:
-                if _time_in_range(entry.start, entry.end, now_hhmm):
-                    entry.level = level
-                    break
-            return config
-
-        update_config(set_activity_level)
-
-        # Notify supervisor to reschedule all heartbeats
+        # Notify running Animas only when the effective level changed.
         supervisor = getattr(request.app.state, "supervisor", None)
-        if supervisor is not None:
+        if supervisor is not None and update.activity_level_changed:
             try:
                 await _reschedule_all_heartbeats(supervisor)
             except Exception:
@@ -938,7 +926,8 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
 
-        from core.config.models import ActivityScheduleEntry, update_config
+        from core.config.models import ActivityScheduleEntry
+        from server.supervisor.activity_schedule import apply_activity_schedule
 
         entries: list[ActivityScheduleEntry] = []
         for i, item in enumerate(raw_schedule):
@@ -955,27 +944,18 @@ def create_system_router() -> APIRouter:
                     status_code=400,
                 )
 
-        # Apply the level for the current time immediately
-        now_hhmm = now_local().strftime("%H:%M")
+        # Apply the current slot on root before notifying the workers.
+        update = await asyncio.to_thread(apply_activity_schedule, activity_schedule=entries)
+        config = update.config
 
-        def set_activity_schedule(config):
-            config.activity_schedule = entries
-            if entries:
-                from core.runtime.scheduler_manager import SchedulerManager
-
-                target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
-                if target is not None:
-                    config.activity_level = target
-            return config
-
-        config = update_config(set_activity_schedule)
-
-        # Reschedule heartbeats and activity schedule jobs
+        # Heartbeat jobs only need rescheduling if the effective level changed.
         supervisor = getattr(request.app.state, "supervisor", None)
         if supervisor is not None:
             try:
-                await _reschedule_all_heartbeats(supervisor)
-                await _reload_activity_schedules(supervisor)
+                if update.activity_level_changed:
+                    await _reschedule_all_heartbeats(supervisor)
+                if update.activity_schedule_changed:
+                    await _reload_activity_schedules(supervisor)
             except Exception:
                 logger.warning(
                     "Failed to reload schedules after activity_schedule change",

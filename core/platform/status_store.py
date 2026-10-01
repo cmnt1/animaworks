@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from core.platform.atomic_io import update_json
+from core.platform.process_role import assert_settings_write_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,9 @@ def update_status(anima_dir: Path, fn: Callable[[dict[str, Any]], dict[str, Any]
     status file starts as an empty object; invalid or non-object JSON raises
     without writing anything.
     """
-    return update_json(Path(anima_dir) / "status.json", fn)
+    anima_dir = Path(anima_dir)
+    assert_settings_write_allowed(anima_dir / "status.json")
+    return update_json(anima_dir / "status.json", fn)
 
 
 __all__ = ["read_status", "update_status"]

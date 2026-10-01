@@ -71,8 +71,8 @@ To alice: 캐싱 전략에 대한 판단을 부탁드립니다.
 | `audit_subordinate` | 전체 하위(재귀) | 활동 타임라인 또는 통계 요약을 생성합니다. `name`를 생략하면 전체 하위를 한 번에 감사(통합 타임라인)합니다 | `name`(선택 사항), `mode`(선택 사항: `"report"`/`"summary"`, 기본값 `"report"`), `hours`(선택 사항: 1~168, 기본값 24), `direct_only`(선택 사항: 불리언), `since`(선택 사항: `"HH:MM"` 당일 시작 시각, 지정하면 hours보다 우선) |
 | `disable_subordinate` | 전체 하위(재귀) | 하위를 일시 중지합니다(status.json enabled=false, 약 30초 후 프로세스 종료) | `name`(필수), `reason`(선택 사항) |
 | `enable_subordinate` | 전체 하위(재귀) | 일시 중지한 하위를 재개합니다 | `name`(필수) |
-| `set_subordinate_model` | 전체 하위(재귀) | 하위의 모델을 변경합니다(status.json 업데이트. 적용하려면 `restart_subordinate`가 필요합니다) | `name`, `model`(필수), `reason`(선택 사항) |
-| `set_subordinate_background_model` | 전체 하위(재귀) | 하위의 백그라운드 모델(Heartbeat/Cron용. Inbox는 메인)을 변경합니다. 빈 문자열로 지웁니다. 적용하려면 `restart_subordinate`가 필요합니다 | `name`, `model`(필수), `credential`, `reason`(선택 사항) |
+| `set_subordinate_model` | 전체 하위(재귀) | root에 status.json 갱신을 요청하고 실행 중인 메인 모델을 reload | `name`, `model`(필수), `reason`(선택 사항) |
+| `set_subordinate_background_model` | 전체 하위(재귀) | root에 Heartbeat/Cron용 백그라운드 모델 갱신을 요청. 다음 백그라운드 작업부터 적용하고 빈 문자열로 지움 | `name`, `model`(필수), `credential`, `reason`(선택 사항) |
 | `restart_subordinate` | 전체 하위(재귀) | 하위 프로세스를 재시작합니다(restart_requested 플래그, 약 30초 후 재시작) | `name`(필수), `reason`(선택 사항) |
 
 `check_permissions`은 모든 Anima가 사용할 수 있습니다(자신의 권한 목록을 확인).

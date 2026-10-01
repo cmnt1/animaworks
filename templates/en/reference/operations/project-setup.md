@@ -454,7 +454,7 @@ When a supervisor changes a subordinate's model, use the `set_subordinate_model`
 
 ### Configuration reload
 
-To apply configuration changes after modifying `status.json` without restarting the process, use the `reload` command:
+To reload model settings after an authorized root/CLI status update without restarting the process, use the `reload` command. The `set-model` CLI command already requests a reload for a running Anima:
 
 ```bash
 # 単一 Anima のリロード
@@ -468,10 +468,10 @@ The reload is applied immediately via IPC (no downtime). Running sessions comple
 
 **Typical configuration change workflow**:
 
-1. Change the model with `animaworks anima set-model <name> <model>`
-2. Apply immediately with `animaworks anima reload <name>`
+1. Change the model with `animaworks anima set-model <name> <model>`; the root API updates `status.json` and reloads a running Anima.
+2. Use `animaworks anima reload <name>` after a root/CLI update that does not automatically notify the process.
 
-If `status.json` is edited manually, it can also be applied with `reload`.
+Anima processes must not edit `status.json` directly. Use root-owned CLI/API operations instead.
 
 ### Default values list (anima_defaults)
 
@@ -503,7 +503,7 @@ Run while the server is running (`animaworks start`).
 | `animaworks anima reload <name>` | Reloads status.json and immediately applies model configuration (no process restart) | None |
 | `animaworks anima reload --all` | Reloads configuration for all Anima at once | None |
 | `animaworks anima restart <name>` | Fully restarts Anima processes (used when applying code changes) | 15-30 seconds |
-| `animaworks anima set-model <name> <model>` | Changes model (updates status.json; requires `reload` to apply) | None |
+| `animaworks anima set-model <name> <model>` | Updates root-owned status and reloads the running Anima's model configuration | None |
 | `animaworks anima set-model --all <model>` | Changes models for all Anima at once | None |
 | `animaworks anima enable <name>` | Activates dormant Anima and starts the process | — |
 | `animaworks anima disable <name>` | Dormants Anima (stops process, sets enabled=false in status.json) | — |

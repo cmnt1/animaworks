@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
@@ -378,3 +378,61 @@ class TestRemovedInitStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/system/init-status")
         assert response.status_code == 404
+
+
+class TestRootOwnedConfigWrites:
+    async def test_config_value_route_updates_config_through_root(self, tmp_path, monkeypatch):
+        from core.config.io import get_config_path, invalidate_cache
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        invalidate_cache()
+        app = _make_test_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/system/config/value",
+                json={"key": "system.timezone", "value": "Asia/Tokyo"},
+            )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert json.loads(get_config_path().read_text(encoding="utf-8"))["system"]["timezone"] == "Asia/Tokyo"
+
+    async def test_per_anima_heartbeat_interval_routes_reload_to_root_scheduler(self, tmp_path, monkeypatch):
+        from core.config.io import invalidate_cache
+        from core.paths import get_animas_dir
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        invalidate_cache()
+        anima_dir = get_animas_dir() / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        app = _make_test_app()
+        app.state.supervisor = MagicMock()
+        app.state.supervisor.processes = {"alice": MagicMock()}
+        app.state.supervisor.send_request = AsyncMock(return_value={})
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/system/config/value",
+                json={"key": "animas.alice.heartbeat_interval_minutes", "value": 60},
+            )
+
+        assert response.status_code == 200
+        assert json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))["heartbeat_interval_minutes"] == 60
+        app.state.supervisor.send_request.assert_awaited_once_with("alice", "reschedule_heartbeat", {}, timeout=10.0)
+
+    async def test_legacy_model_config_value_uses_status_store(self, tmp_path, monkeypatch):
+        from core.config.io import invalidate_cache
+        from core.paths import get_animas_dir
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        invalidate_cache()
+        app = _make_test_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/system/config/value",
+                json={"key": "animas.alice.model", "value": "claude-sonnet-4-6"},
+            )
+        assert response.status_code == 200
+        status = json.loads((get_animas_dir() / "alice" / "status.json").read_text(encoding="utf-8"))
+        assert status["model"] == "claude-sonnet-4-6"

@@ -290,6 +290,28 @@ class TestSchedulerActivityLevel:
 # ── Effective interval calculation ────────────────────────────
 
 
+class TestAnimaScheduleOwnership:
+    @pytest.mark.asyncio
+    async def test_safety_poll_only_reads_root_owned_level(self, tmp_path):
+        from core.runtime.scheduler_manager import SchedulerManager
+
+        mock_anima = MagicMock()
+        anima_dir = tmp_path / "animas" / "test-anima"
+        anima_dir.mkdir(parents=True)
+        config = AnimaWorksConfig(activity_level=50)
+        with (
+            patch("core.runtime.scheduler_manager.load_config", return_value=config),
+            patch("core.config.io.update_config", side_effect=AssertionError("anima scheduler must not write config")),
+        ):
+            manager = SchedulerManager(mock_anima, "test-anima", anima_dir, MagicMock())
+            manager._last_schedule_level = 100
+            manager.reschedule_heartbeat = MagicMock()
+            await manager._activity_schedule_tick()
+
+        manager.reschedule_heartbeat.assert_called_once_with()
+        assert manager._last_schedule_level == 50
+
+
 class TestEffectiveIntervalCalc:
     """Pure calculation tests for activity level scaling."""
 

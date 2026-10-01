@@ -12,6 +12,16 @@ from pathlib import Path
 logger = logging.getLogger("animaworks")
 
 
+def is_server_running(data_dir: Path | None = None) -> bool:
+    """Return whether a valid server PID file points to a live process."""
+    pid = read_server_pid(data_dir)
+    if pid is None:
+        return False
+    from core.platform.process import is_process_alive
+
+    return is_process_alive(pid)
+
+
 def read_server_pid(data_dir: Path | None = None) -> int | None:
     """Read and validate the server PID file for *data_dir* or the active runtime.
 

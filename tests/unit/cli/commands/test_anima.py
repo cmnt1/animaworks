@@ -15,6 +15,34 @@ import pytest
 
 
 class TestCmdCreateAnima:
+    def test_running_server_owns_anima_creation(self, tmp_path, capsys):
+        from cli.commands.anima import cmd_create_anima
+
+        data_dir = tmp_path / "runtime"
+        data_dir.mkdir()
+        source = tmp_path / "sheet.md"
+        source.write_text("# Character: alice\n", encoding="utf-8")
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"status": "ok", "anima_dir": str(data_dir / "animas" / "alice")}
+        args = argparse.Namespace(from_md=str(source), template=None, name="alice", supervisor="boss", role="engineer")
+
+        with (
+            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("core.platform.pid.is_server_running", return_value=True),
+            patch("core.anima.factory.create_from_md") as local_create,
+            patch("core.internal_api.host_api.post", return_value=response) as host_post,
+        ):
+            cmd_create_anima(args)
+
+        local_create.assert_not_called()
+        payload = host_post.call_args.kwargs["json"]
+        assert payload["creation_type"] == "character_sheet"
+        assert payload["character_sheet_content"] == "# Character: alice\n"
+        assert payload["name"] == "alice"
+        assert payload["supervisor"] == "boss"
+        assert payload["role"] == "engineer"
+        assert "Created anima 'alice'" in capsys.readouterr().out
+
     @patch("core.config.register_anima_in_config")
     @patch("core.anima.factory.create_from_md")
     @patch("core.paths.get_animas_dir")

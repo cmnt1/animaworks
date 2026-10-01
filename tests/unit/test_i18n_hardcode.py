@@ -82,7 +82,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # MD section names used for parsing (基本情報, 人格, etc.)
     "core/anima/factory.py": 8,
     # deprecation warning message
-    "cli/commands/config_cmd.py": 1,
     # permissions.md section headers used by the legacy permissions fallback
     "core/config/migrate.py": 2,
     # model catalog "note" descriptions (最高性能・推奨, etc.)

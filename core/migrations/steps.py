@@ -34,6 +34,13 @@ def _iter_anima_dirs(data_dir: Path) -> list[Path]:
     return [d for d in sorted(animas_dir.iterdir()) if d.is_dir() and (d / "identity.md").exists()]
 
 
+def _persist_config(config_path: Path, payload: dict[str, Any]) -> None:
+    """Persist a sparse migration payload through the locked config writer."""
+    from core.config.io import update_config as update
+
+    update(lambda _current: payload, config_path)
+
+
 _TOOLS_RENAME_RE = re.compile(r"(?<![\w.])core([./])tools(?![\w])")
 _TOOLS_RENAME_GLOBS = (
     "common_tools/*.py",
@@ -226,7 +233,7 @@ def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: b
         if dry_run:
             return StepResult(changed=1, skipped=0, details=[f"Would {detail.lower()}" for detail in details])
 
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _persist_config(config_path, config)
         return StepResult(changed=1, skipped=0, details=details)
     except Exception as exc:
         logger.exception("step_engine_timeout_config_cleanup failed")
@@ -274,10 +281,7 @@ def step_rag_vector_worker_config_cleanup(data_dir: Path, dry_run: bool, verbose
                         if not dry_run:
                             for key in removed:
                                 del rag[key]
-                            config_path.write_text(
-                                json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-                                encoding="utf-8",
-                            )
+                            _persist_config(config_path, config)
                     else:
                         details.append("No retired RAG vector-worker settings found")
         except Exception as exc:
@@ -337,7 +341,7 @@ def step_retire_chain_timeout_keys(data_dir: Path, dry_run: bool, verbose: bool)
             if config_changed:
                 changed_files += 1
                 if not dry_run:
-                    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    _persist_config(config_path, config)
         else:
             details.append("config.json not found; skip")
 
@@ -397,7 +401,7 @@ def step_memory_maintenance_config_cleanup_20260927(data_dir: Path, dry_run: boo
         if dry_run:
             return StepResult(changed=1, skipped=0, details=[f"Would {detail.lower()}"])
 
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _persist_config(config_path, config)
         return StepResult(changed=1, skipped=0, details=[detail])
     except Exception as exc:
         logger.exception("step_memory_maintenance_config_cleanup_20260927 failed")
@@ -426,7 +430,7 @@ def step_priming_config_cleanup_20260927(data_dir: Path, dry_run: bool, verbose:
             return StepResult(changed=1, skipped=0, details=["Would drop rag.max_graph_hops"])
 
         del rag["max_graph_hops"]
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _persist_config(config_path, config)
         return StepResult(changed=1, skipped=0, details=["Dropped rag.max_graph_hops"])
     except Exception as exc:
         logger.exception("step_priming_config_cleanup_20260927 failed")
@@ -552,9 +556,7 @@ def step_phase_b_removal_20260927(data_dir: Path, dry_run: bool, verbose: bool) 
                         if dry_run:
                             details.append(f"Would remove {len(removed_settings)} retired consolidation setting(s)")
                         else:
-                            config_path.write_text(
-                                json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-                            )
+                            _persist_config(config_path, config)
                             details.append(f"Removed {len(removed_settings)} retired consolidation setting(s)")
                     else:
                         skipped += 1
@@ -637,10 +639,7 @@ def step_retired_mode_to_a(data_dir: Path, dry_run: bool, verbose: bool) -> Step
                     if dry_run:
                         details.append("Would map retired Mode B values to A in config.json")
                     else:
-                        config_path.write_text(
-                            json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-                            encoding="utf-8",
-                        )
+                        _persist_config(config_path, config)
                         details.append("Mapped retired Mode B values to A in config.json")
                     changed_files += 1
 
@@ -775,9 +774,7 @@ def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool)
                                 del hk[key]
                                 removed = True
                     if removed:
-                        config_path.write_text(
-                            json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-                        )
+                        _persist_config(config_path, config)
                         details.append("removed retired housekeeping settings")
                 except Exception:
                     logger.warning("Failed to clean retired housekeeping settings", exc_info=True)
@@ -793,8 +790,6 @@ def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool)
 def step_neo4j_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Remove retired Neo4j settings and preserve configured fact edge types."""
     del verbose
-    from core.platform.atomic_io import atomic_write_text
-
     details: list[str] = []
     errors: list[str] = []
     changed = 0
@@ -832,10 +827,7 @@ def step_neo4j_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> S
                     if config_changed:
                         changed += 1
                         if not dry_run:
-                            atomic_write_text(
-                                config_path,
-                                json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-                            )
+                            _persist_config(config_path, config)
                     else:
                         skipped += 1
                         details.append("No retired memory settings found in config.json")
@@ -994,7 +986,7 @@ def step_usage_governor_cleanup(data_dir: Path, dry_run: bool, verbose: bool) ->
                 shutil.move(str(source), str(archive_dir / source.name))
                 changed += 1
         if config_changed and config is not None:
-            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _persist_config(config_path, config)
             changed += 1
         return StepResult(changed=changed, skipped=skipped, details=details)
     except Exception as exc:
@@ -1062,7 +1054,7 @@ def step_retired_config_keys_cleanup(data_dir: Path, dry_run: bool, verbose: boo
         action = "Would remove" if dry_run else "Removed"
         details = [f"{action} retired config keys: {', '.join(removed)}"]
         if not dry_run:
-            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _persist_config(config_path, config)
         return StepResult(changed=1, skipped=0, details=details)
     except Exception as exc:
         logger.exception("step_retired_config_keys_cleanup failed")
@@ -1100,7 +1092,7 @@ def step_memory_config_dead_keys_20260927(data_dir: Path, dry_run: bool, verbose
         for section_name, key in found:
             del config[section_name][key]
         details = [f"Removed {section}.{key}" for section, key in found]
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _persist_config(config_path, config)
         return StepResult(changed=len(found), skipped=0, details=details)
     except Exception as exc:
         logger.exception("step_memory_config_dead_keys_20260927 failed")

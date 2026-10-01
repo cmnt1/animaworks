@@ -87,7 +87,7 @@ def test_database_errors_do_not_proxy_to_host(anima_dir, message):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=sqlite3.OperationalError(message)
         ),
-        patch("httpx.post") as post,
+        patch("core.host_api.host_api.post") as post,
         pytest.raises(sqlite3.OperationalError),
     ):
         publish_tasks(anima_dir, [payload()])
@@ -114,7 +114,7 @@ def test_readonly_sandbox_publishes_through_host(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.host_api.host_api.post", return_value=response) as post,
     ):
         entries = publish_tasks(anima_dir, [payload()])
     assert entries[0].task_id == "task-one"
@@ -138,7 +138,7 @@ def test_readonly_single_lookup_passes_task_id_to_host(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.get", return_value=response) as get,
+        patch("core.host_api.host_api.get", return_value=response) as get,
     ):
         assert queue.get_task_by_id(entry.task_id) == entry
     assert get.call_args.kwargs["params"]["task_id"] == entry.task_id
@@ -235,7 +235,7 @@ def test_host_update_identity_cannot_be_supplied_by_model(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.host_api.host_api.post", return_value=response) as post,
     ):
         result = handler._handle_update_task(
             {"task_id": "task-one", "status": "done", "attempt_identity": {"token": "model-invented"}}
@@ -256,7 +256,7 @@ def test_host_publication_propagates_execution_attempt_identity(anima_dir):
         patch.object(
             TaskQueueManager, "store", new_callable=PropertyMock, side_effect=PermissionError(errno.EACCES, "denied")
         ),
-        patch("httpx.post", return_value=response) as post,
+        patch("core.host_api.host_api.post", return_value=response) as post,
     ):
         publish_tasks(anima_dir, [{"task_id": "task-one", "resume": True}])
     assert post.call_args.kwargs["json"]["attempt_identity"] == identity

@@ -345,6 +345,22 @@ class TestCreateBlank:
             content = (anima_dir / "identity.md").read_text(encoding="utf-8")
             assert content == "I am bob"
 
+    def test_blank_root_owned_template_files_use_guarded_store(self, tmp_path, monkeypatch):
+        blank_dir = tmp_path / "blank"
+        blank_dir.mkdir()
+        (blank_dir / "identity.md").write_text("I am {name}", encoding="utf-8")
+        animas_dir = tmp_path / "animas"
+        animas_dir.mkdir()
+        monkeypatch.setenv("ANIMAWORKS_PROCESS_ROLE", "anima")
+
+        with (
+            patch("core.anima.factory.BLANK_TEMPLATE_DIR", blank_dir),
+            patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+            pytest.raises(PermissionError, match="cannot write root-owned settings"),
+        ):
+            create_blank(animas_dir, "bob")
+        assert not (animas_dir / "bob").exists()
+
     def test_raises_for_existing(self, tmp_path):
         animas_dir = tmp_path / "animas"
         (animas_dir / "alice").mkdir(parents=True)

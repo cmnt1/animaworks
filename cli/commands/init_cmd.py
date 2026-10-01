@@ -25,6 +25,25 @@ def cmd_init(args: argparse.Namespace) -> None:
     from core.paths import get_data_dir
 
     data_dir = get_data_dir()
+    from core.platform.pid import is_server_running
+
+    if is_server_running(data_dir) and any(getattr(args, option, None) for option in ("template", "from_md", "blank")):
+        from cli.commands.anima import cmd_create_anima
+
+        cmd_create_anima(
+            argparse.Namespace(
+                from_md=getattr(args, "from_md", None),
+                template=getattr(args, "template", None),
+                name=getattr(args, "name", None) or getattr(args, "blank", None),
+                supervisor=getattr(args, "supervisor", None),
+                role=getattr(args, "role", None),
+            )
+        )
+        return
+
+    if is_server_running(data_dir) and getattr(args, "skip_anima", False):
+        print(f"Runtime directory already exists: {data_dir}")
+        return
 
     # --force: safe merge (add missing files only)
     if getattr(args, "force", False):

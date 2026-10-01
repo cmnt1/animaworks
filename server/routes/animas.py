@@ -168,7 +168,7 @@ def create_animas_router() -> APIRouter:
         # Read memory files from disk — parallelised via thread pool
         from core.memory.manager import MemoryManager
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
 
         identity, injection, cur_state, k_files, e_files, p_files = await asyncio.gather(
             asyncio.to_thread(memory.read_identity),
@@ -317,9 +317,9 @@ def create_animas_router() -> APIRouter:
         if not isinstance(data, dict):
             raise HTTPException(status_code=400, detail="permissions must be a JSON object")
 
-        perm_path = anima_dir / "permissions.json"
-        content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
-        await asyncio.to_thread(perm_path.write_text, content, "utf-8")
+        from core.anima.settings_store import write_permissions
+
+        await asyncio.to_thread(write_permissions, anima_dir, data)
         logger.info("Updated permissions.json for anima '%s'", name)
         return {"status": "ok", "name": name}
 
@@ -335,10 +335,13 @@ def create_animas_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
+        if not isinstance(data, dict) or not isinstance(data.get("content", ""), str):
+            raise HTTPException(status_code=400, detail="content must be a string")
         content: str = data.get("content", "")
 
-        identity_path = anima_dir / "identity.md"
-        await asyncio.to_thread(identity_path.write_text, content, "utf-8")
+        from core.anima.settings_store import write_identity
+
+        await asyncio.to_thread(write_identity, anima_dir, content)
         logger.info("Updated identity.md for anima '%s' (%d chars)", name, len(content))
         return {"status": "ok", "name": name, "field": "identity", "length": len(content)}
 
@@ -352,10 +355,13 @@ def create_animas_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
+        if not isinstance(data, dict) or not isinstance(data.get("content", ""), str):
+            raise HTTPException(status_code=400, detail="content must be a string")
         content: str = data.get("content", "")
 
-        injection_path = anima_dir / "injection.md"
-        await asyncio.to_thread(injection_path.write_text, content, "utf-8")
+        from core.anima.settings_store import write_injection
+
+        await asyncio.to_thread(write_injection, anima_dir, content)
         logger.info("Updated injection.md for anima '%s' (%d chars)", name, len(content))
         return {"status": "ok", "name": name, "field": "injection", "length": len(content)}
 
@@ -371,8 +377,14 @@ def create_animas_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
         data = await request.json()
-        model: str = data.get("model", "").strip()
-        credential: str = data.get("credential", "").strip() or None
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="request body must be an object")
+        raw_model = data.get("model", "")
+        raw_credential = data.get("credential", "")
+        if not isinstance(raw_model, str) or not isinstance(raw_credential, str):
+            raise HTTPException(status_code=400, detail="model and credential must be strings")
+        model = raw_model.strip()
+        credential = raw_credential.strip() or None
 
         if not model:
             raise HTTPException(status_code=400, detail="model is required")
@@ -391,6 +403,12 @@ def create_animas_router() -> APIRouter:
             result["execution_mode"],
             result.get("mode_s_auth"),
         )
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None and name in getattr(supervisor, "processes", {}):
+            try:
+                await supervisor.send_request(name, "reload_config", {}, timeout=10.0)
+            except Exception:
+                logger.info("Model reload deferred until next start for anima=%s", name, exc_info=True)
         return {
             "status": "ok",
             "name": name,
@@ -398,7 +416,87 @@ def create_animas_router() -> APIRouter:
             "credential": result["credential"],
             "execution_mode": result["execution_mode"],
             "mode_s_auth": result.get("mode_s_auth"),
+            "family_changed": result.get("family_changed", False),
         }
+
+    @router.put("/animas/{name}/background-model")
+    async def update_anima_background_model(name: str, request: Request):
+        """Update heartbeat/cron model settings in root-owned status.json."""
+        _validate_anima_name(name)
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.is_dir() or not (anima_dir / "identity.md").is_file():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+        data = await request.json()
+        model = data.get("model", "") if isinstance(data, dict) else None
+        credential = data.get("credential") if isinstance(data, dict) else None
+        clear = bool(data.get("clear", False)) if isinstance(data, dict) else False
+        if not isinstance(model, str) or (credential is not None and not isinstance(credential, str)):
+            raise HTTPException(status_code=400, detail="model and credential must be strings")
+        if not clear and not model.strip():
+            raise HTTPException(status_code=400, detail="model is required")
+        from core.config.model_config import update_status_model
+
+        update: dict[str, Any] = (
+            {"background_model": "", "background_credential": ""} if clear else {"background_model": model.strip()}
+        )
+        if credential is not None and not clear:
+            update["background_credential"] = credential.strip()
+        await asyncio.to_thread(update_status_model, anima_dir, **update)
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None and name in getattr(supervisor, "processes", {}):
+            try:
+                await supervisor.send_request(name, "reload_config", {}, timeout=10.0)
+            except Exception:
+                logger.info("Background model reload deferred until next start for anima=%s", name, exc_info=True)
+        return {"status": "ok", "name": name, "background_model": "" if clear else model.strip()}
+
+    @router.put("/animas/{name}/role")
+    async def update_anima_role(name: str, request: Request):
+        """Update role settings and role permission template through root writers."""
+        _validate_anima_name(name)
+        anima_dir = request.app.state.animas_dir / name
+        if not anima_dir.is_dir() or not (anima_dir / "identity.md").is_file():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="request body must be an object")
+        role = data.get("role", "")
+        status_only = bool(data.get("status_only", False))
+        from core.anima.factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
+        from core.anima.settings_store import update_status
+        from core.config.local_llm import apply_local_llm_role_to_status
+        from core.config.models import load_config
+
+        if not isinstance(role, str) or role not in VALID_ROLES:
+            raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
+        role_defaults: dict[str, object] = {}
+        if not status_only:
+            defaults_path = SHARED_ROLES_DIR / role / "defaults.json"
+            if defaults_path.is_file():
+                try:
+                    role_defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    logger.warning("Failed to load role defaults for '%s'", role, exc_info=True)
+            config = load_config()
+        old_role = "-"
+
+        def apply_role(status: dict[str, object]) -> None:
+            nonlocal old_role
+            old_role = str(status.get("role", "-"))
+            status["role"] = role
+            if not status_only:
+                for key in ("model", "context_threshold", "conversation_history_threshold"):
+                    if key in role_defaults:
+                        status[key] = role_defaults[key]
+                apply_local_llm_role_to_status(status, config, role)
+
+        try:
+            await asyncio.to_thread(update_status, anima_dir, apply_role)
+            if not status_only:
+                await asyncio.to_thread(_apply_role_defaults, anima_dir, role)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=t("anima.status_json_invalid", name=name)) from exc
+        return {"status": "ok", "name": name, "old_role": old_role, "role": role, "status_only": status_only}
 
     # ── Aliases ──────────────────────────────────────────────
 
@@ -453,7 +551,7 @@ def create_animas_router() -> APIRouter:
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
             raise HTTPException(status_code=404, detail=f"Anima '{name}' not found")
 
-        from core.platform.status_store import update_status
+        from core.anima.settings_store import update_status
 
         def enable_status(existing: dict[str, Any]) -> None:
             existing["enabled"] = True
@@ -480,7 +578,7 @@ def create_animas_router() -> APIRouter:
         if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
             raise HTTPException(status_code=404, detail=f"Anima '{name}' not found")
 
-        from core.platform.status_store import update_status
+        from core.anima.settings_store import update_status
 
         def disable_status(existing: dict[str, Any]) -> None:
             existing["enabled"] = False
@@ -498,6 +596,142 @@ def create_animas_router() -> APIRouter:
             request.app.state.anima_names.remove(name)
 
         return {"name": name, "enabled": False}
+
+    @router.post("/animas/{name}/rename")
+    async def rename_anima(name: str, request: Request):
+        """Rename an Anima on root so the CLI never moves owned settings itself."""
+        from core.anima.admin import cleanup_rag_collections, rename_dm_logs
+        from core.anima.factory import validate_anima_name
+        from core.config.anima_registry import rename_anima_in_config
+        from core.paths import get_data_dir
+        from core.platform.status_store import read_status
+
+        _validate_anima_name(name)
+        data = await request.json()
+        new_name = data.get("new_name") if isinstance(data, dict) else None
+        if not isinstance(new_name, str) or not new_name:
+            raise HTTPException(status_code=400, detail="new_name is required")
+        if new_name == name:
+            raise HTTPException(status_code=400, detail="Old and new names are the same")
+        name_error = validate_anima_name(new_name)
+        if name_error:
+            raise HTTPException(status_code=400, detail=name_error)
+
+        data_dir = get_data_dir()
+        animas_dir = request.app.state.animas_dir
+        old_dir = animas_dir / name
+        new_dir = animas_dir / new_name
+        if not old_dir.is_dir() or not (old_dir / "identity.md").is_file():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+        if new_dir.exists():
+            raise HTTPException(status_code=409, detail=f"Anima already exists: {new_name}")
+        old_enabled = bool(read_status(old_dir).get("enabled", True))
+
+        supervisor = request.app.state.supervisor
+        try:
+            await supervisor.stop_anima(name)
+        except Exception as exc:
+            logger.exception("Failed to stop anima before rename: %s", name)
+            raise HTTPException(status_code=409, detail=f"Failed to stop anima '{name}': {exc}") from exc
+
+        old_inbox = data_dir / "shared" / "inbox" / name
+        new_inbox = data_dir / "shared" / "inbox" / new_name
+        inbox_renamed = False
+        directory_renamed = False
+        try:
+            old_dir.rename(new_dir)
+            directory_renamed = True
+            if old_inbox.exists():
+                if new_inbox.exists():
+                    raise FileExistsError(f"Inbox already exists: {new_inbox}")
+                old_inbox.rename(new_inbox)
+                inbox_renamed = True
+
+            run_dir = data_dir / "run"
+            for stale in (run_dir / "sockets" / f"{name}.sock", run_dir / "animas" / f"{name}.pid"):
+                stale.unlink(missing_ok=True)
+
+            dm_count = await asyncio.to_thread(rename_dm_logs, data_dir / "shared", name, new_name)
+            repair_error = ""
+            try:
+                repair_queued = await asyncio.to_thread(cleanup_rag_collections, new_dir, name, source="server")
+            except Exception as exc:
+                repair_queued = False
+                repair_error = str(exc)
+                logger.warning("RAG cleanup failed after anima rename", exc_info=True)
+
+            supervisor_references = rename_anima_in_config(data_dir, name, new_name)
+            from core.anima.settings_store import update_status
+
+            status_updated = 0
+            for other_dir in sorted(path for path in animas_dir.iterdir() if path.is_dir()):
+                if not (other_dir / "status.json").is_file():
+                    continue
+                changed = False
+
+                def rename_supervisor(status: dict[str, Any]) -> None:
+                    nonlocal changed
+                    if status.get("supervisor") == name:
+                        status["supervisor"] = new_name
+                        changed = True
+
+                try:
+                    await asyncio.to_thread(update_status, other_dir, rename_supervisor)
+                    status_updated += int(changed)
+                except Exception:
+                    logger.warning("Failed to rename supervisor reference in %s", other_dir.name, exc_info=True)
+        except Exception as exc:
+            logger.exception("Anima rename failed: %s -> %s", name, new_name)
+            if inbox_renamed and new_inbox.exists() and not old_inbox.exists():
+                try:
+                    new_inbox.rename(old_inbox)
+                except OSError:
+                    logger.warning("Failed to restore inbox after rename failure", exc_info=True)
+            if directory_renamed and new_dir.exists() and not old_dir.exists():
+                try:
+                    new_dir.rename(old_dir)
+                except OSError:
+                    logger.warning("Failed to restore anima directory after rename failure", exc_info=True)
+            raise HTTPException(status_code=409, detail=f"Failed to rename anima: {exc}") from exc
+
+        restart_ctl = getattr(supervisor, "_restart_ctl", None)
+        forget = getattr(restart_ctl, "forget", None)
+        if callable(forget):
+            forget(name)
+        anima_names = request.app.state.anima_names
+        if name in anima_names:
+            anima_names.remove(name)
+        start_error = ""
+        if old_enabled:
+            if new_name not in anima_names:
+                anima_names.append(new_name)
+            try:
+                await supervisor.start_anima(new_name)
+            except Exception as exc:
+                start_error = str(exc)
+                logger.warning("Anima %s renamed but could not be restarted", new_name, exc_info=True)
+
+        logger.info(
+            "Anima renamed via root API: %s -> %s (supervisors=%d status=%d dm_logs=%d repair_queued=%s)",
+            name,
+            new_name,
+            supervisor_references,
+            status_updated,
+            dm_count,
+            repair_queued,
+        )
+        return {
+            "status": "ok",
+            "old_name": name,
+            "new_name": new_name,
+            "supervisor_references_updated": supervisor_references,
+            "status_files_updated": status_updated,
+            "dm_logs_renamed": dm_count,
+            "repair_queued": repair_queued,
+            "repair_error": repair_error,
+            "start_error": start_error,
+            "enabled": old_enabled,
+        }
 
     # ── Background Tasks ────────────────────────────────────
 

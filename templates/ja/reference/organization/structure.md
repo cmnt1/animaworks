@@ -14,7 +14,7 @@ AnimaWorks における組織構造は、各 Anima の `status.json`（または
 2. **identity.md** — 表形式 `| 上司 | name |` の行（日本語のみ。`core/config/models.py` の `read_anima_supervisor` が解析）
 
 `supervisor` が未設定・空・「なし」「(なし)」「（なし）」「-」「---」の場合はトップレベル（最上位）となる。
-`config.json` の `animas.<name>.supervisor` は org_sync によって **ディスクから同期される** ため、手動編集は上書きされる。
+`animaworks config set animas.<name>.supervisor <supervisor>` は root 所有 status/config をまとめて更新する。`config.json` だけを直接変更すると org_sync によってディスクから上書きされるため、CLI/API を使用する。
 
 ### speciality（専門）
 
@@ -26,7 +26,7 @@ AnimaWorks における組織構造は、各 Anima の `status.json`（または
 
 **注意:** org_sync は **speciality を同期しない**。speciality はプロンプト構築時にディスクと config から都度解決される。
 `animaworks anima create --from-md` で作成した Anima は `status.json` に `role` が入るが `speciality` は入らない。
-カスタム表示（例: 「開発リード」）にしたい場合は、`status.json` に `"speciality": "開発リード"` を手動で追加する。
+カスタム表示（例: 「開発リード」）にしたい場合は、`animaworks config set animas.<name>.speciality "開発リード"` を使用する。root 所有 status/config の両方が更新される。
 
 ## org_sync による config.json 同期
 
@@ -49,7 +49,7 @@ AnimaWorks における組織構造は、各 Anima の `status.json`（または
 - `supervisor: null` または未設定 → その Anima はトップレベル（最上位）
 - `supervisor: "alice"` → alice が上司
 
-status.json での設定例（推奨）:
+root 所有の status 値の例（表示用。直接編集せず CLI/API で設定）:
 
 ```json
 {
@@ -122,17 +122,17 @@ alice（経営戦略・全体統括）
 
 組織構造の変更は以下の手順で反映される:
 
-1. 対象 Anima の `status.json` を編集（`supervisor` / `speciality` の変更）
-2. **supervisor を変更した場合:** サーバーを再起動するか、次回の org_sync 実行を待つ（org_sync が config.json に supervisor を同期）
-3. **speciality を変更した場合:** プロンプト構築時に status.json から都度読み取られるため、サーバー再起動は不要。次回のチャット/ハートビートで反映される
+1. 組織設定は root 所有の CLI/API で変更する（例: `animaworks config set animas.<name>.supervisor <supervisor>` / `animaworks config set animas.<name>.speciality <speciality>`）。
+2. CLI/API は `status.json` と `config.json` の両方を更新し、org_sync が階層を同期する。次回の reconciliation / prompt で新しい値が使われる。
+3. **speciality の変更:** プロンプト構築時に読み取られるため、Anima の再起動は不要。次回のチャット/ハートビートで反映される。
 
 注意点:
-- `config.json` の `animas.<name>.supervisor` を直接編集しても、org_sync 実行時にディスクの値で上書きされる（speciality は上書きされない）
+- Anima プロセスから `status.json` / `config.json` を直接編集しない。書き手は root とサーバー停止中の CLI のみ。
 - 組織変更後は、影響を受ける Anima にメッセージで通知することを SHOULD（推奨）
 
 ## 組織構造のパターン例
 
-以下は各 Anima の `status.json` に設定する例。org_sync が `supervisor` を config.json に同期する。`speciality` はプロンプト構築時に status.json / config から都度解決される。
+以下は組織設定の例。root 所有 CLI/API で設定し、org_sync が `supervisor` を同期する。`speciality` はプロンプト構築時に解決される。
 
 ### パターン1: フラット組織
 
@@ -160,7 +160,7 @@ carol（デザイン）
 
 明確な上下関係がある。最も一般的なパターン。
 
-各 Anima の status.json に `supervisor` と `speciality` を設定:
+各階層フィールドは root 所有 CLI/API で設定する（例: `animaworks config set animas.dave.supervisor bob`）:
 
 ```
 alice（CEO・全体統括）
@@ -195,7 +195,7 @@ manager（プロジェクト管理）
 
 ## speciality の活用
 
-`speciality` は `status.json` の `speciality` に自由テキストで記述する。未設定時は `role`（ロール名）がフォールバックとして表示される。
+`speciality` は root 所有の `status.json` に自由テキストで保存される。`animaworks config set animas.<name>.speciality <value>` で設定する。未設定時は `role`（ロール名）がフォールバックとして表示される。
 
 - 組織コンテキストで各 Anima の名前の横に表示される（例: `bob (開発リード)` または `bob (engineer)`）
 - 他の Anima がタスクの相談先や委任先を判断する手がかりになる
@@ -205,7 +205,7 @@ manager（プロジェクト管理）
 - `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]` で作成すると、`status.json` に `supervisor` と `role` が書き込まれる
 - **supervisor**: `--supervisor` オプションが指定されていればそれを優先。未指定の場合はキャラクターシートの基本情報テーブル（`| 上司 | name |`）から解析
 - **speciality**: キャラクターシートの基本情報テーブルには含まれず、`_create_status_json` も speciality を書き込まないため、作成時に自動設定されない
-- カスタム専門表示が必要な場合は、作成後に `status.json` に `"speciality": "開発リード"` 等を手動で追加する
+- カスタム専門表示が必要な場合は、作成後に `animaworks config set animas.<name>.speciality "開発リード"` で設定する。設定ファイルを直接編集しない
 - `create_from_template` / `create_blank` で作成した場合も同様に、speciality は status.json に自動設定されない（テンプレートに status.json が含まれる場合はその内容がコピーされる）
 
 効果的な speciality の書き方:

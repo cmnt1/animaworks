@@ -66,7 +66,8 @@ Mode A의 스키마에서는 **PascalCase 이름**입니다. `ToolHandler` 내�
 - 파일 조작: Read / Write / Edit를 우선. Bash에서의 `cat` / `sed` / `awk`는 비권장.
 - 검색: Grep(내용), Glob(경로)를 우선. Bash의 `grep` / `find`는 비권장.
 - Anima의 기억 트리 내: **`read_memory_file` / `write_memory_file` / `archive_memory_file`**(상대 경로). 프로젝트 전체의 절대 경로 조작이 필요할 때 Read / Write를 사용하는 식의 역할 분담.
-- 상급자가 부하 Anima의 관리 파일(`cron.md`, `heartbeat.md`, `injection.md`, `status.json`)을 편집하는 경우도, Read / Write / Edit / apply_patch / `Path.write_text`가 아니라 **write memory 도구**를 사용합니다. 경로는 `../{anima_name}/cron.md`처럼 지정합니다.
+- Anima가 편집할 수 있는 스케줄(`cron.md`, `heartbeat.md`)은 부하의 경우에도 **write memory 도구**로 `../{anima_name}/cron.md`처럼 지정해 편집합니다.
+- `config.json`, `status.json`, `identity.md`, `injection.md`, `permissions.json`은 root 소유라 Anima가 직접 쓰지 않습니다. bootstrap 중 identity 작성과 승인된 상급자의 injection 변경 요청은 `write_memory_file`에서 root로 전달되어 권한 확인을 거칩니다. 그 외 변경은 상급자 도구 또는 root CLI/API를 사용하고 Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트로 설정하지 마세요.
 
 ### 탐색 범위의 상한(폭주 방지)
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import server_url
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -492,13 +490,11 @@ def create_interaction_resilient(
         ValueError: If *callback_id* is already in use.
         OSError: If both the server API and the local write fail.
     """
-    import httpx
-
-    from core.internal_api import internal_api_headers
+    from core.internal_api import host_api
 
     try:
-        resp = httpx.post(
-            f"{server_url()}/api/internal/interaction/create",
+        resp = host_api.post(
+            "/api/internal/interaction/create",
             json={
                 "anima_name": anima_name,
                 "category": category,
@@ -506,7 +502,6 @@ def create_interaction_resilient(
                 "allowed_users": allowed_users,
                 "callback_id": callback_id,
             },
-            headers=internal_api_headers(),
             timeout=10.0,
         )
         if resp.status_code == 409:
@@ -537,14 +532,11 @@ def update_interaction_message_ts_resilient(callback_id: str, platform: str, ts:
     Best-effort: the ts is only used for post-resolve button invalidation, so
     failures are logged rather than raised.
     """
-    import httpx
-
-    from core.internal_api import internal_api_headers
+    from core.internal_api import host_api
 
     try:
-        resp = httpx.post(
-            f"{server_url()}/api/internal/interaction/message-ts",
-            headers=internal_api_headers(),
+        resp = host_api.post(
+            "/api/internal/interaction/message-ts",
             json={"callback_id": callback_id, "platform": platform, "ts": ts},
             timeout=10.0,
         )
