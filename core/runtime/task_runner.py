@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import traceback
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from core.runtime.ipc_v2 import (
     IPCV2PayloadTooLarge,
     ipc_v2_error,
 )
+from core.runtime.state_writer import IpcStateWriter, configure_state_writer, get_state_writer
 from core.runtime.streaming_handler import StreamingIPCHandler
 from core.runtime.transport import open_ipc_connection
 from core.schemas import CronTask
@@ -374,6 +376,8 @@ def _fsync_chat_state(anima_dir: Path) -> None:
 async def _connect(
     socket_path: Path,
     state: IPCV2ConnectionState,
+    *,
+    on_response: Any | None = None,
 ) -> tuple[IPCV2Connection, IPCV2Envelope]:
     deadline = asyncio.get_running_loop().time() + _CONNECT_DEADLINE_SECONDS
     last_error: Exception | None = None
@@ -395,6 +399,10 @@ async def _connect(
             while True:
                 envelope = await connection.receive()
                 if envelope.kind == "event" and envelope.body["event"] == "hello_ack":
+                    continue
+                if envelope.kind == "response":
+                    if callable(on_response):
+                        on_response(envelope)
                     continue
                 if envelope.kind == "request" and envelope.body["method"] == "run":
                     return connection, envelope
@@ -427,9 +435,57 @@ class _RootLink:
         self._state = state
         self._request_id = request_id
         self._lock = asyncio.Lock()
+        self._pending_responses: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
     async def send_event(self, event: str, data: dict[str, Any] | None = None) -> int:
         return await self.connection.send_event(event, data)
+
+    async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Send one request and await its multiplexed response frame."""
+        request_id = f"state-{uuid.uuid4().hex}"
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._pending_responses[request_id] = future
+        try:
+            connection = self.connection
+            try:
+                await connection.send_request(request_id, method, params)
+            except IPCV2ConnectionError:
+                connection = await self.reconnect(connection)
+                await connection.send_request(request_id, method, params)
+            response = await asyncio.wait_for(future, timeout=300.0)
+            if "error" in response:
+                error = response["error"]
+                raise RuntimeError(f"{error.get('code', 'STATE_WRITE_ERROR')}: {error.get('message', '')}")
+            result = response.get("result")
+            if not isinstance(result, dict):
+                raise RuntimeError("Anima main returned a malformed state-write response")
+            return result
+        finally:
+            self._pending_responses.pop(request_id, None)
+            if not future.done():
+                future.cancel()
+
+    async def send_unanswered_request(self, method: str, params: dict[str, Any]) -> None:
+        """Send one chunk-protocol frame; the peer ACKs at the transport layer."""
+        request_id = f"state-{uuid.uuid4().hex}"
+        connection = self.connection
+        try:
+            await connection.send_request(request_id, method, params)
+        except IPCV2ConnectionError:
+            connection = await self.reconnect(connection)
+            await connection.send_request(request_id, method, params)
+
+    def receive_response(self, envelope: IPCV2Envelope) -> bool:
+        """Resolve the waiter for one state-write response, if present."""
+        request_id = envelope.body["request_id"]
+        future = self._pending_responses.get(request_id)
+        if future is None or future.done():
+            return False
+        if envelope.body.get("error") is not None:
+            future.set_result({"error": envelope.body["error"]})
+        else:
+            future.set_result({"result": envelope.body.get("result")})
+        return True
 
     async def reconnect(self, broken: IPCV2Connection) -> IPCV2Connection:
         """Re-dial the Anima main after *broken* died; returns the live connection."""
@@ -440,7 +496,11 @@ class _RootLink:
                 await broken.close()
             except Exception:
                 logger.debug("Failed to close broken Anima main connection", exc_info=True)
-            connection, replayed_run = await _connect(self._socket_path, self._state)
+            connection, replayed_run = await _connect(
+                self._socket_path,
+                self._state,
+                on_response=self.receive_response,
+            )
             if replayed_run.body["request_id"] != self._request_id:
                 await connection.close()
                 raise IPCV2ConnectionError("reconnect returned a different run contract")
@@ -682,6 +742,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         return 2
 
     link = _RootLink(connection, socket_path, state, request_id)
+    configure_state_writer(IpcStateWriter(link))
 
     # Route child-process task submissions back to the Anima main so its
     # PendingTaskExecutor does not wait a full poll interval after a submit.
@@ -724,6 +785,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
             error=ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False),
         )
         await connection.close()
+        configure_state_writer(None)
         return 2
     except Exception as exc:
         await connection.send_response(
@@ -731,6 +793,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
             error=ipc_v2_error("EXECUTION_ERROR", str(exc), retryable=False),
         )
         await connection.close()
+        configure_state_writer(None)
         return 1
     progress = asyncio.create_task(_progress_loop(link, identity))
     expected_parent_pid = int(get_env("ANIMAWORKS_TASK_ROOT_PID", str(os.getppid())))
@@ -764,10 +827,13 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     receiver = asyncio.create_task(_receive_after_reconnect(link, connection))
                     continue
                 if control.kind == "response":
-                    # The only request this runner sends is the run contract, which
-                    # is consumed during connect; any other response is unexpected.
-                    execution.cancel()
-                    raise IPCV2ConnectionError("unexpected response from Anima main")
+                    if control.body["request_id"] == request_id:
+                        execution.cancel()
+                        raise IPCV2ConnectionError("unexpected run response from Anima main")
+                    if not link.receive_response(control):
+                        logger.debug("Ignoring unsolicited Anima-main response %s", control.body["request_id"])
+                    receiver = asyncio.create_task(connection.receive())
+                    continue
                 if control.kind == "event" and control.body["event"] == "grace":
                     # A-07: stop work (finally flushes journals) → grace_ack → exit.
                     grace_seq = 0
@@ -825,6 +891,10 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                 await execution
             except asyncio.CancelledError:
                 pass
+            if not root_lost and anima is not None:
+                writer_for_task = get_state_writer()
+                if isinstance(writer_for_task, IpcStateWriter):
+                    await writer_for_task.drain()
             if not root_lost and not graced:
                 connection = await _send_terminal(
                     connection,
@@ -845,9 +915,14 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                 )
             return 1
 
+        writer_for_task = get_state_writer() if anima is not None else None
         try:
             result = await execution
+            if isinstance(writer_for_task, IpcStateWriter):
+                await writer_for_task.drain()
         except Exception as exc:
+            if isinstance(writer_for_task, IpcStateWriter):
+                await writer_for_task.drain()
             logger.exception("Task runner execution failed")
             connection = await _send_terminal(
                 connection,
@@ -885,6 +960,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         from core.tasks.wake import unregister_wake
 
         unregister_wake(args.anima)
+        configure_state_writer(None)
 
 
 def _setup_logging(anima_name: str) -> None:

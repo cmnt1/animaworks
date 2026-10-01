@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import inspect
 import io
 import json
 import logging
@@ -1293,7 +1294,7 @@ class VoiceSession:
                     break
                 await self._enqueue_tts(sentence)
 
-    def _record_front_conversation(
+    async def _record_front_conversation(
         self,
         user_text: str,
         response_text: str,
@@ -1311,22 +1312,48 @@ class VoiceSession:
         stay available even if recording is unavailable).  The user turn uses
         ``from_person`` as the role, matching the existing chat path.
 
-        Concurrency note: this runs in the *server* process and writes
-        ``state/conversation.json`` via read-modify-write, so it can race
-        with writes from the anima's own process (heartbeat etc.).  There is
-        currently no supervisor IPC method to append a conversation turn from
-        the server side, so the direct write is kept and the risk documented.
+        When the Anima main is running, the turns are sent through its IPC
+        handler so this server-side voice lane never writes managed conversation
+        state concurrently with task runners. Offline recording remains a local
+        fallback only when no live Anima process can be writing.
         """
         from core.memory.conversation.memory import ConversationMemory
 
         try:
+            processes = getattr(self._supervisor, "processes", None)
+            handle = processes.get(self._anima_name) if isinstance(processes, dict) else None
+            if handle is not None:
+                alive_check = getattr(handle, "is_alive", None)
+                alive = bool(alive_check()) if callable(alive_check) else False
+                state = getattr(getattr(handle, "state", None), "value", None)
+                if alive and state == "running":
+                    turns = []
+                    if record_user:
+                        turns.append({"role": from_person or "human", "content": user_text})
+                    turns.append({"role": "assistant", "content": response_text})
+                    await self._supervisor.send_request(
+                        self._anima_name,
+                        "append_conversation_turns",
+                        {"thread_id": "default", "turns": turns},
+                    )
+                    return
+                if alive:
+                    logger.info(
+                        "Skipping offline voice conversation write while Anima is stopping (%s)", self._anima_name
+                    )
+                    return
+
             from core.paths import get_animas_dir
 
             conversation = ConversationMemory(get_animas_dir() / self._anima_name, None)
             if record_user:
                 conversation.append_turn(from_person or "human", user_text)
             conversation.append_turn("assistant", response_text)
-            conversation.save()
+            saved = conversation.asave()
+            if inspect.isawaitable(saved):
+                await saved
+            else:
+                await asyncio.to_thread(conversation.save)
         except Exception:
             logger.debug("Failed to persist front conversation (%s)", self._anima_name, exc_info=True)
 
@@ -1422,7 +1449,7 @@ class VoiceSession:
                 logger.warning("Voice front turn produced no text (%s)", self._anima_name)
                 return False
             if record:
-                self._record_front_conversation(text, full_text, from_person, record_user=record_user)
+                await self._record_front_conversation(text, full_text, from_person, record_user=record_user)
             self._last_activity = time.monotonic()
             emotion = extract_emotion(full_text)
             await self._finish_tts_and_response_done(emotion)

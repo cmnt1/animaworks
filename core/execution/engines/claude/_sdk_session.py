@@ -19,7 +19,7 @@ import json
 import logging
 import shutil
 import sys
-import threading
+import weakref
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +29,7 @@ from typing import Any
 from core.execution.session.session_ids import EngineSessionIds
 from core.execution.session.session_store import SessionStore
 from core.execution.session.session_types import RESUMABLE_SESSION_TYPES
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -132,8 +133,17 @@ class SessionContextState:
     swept_at: str = ""
 
 
-_session_state_lock = threading.Lock()
 _SESSION_IDS = EngineSessionIds("agent_sdk")
+_SESSION_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _session_async_lock(anima_dir: Path, session_type: str, thread_id: str) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    key = f"{anima_dir.resolve()}:{session_type}:{thread_id}"
+    locks = _SESSION_ASYNC_LOCKS.setdefault(loop, {})
+    return locks.setdefault(key, asyncio.Lock())
 
 
 def _now_iso() -> str:
@@ -205,7 +215,7 @@ def _state_to_dict(state: SessionContextState) -> dict[str, Any]:
     }
 
 
-def record_session_measurement(
+async def arecord_session_measurement(
     anima_dir: Path,
     session_type: str = SESSION_TYPE_CHAT,
     thread_id: str = "default",
@@ -218,12 +228,11 @@ def record_session_measurement(
 ) -> SessionContextState:
     """Persist a context measurement without reseeding its baseline."""
     now = _now_iso()
-    with _session_state_lock:
+    async with _session_async_lock(anima_dir, session_type, thread_id):
         existing = load_session_state(anima_dir, session_type, thread_id)
         if existing is None:
-            sid = session_id or ""
             state = SessionContextState(
-                session_id=sid,
+                session_id=session_id or "",
                 timestamp=now,
                 created_at=now,
                 updated_at=now,
@@ -244,8 +253,36 @@ def record_session_measurement(
                 model=model or existing.model,
                 swept_at=existing.swept_at,
             )
-        _SESSION_IDS.save_state(anima_dir, session_type, _state_to_dict(state), thread_id)
+        await _SESSION_IDS.asave_state(anima_dir, session_type, _state_to_dict(state), thread_id)
     return state
+
+
+def record_session_measurement(
+    anima_dir: Path,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+    *,
+    tokens: int,
+    ratio: float,
+    model: str = "",
+    session_id: str | None = None,
+    baseline_tokens: int = 0,
+) -> SessionContextState:
+    """Synchronous compatibility adapter for local callers and tests."""
+    writer = get_state_writer(anima_dir)
+    return run_writer_sync(
+        writer,
+        arecord_session_measurement(
+            anima_dir,
+            session_type,
+            thread_id,
+            tokens=tokens,
+            ratio=ratio,
+            model=model,
+            session_id=session_id,
+            baseline_tokens=baseline_tokens,
+        ),
+    )
 
 
 from core.execution.session.session_context import _resolve_session_type  # noqa: F401 (re-exported to executor)
@@ -282,7 +319,7 @@ def _load_session_id(
     return state.session_id or None
 
 
-def _save_session_id(
+async def _save_session_id_async(
     anima_dir: Path,
     session_id: str,
     session_type: str = SESSION_TYPE_CHAT,
@@ -290,7 +327,7 @@ def _save_session_id(
 ) -> None:
     """Persist a session ID while retaining all measurement metadata."""
     now = _now_iso()
-    with _session_state_lock:
+    async with _session_async_lock(anima_dir, session_type, thread_id):
         existing = load_session_state(anima_dir, session_type, thread_id)
         if existing is None:
             state = SessionContextState(
@@ -311,10 +348,21 @@ def _save_session_id(
                 model=existing.model,
                 swept_at=existing.swept_at,
             )
-        _SESSION_IDS.save_state(anima_dir, session_type, _state_to_dict(state), thread_id)
+        await _SESSION_IDS.asave_state(anima_dir, session_type, _state_to_dict(state), thread_id)
 
 
-def mark_session_swept(
+def _save_session_id(
+    anima_dir: Path,
+    session_id: str,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+) -> None:
+    """Synchronous compatibility adapter for local callers and tests."""
+    writer = get_state_writer(anima_dir)
+    run_writer_sync(writer, _save_session_id_async(anima_dir, session_id, session_type, thread_id))
+
+
+async def mark_session_swept_async(
     anima_dir: Path,
     session_type: str = SESSION_TYPE_CHAT,
     thread_id: str = "default",
@@ -326,7 +374,7 @@ def mark_session_swept(
     again on every sweep tick. Marking ``swept_at`` with the current
     ``updated_at`` makes the sweep wait for fresh activity.
     """
-    with _session_state_lock:
+    async with _session_async_lock(anima_dir, session_type, thread_id):
         existing = load_session_state(anima_dir, session_type, thread_id)
         if existing is None:
             return
@@ -341,13 +389,26 @@ def mark_session_swept(
             model=existing.model,
             swept_at=existing.updated_at,
         )
-        _SESSION_IDS.save_state(anima_dir, session_type, _state_to_dict(state), thread_id)
+        await _SESSION_IDS.asave_state(anima_dir, session_type, _state_to_dict(state), thread_id)
 
 
-def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> None:
-    """Clear persisted session ID (e.g., after resume failure)."""
+def mark_session_swept(
+    anima_dir: Path,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+) -> None:
+    writer = get_state_writer(anima_dir)
+    run_writer_sync(writer, mark_session_swept_async(anima_dir, session_type, thread_id))
+
+
+async def _clear_session_id_async(
+    anima_dir: Path,
+    session_type: str = "chat",
+    thread_id: str = "default",
+) -> None:
+    """Clear persisted session ID through the process state writer."""
     path = _SESSION_IDS.path_for(anima_dir, session_type, thread_id)
-    with _session_state_lock:
+    async with _session_async_lock(anima_dir, session_type, thread_id):
         if path.exists():
             logger.debug(
                 "Clearing session ID (%s/%s, thread=%s)",
@@ -355,11 +416,26 @@ def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: st
                 anima_dir.name,
                 thread_id,
             )
-            _SESSION_IDS.clear(anima_dir, session_type, thread_id)
+            await _SESSION_IDS.aclear(anima_dir, session_type, thread_id)
+
+
+def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> None:
+    """Synchronous compatibility adapter for local callers and tests."""
+    writer = get_state_writer(anima_dir)
+    run_writer_sync(writer, _clear_session_id_async(anima_dir, session_type, thread_id))
+
+
+async def clear_session_id_for_type_async(
+    anima_dir: Path,
+    session_type: str,
+    thread_id: str = "default",
+) -> None:
+    """Asynchronously clear a resolved SDK session ID namespace."""
+    await _clear_session_id_async(anima_dir, session_type, thread_id)
 
 
 def clear_session_id_for_type(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
-    """Clear a resolved SDK session ID namespace."""
+    """Synchronous compatibility adapter for local callers and tests."""
     _clear_session_id(anima_dir, session_type, thread_id)
 
 
@@ -471,7 +547,7 @@ async def compact_sdk_session(
                 await client.query("/compact")
                 async for message in client.receive_messages():
                     if hasattr(message, "session_id") and message.session_id:
-                        _save_session_id(anima_dir, message.session_id, session_type, thread_id)
+                        await _save_session_id_async(anima_dir, message.session_id, session_type, thread_id)
                         logger.info(
                             "Idle compaction completed (session=%s, type=%s, thread=%s)",
                             message.session_id,

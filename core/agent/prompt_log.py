@@ -6,57 +6,36 @@ from __future__ import annotations
 
 """Prompt-log constants and helpers extracted from ``core.agent.agent_core``.
 
-Pure module-level functions (no class).  ``core.agent.agent_core`` re-exports every
-public symbol so existing ``from core.agent.agent_core import _save_prompt_log``
-continues to work.
+Pure entry construction lives here; state persistence is delegated to the
+process-scoped ``StateWriter``.
 """
 
-import json as _json
 import logging
 from datetime import timedelta
 from pathlib import Path
 
 from core.execution.session.session_context import current_runtime_session
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.agent")
 
 # ── Prompt size guards ──────────────────────────────────────────
-# Agent SDK uses JSON-RPC with a default 1 MB buffer (now raised to 4 MB via
-# max_buffer_size).  These thresholds trigger defensive actions well before
-# the hard limit is hit.  JSON framing + tool schemas add ~30-50% overhead
-# on top of the raw text, so we use conservative byte limits.
-_PROMPT_SOFT_LIMIT_BYTES = 600_000  # Force compression
-_PROMPT_HARD_LIMIT_BYTES = 1_200_000  # Warn only; continue with configured executor
-
-
+_PROMPT_SOFT_LIMIT_BYTES = 600_000
+_PROMPT_HARD_LIMIT_BYTES = 1_200_000
 _PROMPT_LOG_RETENTION_DAYS = 3
 _last_rotation_date: str | None = None
 
 
 def _rotate_prompt_logs(log_dir: Path) -> None:
-    """Delete prompt_log files older than *_PROMPT_LOG_RETENTION_DAYS*.
-
-    Uses the filename date (``YYYY-MM-DD.jsonl``) for comparison so no
-    filesystem stat is required.  Runs at most once per calendar day
-    (module-level ``_last_rotation_date`` cache).
-    """
+    """Synchronously rotate one Anima's prompt logs through StateWriter."""
     global _last_rotation_date
-    today = now_local().strftime("%Y-%m-%d")
-    if _last_rotation_date == today:
-        return  # already rotated today
-    _last_rotation_date = today
-
-    cutoff = now_local() - timedelta(days=_PROMPT_LOG_RETENTION_DAYS)
-    cutoff_str = cutoff.strftime("%Y-%m-%d")
-    for f in log_dir.glob("*.jsonl"):
-        # Filename expected format: YYYY-MM-DD.jsonl
-        date_str = f.stem
-        if date_str < cutoff_str:
-            f.unlink(missing_ok=True)
+    writer = get_state_writer(log_dir.parent)
+    run_writer_sync(writer, writer.rotate_prompt_logs())
+    _last_rotation_date = now_local().strftime("%Y-%m-%d")
 
 
-def _save_prompt_log(
+async def _save_prompt_log(
     anima_dir: Path,
     *,
     trigger: str,
@@ -76,19 +55,9 @@ def _save_prompt_log(
     tool_session_id: str = "",
     sdk_session_id: str = "",
 ) -> None:
-    """Persist the full prompt payload to a JSONL log for post-hoc debugging.
-
-    Writes to ``{anima_dir}/prompt_logs/{date}.jsonl``.
-    Failures are silently logged -- prompt logging must never break execution.
-    """
+    """Persist one request-start record without blocking the task-runner loop."""
     try:
-        log_dir = anima_dir / "prompt_logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        # Auto-rotate old log files (at most once per day)
-        _rotate_prompt_logs(log_dir)
-
-        today = now_iso()[:10]  # YYYY-MM-DD
+        today = now_iso()[:10]
         ctx = current_runtime_session()
         entry = {
             "ts": now_iso(),
@@ -112,15 +81,13 @@ def _save_prompt_log(
             "prior_messages_count": len(prior_messages) if prior_messages else 0,
             "tool_schemas": tool_schemas,
         }
-        log_file = log_dir / f"{today}.jsonl"
-        with log_file.open("a", encoding="utf-8") as f:
-            f.write(_json.dumps(entry, ensure_ascii=False, default=str) + "\n")
-        logger.debug("Prompt log saved: %s (%d bytes)", log_file, len(system_prompt))
+        await get_state_writer(anima_dir).log_prompt(entry)
+        logger.debug("Prompt log saved for %s (%d bytes)", today, len(system_prompt))
     except Exception:
         logger.warning("Failed to save prompt log", exc_info=True)
 
 
-def _save_prompt_log_end(
+async def _save_prompt_log_end(
     anima_dir: Path,
     session_id: str,
     final_messages: list[dict] | None = None,
@@ -133,17 +100,8 @@ def _save_prompt_log_end(
     tool_session_id: str = "",
     sdk_session_id: str = "",
 ) -> None:
-    """Persist post-execution metadata to the same JSONL log.
-
-    Writes a ``request_end`` entry after the tool loop completes, capturing
-    final message counts and token estimates.
-    """
+    """Persist post-execution metadata to the prompt log."""
     try:
-        log_dir = anima_dir / "prompt_logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        today = now_iso()[:10]
-        log_file = log_dir / f"{today}.jsonl"
-
         ctx = current_runtime_session()
         entry = {
             "ts": now_iso(),
@@ -160,8 +118,7 @@ def _save_prompt_log_end(
             "tool_call_count": tool_call_count,
             "total_tokens_estimate": total_tokens_estimate,
         }
-        with log_file.open("a", encoding="utf-8") as f:
-            f.write(_json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        await get_state_writer(anima_dir).log_prompt_end(entry)
     except Exception:
         logger.warning("Failed to save prompt log end", exc_info=True)
 
@@ -172,8 +129,8 @@ def rotate_all_prompt_logs(
 ) -> dict[str, int]:
     """Rotate prompt logs for all Animas under *animas_dir*.
 
-    Returns:
-        Dict mapping anima name to number of deleted files.
+    This server-side maintenance helper is not used by task-runner prompt writes.
+    Returns the number of deleted files per Anima.
     """
     cutoff = now_local() - timedelta(days=retention_days)
     cutoff_str = cutoff.strftime("%Y-%m-%d")
@@ -185,9 +142,9 @@ def rotate_all_prompt_logs(
         if not log_dir.is_dir():
             continue
         deleted = 0
-        for f in log_dir.glob("*.jsonl"):
-            if f.stem < cutoff_str:
-                f.unlink(missing_ok=True)
+        for path in log_dir.glob("*.jsonl"):
+            if path.stem < cutoff_str:
+                path.unlink(missing_ok=True)
                 deleted += 1
         if deleted:
             results[anima_dir.name] = deleted

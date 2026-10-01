@@ -454,6 +454,33 @@ class TestVoiceSessionFrontRouting:
         assert roles == ["human", "assistant"]
         mock_conv.save.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_front_persists_running_anima_conversation_over_supervisor_ipc(self) -> None:
+        from types import SimpleNamespace
+
+        session = _make_voice_session(front_model="openai/qwen3.6-35b-a3b", front_api_base="http://x:8000/v1")
+        handle = MagicMock()
+        handle.state = SimpleNamespace(value="running")
+        handle.is_alive.return_value = True
+        supervisor = MagicMock()
+        supervisor.processes = {"test": handle}
+        supervisor.send_request = AsyncMock(return_value={"status": "saved"})
+        session._supervisor = supervisor
+
+        await session._record_front_conversation("hello", "hi", "alice")
+
+        supervisor.send_request.assert_awaited_once_with(
+            "test",
+            "append_conversation_turns",
+            {
+                "thread_id": "default",
+                "turns": [
+                    {"role": "alice", "content": "hello"},
+                    {"role": "assistant", "content": "hi"},
+                ],
+            },
+        )
+
 
 def test_read_memory_page_rotates_material(tmp_path) -> None:
     (tmp_path / "episodes").mkdir()

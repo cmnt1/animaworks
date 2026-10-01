@@ -17,6 +17,7 @@ from core.memory.conversation.memory import ConversationMemory
 from core.memory.frontmatter import parse_frontmatter
 from core.memory.manager import MemoryManager
 from core.time_utils import get_app_timezone
+from server.supervisor.process_handle import ProcessState
 
 logger = logging.getLogger("animaworks.routes.memory")
 
@@ -40,6 +41,21 @@ def _resolve_link_target(graph: nx.DiGraph, target: str) -> str | None:
         if attrs.get("stem") == target_stem:
             return str(node_id)
     return None
+
+
+def _running_anima_supervisor(request: Request, name: str) -> Any | None:
+    """Return a running Anima-main supervisor without permitting concurrent offline writes."""
+    supervisor = getattr(request.app.state, "supervisor", None)
+    handle = getattr(supervisor, "processes", {}).get(name) if supervisor is not None else None
+    if handle is None:
+        return None
+    is_alive = getattr(handle, "is_alive", None)
+    alive = bool(is_alive()) if callable(is_alive) else getattr(handle, "state", None) == ProcessState.RUNNING
+    if not alive:
+        return None
+    if getattr(handle, "state", None) != ProcessState.RUNNING:
+        raise HTTPException(status_code=503, detail=f"Anima is shutting down: {name}")
+    return supervisor
 
 
 def _build_explicit_graph(memory: MemoryManager) -> nx.DiGraph:
@@ -357,8 +373,12 @@ def create_memory_router() -> APIRouter:
 
         model_config = load_model_config(anima_dir)
 
+        supervisor = _running_anima_supervisor(request, name)
+        if supervisor is not None:
+            return await supervisor.send_request(name, "clear_conversation", {})
+
         conv = ConversationMemory(anima_dir, model_config)
-        conv.clear()
+        await conv.aclear()
         return {"status": "cleared", "anima": name}
 
     @router.post("/animas/{name}/conversation/compress")
@@ -372,6 +392,10 @@ def create_memory_router() -> APIRouter:
         from core.config.models import load_model_config
 
         model_config = load_model_config(anima_dir)
+
+        supervisor = _running_anima_supervisor(request, name)
+        if supervisor is not None:
+            return await supervisor.send_request(name, "compress_conversation", {})
 
         conv = ConversationMemory(anima_dir, model_config)
         compressed = await conv.compress_if_needed()

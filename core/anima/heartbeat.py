@@ -14,10 +14,10 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import re
-import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +29,7 @@ from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.messaging.messenger import InboxItem
 from core.paths import load_prompt
-from core.platform.atomic_io import atomic_write_json
+from core.platform.state_writer import get_state_writer, is_task_runner_process, run_writer_sync
 from core.schemas import CycleResult
 from core.skills.cron_context import SkillContextRejection, SkillContextWarning
 from core.time_utils import ensure_aware, now_iso, now_local
@@ -155,7 +155,7 @@ def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
         return None
 
 
-def _build_cron_rejected_notice(anima_dir: Path, name: str) -> str | None:
+async def _build_cron_rejected_notice_async(anima_dir: Path, name: str) -> str | None:
     """Return a notice once for each distinct rejected-cron list."""
     registration_path = anima_dir / "state" / "cron_registration.json"
     marker_path = anima_dir / "state" / "cron_rejected_notice.sha256"
@@ -177,17 +177,22 @@ def _build_cron_rejected_notice(anima_dir: Path, name: str) -> str | None:
                 if isinstance(item, dict)
             )
             notice = load_prompt("fragments/cron_rejected_notice", rejected_jobs=jobs)
-        try:
-            from core.platform.atomic_io import atomic_write_text
-
-            marker_path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(marker_path, digest + "\n")
-        except Exception:
-            logger.warning("[%s] Failed to persist rejected cron notice marker", name, exc_info=True)
+        await get_state_writer(anima_dir).mark_cron_rejected_notice(digest)
         return notice
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         logger.debug("[%s] Failed to build rejected cron notice", name, exc_info=True)
         return None
+    except Exception:
+        logger.warning("[%s] Failed to persist rejected cron notice marker", name, exc_info=True)
+        return None
+
+
+def _build_cron_rejected_notice(anima_dir: Path, name: str) -> str | None | Any:
+    """Synchronous compatibility wrapper; task-runner callers await it."""
+    operation = _build_cron_rejected_notice_async(anima_dir, name)
+    if is_task_runner_process():
+        return operation
+    return run_writer_sync(get_state_writer(anima_dir), operation)
 
 
 class HeartbeatMixin:
@@ -336,32 +341,35 @@ class HeartbeatMixin:
         conv = ConversationMemory(self.anima_dir, self.model_config)
         return conv.build_structured_messages(prompt_text)
 
-    def _build_background_context_parts(self: _HeartbeatHost, include_dialogue: bool = True) -> list[str]:
-        """Build shared context parts for background-auto sessions (heartbeat/cron).
+    def _build_background_context_parts(self: _HeartbeatHost, include_dialogue: bool = True) -> list[str] | Any:
+        """Build shared background context, retaining a sync local adapter."""
+        if is_task_runner_process():
+            return self._build_background_context_parts_async(include_dialogue)
+        writer = get_state_writer(self.anima_dir)
+        recovery_content = run_writer_sync(writer, writer.consume_recovery_note())
+        notifications = self.drain_background_notifications()
+        return self._compose_background_context_parts(include_dialogue, recovery_content, notifications)
 
-        Collects: recovery note, background task notifications, heartbeat
-        history, reflections, dialogue context, subordinate check.
+    async def _build_background_context_parts_async(
+        self: _HeartbeatHost,
+        include_dialogue: bool = True,
+    ) -> list[str]:
+        writer = get_state_writer(self.anima_dir)
+        recovery_content = await writer.consume_recovery_note()
+        notifications = await writer.consume_background_notifications("all")
+        return self._compose_background_context_parts(include_dialogue, recovery_content, notifications)
 
-        Args:
-            include_dialogue: If True, inject recent chat dialogue turns.
-                Set to False for cron tasks to prevent chat context leaking
-                into scheduled task execution.
-        """
+    def _compose_background_context_parts(
+        self: _HeartbeatHost,
+        include_dialogue: bool,
+        recovery_content: str,
+        bg_notifications: list[str],
+    ) -> list[str]:
         parts: list[str] = []
+        if recovery_content:
+            parts.append(load_prompt("fragments/recovery_note_header") + "\n\n" + recovery_content)
+            logger.info("[%s] Recovery note loaded and removed", self.name)
 
-        # ── Recovery note from previous failed heartbeat ──
-        recovery_note_path = self.anima_dir / "state" / "recovery_note.md"
-        if recovery_note_path.exists():
-            try:
-                recovery_content = recovery_note_path.read_text(encoding="utf-8")
-                parts.append(load_prompt("fragments/recovery_note_header") + "\n\n" + recovery_content)
-                recovery_note_path.unlink(missing_ok=True)
-                logger.info("[%s] Recovery note loaded and removed", self.name)
-            except Exception:
-                logger.debug("[%s] Failed to read recovery note", self.name, exc_info=True)
-
-        # Inject pending background task notifications
-        bg_notifications = self.drain_background_notifications()
         if bg_notifications:
             notif_text = "\n\n".join(bg_notifications)
             parts.append(load_prompt("fragments/bg_task_notification") + "\n\n" + notif_text)
@@ -518,32 +526,41 @@ class HeartbeatMixin:
         except Exception:
             return 0
 
+    async def _archive_heartbeat_md_before_cleanup_async(self: _HeartbeatHost) -> str | None:
+        return await get_state_writer(self.anima_dir).archive_heartbeat_md_snapshot()
+
     def _archive_heartbeat_md_before_cleanup(self: _HeartbeatHost) -> str | None:
-        """Keep one pre-cleanup heartbeat.md snapshot per local calendar day."""
-        source = self.anima_dir / "heartbeat.md"
-        archive_dir = self.anima_dir / "archive" / "heartbeat"
-        archive_path = archive_dir / f"heartbeat.md.{now_local().strftime('%Y%m%d')}"
-        try:
-            if not source.is_file():
-                raise FileNotFoundError(f"heartbeat.md not found at {source}")
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            if not archive_path.exists():
-                shutil.copy2(source, archive_path)
-            if not archive_path.is_file():
-                raise OSError(f"archive target is not a file: {archive_path}")
-            return f"archive/heartbeat/{archive_path.name}"
-        except OSError:
-            logger.warning("[%s] Failed to archive heartbeat.md before cleanup", self.name, exc_info=True)
+        """Synchronous compatibility adapter for local callers and tests."""
+        writer = get_state_writer(self.anima_dir)
+        return run_writer_sync(writer, writer.archive_heartbeat_md_snapshot())
+
+    async def _build_heartbeat_md_cleanup_instruction_async(self: _HeartbeatHost, hb_config: str) -> str | None:
+        max_bytes = self._get_heartbeat_md_max_bytes()
+        if max_bytes <= 0 or not hb_config:
             return None
+        current_bytes = len(hb_config.encode("utf-8"))
+        if current_bytes <= max_bytes:
+            return None
+        logger.info(
+            "[%s] heartbeat.md exceeds limit (%d > %d bytes), injecting compaction instruction",
+            self.name,
+            current_bytes,
+            max_bytes,
+        )
+        archived_path = await self._archive_heartbeat_md_before_cleanup_async()
+        archive_notice = t("heartbeat.heartbeat_md_archive_notice", path=archived_path) if archived_path else ""
+        return t(
+            "heartbeat.heartbeat_md_cleanup_required",
+            current_kb=f"{current_bytes / 1024:.1f}",
+            max_kb=f"{max_bytes / 1024:.0f}",
+            target_kb=f"{max_bytes / 2048:.0f}",
+            archive_notice=archive_notice,
+        )
 
-    def _build_heartbeat_md_cleanup_instruction(self: _HeartbeatHost, hb_config: str) -> str | None:
-        """Return a compaction instruction when heartbeat.md grows past the limit.
-
-        heartbeat.md is re-read into every heartbeat prompt, so a bloated
-        checklist costs tokens on every run. Above the configured limit, the
-        anima is asked to rewrite it down to roughly half the limit.
-        Disabled when the limit is 0.
-        """
+    def _build_heartbeat_md_cleanup_instruction(self: _HeartbeatHost, hb_config: str) -> str | None | Any:
+        """Return a compaction instruction, using a sync local adapter for tests."""
+        if is_task_runner_process():
+            return self._build_heartbeat_md_cleanup_instruction_async(hb_config)
         max_bytes = self._get_heartbeat_md_max_bytes()
         if max_bytes <= 0 or not hb_config:
             return None
@@ -578,6 +595,8 @@ class HeartbeatMixin:
         parts = [load_prompt("heartbeat", checklist=checklist)]
 
         hb_cleanup = self._build_heartbeat_md_cleanup_instruction(hb_config)
+        if inspect.isawaitable(hb_cleanup):
+            hb_cleanup = await hb_cleanup
         if hb_cleanup:
             parts.append(hb_cleanup)
 
@@ -586,10 +605,15 @@ class HeartbeatMixin:
             parts.append(cleanup)
 
         cron_notice = _build_cron_rejected_notice(self.anima_dir, self.name)
+        if inspect.isawaitable(cron_notice):
+            cron_notice = await cron_notice
         if cron_notice:
             parts.append(cron_notice)
 
-        parts.extend(self._build_background_context_parts())
+        background_parts = self._build_background_context_parts()
+        if inspect.isawaitable(background_parts):
+            background_parts = await background_parts
+        parts.extend(background_parts)
 
         scoreboard = _build_stale_task_scoreboard(self.anima_dir, self.name)
         if scoreboard:
@@ -609,6 +633,54 @@ class HeartbeatMixin:
         skills: list[str] | None = None,
         skill_rejections_out: list[SkillContextRejection] | None = None,
         skill_warnings_out: list[SkillContextWarning] | None = None,
+    ) -> str | Any:
+        """Build a cron prompt using local compatibility or awaited IPC state reads."""
+        args = (task_name, description, command_output, skills, skill_rejections_out, skill_warnings_out)
+        if is_task_runner_process():
+            return self._build_cron_prompt_async(*args)
+        background_parts = self._build_background_context_parts(include_dialogue=False)
+        return HeartbeatMixin._compose_cron_prompt(
+            self,
+            task_name,
+            description,
+            command_output,
+            skills,
+            skill_rejections_out,
+            skill_warnings_out,
+            background_context_parts=background_parts,
+        )
+
+    async def _build_cron_prompt_async(
+        self: _HeartbeatHost,
+        task_name: str,
+        description: str,
+        command_output: str | None = None,
+        skills: list[str] | None = None,
+        skill_rejections_out: list[SkillContextRejection] | None = None,
+        skill_warnings_out: list[SkillContextWarning] | None = None,
+    ) -> str:
+        background_parts = await self._build_background_context_parts_async(include_dialogue=False)
+        return HeartbeatMixin._compose_cron_prompt(
+            self,
+            task_name,
+            description,
+            command_output,
+            skills,
+            skill_rejections_out,
+            skill_warnings_out,
+            background_context_parts=background_parts,
+        )
+
+    def _compose_cron_prompt(
+        self: _HeartbeatHost,
+        task_name: str,
+        description: str,
+        command_output: str | None,
+        skills: list[str] | None,
+        skill_rejections_out: list[SkillContextRejection] | None,
+        skill_warnings_out: list[SkillContextWarning] | None,
+        *,
+        background_context_parts: list[str],
     ) -> str:
         """Build cron task prompt with heartbeat-equivalent context.
 
@@ -653,7 +725,7 @@ class HeartbeatMixin:
                 parts.append(rendered)
 
         # Shared background context (without dialogue — cron tasks must not inherit chat context)
-        parts.extend(self._build_background_context_parts(include_dialogue=False))
+        parts.extend(background_context_parts)
 
         return "\n\n".join(parts)
 
@@ -676,20 +748,13 @@ class HeartbeatMixin:
         """
         agent = self._agent_for_lane("background") if hasattr(self, "_agent_for_lane") else self.agent
         # ── Heartbeat Checkpoint ──
-        checkpoint_path = self.anima_dir / "state" / "heartbeat_checkpoint.json"
         try:
             checkpoint_data = {
                 "ts": now_iso(),
                 "trigger": "heartbeat",
                 "unread_count": unread_count,
             }
-            await asyncio.to_thread(
-                atomic_write_json,
-                checkpoint_path,
-                checkpoint_data,
-                indent=None,
-                trailing_newline=False,
-            )
+            await get_state_writer(self.anima_dir).write_heartbeat_checkpoint(checkpoint_data)
         except Exception:
             logger.debug("[%s] Failed to write heartbeat checkpoint", self.name, exc_info=True)
 
@@ -801,11 +866,8 @@ class HeartbeatMixin:
             # ── Hard timeout: write recovery note ──
             if _hard_exceeded:
                 try:
-                    recovery_path = self.anima_dir / "state" / "recovery_note.md"
-                    await asyncio.to_thread(
-                        recovery_path.write_text,
-                        t("reminder.hb_hard_timeout_recovery", timeout=_hard_timeout),
-                        encoding="utf-8",
+                    await get_state_writer(self.anima_dir).write_recovery_note(
+                        t("reminder.hb_hard_timeout_recovery", timeout=_hard_timeout)
                     )
                     logger.info("[%s] Hard timeout recovery note saved", self.name)
                 except Exception:
@@ -862,7 +924,7 @@ class HeartbeatMixin:
             # Heartbeat completed successfully — remove checkpoint
             if result.action != "error":
                 try:
-                    await asyncio.to_thread(checkpoint_path.unlink, missing_ok=True)
+                    await get_state_writer(self.anima_dir).clear_heartbeat_checkpoint()
                 except Exception:
                     logger.debug("[%s] Failed to remove heartbeat checkpoint", self.name, exc_info=True)
 
@@ -922,7 +984,6 @@ class HeartbeatMixin:
 
         # ── Save recovery note for next heartbeat ──
         try:
-            recovery_path = self.anima_dir / "state" / "recovery_note.md"
             recovery_content = t(
                 "anima.recovery_error_info",
                 exc_type=type(error).__name__,
@@ -930,7 +991,7 @@ class HeartbeatMixin:
                 ts=now_iso(),
                 count=unread_count,
             )
-            await asyncio.to_thread(recovery_path.write_text, recovery_content, encoding="utf-8")
+            await get_state_writer(self.anima_dir).write_recovery_note(recovery_content)
             logger.info("[%s] Recovery note saved", self.name)
         except Exception:
             logger.debug("[%s] Failed to save recovery note", self.name, exc_info=True)

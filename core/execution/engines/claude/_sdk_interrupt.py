@@ -65,11 +65,17 @@ async def _graceful_interrupt_stream(
     try:
         sid = await asyncio.wait_for(_interrupt_and_receive(), timeout=INTERRUPT_TIMEOUT_SEC)
         if sid and session_type in _RESUMABLE_SESSION_TYPES:
-            _save_session_id(anima_dir, sid, session_type, thread_id=thread_id)
+            await asyncio.to_thread(_save_session_id, anima_dir, sid, session_type, thread_id=thread_id)
             logger.info("Saved session_id from ResultMessage after interrupt")
     except Exception:
         if captured_session_id and session_type in _RESUMABLE_SESSION_TYPES:
-            _save_session_id(anima_dir, captured_session_id, session_type, thread_id=thread_id)
+            await asyncio.to_thread(
+                _save_session_id,
+                anima_dir,
+                captured_session_id,
+                session_type,
+                thread_id=thread_id,
+            )
             logger.warning("interrupt() failed; saved session_id from StreamEvent fallback")
         else:
             logger.warning("interrupt() failed and no StreamEvent session_id available")
@@ -100,7 +106,7 @@ async def _graceful_interrupt_blocking(
     try:
         sid = await asyncio.wait_for(_interrupt_and_receive(), timeout=INTERRUPT_TIMEOUT_SEC)
         if sid and session_type in _RESUMABLE_SESSION_TYPES:
-            _save_session_id(anima_dir, sid, session_type, thread_id=thread_id)
+            await asyncio.to_thread(_save_session_id, anima_dir, sid, session_type, thread_id=thread_id)
             logger.info("Saved session_id from ResultMessage after blocking interrupt")
     except Exception:
         logger.warning("interrupt() failed in blocking mode; session_id not saved")

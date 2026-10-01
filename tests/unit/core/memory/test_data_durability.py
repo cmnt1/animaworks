@@ -132,7 +132,7 @@ class TestConversationAtomicSave:
 
         with (
             patch(
-                "core.memory.conversation.memory.atomic_write_text",
+                "core.platform.state_writer.atomic_write_text",
                 side_effect=OSError("Simulated disk failure"),
             ),
             pytest.raises(OSError, match="Simulated disk failure"),

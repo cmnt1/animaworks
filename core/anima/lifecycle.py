@@ -13,6 +13,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import inspect
 import logging
 import os
 import re
@@ -428,7 +429,7 @@ class LifecycleMixin:
                     return await asyncio.wait_for(cycle, timeout=float(hard_timeout))
                 return await cycle
             except TimeoutError:
-                return self._handle_hard_timeout(hard_timeout)
+                return await self._handle_hard_timeout(hard_timeout)
             except asyncio.CancelledError:
                 current = asyncio.current_task()
                 if current is not None and current.cancelling():
@@ -455,7 +456,7 @@ class LifecycleMixin:
 
     # ── Hard timeout helper ───────────────────────────────────
 
-    def _handle_hard_timeout(self: _LifecycleHost, hard_timeout: int) -> CycleResult:
+    async def _handle_hard_timeout(self: _LifecycleHost, hard_timeout: int) -> CycleResult:
         """Write recovery note and return a timeout CycleResult."""
         logger.warning(
             "[%s] Heartbeat hard timeout (%ds) — forced termination",
@@ -463,10 +464,10 @@ class LifecycleMixin:
             hard_timeout,
         )
         try:
-            recovery_path = self.anima_dir / "state" / "recovery_note.md"
-            recovery_path.write_text(
-                t("reminder.hb_hard_timeout_recovery", timeout=hard_timeout),
-                encoding="utf-8",
+            from core.platform.state_writer import get_state_writer
+
+            await get_state_writer(self.anima_dir).write_recovery_note(
+                t("reminder.hb_hard_timeout_recovery", timeout=hard_timeout)
             )
         except Exception:
             logger.debug("[%s] Failed to write timeout recovery note", self.name, exc_info=True)
@@ -524,9 +525,11 @@ class LifecycleMixin:
                 if project is not None:
                     agent._tool_handler._default_project = project
 
-                _consolidation_flag = self.anima_dir / "state" / ".consolidation_mode"
+                from core.platform.state_writer import get_state_writer
+
+                state_writer = get_state_writer(self.anima_dir)
                 try:
-                    await asyncio.to_thread(_consolidation_flag.write_text, "1", encoding="utf-8")
+                    await state_writer.set_consolidation_mode(True)
                 except OSError:
                     pass
 
@@ -585,7 +588,7 @@ class LifecycleMixin:
                     if project is not None:
                         agent._tool_handler._default_project = previous_default_project
                     _keepalive.cancel()
-                    await asyncio.to_thread(_consolidation_flag.unlink, missing_ok=True)
+                    await state_writer.set_consolidation_mode(False)
                     active_session_type.reset(_session_token)
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
@@ -1045,6 +1048,8 @@ class LifecycleMixin:
                     skill_rejections_out=cron_skill_rejections,
                     skill_warnings_out=cron_skill_warnings,
                 )
+                if inspect.isawaitable(prompt):
+                    prompt = await prompt
 
                 # ── Background model swap ──
                 try:

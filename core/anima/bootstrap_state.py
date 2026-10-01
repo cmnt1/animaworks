@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.platform.atomic_io import atomic_write_json
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.time_utils import now_iso, now_local
 
 STATE_PENDING_USER_INPUT = "pending_user_input"
@@ -71,8 +72,8 @@ def write_bootstrap_state(anima_dir: Path, state: dict[str, Any]) -> dict[str, A
         payload["state"] = STATE_NEEDS_REPAIR
         payload["reason"] = "invalid_bootstrap_state"
 
-    path = bootstrap_state_path(anima_dir)
-    atomic_write_json(path, payload)
+    writer = get_state_writer(anima_dir)
+    run_writer_sync(writer, writer.write_bootstrap_state(payload))
     return payload
 
 
@@ -367,16 +368,9 @@ def validate_bootstrap(anima_dir: Path) -> dict[str, Any]:
 
 
 def _archive_bootstrap_file(anima_dir: Path, bootstrap_file: Path) -> Path:
-    archive_dir = anima_dir / "state" / "bootstrap_archive"
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = now_local().strftime("%Y%m%d_%H%M%S")
-    archive_path = archive_dir / f"bootstrap-{timestamp}.md"
-    counter = 1
-    while archive_path.exists():
-        archive_path = archive_dir / f"bootstrap-{timestamp}-{counter}.md"
-        counter += 1
-    shutil.move(str(bootstrap_file), str(archive_path))
-    return archive_path
+    """Archive the bootstrap input through the process StateWriter."""
+    writer = get_state_writer(anima_dir)
+    return run_writer_sync(writer, writer.archive_bootstrap_file(bootstrap_file.name))
 
 
 def _archive_named_file(anima_dir: Path, source: Path, filename: str) -> Path:

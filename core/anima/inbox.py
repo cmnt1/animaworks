@@ -13,6 +13,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import re
@@ -26,7 +27,7 @@ from core.llm.guard.error_classifier import classify_llm_error
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.messaging.messenger import InboxItem
 from core.paths import load_prompt
-from core.platform.atomic_io import atomic_write_json
+from core.platform.state_writer import get_state_writer
 from core.schemas import CycleResult
 from core.time_utils import now_local
 from core.trust import (
@@ -325,15 +326,13 @@ class InboxMixin:
 
     # ── Inbox MSG Immediate Processing ────────────────────────
 
-    def _undo_failed_inbox_presentation(self: _InboxHost, items: list[InboxItem]) -> None:
+    async def _undo_failed_inbox_presentation(self: _InboxHost, items: list[InboxItem]) -> None:
         """Provider failure does not consume the unanswered-message limit."""
         path = self.anima_dir / "state" / "inbox_read_counts.json"
         if not items or not path.exists():
             return
         try:
-            from core.platform.atomic_io import atomic_write_text
-
-            counts = json.loads(path.read_text(encoding="utf-8"))
+            counts = json.loads(await asyncio.to_thread(path.read_text, encoding="utf-8"))
             if not isinstance(counts, dict):
                 return
             for item in items:
@@ -344,7 +343,7 @@ class InboxMixin:
                         counts[key] = count - 1
                     else:
                         counts.pop(key, None)
-            atomic_write_text(path, json.dumps(counts, ensure_ascii=False))
+            await get_state_writer(self.anima_dir).update_inbox_read_counts(counts)
         except (OSError, ValueError):
             logger.warning("[%s] Failed to restore inbox presentation counters", self.name, exc_info=True)
 
@@ -377,6 +376,8 @@ class InboxMixin:
                             trigger="inbox",
                             model_config=agent.model_config,
                         )
+                        if inspect.isawaitable(budget_result):
+                            budget_result = await budget_result
 
                     await self._activity.alog(
                         "inbox_processing_start",
@@ -604,7 +605,7 @@ class InboxMixin:
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry — up to _MAX_INBOX_RETRIES.
                     if cycle_failed:
-                        await asyncio.to_thread(self._undo_failed_inbox_presentation, inbox_result.inbox_items)
+                        await self._undo_failed_inbox_presentation(inbox_result.inbox_items)
                         logger.warning(
                             "[%s] Inbox LLM cycle failed — messages NOT archived (reason=%s)",
                             self.name,
@@ -687,7 +688,7 @@ class InboxMixin:
                     # unread work. The watcher schedules its bounded retry;
                     # retain the original messages for recovery.
                     if inbox_result is not None:
-                        await asyncio.to_thread(self._undo_failed_inbox_presentation, inbox_result.inbox_items)
+                        await self._undo_failed_inbox_presentation(inbox_result.inbox_items)
                     await self._activity.alog(
                         "error",
                         summary=t("anima.inbox_error", exc=type(exc).__name__),
@@ -728,7 +729,10 @@ class InboxMixin:
                 dedup = MessageDeduplicator(self.anima_dir)
 
                 critical, non_critical = dedup.split_critical(messages)
-                non_critical, overflow_count = dedup.overflow_to_files(non_critical)
+                overflow_result = dedup.overflow_to_files(non_critical)
+                if inspect.isawaitable(overflow_result):
+                    overflow_result = await overflow_result
+                non_critical, overflow_count = overflow_result
 
                 messages = critical + non_critical
 
@@ -836,13 +840,7 @@ class InboxMixin:
 
         if track_retries:
             try:
-                await asyncio.to_thread(
-                    atomic_write_json,
-                    _read_counts_path,
-                    _read_counts,
-                    indent=None,
-                    trailing_newline=False,
-                )
+                await get_state_writer(self.anima_dir).update_inbox_read_counts(_read_counts)
             except Exception:
                 logger.debug("[%s] Failed to write inbox_read_counts", self.name, exc_info=True)
 

@@ -11,6 +11,7 @@ are resolved at runtime via MRO when mixed into ``AgentCore``.
 """
 
 import asyncio
+import inspect
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 
 from core.agent.priming import SystemPromptContext
 from core.agent.prompt_log import _save_prompt_log, _save_prompt_log_end
-from core.execution.session.engine_session import clear_all_engine_sessions, clear_engine_session
+from core.execution.session.engine_session import aclear_all_engine_sessions, aclear_engine_session
 from core.execution.session.session_context import RuntimeSessionContext, runtime_session_scope
 from core.execution.session.session_types import (
     is_clean_start_session,
@@ -35,6 +36,7 @@ from core.execution.session.session_types import (
 )
 from core.i18n import t
 from core.memory.conversation.shortterm import SessionState, ShortTermMemory
+from core.platform.state_writer import get_state_writer
 from core.prompt.context import ContextTracker
 from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso, now_local
@@ -61,6 +63,13 @@ def _request_background_review(anima_dir: Path, trigger: str) -> None:
         request_background_review(anima_dir, trigger)
     except Exception:
         logger.warning("Could not queue background review (%s)", trigger)
+
+
+async def _await_if_needed(value: Any) -> Any:
+    """Await async persistence while keeping synchronous test doubles compatible."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
@@ -96,7 +105,7 @@ def _resolve_error_category(reason: str, message: str) -> str | None:
         return None
 
 
-def _log_session_token_usage(
+async def _log_session_token_usage(
     anima_dir: Path,
     *,
     model: str,
@@ -113,7 +122,7 @@ def _log_session_token_usage(
         from core.usage.token_usage import TokenUsageLogger
 
         tul = TokenUsageLogger(anima_dir)
-        tul.log(
+        await tul.alog(
             model=model,
             trigger=trigger,
             mode=mode,
@@ -128,7 +137,7 @@ def _log_session_token_usage(
         logger.debug("Failed to log token usage", exc_info=True)
 
 
-def _save_handoff_shortterm(
+async def _save_handoff_shortterm(
     shortterm: ShortTermMemory,
     *,
     result_text: str,
@@ -143,18 +152,21 @@ def _save_handoff_shortterm(
     from dataclasses import asdict, is_dataclass
 
     tool_uses = [asdict(record) if is_dataclass(record) else dict(record) for record in tool_records]
-    shortterm.save(
-        SessionState(
-            session_id=session_id,
-            timestamp=now_iso(),
-            trigger=trigger,
-            original_prompt=prompt,
-            accumulated_response=result_text,
-            tool_uses=tool_uses,
-            context_usage_ratio=tracker.usage_ratio,
-            turn_count=turn_count,
-        )
+    state = SessionState(
+        session_id=session_id,
+        timestamp=now_iso(),
+        trigger=trigger,
+        original_prompt=prompt,
+        accumulated_response=result_text,
+        tool_uses=tool_uses,
+        context_usage_ratio=tracker.usage_ratio,
+        turn_count=turn_count,
     )
+    saved = shortterm.asave(state)
+    if inspect.isawaitable(saved):
+        await saved
+    else:
+        await asyncio.to_thread(shortterm.save, state)
 
 
 class CycleMixin:
@@ -177,7 +189,7 @@ class CycleMixin:
         if state is None:
             return None
         if not state.session_id:
-            clear_engine_session(self.anima_dir, "agent_sdk", SESSION_TYPE_CHAT, thread_id)
+            await aclear_engine_session(self.anima_dir, "agent_sdk", SESSION_TYPE_CHAT, thread_id)
             return None
         now = datetime.now(UTC)
         try:
@@ -288,7 +300,7 @@ class CycleMixin:
             partial_execution=has_partial_execution(result),
         )
 
-    def _check_monthly_token_budget(
+    async def _check_monthly_token_budget(
         self,
         *,
         trigger: str,
@@ -310,7 +322,7 @@ class CycleMixin:
             from core.usage.token_budget import calculate_token_budget_status
             from core.usage.token_usage import TokenUsageLogger
 
-            consumed = TokenUsageLogger(self.anima_dir).monthly_total(now)
+            consumed = await TokenUsageLogger(self.anima_dir).monthly_total_async(now)
             status = calculate_token_budget_status(budget, consumed)
         except Exception as exc:
             logger.warning(
@@ -363,7 +375,7 @@ class CycleMixin:
         except Exception:
             logger.warning("Failed to record budget_exceeded activity", exc_info=True)
 
-        self._write_budget_exceeded_notification(meta)
+        await self._write_budget_exceeded_notification(meta)
         logger.warning(
             "Monthly token budget reached for %s: consumed=%d budget=%d trigger=%s",
             self.anima_dir.name,
@@ -378,42 +390,14 @@ class CycleMixin:
             summary="Monthly token budget reached; LLM cycle skipped",
         )
 
-    def _write_budget_exceeded_notification(self, meta: dict[str, Any]) -> None:
+    async def _write_budget_exceeded_notification(self, meta: dict[str, Any]) -> None:
         """Write the owner notification at most once for each calendar month."""
-        month = str(meta["month"])
-        marker_dir = self.anima_dir / "state" / "token_budget_notifications"
-        marker_path = marker_dir / f"{month}.notified"
-        marker_created = False
         try:
-            marker_dir.mkdir(parents=True, exist_ok=True)
-            # Exclusive creation makes duplicate suppression safe across lanes
-            # or processes that reach the cap concurrently.
-            with marker_path.open("x", encoding="utf-8") as marker:
-                marker.write(now_iso() + "\n")
-            marker_created = True
-
-            notif_dir = self.anima_dir / "state" / "background_notifications"
-            notif_dir.mkdir(parents=True, exist_ok=True)
-            notif_path = notif_dir / f"token_budget_exceeded_{month}.md"
-            notif_path.write_text(
-                "# Monthly token budget reached\n\n"
-                f"- month: {month}\n"
-                f"- budget: {meta['budget']}\n"
-                f"- consumed: {meta['consumed']}\n"
-                f"- trigger: {meta['trigger']}\n",
-                encoding="utf-8",
-            )
-        except FileExistsError:
-            return
+            await get_state_writer(self.anima_dir).write_token_budget_notification(str(meta["month"]), meta)
         except Exception:
-            if marker_created:
-                try:
-                    marker_path.unlink()
-                except OSError:
-                    pass
             logger.warning("Failed to write token budget notification", exc_info=True)
 
-    def _prepare_clean_start_session(
+    async def _prepare_clean_start_session(
         self,
         *,
         trigger: str,
@@ -426,11 +410,11 @@ class CycleMixin:
             return
 
         try:
-            shortterm.clear_for_clean_start()
+            await shortterm.aclear_for_clean_start()
         except Exception:
             logger.debug("Failed to clear non-chat shortterm state", exc_info=True)
 
-        clear_all_engine_sessions(self.anima_dir, session_type, thread_id)
+        await aclear_all_engine_sessions(self.anima_dir, session_type, thread_id)
 
     # ── Public API ─────────────────────────────────────────
 
@@ -465,9 +449,11 @@ class CycleMixin:
         cycle_tokens = bind_cycle_context(uuid4().hex[:8], trigger)
         try:
             async with self._get_agent_lock(thread_id):
-                budget_result = self._check_monthly_token_budget(
-                    trigger=trigger,
-                    model_config=self.model_config,
+                budget_result = await _await_if_needed(
+                    self._check_monthly_token_budget(
+                        trigger=trigger,
+                        model_config=self.model_config,
+                    )
                 )
                 if budget_result is not None:
                     return budget_result
@@ -577,7 +563,8 @@ class CycleMixin:
             thread_id=thread_id,
         )
         shortterm = ShortTermMemory(self.anima_dir, session_type=session_type, thread_id=thread_id)
-        self._prepare_clean_start_session(
+        await _await_if_needed(shortterm.ensure_ready())
+        await self._prepare_clean_start_session(
             trigger=trigger,
             session_type=session_type,
             thread_id=thread_id,
@@ -628,30 +615,32 @@ class CycleMixin:
             shortterm_text=shortterm_text,
         )
 
-        def _save_cycle_prompt_log() -> None:
+        async def _save_cycle_prompt_log() -> None:
             from core.tooling.policy.schemas import load_all_tool_schemas
 
             tool_schemas = load_all_tool_schemas(
                 tool_registry=self._tool_registry,
                 personal_tools=self._personal_tools,
             )
-            _save_prompt_log(
-                self.anima_dir,
-                trigger=trigger,
-                sender=self._extract_sender(prompt, trigger),
-                model=active_model_config.model,
-                mode=mode,
-                system_prompt=system_prompt,
-                user_message=prompt,
-                tools=self._tool_registry,
-                session_id=self._tool_handler.session_id,
-                context_window=context_window,
-                prior_messages=prior_messages,
-                tool_schemas=tool_schemas,
+            await _await_if_needed(
+                _save_prompt_log(
+                    self.anima_dir,
+                    trigger=trigger,
+                    sender=self._extract_sender(prompt, trigger),
+                    model=active_model_config.model,
+                    mode=mode,
+                    system_prompt=system_prompt,
+                    user_message=prompt,
+                    tools=self._tool_registry,
+                    session_id=self._tool_handler.session_id,
+                    context_window=context_window,
+                    prior_messages=prior_messages,
+                    tool_schemas=tool_schemas,
+                )
             )
 
         if not save_prompt_log_after_preflight:
-            _save_cycle_prompt_log()
+            await _save_cycle_prompt_log()
 
         conv_memory = None
         if uses_chat_session:
@@ -675,7 +664,7 @@ class CycleMixin:
         active_executor.prepare_tracker(tracker, system_prompt, prompt)
 
         if save_prompt_log_after_preflight:
-            _save_cycle_prompt_log()
+            await _save_cycle_prompt_log()
 
         return _PreparedCyclePrompt(
             prompt=prompt,
@@ -750,17 +739,19 @@ class CycleMixin:
             # Preserve usage observed before an interruption for every engine.
             observed = getattr(exc, "usage", None)
             if isinstance(observed, dict):
-                _log_session_token_usage(
-                    self.anima_dir,
-                    model=active_model_config.model,
-                    mode=mode,
-                    trigger=trigger,
-                    usage=observed,
-                    duration_ms=int((time.monotonic() - start) * 1000),
+                await _await_if_needed(
+                    _log_session_token_usage(
+                        self.anima_dir,
+                        model=active_model_config.model,
+                        mode=mode,
+                        trigger=trigger,
+                        usage=observed,
+                        duration_ms=int((time.monotonic() - start) * 1000),
+                    )
                 )
             raise
 
-        return self._finalize_engine_result(
+        return await self._finalize_engine_result(
             result=result,
             mode=mode,
             trigger=trigger,
@@ -774,7 +765,7 @@ class CycleMixin:
             start=start,
         )
 
-    def _finalize_engine_result(
+    async def _finalize_engine_result(
         self,
         *,
         result: ExecutionResult,
@@ -796,10 +787,12 @@ class CycleMixin:
             self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
 
         tool_records = [asdict(record) for record in result.tool_call_records]
-        _save_prompt_log_end(
-            self.anima_dir,
-            session_id=self._tool_handler.session_id,
-            tool_call_count=len(tool_records),
+        await _await_if_needed(
+            _save_prompt_log_end(
+                self.anima_dir,
+                session_id=self._tool_handler.session_id,
+                tool_call_count=len(tool_records),
+            )
         )
 
         compaction_review_requested = False
@@ -822,8 +815,8 @@ class CycleMixin:
                 tracker.usage_ratio * 100,
             )
             if getattr(active_executor, "saves_threshold_shortterm", False) is not True:
-                shortterm.clear()
-                _save_handoff_shortterm(
+                await shortterm.aclear()
+                await _save_handoff_shortterm(
                     shortterm,
                     result_text=result.text,
                     tool_records=result.tool_call_records,
@@ -833,9 +826,9 @@ class CycleMixin:
                     prompt=prompt,
                     tracker=tracker,
                 )
-            active_executor.clear_session(trigger, thread_id)
+            await asyncio.to_thread(active_executor.clear_session, trigger, thread_id)
         elif uses_chat_session and result.session_rotation_pending:
-            _save_handoff_shortterm(
+            await _save_handoff_shortterm(
                 shortterm,
                 result_text=result.text,
                 tool_records=result.tool_call_records,
@@ -847,7 +840,7 @@ class CycleMixin:
             )
             logger.info("Session rotation pending — saved shortterm for next turn")
         elif uses_chat_session:
-            shortterm.clear()
+            await shortterm.aclear()
 
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.info(
@@ -857,14 +850,16 @@ class CycleMixin:
             len(result.text),
         )
         usage = result.usage.to_dict() if result.usage else None
-        _log_session_token_usage(
-            self.anima_dir,
-            model=active_model_config.model,
-            mode=mode,
-            trigger=trigger,
-            usage=usage,
-            duration_ms=duration_ms,
-            turns=total_turns,
+        await _await_if_needed(
+            _log_session_token_usage(
+                self.anima_dir,
+                model=active_model_config.model,
+                mode=mode,
+                trigger=trigger,
+                usage=usage,
+                duration_ms=duration_ms,
+                turns=total_turns,
+            )
         )
 
         is_error = result.error is True
@@ -917,9 +912,11 @@ class CycleMixin:
                 trigger=trigger,
             )
             async with self._get_agent_lock(thread_id):
-                budget_result = self._check_monthly_token_budget(
-                    trigger=trigger,
-                    model_config=self.model_config,
+                budget_result = await _await_if_needed(
+                    self._check_monthly_token_budget(
+                        trigger=trigger,
+                        model_config=self.model_config,
+                    )
                 )
                 if budget_result is not None:
                     budget_result.session_type = ctx.session_type
@@ -1155,7 +1152,7 @@ class CycleMixin:
                             )
                             from core.memory.conversation.shortterm import StreamCheckpoint
 
-                            shortterm.save_checkpoint(
+                            await shortterm.asave_checkpoint(
                                 StreamCheckpoint(
                                     timestamp=now_iso(),
                                     trigger=trigger,
@@ -1269,7 +1266,7 @@ class CycleMixin:
                     if retry_count == 1:
                         try:
                             if uses_chat_session:
-                                active_executor.clear_session(trigger, thread_id)
+                                await asyncio.to_thread(active_executor.clear_session, trigger, thread_id)
                             logger.info("Session IDs cleared for retry 1 (fresh session forced)")
                         except Exception as e:
                             logger.warning("Failed to clear session IDs for retry: %s", e)
@@ -1307,14 +1304,16 @@ class CycleMixin:
                 # Flush each execution attempt under its actual model/mode,
                 # including failures, cancellation and generator close. A
                 # fallback can use a different provider's token semantics.
-                _log_session_token_usage(
-                    self.anima_dir,
-                    model=active_model_config.model,
-                    mode=mode,
-                    trigger=trigger,
-                    usage=attempt_usage,
-                    duration_ms=int((time.monotonic() - attempt_started) * 1000),
-                    turns=attempt_turns,
+                await _await_if_needed(
+                    _log_session_token_usage(
+                        self.anima_dir,
+                        model=active_model_config.model,
+                        mode=mode,
+                        trigger=trigger,
+                        usage=attempt_usage,
+                        duration_ms=int((time.monotonic() - attempt_started) * 1000),
+                        turns=attempt_turns,
+                    )
                 )
 
             if (
@@ -1424,11 +1423,11 @@ class CycleMixin:
                 # not a disconnected stream eligible for retry.
                 if terminal_error_chunk is not None:
                     yield terminal_error_chunk
-                shortterm.clear_checkpoint()
+                await shortterm.aclear_checkpoint()
                 break
 
         if not uses_chat_session:
-            shortterm.clear_checkpoint()
+            await shortterm.aclear_checkpoint()
 
         total_turns = result_message.num_turns if result_message else 0
 
@@ -1448,8 +1447,8 @@ class CycleMixin:
                 "Session context at %.1f%% — saving shortterm, will resume on next message (stream)",
                 tracker.usage_ratio * 100,
             )
-            shortterm.clear()
-            _save_handoff_shortterm(
+            await shortterm.aclear()
+            await _save_handoff_shortterm(
                 shortterm,
                 result_text="\n".join(full_text_parts),
                 tool_records=all_tool_call_records,
@@ -1459,9 +1458,9 @@ class CycleMixin:
                 prompt=prompt,
                 tracker=tracker,
             )
-            active_executor.clear_session(trigger, thread_id)
+            await asyncio.to_thread(active_executor.clear_session, trigger, thread_id)
         elif uses_chat_session and rotation_pending:
-            _save_handoff_shortterm(
+            await _save_handoff_shortterm(
                 shortterm,
                 result_text="\n".join(full_text_parts),
                 tool_records=all_tool_call_records,
@@ -1472,12 +1471,14 @@ class CycleMixin:
                 tracker=tracker,
             )
         elif uses_chat_session:
-            shortterm.clear()
+            await shortterm.aclear()
 
-        _save_prompt_log_end(
-            self.anima_dir,
-            session_id=self._tool_handler.session_id,
-            tool_call_count=len(all_tool_call_records),
+        await _await_if_needed(
+            _save_prompt_log_end(
+                self.anima_dir,
+                session_id=self._tool_handler.session_id,
+                tool_call_count=len(all_tool_call_records),
+            )
         )
 
         full_text = "\n".join(full_text_parts)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import inspect
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -152,7 +153,7 @@ class SessionCompactor:
         target = anima or self._sweep_anima
         if target is None:
             return
-        from core.execution.engines.claude._sdk_session import load_session_state, mark_session_swept
+        from core.execution.engines.claude._sdk_session import load_session_state, mark_session_swept_async
 
         state_dir = target.anima_dir / "state"
         prefix = "current_session_chat"
@@ -191,7 +192,7 @@ class SessionCompactor:
                 # Only Mode S deletes the state file. For every other mode the
                 # file survives with the same ``updated_at``, so without this
                 # marker the sweep would recompact it on every tick.
-                mark_session_swept(target.anima_dir, "chat", thread_id)
+                await mark_session_swept_async(target.anima_dir, "chat", thread_id)
             except Exception:
                 logger.exception(
                     "SessionCompactor sweep failed for %s/%s; continuing",
@@ -391,7 +392,11 @@ async def _compact_mode_s_shared(
     ctx = _extract_recent_chat_context(anima_dir, thread_id=thread_id)
     if ctx.get("accumulated_response") or ctx.get("tool_uses"):
         shortterm = ShortTermMemory(anima_dir, session_type="chat", thread_id=thread_id)
-        shortterm.save(
+        ready = shortterm.ensure_ready()
+        if inspect.isawaitable(ready):
+            await ready
+        await asyncio.to_thread(
+            shortterm.save,
             SessionState(
                 accumulated_response=ctx.get("accumulated_response", ""),
                 tool_uses=ctx.get("tool_uses", []),
@@ -399,10 +404,10 @@ async def _compact_mode_s_shared(
                 timestamp=ctx.get("timestamp", ""),
                 trigger=trigger,
                 notes=notes or ctx.get("notes", ""),
-            )
+            ),
         )
         logger.info("_compact_mode_s: shortterm saved from activity_log")
-    _clear_session_id(anima_dir, SESSION_TYPE_CHAT, thread_id)
+    await asyncio.to_thread(_clear_session_id, anima_dir, SESSION_TYPE_CHAT, thread_id=thread_id)
     logger.info("_compact_mode_s: session_id cleared (anima=%s, thread=%s)", anima_name, thread_id)
     return True
 
@@ -438,17 +443,21 @@ async def _compact_conversation(
     shortterm_saved = bool(summary_parts)
     if shortterm_saved:
         shortterm = ShortTermMemory(anima.anima_dir, session_type="chat", thread_id=thread_id)
-        shortterm.save(
+        ready = shortterm.ensure_ready()
+        if inspect.isawaitable(ready):
+            await ready
+        await asyncio.to_thread(
+            shortterm.save,
             SessionState(
                 accumulated_response="\n".join(summary_parts)[:4000],
                 timestamp=now_local().isoformat(),
                 trigger="idle_compaction",
                 notes="Auto-saved during idle compaction",
-            )
+            ),
         )
 
     if clear_engine is not None:
-        clear_engine_session(anima.anima_dir, clear_engine, "chat", thread_id)
+        await asyncio.to_thread(clear_engine_session, anima.anima_dir, clear_engine, "chat", thread_id)
     finalized = await conv.finalize_if_session_ended()
     logger.debug("_compact_conversation: exit (compressed=%s)", compression.performed)
     return {

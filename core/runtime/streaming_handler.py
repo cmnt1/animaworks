@@ -66,7 +66,7 @@ class StreamingIPCHandler:
         self._anima_dir = anima_dir
         self._task_runner_supervisor = task_runner_supervisor
 
-    def _clear_stream_abort_state(self, reason: str, thread_id: str = "default") -> None:
+    async def _clear_stream_abort_state(self, reason: str, thread_id: str = "default") -> None:
         """Clear checkpoint after abnormal stream termination.
 
         Session ID is intentionally preserved so that the next chat
@@ -77,7 +77,8 @@ class StreamingIPCHandler:
         try:
             from core.memory.conversation.shortterm import ShortTermMemory
 
-            ShortTermMemory(self._anima_dir, thread_id=thread_id).clear_checkpoint()
+            shortterm = ShortTermMemory(self._anima_dir, thread_id=thread_id)
+            await asyncio.to_thread(shortterm.clear_checkpoint)
             logger.info("Stream checkpoint cleared: %s (thread=%s)", reason, thread_id)
         except Exception as e:
             logger.warning("Failed to clear checkpoint: %s", e)
@@ -116,7 +117,9 @@ class StreamingIPCHandler:
                 return
             except Exception as exc:
                 logger.exception("Isolated chat task runner failed: %s", exc)
-                self._clear_stream_abort_state("chat task runner failed", request.params.get("thread_id", "default"))
+                await self._clear_stream_abort_state(
+                    "chat task runner failed", request.params.get("thread_id", "default")
+                )
                 yield IPCResponse(
                     id=request.id,
                     error={"code": "CHAT_RUNNER_ERROR", "message": str(exc)},
@@ -287,7 +290,7 @@ class StreamingIPCHandler:
                     await _enqueue(terminal_response)
                 else:
                     # Stream ended without cycle_done — done=False切断パス
-                    self._clear_stream_abort_state("stream ended without cycle_done (done=False)", thread_id)
+                    await self._clear_stream_abort_state("stream ended without cycle_done (done=False)", thread_id)
                     await _enqueue(
                         IPCResponse(
                             id=request.id,
@@ -302,7 +305,7 @@ class StreamingIPCHandler:
 
             except TimeoutError as e:
                 logger.error("Timeout in streaming process_message: %s", e)
-                self._clear_stream_abort_state("timeout", thread_id)
+                await self._clear_stream_abort_state("timeout", thread_id)
                 await queue.put(
                     IPCResponse(
                         id=request.id,
@@ -317,7 +320,7 @@ class StreamingIPCHandler:
                     "Error in streaming process_message: %s",
                     e,
                 )
-                self._clear_stream_abort_state("exception", thread_id)
+                await self._clear_stream_abort_state("exception", thread_id)
                 await queue.put(
                     IPCResponse(
                         id=request.id,

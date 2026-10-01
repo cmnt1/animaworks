@@ -468,44 +468,32 @@ class DigitalAnima(
         return events
 
     def drain_background_notifications(self) -> list[str]:
-        """Read and remove all pending background notifications.
+        """Synchronously consume notifications for local compatibility callers."""
+        from core.platform.state_writer import get_state_writer, run_writer_sync
 
-        Returns list of notification texts for inclusion in heartbeat context.
-        """
-        return self._drain_background_notifications(
-            lambda _path: True,
-        )
+        anima_dir = self.agent.anima_dir
+        writer = get_state_writer(anima_dir)
+        return run_writer_sync(writer, writer.consume_background_notifications("all"))
+
+    async def adrain_background_notifications(self) -> list[str]:
+        """Consume all pending notifications through the state writer."""
+        from core.platform.state_writer import get_state_writer
+
+        return await get_state_writer(self.agent.anima_dir).consume_background_notifications("all")
 
     def drain_chat_background_notifications(self) -> list[str]:
-        """Read task-completion notifications intended for a chat turn.
+        """Synchronously consume chat-visible notifications for local callers."""
+        from core.platform.state_writer import get_state_writer, run_writer_sync
 
-        Cron parse, legacy cron-guard, and token-budget notices are operational
-        context for the heartbeat, not background task results requested by the
-        user. Leave those files for the heartbeat drain instead of consuming
-        them during a normal chat turn.
-        """
-        excluded_prefixes = ("cron_health_", "cron_guard_", "token_budget_")
-        return self._drain_background_notifications(
-            lambda path: not path.name.startswith(excluded_prefixes),
-        )
+        anima_dir = self.agent.anima_dir
+        writer = get_state_writer(anima_dir)
+        return run_writer_sync(writer, writer.consume_background_notifications("chat"))
 
-    def _drain_background_notifications(self, predicate: Callable[[Path], bool]) -> list[str]:
-        """Read and remove matching pending background notification files."""
-        notif_dir = self.agent.anima_dir / "state" / "background_notifications"
-        if not notif_dir.is_dir():
-            return []
+    async def adrain_chat_background_notifications(self) -> list[str]:
+        """Consume chat-visible notifications through the state writer."""
+        from core.platform.state_writer import get_state_writer
 
-        notifications: list[str] = []
-        for path in sorted(notif_dir.glob("*.md")):
-            if not predicate(path):
-                continue
-            try:
-                notifications.append(path.read_text(encoding="utf-8"))
-                path.unlink()
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                logger.warning("Failed to read notification: %s", path.name)
-
-        return notifications
+        return await get_state_writer(self.agent.anima_dir).consume_background_notifications("chat")
 
     async def interrupt(self, thread_id: str | None = None) -> dict[str, Any]:
         """Interrupt LLM session(s) without killing the process.
@@ -577,9 +565,6 @@ class DigitalAnima(
             if task.status.value == "failed":
                 subject = t("anima.bg_task_failed", tool=task.tool_name)
 
-            notif_dir = self.agent.anima_dir / "state" / "background_notifications"
-            notif_dir.mkdir(parents=True, exist_ok=True)
-            notif_path = notif_dir / f"{task.task_id}.md"
             notif_content = (
                 f"# {subject}\n\n"
                 f"{t('anima.bg_notif_task_id', task_id=task.task_id)}\n"
@@ -587,7 +572,11 @@ class DigitalAnima(
                 f"{t('anima.bg_notif_status', status=task.status.value)}\n"
                 f"{t('anima.bg_notif_result', summary=summary)}\n"
             )
-            notif_path.write_text(notif_content, encoding="utf-8")
+            from core.platform.state_writer import get_state_writer
+
+            notif_path = await get_state_writer(self.agent.anima_dir).write_background_notification(
+                task.task_id, notif_content
+            )
             logger.info(
                 "[%s] Background task notification written: %s",
                 self.name,

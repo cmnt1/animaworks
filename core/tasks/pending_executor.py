@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ToolExecutionError
 from core.i18n import t
+from core.platform.state_writer import get_state_writer, run_writer_sync
 from core.platform.tasks import spawn
 from core.time_utils import now_iso
 
@@ -253,17 +254,22 @@ class PendingTaskExecutor:
 
     # ── Result save / dependency context ─────────────────────
 
+    async def _asave_task_result(self, task_id: str, summary: str, attempt_token: str | None) -> None:
+        """Save under the attempt token through the process StateWriter."""
+        await get_state_writer(self._anima_dir).save_task_result(
+            task_id,
+            attempt_token,
+            summary[:_TASK_RESULT_MAX_CHARS],
+        )
+
     def _save_task_result(self, task_id: str, summary: str) -> None:
-        """Save under the attempt token, falling back to a flat legacy path."""
-        from core.platform.atomic_io import atomic_write_text
+        """Synchronous compatibility adapter for local callers and tests."""
         from core.tasks.board.tasks import current_attempt_identity
 
-        results_dir = self._anima_dir / "state" / "task_results"
-        results_dir.mkdir(parents=True, exist_ok=True)
         identity = current_attempt_identity()
-        path = (results_dir / task_id / f"{identity['token']}.md") if identity else results_dir / f"{task_id}.md"
-        truncated = summary[:_TASK_RESULT_MAX_CHARS]
-        atomic_write_text(path, truncated)
+        token = str(identity["token"]) if identity else None
+        writer = get_state_writer(self._anima_dir)
+        run_writer_sync(writer, self._asave_task_result(task_id, summary, token))
 
     def _build_dependency_context(
         self,
@@ -311,7 +317,7 @@ class PendingTaskExecutor:
                 exc_info=True,
             )
 
-    def _return_task_to_pending(self, task_desc: dict[str, Any], reason: str, *, stop_kind: str) -> None:
+    async def _return_task_to_pending(self, task_desc: dict[str, Any], reason: str, *, stop_kind: str) -> None:
         """Put a task whose run ended abnormally back on its owner's pending list.
 
         There is no failed state and no automatic retry: the task becomes
@@ -326,7 +332,7 @@ class PendingTaskExecutor:
         entry = self._get_task_queue_entry(task_id)
         if entry is not None and entry.status == "cancelled":
             return
-        self._save_task_result(task_id, reason)
+        await asyncio.to_thread(self._save_task_result, task_id, reason)
         self._record_run_ended(task_id, stop_kind, note=reason)
         self._sync_task_queue(task_id, "pending")
         if task_desc.get("_attempt_token"):
@@ -1136,7 +1142,11 @@ class PendingTaskExecutor:
                 # completion could not be declared (e.g. a tool failed while
                 # updating the ledger). The sentinel controls task state; it
                 # must not replace the model's evidence in the result file.
-                self._save_task_result(task_id, f"{_SENTINEL_UNDECLARED}\n\n{result_summary}")
+                await asyncio.to_thread(
+                    self._save_task_result,
+                    task_id,
+                    f"{_SENTINEL_UNDECLARED}\n\n{result_summary}",
+                )
                 logger.info(
                     "[%s] LLM task ended without a completion declaration: id=%s stop_kind=%s",
                     self._anima_name,
@@ -1447,7 +1457,7 @@ class PendingTaskExecutor:
             else:
                 result = await self._run_llm_task(task_desc, task_desc.get("_completed_results"))
             if result != _SENTINEL_UNDECLARED:
-                self._save_task_result(task_id, result)
+                await asyncio.to_thread(self._save_task_result, task_id, result)
             status, summary = _classify_task_result(result)
             self._sync_task_queue(task_id, status, summary=summary)
         except Exception as exc:
@@ -1463,7 +1473,7 @@ class PendingTaskExecutor:
                 self._anima_name,
                 task_id,
             )
-            self._return_task_to_pending(
+            await self._return_task_to_pending(
                 task_desc,
                 f"{type(exc).__name__}: {str(exc)[:200]}",
                 stop_kind="crash",

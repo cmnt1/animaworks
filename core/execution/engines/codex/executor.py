@@ -80,8 +80,13 @@ _CODEX_SESSION_IDS = EngineSessionIds("codex")
 
 
 def clear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
-    """Clear one resolved Codex thread ID namespace."""
+    """Clear one resolved Codex thread ID namespace for local callers."""
     _CODEX_SESSION_IDS.clear(anima_dir, session_type, chat_thread_id)
+
+
+async def aclear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
+    """Asynchronously clear one resolved Codex thread ID namespace."""
+    await _CODEX_SESSION_IDS.aclear(anima_dir, session_type, chat_thread_id)
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -209,7 +214,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                     e,
                 )
                 if persist_thread:
-                    _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
+                    await _CODEX_SESSION_IDS.aclear(self._anima_dir, session_type, chat_thread_id)
         thread = await setup._maybe_await(codex.thread_start(**thread_kwargs))
         logger.info("Started fresh Codex thread")
         return thread
@@ -263,7 +268,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
             session_record = _CODEX_SESSION_IDS.load(self._anima_dir, session_type, chat_thread_id)
             codex_thread_id = session_record.session_id if session_record is not None else None
         else:
-            clear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
+            await aclear_codex_thread_id(self._anima_dir, session_type, chat_thread_id)
             codex_thread_id = None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
@@ -646,7 +651,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         turn_result = events._wrap_result_message(payload, thread, completed_turns=completed_turn_count)
                         saved_tid = events._get_thread_id(thread)
                         if saved_tid and persist_thread:
-                            _CODEX_SESSION_IDS.save(self._anima_dir, saved_tid, session_type, chat_thread_id)
+                            await _CODEX_SESSION_IDS.asave(self._anima_dir, saved_tid, session_type, chat_thread_id)
                         turn_obj = events._get_attr(payload, "turn", None)
                         error_obj = events._get_attr(turn_obj, "error", None)
                         error_msg = events._get_str(error_obj, "message")
@@ -726,7 +731,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             codex_thread_id,
                         )
                         if persist_thread:
-                            _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
+                            await _CODEX_SESSION_IDS.aclear(self._anima_dir, session_type, chat_thread_id)
                         fell_back = True
                         await gen.aclose()
                     except Exception as e:
@@ -738,7 +743,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                             e,
                         )
                         if persist_thread:
-                            _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
+                            await _CODEX_SESSION_IDS.aclear(self._anima_dir, session_type, chat_thread_id)
                         fell_back = True
                         await gen.aclose()
                     else:
@@ -754,7 +759,7 @@ class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
                         e,
                     )
                     if persist_thread:
-                        _CODEX_SESSION_IDS.clear(self._anima_dir, session_type, chat_thread_id)
+                        await _CODEX_SESSION_IDS.aclear(self._anima_dir, session_type, chat_thread_id)
                     fell_back = True
             else:
                 fell_back = True

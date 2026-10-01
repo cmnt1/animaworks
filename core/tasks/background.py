@@ -26,7 +26,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from core.platform.atomic_io import atomic_write_json
+from core.platform.state_writer import IpcStateWriter, get_state_writer, is_task_runner_process, run_writer_sync
 
 logger = logging.getLogger("animaworks.background")
 
@@ -138,9 +138,6 @@ class BackgroundTaskManager:
         self._tasks: dict[str, BackgroundTask] = {}
         self._async_tasks: dict[str, asyncio.Task[None]] = {}
         self.on_complete: OnTaskCompleteFn | None = None
-
-        # Ensure storage directory exists
-        self._storage_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def _storage_dir(self) -> Path:
@@ -448,10 +445,13 @@ class BackgroundTaskManager:
     # ── Persistence ──────────────────────────────────────────
 
     def _save_task(self, task: BackgroundTask) -> None:
-        """Persist task state to disk."""
-        path = self._storage_dir / f"{task.task_id}.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(path, task.to_dict(), indent=2, ensure_ascii=False)
+        """Persist task state through the process StateWriter."""
+        writer = get_state_writer(self._anima_dir)
+        operation = writer.save_background_task(task.task_id, task.to_dict())
+        if is_task_runner_process() and isinstance(writer, IpcStateWriter):
+            writer.schedule(operation)
+            return
+        run_writer_sync(writer, operation)
 
     def _load_task(self, task_id: str) -> BackgroundTask | None:
         """Load a task from disk."""
@@ -475,6 +475,14 @@ class BackgroundTaskManager:
             logger.warning("Failed to load background task %s: %s", task_id, e)
             return None
 
+    def _clear_task_file(self, task_id: str) -> None:
+        writer = get_state_writer(self._anima_dir)
+        operation = writer.clear_background_task(task_id)
+        if is_task_runner_process() and isinstance(writer, IpcStateWriter):
+            writer.schedule(operation)
+            return
+        run_writer_sync(writer, operation)
+
     def cleanup_old_tasks(self, max_age_hours: int = 24) -> int:
         """Remove completed/failed tasks older than max_age_hours.
 
@@ -491,7 +499,7 @@ class BackgroundTaskManager:
                 status = data.get("status", "")
                 completed = data.get("completed_at")
                 if status in ("completed", "failed") and completed and completed < cutoff:
-                    path.unlink()
+                    self._clear_task_file(str(data.get("task_id", path.stem)))
                     self._tasks.pop(data.get("task_id", ""), None)
                     removed += 1
                 # Clean up stale running tasks (crash orphans)
@@ -499,7 +507,7 @@ class BackgroundTaskManager:
                     created = data.get("created_at")
                     stale_cutoff = time.time() - (48 * 3600)  # 48 hours
                     if created and created < stale_cutoff:
-                        path.unlink()
+                        self._clear_task_file(str(data.get("task_id", path.stem)))
                         self._tasks.pop(data.get("task_id", ""), None)
                         removed += 1
                         logger.info(

@@ -655,8 +655,21 @@ class BaseExecutor(ABC):
         """Set override cwd for TaskExec sessions."""
         self._task_cwd = cwd
 
+    async def aclear_session(self, trigger: str, thread_id: str = "default") -> None:
+        """Asynchronously clear this executor's persisted session."""
+        if self.session_engine is None:
+            return
+        from core.execution.session.engine_session import aclear_engine_session
+
+        await aclear_engine_session(
+            self._anima_dir,
+            self.session_engine,
+            resolve_runtime_session_type(trigger),
+            thread_id,
+        )
+
     def clear_session(self, trigger: str, thread_id: str = "default") -> None:
-        """Clear this executor's persisted session for a runtime trigger."""
+        """Synchronous compatibility adapter for local callers and tests."""
         if self.session_engine is None:
             return
         from core.execution.session.engine_session import clear_engine_session

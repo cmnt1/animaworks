@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import inspect
+import json
 import logging
 import os
 import signal
@@ -31,6 +34,7 @@ from core.runtime.ipc_v2 import (
     read_ipc_v2_envelope,
 )
 from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
+from core.runtime.state_writer import LocalStateWriter, get_state_writer
 from core.runtime.transport import cleanup_ipc_endpoint, start_ipc_server
 from core.schemas import CronTask
 
@@ -51,6 +55,7 @@ _HANG_CHECK_INTERVAL_MAX = 5.0
 # every hang-check tick (max 5s).  Patching this to 0 lets tests drive a check
 # on the next loop iteration.
 _CANCEL_CHECK_INTERVAL = 30.0
+_STATE_WRITE_MAX_PAYLOAD_BYTES = 64 * 1024 * 1024
 
 OnSpawned = Callable[["TaskRunnerJob"], Awaitable[None] | None]
 
@@ -61,6 +66,18 @@ class TaskRunnerError(RuntimeError):
 
 class TaskRunnerCancelled(TaskRunnerError):
     """The runner was stopped because its task was cancelled in the queue."""
+
+
+@dataclass
+class _StateWriteAssembly:
+    """One validated chunked state-write payload being received."""
+
+    operation: str
+    byte_length: int
+    sha256: str
+    chunks: list[bytes] = field(default_factory=list)
+    next_index: int = 0
+    received_bytes: int = 0
 
 
 @dataclass
@@ -86,6 +103,10 @@ class TaskRunnerJob:
     stream_events: list[asyncio.Queue[dict[str, Any] | None]] = field(default_factory=list)
     inject_waiters: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
     interrupt_thread_id: str | None = None
+    state_write_count: int = 0
+    state_write_duration_sec: float = 0.0
+    state_write_pending: set[str] = field(default_factory=set)
+    state_write_results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class TaskRunnerSupervisor:
@@ -109,6 +130,7 @@ class TaskRunnerSupervisor:
         self.socket_path = shared_dir.parent / "run" / "sockets" / f"{anima_name}.task-v2.sock"
         self._server: asyncio.Server | None = None
         self._memory_service = memory_service
+        self._state_writer = get_state_writer(anima_dir)
         self._start_lock = asyncio.Lock()
         self._jobs: dict[str, TaskRunnerJob] = {}
         self._journal_recovery_lock = asyncio.Lock()
@@ -662,6 +684,15 @@ class TaskRunnerSupervisor:
                     hang_watch.cancel()
                 await asyncio.gather(hang_watch, return_exceptions=True)
             self._jobs.pop(job_id, None)
+            if job.state_write_count:
+                logger.info(
+                    "Task runner state_write summary: anima=%s lane=%s job=%s operations=%d write_ms=%.1f",
+                    self.anima_name,
+                    job.identity.lane,
+                    job.identity.job_id,
+                    job.state_write_count,
+                    job.state_write_duration_sec * 1000,
+                )
             for queue in job.stream_events:
                 queue.put_nowait(None)
             for waiter in job.inject_waiters.values():
@@ -888,8 +919,166 @@ class TaskRunnerSupervisor:
                 await recovery_task
                 raise
 
+    async def _state_write_worker(
+        self,
+        connection: IPCV2Connection,
+        job: TaskRunnerJob,
+        queue: asyncio.Queue[tuple[str, str, dict[str, Any]] | None],
+    ) -> None:
+        """Apply queued writes in order without blocking the frame receiver."""
+        while (item := await queue.get()) is not None:
+            request_id, operation, payload = item
+            started = asyncio.get_running_loop().time()
+            try:
+                writer = self._state_writer
+                if not isinstance(writer, LocalStateWriter):
+                    raise TaskRunnerError("Anima main state writer is not local")
+                result = await writer.execute_operation(operation, payload)
+                response = {"result": result}
+            except Exception as exc:
+                logger.exception(
+                    "Task state write failed: anima=%s job=%s operation=%s",
+                    self.anima_name,
+                    job.identity.job_id,
+                    operation,
+                )
+                response = {
+                    "error": ipc_v2_error("STATE_WRITE_ERROR", str(exc), retryable=False),
+                }
+            finally:
+                job.state_write_duration_sec += asyncio.get_running_loop().time() - started
+                job.state_write_pending.discard(request_id)
+            job.state_write_results[request_id] = response
+            reply_connection = job.connection or connection
+            try:
+                if "error" in response:
+                    await reply_connection.send_response(request_id, error=response["error"])
+                else:
+                    await reply_connection.send_response(request_id, result=response["result"])
+            except Exception:
+                # The disk operation is already durable. A task runner that
+                # disappeared while it was in flight cannot undo the write.
+                logger.debug(
+                    "Could not return state-write response: anima=%s job=%s request=%s",
+                    self.anima_name,
+                    job.identity.job_id,
+                    request_id,
+                    exc_info=True,
+                )
+
+    async def _accept_state_write(
+        self,
+        connection: IPCV2Connection,
+        job: TaskRunnerJob,
+        queue: asyncio.Queue[tuple[str, str, dict[str, Any]] | None],
+        assemblies: dict[str, _StateWriteAssembly],
+        request: Any,
+    ) -> None:
+        """Validate a state_write frame and enqueue only complete operations."""
+        request_id = request.body["request_id"]
+        if request_id in job.state_write_results:
+            response = job.state_write_results[request_id]
+            if "error" in response:
+                await connection.send_response(request_id, error=response["error"])
+            else:
+                await connection.send_response(request_id, result=response["result"])
+            return
+        if request_id in job.state_write_pending:
+            return
+        params = request.body.get("params") or {}
+        phase = params.get("phase", "write")
+        try:
+            if phase == "write":
+                operation = params.get("operation")
+                payload = params.get("payload")
+                if not isinstance(operation, str) or not operation or not isinstance(payload, dict):
+                    raise ValueError("state_write requires operation and payload object")
+                self._queue_state_write(job, queue, request_id, operation, payload)
+                return
+
+            transaction_id = params.get("transaction_id")
+            if not isinstance(transaction_id, str) or not transaction_id or len(transaction_id) > 80:
+                raise ValueError("state_write transaction_id is invalid")
+            if phase == "begin":
+                operation = params.get("operation")
+                byte_length = params.get("byte_length")
+                digest = params.get("sha256")
+                if (
+                    not isinstance(operation, str)
+                    or not operation
+                    or not isinstance(byte_length, int)
+                    or isinstance(byte_length, bool)
+                    or byte_length < 1
+                    or byte_length > _STATE_WRITE_MAX_PAYLOAD_BYTES
+                    or not isinstance(digest, str)
+                    or len(digest) != 64
+                ):
+                    raise ValueError("state_write begin metadata is invalid")
+                if transaction_id in assemblies:
+                    raise ValueError("duplicate state_write transaction_id")
+                assemblies[transaction_id] = _StateWriteAssembly(operation, byte_length, digest)
+                return
+
+            if phase == "chunk":
+                assembly = assemblies.get(transaction_id)
+                index = params.get("index")
+                encoded = params.get("data")
+                if assembly is None or not isinstance(index, int) or isinstance(index, bool):
+                    raise ValueError("state_write chunk has no matching begin")
+                if index != assembly.next_index or not isinstance(encoded, str):
+                    raise ValueError("state_write chunk index is out of order")
+                chunk = base64.b64decode(encoded, validate=True)
+                if assembly.received_bytes + len(chunk) > assembly.byte_length:
+                    raise ValueError("state_write chunks exceed declared byte length")
+                assembly.chunks.append(chunk)
+                assembly.received_bytes += len(chunk)
+                assembly.next_index += 1
+                return
+
+            if phase == "commit":
+                assembly = assemblies.pop(transaction_id, None)
+                if assembly is None or assembly.received_bytes != assembly.byte_length:
+                    raise ValueError("state_write commit has an incomplete payload")
+                encoded_payload = b"".join(assembly.chunks)
+                if hashlib.sha256(encoded_payload).hexdigest() != assembly.sha256:
+                    raise ValueError("state_write payload checksum mismatch")
+                decoded = json.loads(encoded_payload.decode("utf-8"))
+                if not isinstance(decoded, dict) or decoded.get("operation") != assembly.operation:
+                    raise ValueError("state_write payload does not match begin metadata")
+                payload = decoded.get("payload")
+                if not isinstance(payload, dict):
+                    raise ValueError("state_write payload must be an object")
+                self._queue_state_write(job, queue, request_id, assembly.operation, payload)
+                return
+
+            raise ValueError(f"unsupported state_write phase: {phase!r}")
+        except Exception as exc:
+            await connection.send_response(
+                request_id,
+                error=ipc_v2_error("STATE_WRITE_PROTOCOL_ERROR", str(exc), retryable=False),
+            )
+
+    @staticmethod
+    def _queue_state_write(
+        job: TaskRunnerJob,
+        queue: asyncio.Queue[tuple[str, str, dict[str, Any]] | None],
+        request_id: str,
+        operation: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Deduplicate application request IDs before ordered disk dispatch."""
+        if request_id in job.state_write_results or request_id in job.state_write_pending:
+            return
+        job.state_write_count += 1
+        job.state_write_pending.add(request_id)
+        queue.put_nowait((request_id, operation, payload))
+
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection: IPCV2Connection | None = None
+        job: TaskRunnerJob | None = None
+        state_write_queue: asyncio.Queue[tuple[str, str, dict[str, Any]] | None] | None = None
+        state_write_worker: asyncio.Task[None] | None = None
+        assemblies: dict[str, _StateWriteAssembly] = {}
         try:
             first = await asyncio.wait_for(
                 read_ipc_v2_envelope(reader),
@@ -930,6 +1119,11 @@ class TaskRunnerSupervisor:
                 },
             )
             await connection.replay_after(last_received, through_seq=replay_through)
+            state_write_queue = asyncio.Queue()
+            state_write_worker = asyncio.create_task(
+                self._state_write_worker(connection, job, state_write_queue),
+                name=f"state-write-{job.identity.job_id}",
+            )
             await connection.send_request(job.request_id, "run", job.params)
             if job.interrupt_thread_id is not None:
                 await connection.send_event("interrupt", {"thread_id": job.interrupt_thread_id})
@@ -947,12 +1141,15 @@ class TaskRunnerSupervisor:
                         break  # superseded by a reconnect, or the job is gone
                     continue
                 if envelope.kind == "request":
-                    # Task runners no longer send IPC requests (memory access now
-                    # goes over HTTP); reject any that nonetheless arrive.
-                    await connection.send_response(
-                        envelope.body["request_id"],
-                        error=ipc_v2_error("PROTOCOL_ERROR", "unsupported task request", retryable=False),
-                    )
+                    if envelope.body["method"] == "state_write" and state_write_queue is not None:
+                        await self._accept_state_write(connection, job, state_write_queue, assemblies, envelope)
+                    else:
+                        # The state-write operation is the only task-runner
+                        # request accepted on this channel.
+                        await connection.send_response(
+                            envelope.body["request_id"],
+                            error=ipc_v2_error("PROTOCOL_ERROR", "unsupported task request", retryable=False),
+                        )
                     continue
                 if envelope.kind == "response":
                     if envelope.body["request_id"] != job.request_id:
@@ -1005,10 +1202,17 @@ class TaskRunnerSupervisor:
                     job.result.set_result({"error": ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False)})
                     self._terminate_job_group(job)
         finally:
+            if state_write_queue is not None and state_write_worker is not None:
+                state_write_queue.put_nowait(None)
+                try:
+                    await asyncio.shield(state_write_worker)
+                except asyncio.CancelledError:
+                    await state_write_worker
+                    raise
             if connection is not None:
-                job = self._jobs.get(connection.state.identity.job_id)
-                if job is not None and job.connection is connection:
-                    job.connection = None
+                current_job = self._jobs.get(connection.state.identity.job_id)
+                if current_job is not None and current_job.connection is connection:
+                    current_job.connection = None
                 await connection.close()
             else:
                 writer.close()
