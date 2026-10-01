@@ -5,11 +5,10 @@ from __future__ import annotations
 # SPDX-License-Identifier: Apache-2.0
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, save_config
-from core.execution.engines.codex.executor import CodexSDKExecutor
-from core.schemas import ModelConfig
+from core.platform.process_role import PROCESS_ROLE_ENV
 from core.tooling.handler import ToolHandler
 from core.tooling.policy.schemas import build_unified_tool_list
 
@@ -50,45 +49,58 @@ def _grant(handler: ToolHandler, alias: str, path: Path, **kwargs: object) -> di
     return json.loads(result)
 
 
-def test_top_level_human_can_grant_self_workspace(data_dir: Path, tmp_path: Path) -> None:
+def _root_response(**values: object) -> MagicMock:
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"status": "ok", **values}
+    return response
+
+
+def test_top_level_human_can_grant_self_workspace(data_dir: Path, tmp_path: Path, monkeypatch) -> None:
     top_dir = _make_anima(data_dir, "ritsu")
     _write_config({"ritsu": AnimaModelConfig(supervisor=None)})
     workspace = tmp_path / "finance-dashboard"
     workspace.mkdir()
 
+    monkeypatch.setenv(PROCESS_ROLE_ENV, "task_runner")
     handler = _handler(top_dir)
     handler.set_session_origin("human")
-    parsed = _grant(handler, "finance-dashboard", workspace)
+    result = {
+        "qualified_alias": "finance-dashboard#12345678",
+        "target_anima": "ritsu",
+        "permissions_changed": True,
+    }
+    with patch("core.host_api.host_api.post", return_value=_root_response(**result)) as mock_post:
+        parsed = _grant(handler, "finance-dashboard", workspace)
 
     assert parsed["status"] == "ok"
     assert parsed["target_anima"] == "ritsu"
     assert parsed["permissions_changed"] is True
-    assert load_config().workspaces["finance-dashboard"] == str(workspace.resolve())
+    assert load_config().workspaces == {}
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["alias"] == "finance-dashboard"
+    assert payload["path"] == str(workspace.resolve())
+    assert payload["target_anima"] == "ritsu"
+    assert payload["human_origin"] is True
+    assert not json.loads((top_dir / "permissions.json").read_text(encoding="utf-8"))["file_roots"]
+    assert "default_workspace" not in json.loads((top_dir / "status.json").read_text(encoding="utf-8"))
 
-    permissions = json.loads((top_dir / "permissions.json").read_text(encoding="utf-8"))
-    assert str(workspace.resolve()) in permissions["file_roots"]
 
-    status = json.loads((top_dir / "status.json").read_text(encoding="utf-8"))
-    assert status["default_workspace"] == parsed["qualified_alias"]
-
-
-def test_granted_workspace_is_in_next_codex_writable_roots(data_dir: Path, tmp_path: Path) -> None:
+def test_workspace_grant_is_delegated_to_root(data_dir: Path, tmp_path: Path, monkeypatch) -> None:
     top_dir = _make_anima(data_dir, "ritsu")
     _write_config({"ritsu": AnimaModelConfig(supervisor=None)})
     workspace = tmp_path / "finance-dashboard"
     workspace.mkdir()
 
+    monkeypatch.setenv(PROCESS_ROLE_ENV, "task_runner")
     handler = _handler(top_dir)
     handler.set_session_origin("human")
-    _grant(handler, "finance-dashboard", workspace)
+    with patch("core.host_api.host_api.post", return_value=_root_response(permissions_changed=True)) as mock_post:
+        parsed = _grant(handler, "finance-dashboard", workspace)
 
-    model_config = ModelConfig(model="codex/o4-mini", credential="openai", api_key="test")
-    executor = CodexSDKExecutor(model_config=model_config, anima_dir=top_dir)
-    executor._write_codex_config("prompt")
-    config_toml = (top_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
-
-    assert "workspace-write" in config_toml
-    assert str(workspace.resolve()) in config_toml
+    assert parsed["permissions_changed"] is True
+    mock_post.assert_called_once()
+    assert mock_post.call_args.args == ("/api/internal/workspace/grant",)
 
 
 def test_non_top_level_cannot_self_grant(data_dir: Path, tmp_path: Path) -> None:
@@ -113,7 +125,7 @@ def test_non_top_level_cannot_self_grant(data_dir: Path, tmp_path: Path) -> None
     assert str(workspace.resolve()) not in permissions["file_roots"]
 
 
-def test_top_level_can_grant_descendant_workspace(data_dir: Path, tmp_path: Path) -> None:
+def test_top_level_can_grant_descendant_workspace(data_dir: Path, tmp_path: Path, monkeypatch) -> None:
     top_dir = _make_anima(data_dir, "owner")
     _make_anima(data_dir, "manager")
     child_dir = _make_anima(data_dir, "ritsu")
@@ -127,14 +139,16 @@ def test_top_level_can_grant_descendant_workspace(data_dir: Path, tmp_path: Path
     workspace = tmp_path / "finance-dashboard"
     workspace.mkdir()
 
+    monkeypatch.setenv(PROCESS_ROLE_ENV, "task_runner")
     handler = _handler(top_dir)
     handler.set_session_origin("human")
-    parsed = _grant(handler, "finance-dashboard", workspace, target_anima="ritsu")
+    with patch("core.host_api.host_api.post", return_value=_root_response(target_anima="ritsu")) as mock_post:
+        parsed = _grant(handler, "finance-dashboard", workspace, target_anima="ritsu")
 
     assert parsed["status"] == "ok"
     assert parsed["target_anima"] == "ritsu"
-    permissions = json.loads((child_dir / "permissions.json").read_text(encoding="utf-8"))
-    assert str(workspace.resolve()) in permissions["file_roots"]
+    assert mock_post.call_args.kwargs["json"]["target_anima"] == "ritsu"
+    assert not json.loads((child_dir / "permissions.json").read_text(encoding="utf-8"))["file_roots"]
 
 
 def test_non_human_origin_is_denied(data_dir: Path, tmp_path: Path) -> None:

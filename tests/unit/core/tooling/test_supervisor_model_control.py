@@ -119,6 +119,34 @@ class TestSetSubordinateModel:
         updated_status = json.loads(status_file.read_text(encoding="utf-8"))
         assert updated_status["model"] == known_model
 
+    def test_anima_process_delegates_model_change_to_root_api(self, tmp_path: Path, monkeypatch):
+        from core.platform.process_role import PROCESS_ROLE_ENV
+
+        handler = _make_handler(tmp_path, "manager")
+        target_dir = self._animas_dir(tmp_path) / "engineer"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        status_path = target_dir / "status.json"
+        status_path.write_text(json.dumps({"enabled": True, "supervisor": "manager"}), encoding="utf-8")
+        original_status = status_path.read_bytes()
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "ok": True,
+            "changed": True,
+            "result": {"model": "claude-sonnet-4-6", "family_changed": False},
+        }
+        monkeypatch.setenv(PROCESS_ROLE_ENV, "task_runner")
+
+        with (
+            patch("core.tooling.handler.ToolHandler._check_descendant", return_value=None),
+            patch("core.host_api.host_api.post", return_value=response) as mock_post,
+        ):
+            result = handler._handle_set_subordinate_model({"name": "engineer", "model": "claude-sonnet-4-6"})
+
+        assert "claude-sonnet-4-6" in result
+        assert mock_post.call_args.args[0] == "/api/internal/animas/engineer/control"
+        assert mock_post.call_args.kwargs["json"] == {"action": "set_model", "model": "claude-sonnet-4-6"}
+        assert status_path.read_bytes() == original_status
+
     def test_set_model_unknown_model_warns(self, tmp_path: Path, caplog):
         """Models outside KNOWN_MODELS succeed but emit a warning."""
         import logging
@@ -301,7 +329,7 @@ class TestRestartSubordinate:
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
-            result = handler._handle_restart_subordinate({"name": "newbie"})
+            handler._handle_restart_subordinate({"name": "newbie"})
 
         assert status_file.exists()
         updated = json.loads(status_file.read_text(encoding="utf-8"))

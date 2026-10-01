@@ -107,7 +107,7 @@ class TestInternalDelegateTask:
                 new_callable=PropertyMock,
                 side_effect=PermissionError(errno.EACCES, "denied"),
             ),
-            patch("httpx.post") as post,
+            patch("core.internal_api.host_api.post") as post,
             patch("core.config.model_catalog.validate_model_override", return_value=None),
         ):
             assert publish_delegation(animas / "natsume", task, delegator="rin", tracking_task_id="112233445566")

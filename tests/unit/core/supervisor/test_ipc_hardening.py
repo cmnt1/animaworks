@@ -43,6 +43,8 @@ def test_phase3_child_env_reaches_vector_store_over_http(tmp_path: Path, monkeyp
     """Phase3 task children get the vector and embed URLs so they use HTTP."""
     supervisor = _supervisor(tmp_path)
     monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://vector.test/internal/vector")
+    monkeypatch.setenv("ANIMAWORKS_INTERNAL_AUTH", "rin.per-anima-token")
+    monkeypatch.setenv("ANIMAWORKS_PROCESS_ROLE", "anima")
     env = supervisor._build_child_environment(
         {
             "ANIMAWORKS_EMBED_URL": "http://embed.test",
@@ -55,6 +57,8 @@ def test_phase3_child_env_reaches_vector_store_over_http(tmp_path: Path, monkeyp
     assert env["ANIMAWORKS_VECTOR_URL"] == "http://vector.test/internal/vector"
     assert env["ANIMAWORKS_EMBED_URL"] == "http://embed.test"
     assert env["ANIMAWORKS_RERANK_URL"] == "http://rerank.test/internal/rerank"
+    assert env["ANIMAWORKS_INTERNAL_AUTH"] == "rin.per-anima-token"
+    assert env["ANIMAWORKS_PROCESS_ROLE"] == "anima"
 
 
 # ── Task 1: received result is kept even when the child exits nonzero ───

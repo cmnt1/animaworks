@@ -134,17 +134,11 @@ class VectorClient(VectorStore):
     def _get_client(self):
         """Lazy-initialize httpx client."""
         if self._client is None:
-            import httpx
-
-            from core.internal_api import internal_api_headers
+            from core.internal_api import host_api
 
             # Upserts during bulk reindex can stall behind worker queue
             # pressure; 30s was too tight on a busy fleet.
-            self._client = httpx.Client(
-                base_url=self._base_url,
-                timeout=120.0,
-                headers=internal_api_headers(),
-            )
+            self._client = host_api.http_client(base_url=self._base_url, timeout=120.0)
         return self._client
 
     def _write_circuit_open(self, collection: str) -> bool:

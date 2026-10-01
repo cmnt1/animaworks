@@ -95,3 +95,73 @@ def delete_anima_files(data_dir: Path, name: str, *, archive: bool) -> DeleteRes
         archive_path=archive_path,
         supervisor_references=supervisor_references,
     )
+
+
+def rename_dm_logs(shared_dir: Path, old_name: str, new_name: str) -> int:
+    """Rename DM log files referencing *old_name*. Returns count of renamed files."""
+    dm_dir = shared_dir / "dm_logs"
+    if not dm_dir.exists():
+        return 0
+    count = 0
+    for path in sorted(dm_dir.glob("*.jsonl")):
+        parts = path.stem.split("-", 1)
+        if len(parts) != 2 or old_name not in parts:
+            continue
+        new_parts = sorted(new_name if part == old_name else part for part in parts)
+        new_path = dm_dir / f"{new_parts[0]}-{new_parts[1]}.jsonl"
+        if new_path.exists():
+            with new_path.open("a", encoding="utf-8") as destination:
+                destination.write(path.read_text(encoding="utf-8"))
+            path.unlink()
+        else:
+            path.rename(new_path)
+        count += 1
+    return count
+
+
+def cleanup_rag_collections(anima_dir: Path, old_name: str, *, source: str = "cli") -> bool:
+    """Delete old RAG collections, queuing a rebuild if ownership is busy."""
+    from core.memory.rag.shared_meta import clear_shared_meta
+
+    index_meta = anima_dir / "index_meta.json"
+    if index_meta.exists():
+        index_meta.write_text("{}\n", encoding="utf-8")
+    clear_shared_meta(anima_dir)
+
+    if not (anima_dir / "vectordb").is_dir():
+        return False
+
+    from core.memory.rag.cli_access import open_vector_access
+    from core.memory.rag.owner_lock import VectorOwnerBusy
+    from core.memory.rag.repair import state as repair_state
+
+    try:
+        with open_vector_access(anima_dir.name, anima_dir, purpose="rename") as access:
+            for suffix in ("knowledge", "episodes", "procedures", "skills", "common_knowledge", "conversation_summary"):
+                collection_name = f"{old_name}_{suffix}"
+                try:
+                    access.store.delete_collection(collection_name)
+                except Exception:
+                    logger.debug("Failed to delete stale RAG collection %s", collection_name, exc_info=True)
+            return False
+    except VectorOwnerBusy as exc:
+        logger.info("Vector owner is busy during rename cleanup for %s: %s", anima_dir.name, exc)
+    except Exception:
+        logger.warning("RAG cleanup failed for renamed anima %s", anima_dir.name, exc_info=True)
+
+    repair_state.write_repair_request_state(
+        anima_dir.name,
+        reason="anima_renamed",
+        collection=None,
+        source=source,
+        include_shared=True,
+    )
+    return True
+
+
+__all__ = [
+    "DeleteResult",
+    "delete_anima_files",
+    "rename_dm_logs",
+    "cleanup_rag_collections",
+]

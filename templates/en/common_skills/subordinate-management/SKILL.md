@@ -16,10 +16,10 @@ A set of supervisor tools automatically enabled for Anima instances with subordi
 
 | Tool | Purpose |
 |------|---------|
-| `disable_subordinate` | Suspend a subordinate (status.json `enabled: false` → process stop + automatic resume prevention) |
+| `disable_subordinate` | Ask root to set `status.json` `enabled: false` → process stop + automatic resume prevention |
 | `enable_subordinate` | Resume a suspended subordinate |
-| `set_subordinate_model` | Change a subordinate's main LLM model (status.json update. `restart_subordinate` required for it to take effect) |
-| `set_subordinate_background_model` | Change a subordinate's background model (for heartbeat/cron) (status.json update. `restart_subordinate` required for it to take effect. Clear with an empty string) |
+| `set_subordinate_model` | Ask root to update the subordinate's main model in `status.json` and reload a running process |
+| `set_subordinate_background_model` | Ask root to change the heartbeat/cron model in `status.json`; new background jobs use it. Clear with an empty string |
 | `restart_subordinate` | Restart a subordinate process (status.json `restart_requested` flag. Reconciliation restarts within about 30 seconds) |
 | `delegate_task` | Delegate a task to a direct subordinate (queue addition + DM send + tracking entry creation on your side) |
 | `org_dashboard` | Display process status, last activity, current task, and task count for all subordinates in a tree view |
@@ -54,26 +54,25 @@ enable_subordinate(name="aoi")
 
 ### Model Change and Restart
 
-Model changes are saved to status.json, but `restart_subordinate` is required for them to take effect in running processes:
+These tools request root to update the root-owned `status.json`; Anima processes must not edit it directly. A running main model is reloaded by root, while stopped Animas use the setting on their next start:
 
 ```
 set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
-restart_subordinate(name="aoi", reason="モデル変更を反映")
 ```
 
-When changing the background model (for heartbeat/cron):
+When changing the background model (for heartbeat/cron), the next background task runner uses the new value; an already-running task is allowed to finish:
 
 ```
 set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
-restart_subordinate(name="aoi", reason="バックグラウンドモデル変更を反映")
 ```
 
 When clearing the background model and reverting to the main model:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")
-restart_subordinate(name="aoi")
 ```
+
+Use `restart_subordinate` separately when a full process restart is actually required.
 
 ### Status Check and Audit
 

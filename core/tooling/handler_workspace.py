@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 from core.config.file_access_policy import effective_write_roots
-from core.platform.atomic_io import atomic_write_json
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import resolve_anima_name
 from core.trust import ORIGIN_HUMAN
@@ -72,9 +71,7 @@ class WorkspaceToolsMixin:
             )
 
         try:
-            from core.config.io import update_config
             from core.config.models import load_config
-            from core.org.workspace import qualified_alias
             from core.paths import get_animas_dir
 
             config = load_config()
@@ -116,41 +113,70 @@ class WorkspaceToolsMixin:
         if not target_dir.is_dir():
             return _error_result("AnimaNotFound", f"Target Anima directory not found: {target_dir}")
 
-        try:
-            update_config(lambda current: current.workspaces.__setitem__(alias, str(workspace_path)))
-        except Exception as exc:
-            logger.warning("workspace grant config save failed: %s", exc)
-            return _error_result("ConfigError", f"Failed to save global config: {exc}")
+        from core.anima.settings_store import settings_server_running
+        from core.platform.process_role import get_process_role
 
-        qualified = qualified_alias(alias, str(workspace_path))
-        try:
-            permissions_changed, permissions_unrestricted = self._workspace_grant_update_permissions(
-                target_dir,
-                workspace_path,
+        process_role = get_process_role()
+        if process_role == "root" or (process_role == "cli" and not settings_server_running()):
+            from core.anima.settings_store import update_config
+            from core.org.workspace import qualified_alias
+
+            try:
+                update_config(lambda current: current.workspaces.__setitem__(alias, str(workspace_path)))
+                qualified = qualified_alias(alias, str(workspace_path))
+                permissions_changed, permissions_unrestricted = self._workspace_grant_update_permissions(
+                    target_dir,
+                    workspace_path,
+                )
+                status_changed = self._workspace_grant_update_status(target_dir, qualified) if make_default else False
+            except Exception as exc:
+                logger.warning("Offline workspace grant failed: %s", exc, exc_info=True)
+                return _error_result("FileWriteError", f"Failed to update workspace settings: {exc}")
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "qualified_alias": qualified,
+                    "alias": alias,
+                    "path": str(workspace_path),
+                    "target_anima": target_name,
+                    "global_workspace_registered": True,
+                    "permissions_changed": permissions_changed,
+                    "permissions_unrestricted": permissions_unrestricted,
+                    "default_workspace_changed": status_changed,
+                    "effective_next_codex_run": True,
+                },
+                ensure_ascii=False,
+                indent=2,
             )
-            status_changed = False
-            if make_default:
-                status_changed = self._workspace_grant_update_status(target_dir, qualified)
-        except OSError as exc:
-            logger.warning("workspace grant target update failed: %s", exc)
-            return _error_result("FileWriteError", f"Failed to update target Anima files: {exc}")
 
-        return json.dumps(
-            {
-                "status": "ok",
-                "qualified_alias": qualified,
-                "alias": alias,
-                "path": str(workspace_path),
-                "target_anima": target_name,
-                "global_workspace_registered": True,
-                "permissions_changed": permissions_changed,
-                "permissions_unrestricted": permissions_unrestricted,
-                "default_workspace_changed": status_changed,
-                "effective_next_codex_run": True,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+        payload = {
+            "alias": alias,
+            "path": str(workspace_path),
+            "target_anima": target_name,
+            "caller_anima": self._anima_name,
+            "make_default": make_default,
+            "human_origin": self._workspace_grant_has_human_origin(),
+        }
+        from core.host_api import host_api, response_detail
+
+        try:
+            response = host_api.post("/api/internal/workspace/grant", json=payload, timeout=30.0)
+        except Exception as exc:
+            logger.warning("workspace grant root API request failed: %s", exc, exc_info=True)
+            return _error_result("HostAPIError", f"Failed to update workspace settings through root API: {exc}")
+        if response.status_code >= 400:
+            error_type = {
+                400: "InvalidArguments",
+                403: "PermissionDenied",
+                404: "AnimaNotFound",
+                409: "ConfigError",
+            }.get(response.status_code, "HostAPIError")
+            return _error_result(error_type, response_detail(response))
+        try:
+            result = response.json()
+        except Exception as exc:
+            return _error_result("HostAPIError", f"Invalid workspace grant response: {exc}")
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     def _workspace_grant_has_human_origin(self: _WorkspaceToolsHost) -> bool:
         if self._session_origin == ORIGIN_HUMAN:
@@ -224,25 +250,22 @@ class WorkspaceToolsMixin:
     def _workspace_grant_update_permissions(
         self: _WorkspaceToolsHost, target_dir: Path, workspace_path: Path
     ) -> tuple[bool, bool]:
+        from core.anima.settings_store import write_permissions
         from core.config.models import load_permissions
 
         permissions = load_permissions(target_dir)
         current_roots = effective_write_roots(target_dir, permissions.file_roots)
         if permissions.file_roots == ["/"]:
             return False, True
-
-        for allowed in current_roots:
-            if workspace_path == allowed or workspace_path.is_relative_to(allowed):
-                return False, False
-
+        if any(workspace_path == root or workspace_path.is_relative_to(root) for root in current_roots):
+            return False, False
         effective_write_roots(target_dir, [str(workspace_path)])
         permissions.file_roots.append(str(workspace_path))
-        payload = permissions.model_dump(mode="json")
-        atomic_write_json(target_dir / "permissions.json", payload, indent=2, ensure_ascii=False)
+        write_permissions(target_dir, permissions)
         return True, False
 
     def _workspace_grant_update_status(self: _WorkspaceToolsHost, target_dir: Path, qualified: str) -> bool:
-        from core.platform.status_store import update_status
+        from core.anima.settings_store import update_status
 
         changed = False
 

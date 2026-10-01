@@ -17,7 +17,6 @@ Covers:
 - create_anima: valid character_sheet_path still works
 """
 
-import json
 import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -302,21 +301,16 @@ class TestCreateAnimaPathTraversal:
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir(exist_ok=True)
-        data_dir = tmp_path
-
-        with (
-            patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.paths.get_data_dir", return_value=data_dir),
-            patch("core.anima.factory.create_from_md") as mock_create,
-            patch("core.config.register_anima_in_config"),
-        ):
-            mock_create.return_value = animas_dir / "testchild"
-            (animas_dir / "testchild").mkdir(parents=True, exist_ok=True)
-            status = animas_dir / "testchild" / "status.json"
-            status.write_text(json.dumps({"enabled": True}), encoding="utf-8")
-
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"status": "ok", "anima_dir": str(animas_dir / "testchild")}
+        with patch("core.host_api.host_api.post", return_value=response) as mock_post:
             result = handler._handle_create_anima(
                 {"character_sheet_path": "character_sheet.md"},
             )
 
         assert "created successfully" in result
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["character_sheet_content"] == sheet.read_text(encoding="utf-8")
+        assert not (animas_dir / "testchild").exists()

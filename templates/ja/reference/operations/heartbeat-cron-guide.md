@@ -189,7 +189,7 @@ heartbeat.md をファイルシステム上で更新すると、次回のハー�
 
 ### status.jsonでの設定
 
-各Animaの `status.json` に `heartbeat_interval_minutes` を設定することで、Anima個別のHeartbeat間隔を指定できます。
+root 管理者は root CLI/API で Anima 個別の `heartbeat_interval_minutes` を設定できます。値は root 所有 `status.json` に保存され、Anima プロセスからは編集しません。
 
 ```json
 {
@@ -199,7 +199,7 @@ heartbeat.md をファイルシステム上で更新すると、次回のハー�
 
 - 設定可能範囲: 1〜1440分（1日）
 - 未設定の場合: `config.json` の `heartbeat.interval_minutes`（デフォルト30分）にフォールバック
-- Anima自身が `write_memory_file` で `status.json` を更新して自己調整可能
+- `status.json` は root 所有です。管理者はサーバー停止中に `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>` で個別の上書きを設定できます。サーバー起動中は CLI が root API 経由で反映します。Anima プロセスはこのファイルを編集しません。
 
 ### 推奨ガイドライン
 
@@ -257,7 +257,7 @@ Activity Level を時間帯に応じて自動的に切り替える仕組み。
 
 - **Settings UI**: ナイトモードのチェックボックス + 時間帯・レベル設定
 - **API**: `PUT /api/settings/activity-schedule` に上記 JSON を送信
-- **設定ファイル直接編集**: `config.json` の `activity_schedule` を編集後、サーバー再起動
+- **root 設定 API**: Settings UI を使うか、上記 JSON を `PUT /api/settings/activity-schedule` に送信する。Anima プロセスから `config.json` を直接編集しない
 
 #### 注意点
 
@@ -540,7 +540,7 @@ type: llm
 
 cron.md を更新すると、heartbeat.md と同様にスケジュールが自動リロードされる。
 Anima 自身が cron.md を書き換えた場合も即座に反映される（self-modify パターン）。
-配下 Anima の `cron.md` / `heartbeat.md` / `injection.md` / `status.json` を上司が編集する場合も、write memoryツールで `../{anima_name}/cron.md` のように指定する。Read / Write / Edit / apply_patch / `Path.write_text` / シェルリダイレクト等の直接ファイル操作は使わない。
+上司は配下の `cron.md` / `heartbeat.md` を write memory ツールで編集できる。許可された上司からの `injection.md` 変更依頼も root に転送・認可される。`status.json` の変更には対応する上司向けツールまたは root CLI/API を使う。root 所有ファイルを Read / Write / Edit / apply_patch / `Path.write_text` / シェルリダイレクト等で直接書き込まない。
 
 リロード時の動作:
 1. 該当 Anima の既存 cron ジョブを全て削除

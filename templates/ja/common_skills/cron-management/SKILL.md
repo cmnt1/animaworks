@@ -299,8 +299,8 @@ cron.md の初回登録または `reload_schedule` 時に解析・登録エラ�
 ### 対象パスと配下編集
 
 - 自分の `cron.md` は `read_memory_file(path="cron.md")` で読み、`write_memory_file(path="cron.md", ...)` で更新する。
-- 上司が配下 Anima の `cron.md` / `heartbeat.md` / `injection.md` / `status.json` を編集する場合も、Read / Write / Edit / apply_patch / `Path.write_text` / シェルリダイレクト等の直接ファイル操作は使わない。
-- 配下の管理ファイルは write memoryツールで `../{anima_name}/cron.md` のように指定して編集する（例: `../yuki/cron.md`）。対象は自分の全配下（子・孫以下）。`identity.md` は読み取りのみ。
+- 上司は配下の `cron.md` / `heartbeat.md` を write memory ツールで `../{anima_name}/cron.md` のように指定して編集できる（子・孫以下の全配下が対象）。
+- `status.json` / `identity.md` / `permissions.json` は root 所有で、記憶・ファイルツールから書き込めない。許可された上司の `injection.md` 変更と bootstrap 中の identity 作成依頼は root に転送・認可される。直接ファイル操作はしない。
 
 ### 新規タスク追加
 

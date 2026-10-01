@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import server_url
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -118,14 +116,11 @@ def post_notification_mapping_via_api(
     write ``{data_dir}/run/`` directly, so they delegate the write to the
     server process via ``POST /api/internal/notification-mapping``.
     """
-    import httpx
-
-    from core.internal_api import internal_api_headers
+    from core.internal_api import host_api
 
     try:
-        resp = httpx.post(
-            f"{server_url()}/api/internal/notification-mapping",
-            headers=internal_api_headers(),
+        resp = host_api.post(
+            "/api/internal/notification-mapping",
             json={
                 "ts": ts,
                 "channel": channel,

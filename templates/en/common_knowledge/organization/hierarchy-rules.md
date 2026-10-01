@@ -71,8 +71,8 @@ Anima with subordinates have dedicated tools for organizational management autom
 | `audit_subordinate` | All descendants (recursive) | Generates an activity timeline or statistics summary. Omit `name` to audit all descendants at once (consolidated timeline) | `name` (optional), `mode` (optional: `"report"`/`"summary"`, default `"report"`), `hours` (optional: 1–168, default 24), `direct_only` (optional: boolean), `since` (optional: `"HH:MM"` start time for the current day; takes precedence over hours when specified) |
 | `disable_subordinate` | All descendants (recursive) | Suspends descendants (status.json enabled=false; processes stop after about 30 seconds) | `name` (required), `reason` (optional) |
 | `enable_subordinate` | All descendants (recursive) | Resumes suspended descendants | `name` (required) |
-| `set_subordinate_model` | All descendants (recursive) | Changes descendants' models (updates status.json. Requires `restart_subordinate` to take effect) | `name`, `model` (required), `reason` (optional) |
-| `set_subordinate_background_model` | All descendants (recursive) | Changes descendants' background model (for Heartbeat/Cron; Inbox uses the main model). Clear by setting an empty string. Requires `restart_subordinate` to take effect | `name`, `model` (required), `credential`, `reason` (optional) |
+| `set_subordinate_model` | All descendants (recursive) | Requests a root-owned status.json update and reloads a running main model | `name`, `model` (required), `reason` (optional) |
+| `set_subordinate_background_model` | All descendants (recursive) | Requests a root-owned background-model update for Heartbeat/Cron; new background jobs use it. Clear by setting an empty string | `name`, `model` (required), `credential`, `reason` (optional) |
 | `restart_subordinate` | All descendants (recursive) | Restarts descendant processes (sets the restart_requested flag; restarts after about 30 seconds) | `name` (required), `reason` (optional) |
 
 `check_permissions` is available to all Anima (check your own permission list).

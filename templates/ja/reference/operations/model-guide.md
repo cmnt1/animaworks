@@ -388,7 +388,7 @@ Sonnet 以下のロールは既にコスト効率が良いため、`background_m
 
 ### モデルを変更したのに反映されない
 
-`set-model` は `status.json` を更新するだけ。サーバー起動中は `anima restart {名前}` または `anima reload {名前}` が必要。
+`set-model` は root API 経由で root 所有の `status.json` を更新し、起動中の Anima のモデル設定を reload する。停止中の Anima は次回起動時に新設定を読む。Anima プロセスからこのファイルを直接編集しない。
 
 ### models.json を編集したのに反映されない
 

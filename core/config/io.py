@@ -19,6 +19,7 @@ from core.config.schemas import AnimaWorksConfig
 from core.config.vault import resolve_vault_references
 from core.exceptions import ConfigError
 from core.platform.atomic_io import update_json
+from core.platform.process_role import assert_settings_write_allowed
 
 logger = logging.getLogger("animaworks.config")
 
@@ -128,6 +129,7 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
     """
     if path is None:
         path = get_config_path()
+    assert_settings_write_allowed(path)
 
     payload = config.model_dump(mode="json")
 
@@ -152,18 +154,20 @@ def save_config(config: AnimaWorksConfig, path: Path | None = None) -> None:
 
 
 def update_config(
-    fn: Callable[[AnimaWorksConfig], AnimaWorksConfig | None],
+    fn: Callable[[AnimaWorksConfig], AnimaWorksConfig | dict[str, Any] | None],
     path: Path | None = None,
 ) -> AnimaWorksConfig:
     """Lock, load, modify, and persist config.json as one transaction.
 
     The callback receives the latest validated config while the sibling lock
-    is held. It may mutate that instance and return ``None``, or return a
-    replacement config. Vault references and the in-process mtime cache are
-    kept in sync with :func:`save_config`.
+    is held. It may mutate that instance and return ``None``, return a
+    replacement model, or return a raw JSON object for lossless migrations
+    that must preserve sparse/unknown legacy fields. Vault references and the
+    in-process mtime cache are kept in sync with :func:`save_config`.
     """
     if path is None:
         path = get_config_path()
+    assert_settings_write_allowed(path)
 
     updated_config: AnimaWorksConfig | None = None
 
@@ -174,8 +178,18 @@ def update_config(
         current_config = AnimaWorksConfig.model_validate(resolved)
         loaded_values = _collect_vault_reference_values(raw_data, resolved)
         result = fn(current_config)
-        updated_config = result if result is not None else current_config
-        payload = updated_config.model_dump(mode="json")
+        if result is None:
+            updated_config = current_config
+            payload = updated_config.model_dump(mode="json")
+        elif isinstance(result, AnimaWorksConfig):
+            updated_config = result
+            payload = updated_config.model_dump(mode="json")
+        elif isinstance(result, dict):
+            payload = result
+            resolved_payload = resolve_vault_references(payload, path.parent)
+            updated_config = AnimaWorksConfig.model_validate(resolved_payload)
+        else:
+            raise TypeError("update_config callback must return None, AnimaWorksConfig, or a JSON object")
         disk_payload, vault_updates = _preserve_vault_references(
             payload,
             raw_data,

@@ -745,16 +745,16 @@ class TestServerFallback:
     def test_send_falls_back_to_server_on_erofs(self, messenger: Messenger) -> None:
         captured: dict = {}
 
-        def fake_post(url, json=None, timeout=None, headers=None):
-            captured["url"] = url
-            captured["json"] = json
+        def fake_post(path, **kwargs):
+            captured["url"] = path
+            captured["json"] = kwargs.get("json")
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             return resp
 
         with (
             patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", side_effect=fake_post),
+            patch("core.host_api.host_api.post", side_effect=fake_post),
         ):
             msg = messenger.send("bob", "hello", skip_logging=True)
 
@@ -765,7 +765,7 @@ class TestServerFallback:
     def test_send_raises_delivery_error_when_fallback_fails(self, messenger: Messenger) -> None:
         with (
             patch("core.platform.atomic_io.atomic_write_text", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", side_effect=ConnectionError("server down")),
+            patch("core.host_api.host_api.post", side_effect=ConnectionError("server down")),
             pytest.raises(DeliveryError, match="server fallback"),
         ):
             messenger.send("bob", "hello", skip_logging=True)
@@ -776,9 +776,9 @@ class TestServerFallback:
         (channels / "general.jsonl").write_text("", encoding="utf-8")
         captured: dict = {}
 
-        def fake_post(url, json=None, timeout=None, headers=None):
-            captured["url"] = url
-            captured["json"] = json
+        def fake_post(path, **kwargs):
+            captured["url"] = path
+            captured["json"] = kwargs.get("json")
             resp = MagicMock()
             resp.raise_for_status.return_value = None
             return resp
@@ -792,7 +792,7 @@ class TestServerFallback:
 
         with (
             patch("pathlib.Path.open", deny_append),
-            patch("httpx.post", side_effect=fake_post),
+            patch("core.host_api.host_api.post", side_effect=fake_post),
         ):
             messenger.post_channel("general", "hi all")
 

@@ -155,6 +155,43 @@ _RUNTIME_SUBDIRS = [
     "shortterm",
     "shortterm/archive",
 ]
+_ROOT_OWNED_TEMPLATE_FILES = frozenset({"identity.md", "injection.md", "permissions.json", "status.json"})
+
+
+def _copy_template_tree(template_dir: Path, anima_dir: Path, *, name: str, replace_name: bool = False) -> None:
+    """Copy non-settings template files and route root-owned files through their writers."""
+    source_root = template_dir.resolve()
+
+    def ignore_root_owned_settings(directory: str, filenames: list[str]) -> set[str]:
+        if Path(directory).resolve() == source_root:
+            return _ROOT_OWNED_TEMPLATE_FILES.intersection(filenames)
+        return set()
+
+    shutil.copytree(template_dir, anima_dir, ignore=ignore_root_owned_settings)
+
+    from core.anima.settings_store import update_status, write_identity, write_injection, write_permissions
+
+    for filename, writer in (("identity.md", write_identity), ("injection.md", write_injection)):
+        source = template_dir / filename
+        if source.is_file():
+            content = source.read_text(encoding="utf-8")
+            if replace_name:
+                content = content.replace("{name}", name)
+            writer(anima_dir, content)
+
+    permissions_path = template_dir / "permissions.json"
+    if permissions_path.is_file():
+        permissions = json.loads(permissions_path.read_text(encoding="utf-8"))
+        if not isinstance(permissions, dict):
+            raise ValueError(f"Expected a JSON object in {permissions_path}")
+        write_permissions(anima_dir, permissions)
+
+    status_path = template_dir / "status.json"
+    if status_path.is_file():
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        if not isinstance(status, dict):
+            raise ValueError(f"Expected a JSON object in {status_path}")
+        update_status(anima_dir, lambda current: current.update(status))
 
 
 def list_anima_templates() -> list[str]:
@@ -185,8 +222,8 @@ def create_from_template(animas_dir: Path, template_name: str, *, anima_name: st
     if anima_dir.exists():
         raise FileExistsError(f"Anima already exists: {name}")
 
-    shutil.copytree(template_dir, anima_dir)
     try:
+        _copy_template_tree(template_dir, anima_dir, name=name)
         _ensure_runtime_subdirs(anima_dir)
         _init_state_files(anima_dir)
         _place_bootstrap(anima_dir)
@@ -224,12 +261,21 @@ def create_blank(animas_dir: Path, name: str) -> Path:
     try:
         blank_dir = BLANK_TEMPLATE_DIR
         if blank_dir.exists():
-            shutil.copytree(blank_dir, anima_dir)
-            # Replace {name} placeholder in all markdown files
+            _copy_template_tree(blank_dir, anima_dir, name=name, replace_name=True)
+            # Replace {name} placeholders in markdown files. Root-owned prompt
+            # settings must continue through the guarded settings store.
             for md_file in anima_dir.rglob("*.md"):
                 content = md_file.read_text(encoding="utf-8")
-                if "{name}" in content:
-                    md_file.write_text(content.replace("{name}", name), encoding="utf-8")
+                if "{name}" not in content:
+                    continue
+                rendered = content.replace("{name}", name)
+                if md_file.parent == anima_dir and md_file.name in {"identity.md", "injection.md"}:
+                    from core.anima.settings_store import write_identity, write_injection
+
+                    writer = write_identity if md_file.name == "identity.md" else write_injection
+                    writer(anima_dir, rendered)
+                else:
+                    md_file.write_text(rendered, encoding="utf-8")
         else:
             anima_dir.mkdir(parents=True, exist_ok=True)
 
@@ -476,7 +522,7 @@ def _ensure_status_json(anima_dir: Path) -> None:
     status_path = anima_dir / "status.json"
     if status_path.exists():
         return
-    from core.platform.status_store import update_status
+    from core.anima.settings_store import update_status
 
     def create_minimal(status: dict[str, Any]) -> None:
         status.setdefault("enabled", True)
@@ -564,7 +610,7 @@ def _create_status_json(
     if sheet_cred:
         status["credential"] = sheet_cred
 
-    from core.platform.status_store import update_status
+    from core.anima.settings_store import update_status
 
     def apply_status(status_data: dict[str, Any]) -> None:
         status_data.update(status)
@@ -635,13 +681,17 @@ def _apply_defaults_from_sheet(anima_dir: Path, md_content: str) -> None:
     # Identity
     personality = _extract_section_content(md_content, headings["personality"])
     if personality:
-        (anima_dir / "identity.md").write_text(personality + "\n", encoding="utf-8")
+        from core.anima.settings_store import write_identity
+
+        write_identity(anima_dir, personality + "\n")
         logger.debug("Wrote identity.md from character sheet for %s", anima_dir.name)
 
     # Injection
     injection = _extract_section_content(md_content, headings["role_guidelines"])
     if injection:
-        (anima_dir / "injection.md").write_text(injection + "\n", encoding="utf-8")
+        from core.anima.settings_store import write_injection
+
+        write_injection(anima_dir, injection + "\n")
         logger.debug("Wrote injection.md from character sheet for %s", anima_dir.name)
 
     # Permissions
@@ -674,10 +724,15 @@ def _apply_role_defaults(anima_dir: Path, role: str) -> None:
         logger.warning("Role template directory not found: %s", role_dir)
         return
 
-    # Copy permissions.json (overwrite blank template)
+    # Copy permissions.json (overwrite blank template) through the guarded settings writer.
     perm_src = role_dir / "permissions.json"
     if perm_src.exists():
-        shutil.copy2(perm_src, anima_dir / "permissions.json")
+        from core.anima.settings_store import write_permissions
+
+        permissions = json.loads(perm_src.read_text(encoding="utf-8"))
+        if not isinstance(permissions, dict):
+            raise ValueError(f"Expected a JSON object in {perm_src}")
+        write_permissions(anima_dir, permissions)
 
     # Copy specialty_prompt.md
     spec_src = role_dir / "specialty_prompt.md"

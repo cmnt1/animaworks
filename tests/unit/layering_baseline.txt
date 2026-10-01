@@ -46,7 +46,6 @@ core.memory.retrieval.reranker -> core.infra.gpu
 core.memory.retrieval.reranker -> core.infra.gpu
 core.memory.retrieval.reranker -> core.infra.gpu
 core.memory.retrieval.reranker -> core.infra.gpu
-core.memory.retrieval.reranker -> core.internal_api
 core.messaging.discord_webhooks -> core.integrations._anima_icon_url
 core.messaging.discord_webhooks -> core.integrations._discord_markdown
 core.messaging.messenger -> core.internal_api

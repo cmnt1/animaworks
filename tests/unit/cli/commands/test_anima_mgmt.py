@@ -543,7 +543,7 @@ def test_restart_keeps_server_stopped_message_and_exit_code(tmp_path, capsys):
 
 
 @pytest.mark.parametrize("server_running", [True, False])
-def test_set_model_reports_server_state_without_gateway_request(server_running, tmp_path, capsys):
+def test_set_model_uses_root_api_when_server_is_running(server_running, tmp_path, capsys):
     from cli.commands.anima_mgmt import cmd_anima_set_model
 
     data_dir = tmp_path / ".animaworks"
@@ -558,15 +558,21 @@ def test_set_model_reports_server_state_without_gateway_request(server_running, 
         patch(
             "core.config.model_config.smart_update_model",
             return_value={"family_changed": False, "execution_mode": "S"},
-        ),
+        ) as mock_local,
         patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
     ):
+        mock_gateway.return_value.json.return_value = {
+            "family_changed": False,
+            "credential": "",
+            "execution_mode": "S",
+        }
         cmd_anima_set_model(args)
 
     output = capsys.readouterr().out
     assert "Model updated to 'new-model' for 'alice'" in output
-    assert ("Server is running" in output) is server_running
-    mock_gateway.assert_not_called()
+    assert ("Running anima processes were asked to reload" in output) is server_running
+    assert mock_gateway.called is server_running
+    assert mock_local.called is not server_running
 
 
 def test_gateway_request_raw_response_preserves_caller_error_handling():

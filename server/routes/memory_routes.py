@@ -193,7 +193,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         return {"files": memory.list_episode_files()}
 
     @router.get("/animas/{name}/episodes/calendar")
@@ -209,7 +209,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         episode_dates = set(memory.list_episode_files())
         days = []
         for day_number in range(1, monthrange(year, month)[1] + 1):
@@ -237,7 +237,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         path = memory.episodes_dir / f"{date}.md"
         if not path.exists():
             raise HTTPException(status_code=404, detail="Episode not found")
@@ -256,7 +256,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         return {"files": memory.list_knowledge_files()}
 
     @router.get("/animas/{name}/knowledge/{topic}")
@@ -266,7 +266,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         path = memory.knowledge_dir / f"{topic}.md"
         if not path.exists():
             raise HTTPException(status_code=404, detail="Knowledge not found")
@@ -285,7 +285,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         return {"files": memory.list_procedure_files()}
 
     @router.get("/animas/{name}/procedures/{proc}")
@@ -295,7 +295,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         path = memory.procedures_dir / f"{proc}.md"
         if not path.exists():
             raise HTTPException(status_code=404, detail="Procedure not found")
@@ -393,7 +393,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
         graph = _build_explicit_graph(memory)
         return _graph_response(anima_dir, graph, partial=True)
 
@@ -405,7 +405,7 @@ def create_memory_router() -> APIRouter:
         if not anima_dir.exists():
             raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
 
-        memory = MemoryManager(anima_dir)
+        memory = MemoryManager(anima_dir, read_only=True)
 
         def dir_stats(directory):
             if not directory.exists():

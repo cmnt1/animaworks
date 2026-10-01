@@ -960,6 +960,68 @@ class MemoryToolsMixin:
                 )
         return self._write_plain_memory_file(request)
 
+    def _write_root_prompt_setting(
+        self: _MemoryToolsHost,
+        target_name: str,
+        setting: str,
+        content: str,
+        mode: str,
+    ) -> str:
+        """Persist bootstrap/supervisor prompt settings through their root owner."""
+        if not isinstance(mode, str) or mode not in {"overwrite", "append"}:
+            return _error_result("InvalidArguments", "Root-owned settings support overwrite or append only")
+        target_dir = self._anima_dir.parent / target_name
+        from core.platform.process_role import get_process_role
+
+        role = get_process_role()
+        from core.anima.settings_store import settings_server_running
+
+        if role == "root" or (role == "cli" and not settings_server_running()):
+            try:
+                if mode == "append":
+                    path = target_dir / f"{setting}.md"
+                    content = (path.read_text(encoding="utf-8") if path.is_file() else "") + content
+                if setting == "identity":
+                    from core.anima.settings_store import write_identity
+
+                    write_identity(target_dir, content)
+                else:
+                    from core.anima.settings_store import write_injection
+
+                    write_injection(target_dir, content)
+            except Exception as exc:
+                return _error_result("WriteError", f"Failed to update {setting}.md: {exc}")
+            self._activity.log("memory_write", summary=f"../{target_name}/{setting}.md (offline root settings)")
+            return f"Written to ../{target_name}/{setting}.md through the offline root settings store"
+
+        from urllib.parse import quote
+
+        from core.host_api import response_detail
+        from core.internal_api import host_api
+
+        try:
+            response = host_api.post(
+                f"/api/internal/animas/{quote(target_name, safe='')}/prompt-settings",
+                json={"setting": setting, "content": content, "mode": mode},
+                timeout=30.0,
+            )
+        except Exception as exc:
+            logger.warning("Root prompt-settings API failed for %s/%s", target_name, setting, exc_info=True)
+            return _error_result("HostAPIError", f"Root settings API unavailable: {exc}")
+        if response.status_code >= 400:
+            error_type = {
+                400: "InvalidArguments",
+                401: "PermissionDenied",
+                403: "PermissionDenied",
+                404: "FileNotFound",
+            }.get(
+                response.status_code,
+                "HostAPIError",
+            )
+            return _error_result(error_type, response_detail(response))
+        self._activity.log("memory_write", summary=f"../{target_name}/{setting}.md (root API)")
+        return f"Written to ../{target_name}/{setting}.md through the root settings API"
+
     def _write_memory_scope(self: _MemoryToolsHost, request: _MemoryWriteRequest) -> _MemoryWriteOutcome:
         scope = next(
             (scope for prefix, scope in _MEMORY_WRITE_SCOPE_PREFIXES if request.rel.startswith(prefix)),
@@ -1028,6 +1090,25 @@ class MemoryToolsMixin:
         else:
             path = self._anima_dir / rel
 
+        mode = args.get("mode", "overwrite")
+        content = args.get("content", "")
+        if not rel.startswith(("common_knowledge/", "common_skills/")):
+            try:
+                from core.paths import get_animas_dir
+
+                anima_root = get_animas_dir().resolve()
+                target_path = path.resolve()
+                target_relative = target_path.relative_to(anima_root)
+            except (OSError, RuntimeError, ValueError):
+                target_relative = None
+            if target_relative is not None and len(target_relative.parts) == 2:
+                target_name, filename = target_relative.parts
+                if filename in {"identity.md", "injection.md"}:
+                    if "content" not in args or not isinstance(content, str):
+                        return _error_result("InvalidArguments", "content must be a string")
+                    setting = filename.removesuffix(".md")
+                    return self._write_root_prompt_setting(target_name, setting, content, mode)
+
         # Security check: block protected files and path traversal
         if not self._superuser and not rel.startswith(("common_knowledge/", "common_skills/")):
             err = _is_protected_write(self._anima_dir, path)
@@ -1054,7 +1135,6 @@ class MemoryToolsMixin:
                 )
 
         _was_existing = path.exists()
-        mode = args.get("mode", "overwrite")
 
         from core.skills.ledger import capture_skill_document, is_skill_document_path
 

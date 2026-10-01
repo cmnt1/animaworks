@@ -16,10 +16,10 @@ description: >-
 
 | 도구 | 용도 |
 |--------|------|
-| `disable_subordinate` | 하위를 일시정지 (status.json `enabled: false` → 프로세스 종료 + 자동 복귀 방지) |
+| `disable_subordinate` | root에 status.json `enabled: false` 설정을 요청 (프로세스 종료 + 자동 복귀 방지) |
 | `enable_subordinate` | 일시정지 중인 하위를 복귀 |
-| `set_subordinate_model` | 하위의 LLM 모델(메인)을 변경 (status.json 업데이트. 반영에는 `restart_subordinate` 필요) |
-| `set_subordinate_background_model` | 하위의 백그라운드 모델(heartbeat/cron용)을 변경 (status.json 업데이트. 반영에는 `restart_subordinate` 필요. 빈 문자열로 클리어) |
+| `set_subordinate_model` | root에 status.json 메인 모델 갱신 및 실행 중 프로세스 reload를 요청 |
+| `set_subordinate_background_model` | root에 heartbeat/cron용 모델 갱신을 요청. 다음 백그라운드 작업부터 적용 (빈 문자열로 클리어) |
 | `restart_subordinate` | 하위 프로세스를 재시작 (status.json `restart_requested` 플래그. Reconciliation이 약 30초 이내에 재시작) |
 | `delegate_task` | 직속 부하에게 작업을 위임 (큐 추가 + DM 전송 + 자신 측 추적 엔트리 생성) |
 | `org_dashboard` | 하위 전체의 프로세스 상태・최종 활동・현재 작업・작업 수를 트리 표시 |
@@ -54,26 +54,25 @@ enable_subordinate(name="aoi")
 
 ### 모델 변경과 재시작
 
-모델 변경은 status.json에 저장되지만, 실행 중 프로세스에 반영하려면 `restart_subordinate`이 필요:
+이 도구들은 root에 root 소유 `status.json` 갱신을 요청합니다. Anima 프로세스에서 직접 편집하지 않습니다. 메인 모델은 실행 중 프로세스에 reload되고, 중지된 Anima는 다음 시작 때 새 설정을 읽습니다:
 
 ```
 set_subordinate_model(name="aoi", model="claude-sonnet-4-6", reason="負荷分散のため")
-restart_subordinate(name="aoi", reason="モデル変更を反映")
 ```
 
-백그라운드 모델(heartbeat/cron용)을 변경하는 경우:
+백그라운드 모델(heartbeat/cron용)은 다음 task runner 시작부터 적용되며, 현재 실행 중인 작업은 완료됩니다:
 
 ```
 set_subordinate_background_model(name="aoi", model="claude-sonnet-4-6", reason="heartbeat負荷軽減")
-restart_subordinate(name="aoi", reason="バックグラウンドモデル変更を反映")
 ```
 
-백그라운드 모델을 클리어하고 메인 모델로 되돌리는 경우:
+백그라운드 모델을 지우고 메인 모델로 되돌리는 경우:
 
 ```
 set_subordinate_background_model(name="aoi", model="", reason="メインモデルに統一")
-restart_subordinate(name="aoi")
 ```
+
+프로세스 전체 재시작이 실제로 필요한 경우에만 `restart_subordinate`를 별도로 사용합니다.
 
 ### 상태 확인・감사
 

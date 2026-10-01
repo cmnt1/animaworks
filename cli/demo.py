@@ -122,16 +122,18 @@ def _deep_merge(base: dict, patch: dict) -> None:
 
 def _apply_overlay(data_dir: Path, overlay_path: Path) -> None:
     """Deep-merge config_overlay.json into config.json (entrypoint step 3)."""
-    from core.platform.atomic_io import update_json
+    from core.config.io import update_config
+    from core.config.schemas import AnimaWorksConfig
 
     cfg_path = data_dir / "config.json"
     ovl = json.loads(overlay_path.read_text(encoding="utf-8"))
 
-    def apply_overlay(config: dict) -> dict:
-        _deep_merge(config, ovl)
-        return config
+    def apply_overlay(config: AnimaWorksConfig) -> AnimaWorksConfig:
+        merged = config.model_dump(mode="json")
+        _deep_merge(merged, ovl)
+        return AnimaWorksConfig.model_validate(merged)
 
-    update_json(cfg_path, apply_overlay)
+    update_config(apply_overlay, cfg_path)
 
 
 def _inject_credentials(auth: dict) -> None:
@@ -163,7 +165,7 @@ def _override_models(data_dir: Path, family: str) -> None:
         main_model, bg_model = CODEX_MODEL_MAIN, CODEX_MODEL_BACKGROUND
     else:
         main_model, bg_model = CLAUDE_MODEL_MAIN, CLAUDE_MODEL_BACKGROUND
-    from core.platform.status_store import update_status
+    from core.anima.settings_store import update_status
 
     for status_path in (data_dir / "animas").glob("*/status.json"):
 
@@ -330,6 +332,17 @@ def cmd_demo(args: argparse.Namespace) -> None:
     from core.config import invalidate_cache
 
     invalidate_cache()
+
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
+
+    running_pid = read_server_pid(data_dir)
+    if running_pid is not None and is_process_alive(running_pid):
+        print(
+            f"Error: AnimaWorks server is already running (pid={running_pid}); stop it before starting demo mode.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     repo_root = _resolve_repo_root()
     preset_dir = _resolve_preset_dir(repo_root, args.preset)

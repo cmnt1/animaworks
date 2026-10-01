@@ -39,7 +39,7 @@ Anima는 평소 “자기 집”(~/.animaworks/animas/{name}/）에 있다.
 }
 ```
 
-이 도구는 조직 공유 레지스트리 등록, 대상 Anima의 `permissions.json.file_roots` 쓰기 권한 추가, 필요 시 `status.json.default_workspace` 갱신을 함께 수행합니다.
+이 도구는 root 호스트에 요청해 조직 공유 레지스트리와 root 소유 대상 Anima의 `permissions.json` / `status.json`을 갱신합니다. Anima 프로세스가 설정 파일을 직접 쓰지 않습니다.
 
 **주의**: 디렉토리가 존재하지 않으면 에러가 발생합니다.
 **주의**: `read_memory_file(path="config.json")`은 자신의 Anima 디렉토리에 있는 `config.json`을 읽습니다. 조직 공유 레지스트리 등록에는 사용하지 않습니다.

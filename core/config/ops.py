@@ -22,8 +22,7 @@ from core.config.models import (
 from core.paths import get_animas_dir
 from core.platform.status_store import update_status
 
-# Fields that were historically stored in ``config.json`` but now belong in
-# each Anima's ``status.json``.
+# Legacy per-Anima fields that are now owned by each anima's ``status.json``.
 _MODEL_FIELDS = frozenset(
     {
         "model",
@@ -38,6 +37,9 @@ _MODEL_FIELDS = frozenset(
         "conversation_history_threshold",
         "execution_mode",
         "thinking",
+        "heartbeat_interval_minutes",
+        "supervisor",
+        "speciality",
     }
 )
 
@@ -114,7 +116,7 @@ def list_config_values(section: str | None = None) -> list[tuple[str, Any]]:
 
 
 def legacy_model_status_target(key: str) -> tuple[str, str] | None:
-    """Return the Anima/status field for a deprecated model-setting key."""
+    """Return an Anima/status field addressed through the legacy config path."""
     parts = key.split(".")
     if len(parts) >= 3 and parts[0] == "animas" and parts[2] in _MODEL_FIELDS:
         return parts[1], parts[2]
@@ -124,18 +126,32 @@ def legacy_model_status_target(key: str) -> tuple[str, str] | None:
 def set_config_value(key: str, value: Any) -> None:
     """Validate and persist a configuration value.
 
-    The legacy ``animas.<name>.<model-field>`` path is kept for CLI
-    compatibility, but writes to the per-Anima status file as the source of
-    truth. All other values are validated through :class:`AnimaWorksConfig`
-    and updated transactionally in ``config.json``.
+    Legacy ``animas.<name>.<status-field>`` keys write per-Anima status;
+    ``heartbeat_interval_minutes`` is a root-owned scheduler override. Other
+    values are validated through :class:`AnimaWorksConfig` and updated
+    transactionally in ``config.json``.
     """
     target = legacy_model_status_target(key)
     if target is not None:
         anima_name, status_field = target
-        update_status(
-            get_animas_dir() / anima_name,
-            lambda status: status.__setitem__(status_field, value),
-        )
+        if status_field == "heartbeat_interval_minutes":
+            if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 1440:
+                raise ValueError("heartbeat_interval_minutes must be an integer from 1 to 1440")
+        if status_field in {"supervisor", "speciality"} and value is not None and not isinstance(value, str):
+            raise ValueError(f"{status_field} must be a string or null")
+        anima_dir = get_animas_dir() / anima_name
+        if status_field in {"supervisor", "speciality"} and anima_name not in load_config().animas:
+            raise KeyError(f"Anima not found in config: {anima_name}")
+        update_status(anima_dir, lambda status: status.__setitem__(status_field, value))
+        if status_field in {"supervisor", "speciality"}:
+
+            def update_org_config(config: AnimaWorksConfig) -> None:
+                anima_config = config.animas.get(anima_name)
+                if anima_config is None:
+                    raise KeyError(f"Anima not found in config: {anima_name}")
+                setattr(anima_config, status_field, value)
+
+            update_config(update_org_config)
         return
 
     parts = key.split(".")

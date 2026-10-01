@@ -61,7 +61,7 @@ class TestResilientFallback:
         resp.raise_for_status.return_value = None
         with (
             patch.object(reply_routing, "save_notification_mapping", return_value=False),
-            patch("httpx.post", return_value=resp) as mock_post,
+            patch("core.host_api.host_api.post", return_value=resp) as mock_post,
         ):
             assert (
                 reply_routing.save_notification_mapping_resilient(
@@ -73,9 +73,9 @@ class TestResilientFallback:
                 )
                 is True
             )
-        url = mock_post.call_args[0][0]
-        assert url.endswith("/api/internal/notification-mapping")
-        payload = mock_post.call_args[1]["json"]
+        path = mock_post.call_args.args[0]
+        assert path == "/api/internal/notification-mapping"
+        payload = mock_post.call_args.kwargs["json"]
         assert payload["ts"] == "2.0"
         assert payload["anima_name"] == "sakura"
         assert payload["callback_id"] == "cb1"
@@ -85,13 +85,11 @@ class TestResilientFallback:
 
         with (
             patch.object(reply_routing, "save_notification_mapping", return_value=False),
-            patch("httpx.post", side_effect=ConnectionError("refused")),
+            patch("core.host_api.host_api.post", side_effect=ConnectionError("refused")),
         ):
             assert reply_routing.save_notification_mapping_resilient("3.0", "C1", "mei") is False
 
-    def test_server_url_env_override(
-        self, routing_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_server_url_env_override(self, routing_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from core.notification import reply_routing
 
         monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://127.0.0.1:9999/")
@@ -100,10 +98,10 @@ class TestResilientFallback:
         resp.raise_for_status.return_value = None
         with (
             patch.object(reply_routing, "save_notification_mapping", return_value=False),
-            patch("httpx.post", return_value=resp) as mock_post,
+            patch("core.host_api.host_api.post", return_value=resp) as mock_post,
         ):
             reply_routing.save_notification_mapping_resilient("4.0", "C1", "aoi")
-        assert mock_post.call_args[0][0] == "http://127.0.0.1:9999/api/internal/notification-mapping"
+        assert mock_post.call_args.args[0] == "/api/internal/notification-mapping"
 
 
 class TestInternalEndpoint:

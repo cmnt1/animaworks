@@ -18,6 +18,7 @@ PROTECTED_FILE_PATHS = frozenset(
         "permissions.md",
         "permissions.json",
         "identity.md",
+        "injection.md",
         "bootstrap.md",
         "status.json",
         "state/bm25_longterm_index.json",
@@ -251,11 +252,14 @@ def resolve_effective_denied_roots(
     return tuple(root for root in merged if not any(other != root and root.is_relative_to(other) for other in merged))
 
 
-def load_denied_roots(anima_dir: Path) -> tuple[Path, ...]:
+def load_denied_roots(anima_dir: Path, *, read_only: bool = False) -> tuple[Path, ...]:
     """Load the Anima's configured and company-derived file deny roots."""
     from core.config.models import load_permissions
 
-    return resolve_effective_denied_roots(anima_dir, load_permissions(anima_dir).file_roots_denied)
+    return resolve_effective_denied_roots(
+        anima_dir,
+        load_permissions(anima_dir, read_only=read_only).file_roots_denied,
+    )
 
 
 def find_denied_root(path: str | Path, denied_roots: tuple[Path, ...]) -> Path | None:
@@ -337,12 +341,41 @@ def evaluate_file_access(
     discovery. This function is deterministic for a given context and path,
     apart from canonical path resolution needed to enforce symlink boundaries.
     """
-    if ctx.superuser or not str(path):
+    if not str(path):
         return FileAccessDecision(True)
 
     resolved = Path(path).resolve()
     anima_root = Path(ctx.anima_dir).resolve()
     data_root = Path(ctx.data_dir).resolve()
+    root_config_path = data_root / "config.json"
+    lexical_path = Path(os.path.abspath(path))
+    if write and (resolved == root_config_path or lexical_path == root_config_path):
+        return FileAccessDecision(False, "protected_file", protected_path="config.json")
+    if write:
+        animas_root = data_root / "animas"
+        for candidate in (resolved, lexical_path):
+            if not candidate.is_relative_to(animas_root):
+                continue
+            relative = candidate.relative_to(animas_root)
+            if len(relative.parts) < 2:
+                continue
+            anima_relative = Path(*relative.parts[1:])
+            if str(anima_relative) in ctx.protected_files:
+                return FileAccessDecision(False, "protected_file", protected_path=str(anima_relative))
+            for marker in sorted(ctx.protected_directory_markers):
+                if marker in anima_relative.parts:
+                    return FileAccessDecision(False, "protected_directory", protected_path=marker)
+    if write and resolved.is_relative_to(anima_root):
+        protected = evaluate_protected_write(
+            anima_root,
+            resolved,
+            protected_files=ctx.protected_files,
+            protected_directory_markers=ctx.protected_directory_markers,
+        )
+        if protected is not None:
+            return protected
+    if ctx.superuser:
+        return FileAccessDecision(True)
 
     # Deny configured credential caches whenever explicit denies are active.
     # Trusted internal writes are a narrow ToolHandler-only maintenance path;
@@ -362,8 +395,8 @@ def evaluate_file_access(
     if denied_root is not None:
         return FileAccessDecision(False, "denied_root", denied_root=denied_root)
 
-    # Protect the system permissions file and same-named files anywhere under
-    # data_dir (the latter preserves Mode S's stricter historical boundary).
+    # Protect the root configuration and system permissions from model-facing
+    # file tools even when a workspace has unusually broad write roots.
     if write and resolved.name == "permissions.global.json" and resolved.is_relative_to(data_root):
         return FileAccessDecision(False, "global_permissions")
 

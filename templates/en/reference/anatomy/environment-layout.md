@@ -29,7 +29,8 @@ All runtime data is stored in `{data_dir}/`.
 5. **Prompts** (`{data_dir}/prompts/`): Read-only. Templates such as character design guides
 6. **Other employees' directories**: Only accessible within the scope specified in permissions.json
 7. **Subordinate directories** (supervisor only. Same permissions for all subordinates: children, grandchildren, great-grandchildren, etc.):
-   - **Management files**: `injection.md`, `cron.md`, `heartbeat.md`, `status.json` are **readable and writable** (necessary for organization operations: personnel orders and configuration changes)
+   - **Agent-editable schedules**: `cron.md` and `heartbeat.md` are readable and writable for the supervisor.
+   - **Root-owned settings**: `status.json`, `identity.md`, `injection.md`, `permissions.json`, and the root `config.json` are not directly writable by Anima processes; use supported supervisor tools or the root administration API/CLI.
    - **Status reference**: `activity_log/` and `state/current_state.md` are **read-only**. Check subordinate tasks using authorized task tools. The master copy is managed by the host; direct editing is prohibited.
-   - **identity.md**: **Read-only** (write-protected)
+   - **Other subordinate memory** (including `identity.md`): read-only unless a dedicated root-owned operation is provided.
 8. **Colleagues' activity_log**: `activity_log/` of colleagues with the same supervisor is readable (for validation). Writing is not allowed.

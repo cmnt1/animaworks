@@ -31,7 +31,7 @@ If identity.md content is a skeleton (says "undefined"):
   - Personality direction (e.g., "cheerful", "cool", "gentle" is fine)
 - **Do not ask for role**: Anima created during bootstrap are the organization's founding members = top level (no supervisor). Role/specialty is automatically set as "general / manager"
 - You may ask for other details (Japanese name, age, appearance preferences, etc.), but generate them if unspecified
-- **Following the Character Design Guide**, generate a rich character and update identity.md and injection.md
+- **Following the Character Design Guide**, generate a rich character and request updates to identity.md and injection.md with `write_memory_file`; the root API validates and persists these root-owned files. Never write them directly.
 
 ## Step 1.5: Set Up Your Work Configuration
 

@@ -60,6 +60,7 @@ class SchedulerMixin:
             self.scheduler.start()
             self._scheduler_running = True
             logger.info("System scheduler started")
+            spawn(self._apply_activity_schedule_tick(), name="scheduler-activity-level-startup")
             spawn(self._catchup_missed_jobs(), name="scheduler-catchup-missed-jobs")
         except Exception:
             logger.exception("Failed to start system scheduler")
@@ -206,6 +207,41 @@ class SchedulerMixin:
             misfire_grace_time=600,
         )
         logger.info("System cron: DM log rotation at 04:30")
+
+        self.scheduler.add_job(
+            self._apply_activity_schedule_tick,
+            CronTrigger(minute="*"),
+            id="system_activity_schedule",
+            name="System: Activity Schedule",
+            replace_existing=True,
+            misfire_grace_time=120,
+            max_instances=1,
+        )
+        logger.info("System cron: Activity schedule every minute")
+
+    async def _apply_activity_schedule_tick(self: _SchedulerMixinHost) -> None:
+        """Apply the active activity-schedule slot once from the root process."""
+        from server.supervisor.activity_schedule import apply_activity_schedule
+
+        try:
+            update = await asyncio.to_thread(apply_activity_schedule)
+        except Exception:
+            logger.exception("Root activity schedule application failed")
+            return
+        if not update.activity_level_changed:
+            return
+
+        logger.info("Activity schedule changed global level to %d%%", update.config.activity_level)
+        for name in list(self.processes):
+            handle = self.processes.get(name)
+            if handle is None:
+                continue
+            try:
+                response = await handle.send_request("reschedule_heartbeat", {}, timeout=10.0)
+                if response.error:
+                    raise RuntimeError(str(response.error))
+            except Exception:
+                logger.warning("Failed to send reschedule_heartbeat to %s after activity schedule change", name)
 
     def _iter_consolidation_targets(self: _SchedulerMixinHost) -> list[tuple[str, Path]]:
         """Return (anima_name, anima_dir) for all initialized and enabled animas.

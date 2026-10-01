@@ -775,3 +775,77 @@ class TestDeleteAnima:
         assert app.state.anima_names == ["bob"]
         assert "alice" not in json.loads(config_path.read_text(encoding="utf-8"))["animas"]
         supervisor.stop_anima.assert_awaited_once_with("alice")
+
+
+class TestRootOwnedPromptSettings:
+    async def test_background_model_update_reloads_running_anima(self, tmp_path):
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+        app = _make_test_app(animas_dir=tmp_path / "animas")
+        app.state.supervisor.processes = {"alice": MagicMock()}
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/animas/alice/background-model",
+                json={"model": "claude-haiku-4-5"},
+            )
+
+        assert response.status_code == 200
+        assert json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))["background_model"] == (
+            "claude-haiku-4-5"
+        )
+        app.state.supervisor.send_request.assert_awaited_once_with("alice", "reload_config", {}, timeout=10.0)
+
+    async def test_identity_injection_and_permissions_use_atomic_settings_writers(self, tmp_path):
+        anima_dir = tmp_path / "animas" / "alice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "identity.md").write_text("Old identity\n", encoding="utf-8")
+        (anima_dir / "injection.md").write_text("Old injection\n", encoding="utf-8")
+        (anima_dir / "permissions.json").write_text("{}\n", encoding="utf-8")
+        app = _make_test_app(animas_dir=tmp_path / "animas")
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            identity = await client.put("/api/animas/alice/identity", json={"content": "New identity"})
+            injection = await client.put("/api/animas/alice/injection", json={"content": "New injection"})
+            permissions = await client.put(
+                "/api/animas/alice/permissions",
+                json={"version": 1, "file_roots": ["/tmp/workspace"]},
+            )
+
+        assert identity.status_code == injection.status_code == permissions.status_code == 200
+        assert (anima_dir / "identity.md").read_text(encoding="utf-8") == "New identity"
+        assert (anima_dir / "injection.md").read_text(encoding="utf-8") == "New injection"
+        assert json.loads((anima_dir / "permissions.json").read_text(encoding="utf-8"))["file_roots"] == [
+            "/tmp/workspace"
+        ]
+
+    async def test_running_server_rename_moves_settings_on_root(self, tmp_path, monkeypatch):
+        from core.config.models import AnimaModelConfig, AnimaWorksConfig, load_config, save_config
+
+        data_dir = tmp_path / "runtime"
+        animas_dir = data_dir / "animas"
+        old_dir = animas_dir / "alice"
+        old_dir.mkdir(parents=True)
+        (old_dir / "identity.md").write_text("Alice\n", encoding="utf-8")
+        (old_dir / "status.json").write_text(json.dumps({"enabled": True, "role": "general"}), encoding="utf-8")
+        (old_dir / "permissions.json").write_text(json.dumps({"version": 1, "file_roots": []}), encoding="utf-8")
+        save_config(AnimaWorksConfig(animas={"alice": AnimaModelConfig(supervisor=None)}), data_dir / "config.json")
+        monkeypatch.setattr("core.paths.get_data_dir", lambda: data_dir)
+        app = _make_test_app(animas_dir=animas_dir, anima_names=["alice"])
+        app.state.supervisor.stop_anima = AsyncMock()
+        app.state.supervisor.start_anima = AsyncMock()
+
+        with patch("core.anima.admin.cleanup_rag_collections", return_value=False):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                response = await client.post("/api/animas/alice/rename", json={"new_name": "alicia"})
+
+        assert response.status_code == 200
+        assert response.json()["new_name"] == "alicia"
+        assert not old_dir.exists()
+        assert (animas_dir / "alicia" / "identity.md").is_file()
+        assert "alicia" in load_config(data_dir / "config.json").animas
+        app.state.supervisor.stop_anima.assert_awaited_once_with("alice")
+        app.state.supervisor.start_anima.assert_awaited_once_with("alicia")
+        assert app.state.anima_names == ["alicia"]

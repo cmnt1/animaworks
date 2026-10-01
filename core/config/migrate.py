@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -6,8 +8,6 @@
 # See LICENSE for the full license text.
 
 """Migrate legacy permissions.md files to permissions.json."""
-
-from __future__ import annotations
 
 import logging
 import re
@@ -25,69 +25,58 @@ logger = logging.getLogger("animaworks.config_migrate")
 # ── Permissions MD → JSON migration ──────────────────────────────────────────
 
 
-def migrate_permissions_md_to_json(anima_dir: Path) -> PermissionsConfig:
-    """Migrate permissions.md to permissions.json.
-
-    Parses the MD file best-effort and creates a structured JSON.
-    Falls back to open defaults for unparseable sections.
-    Renames the old file to permissions.md.bak.
-    """
+def parse_permissions_md(anima_dir: Path) -> PermissionsConfig:
+    """Parse legacy permissions.md without writing or renaming any files."""
     md_path = anima_dir / "permissions.md"
-    json_path = anima_dir / "permissions.json"
-
     if not md_path.is_file():
-        config = PermissionsConfig()
-        _write_permissions_json(json_path, config)
-        return config
-
+        return PermissionsConfig()
     try:
         text = md_path.read_text(encoding="utf-8")
     except OSError as exc:
         logger.warning("Cannot read permissions.md at %s: %s", md_path, exc)
-        config = PermissionsConfig()
-        _write_permissions_json(json_path, config)
-        return config
+        return PermissionsConfig()
 
-    file_roots = _extract_file_roots(text)
-    commands = _extract_commands(text)
-    external_tools = _extract_external_tools(text)
-    tool_creation = _extract_tool_creation(text)
-
-    config = PermissionsConfig(
-        file_roots=file_roots,
-        commands=commands,
-        external_tools=external_tools,
-        tool_creation=tool_creation,
+    return PermissionsConfig(
+        file_roots=_extract_file_roots(text),
+        commands=_extract_commands(text),
+        external_tools=_extract_external_tools(text),
+        tool_creation=_extract_tool_creation(text),
     )
 
-    _write_permissions_json(json_path, config)
 
-    # Rename old file
-    bak_path = md_path.with_suffix(".md.bak")
-    try:
-        md_path.rename(bak_path)
-        logger.info("Migrated permissions.md → permissions.json for %s (backup: %s)", anima_dir.name, bak_path.name)
-    except OSError as exc:
-        logger.warning("Failed to rename permissions.md to .bak: %s", exc)
+def migrate_permissions_md_to_json(anima_dir: Path) -> PermissionsConfig:
+    """Migrate permissions.md to permissions.json and retain a .bak copy.
 
+    Parses the MD file best-effort and creates a structured JSON. Unparseable
+    sections use the same defaults as before. The old MD is renamed only after
+    the guarded settings writer has persisted the JSON successfully.
+    """
+    md_path = anima_dir / "permissions.md"
+    config = parse_permissions_md(anima_dir)
+
+    from importlib import import_module
+
+    settings_store = import_module("core.anima.settings_store")
+    settings_store.write_permissions(anima_dir, config)
+    if md_path.is_file():
+        bak_path = md_path.with_suffix(".md.bak")
+        try:
+            md_path.rename(bak_path)
+            logger.info(
+                "Migrated permissions.md → permissions.json for %s (backup: %s)",
+                anima_dir.name,
+                bak_path.name,
+            )
+        except OSError as exc:
+            logger.warning("Failed to rename permissions.md to .bak: %s", exc)
     return config
-
-
-def _write_permissions_json(path: Path, config: PermissionsConfig) -> None:
-    """Write PermissionsConfig as pretty-printed JSON."""
-    import json as _json
-
-    path.write_text(
-        _json.dumps(config.model_dump(mode="json"), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
 
 
 def _extract_file_roots(text: str) -> list[str]:
     """Extract file_roots from permissions.md text.
 
     If a file section exists but contains no absolute paths, returns ``[]``
-    (anima_dir only — restrictive).  If no file section is found at all,
+    (anima_dir only — restrictive). If no file section is found at all,
     returns ``["/"]`` (open default).
     """
     _HEADERS = ("ファイル操作", "読める場所", "File Operations", "Readable Locations")
@@ -115,9 +104,6 @@ def _extract_file_roots(text: str) -> list[str]:
 
 def _extract_commands(text: str) -> CommandsPermission:
     """Extract command permissions from permissions.md text."""
-    from core.config.models import CommandsPermission
-
-    # Check for denied commands
     deny: list[str] = []
     in_denied = False
     for line in text.splitlines():
@@ -133,7 +119,6 @@ def _extract_commands(text: str) -> CommandsPermission:
                 if part:
                     deny.append(part)
 
-    # Check for allowed commands
     allow: list[str] = []
     in_allowed = False
     for line in text.splitlines():
@@ -157,8 +142,6 @@ def _extract_commands(text: str) -> CommandsPermission:
 
 def _extract_external_tools(text: str) -> ExternalToolsPermission:
     """Extract external tool permissions from permissions.md text."""
-    from core.config.models import ExternalToolsPermission
-
     if "外部ツール" not in text and "External Tools" not in text:
         return ExternalToolsPermission(allow_all=True)
 
@@ -195,8 +178,6 @@ def _extract_external_tools(text: str) -> ExternalToolsPermission:
 
 def _extract_tool_creation(text: str) -> ToolCreationPermission:
     """Extract tool creation permissions from permissions.md text."""
-    from core.config.models import ToolCreationPermission
-
     personal = True
     shared = False
     kw_patterns = ("ツール作成", "Tool Creation")

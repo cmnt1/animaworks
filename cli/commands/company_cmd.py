@@ -159,13 +159,37 @@ def cmd_company_assign(args: argparse.Namespace) -> None:
     """Assign or unassign one or more animas."""
     from core.org.company import assign_animas
     from core.paths import get_data_dir
+    from core.platform.pid import is_server_running
+
+    data_dir = get_data_dir()
+    if is_server_running(data_dir):
+        from core.host_api import response_detail
+        from core.internal_api import host_api
+
+        try:
+            response = host_api.post(
+                "/api/internal/company/assign",
+                json={
+                    "anima_names": args.anima,
+                    "company_name": args.to,
+                    "unassign": bool(args.unassign),
+                },
+                timeout=30.0,
+            )
+            if response.status_code >= 400:
+                raise RuntimeError(response_detail(response))
+            _print_lines(response.json().get("lines", []))
+        except Exception as exc:
+            print(f"Error: Failed to update company membership through the running server: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        return
 
     lines = _run_company_action(
         lambda: assign_animas(
             args.anima,
             company_name=args.to,
             unassign=bool(args.unassign),
-            data_dir=get_data_dir(),
+            data_dir=data_dir,
         )
     )
     _print_lines(lines)
@@ -196,6 +220,28 @@ def cmd_company_split(args: argparse.Namespace) -> None:
     """Plan or execute a company split manifest."""
     from core.org.company import CompanyError, SplitExecutionError, split_companies
     from core.paths import get_data_dir
+    from core.platform.pid import is_server_running
+
+    data_dir = get_data_dir()
+    if bool(args.execute) and is_server_running(data_dir):
+        from core.host_api import response_detail
+        from core.internal_api import host_api
+
+        try:
+            response = host_api.post(
+                "/api/internal/company/split",
+                json={"manifest_path": str(Path(args.manifest).expanduser().resolve()), "execute": True},
+                timeout=120.0,
+            )
+            if response.status_code >= 400:
+                details = response.json().get("completed_lines", []) if response.status_code == 409 else []
+                _print_lines(details)
+                raise RuntimeError(response_detail(response))
+            _print_lines(response.json().get("lines", []))
+        except Exception as exc:
+            print(f"Error: Failed to split companies through the running server: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        return
 
     try:
         lines = split_companies(args.manifest, execute=bool(args.execute), data_dir=get_data_dir())

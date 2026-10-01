@@ -545,6 +545,9 @@ def preserved_status_settings(status_data: dict[str, Any]) -> dict[str, Any]:
 
 def repair_bootstrap_fresh(animas_dir: Path, name: str, *, archive_root: Path) -> tuple[Path, Path]:
     """Archive and recreate a blank Anima, preserving model credential settings."""
+    from core.platform.process_role import assert_settings_write_allowed
+
+    assert_settings_write_allowed()
     from core.anima.factory import create_blank
 
     anima_dir = animas_dir / name
@@ -566,7 +569,7 @@ def repair_bootstrap_fresh(animas_dir: Path, name: str, *, archive_root: Path) -
     shutil.rmtree(anima_dir)
     new_dir = create_blank(animas_dir, name)
 
-    from core.platform.status_store import update_status
+    from core.anima.settings_store import update_status
 
     def restore_preserved_status(status: dict[str, Any]) -> None:
         status.update(preserved)

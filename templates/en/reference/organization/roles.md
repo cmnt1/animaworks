@@ -243,7 +243,7 @@ Model and execution parameters:
 | ops | ollama/glm-4.7 | — | 0.50 | 0.30 |
 | general | claude-sonnet-4-6 | — | 0.50 | 0.30 |
 
-For `create_from_md` where `--role` is not specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the `templates/_shared/config_defaults/models.json` bundled with the templates, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, edit `model` and `credential` (e.g., `openai/glm-4.7-flash`) in `status.json`. engineer / manager can assign lightweight models for background execution such as heartbeat and cron via `background_model`.
+For `create_from_md` where `--role` is not specified, `general` is used. The default for ops is `ollama/glm-4.7` for local use. In the `templates/_shared/config_defaults/models.json` bundled with the templates, `ollama/glm-4.7*` matches execution mode **A** (LiteLLM + tool loop). When using vLLM or similar, set `model` and `credential` with `animaworks anima set-model`; configure `background_model` with `animaworks anima set-background-model`. These commands use the root API while the server is running and the offline settings store otherwise; do not edit `status.json` from an Anima process.
 
 ### Application flow
 
@@ -251,7 +251,7 @@ For `create_from_md` where `--role` is not specified, `general` is used. The def
    - `_apply_defaults_from_sheet()` … Migrate from the character sheet to `identity.md` / `injection.md` (if there is a /（ permission section) `permissions.md` → `permissions.json`
    - `_apply_role_defaults()` … **Overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (character-sheet-derived `permissions.json` is overwritten by the role side)
    - `_create_status_json()` … Read the model and context settings from the table above via `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), overwrite with the character sheet's "model" and "credential" if present, and write `status.json`. Only write `execution_mode` when the character sheet's "execution mode" has a value; if unspecified, omit the key itself and leave it to pattern resolution such as `models.json` (`_create_status_json` of `core/anima/factory.py`).
-2. **At role change** (`animaworks anima set-role`): Re-copy `permissions.json` and `specialty_prompt.md` via `_apply_role_defaults()`. `model`, `context_threshold`, and `conversation_history_threshold` are merged into `status.json` from `defaults.json`. `background_model` is **not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only `role` and does not touch template files. `--no-restart` can skip automatic restart via the API. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).
+2. **At role change** (`animaworks anima set-role`): The root applies `permissions.json` and `specialty_prompt.md` via `_apply_role_defaults()`. `model`, `context_threshold`, and `conversation_history_threshold` are merged into the root-owned `status.json` from `defaults.json`. `background_model` is **not changed by set-role**; use `animaworks anima set-background-model` instead. `--status-only` updates only `role` and does not touch template files. `--no-restart` can skip the automatic restart via the API. The CLI success output includes `permissions.json` (`cmd_anima_set_role` of `cli/commands/anima_mgmt.py`).
 
 ### Prompt Injection
 

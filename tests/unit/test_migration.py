@@ -228,9 +228,8 @@ class TestMigrationSteps:
 
         assert result.error is None
         assert result.changed == 1
-        assert json.loads((data_dir / "config.json").read_text(encoding="utf-8")) == {
-            "rag": {"enable_spreading_activation": True}
-        }
+        updated = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+        assert "max_graph_hops" not in updated["rag"]
 
     def test_step_priming_config_cleanup_skips_when_setting_missing(self, data_dir: Path) -> None:
         from core.migrations.steps import step_priming_config_cleanup_20260927

@@ -39,7 +39,7 @@ A top-level Anima with an explicit human instruction uses `grant_workspace_acces
 }
 ```
 
-This tool updates the shared workspace registry, adds the path to the target Anima's `permissions.json.file_roots`, and optionally updates `status.json.default_workspace`.
+This tool asks the root host to update the shared workspace registry and the target Anima's root-owned `permissions.json` / `status.json`; it does not write those settings from the Anima process.
 
 **Note**: Registration fails if the directory does not exist.
 **Note**: `read_memory_file(path="config.json")` reads the Anima-local `config.json`. Do not use it for the shared workspace registry.

@@ -22,8 +22,7 @@ from typing import TYPE_CHECKING, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from core.config.io import update_config
-from core.config.models import ActivityScheduleEntry, load_config
+from core.config.models import load_config
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
 from core.platform.tasks import spawn
@@ -150,14 +149,12 @@ class SchedulerManager:
 
         try:
             self.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
+            self._last_schedule_level = load_config().activity_level
             self._setup_heartbeat()
             self._setup_cron_tasks()
             self._setup_activity_schedule()
             self._setup_background_review_drain()
             self.scheduler.start()
-
-            # Apply the correct activity level for the current time on startup
-            self._apply_current_schedule_level()
 
             # Wire up hot-reload callback
             self._anima.set_on_schedule_changed(self.reload_schedule)
@@ -273,9 +270,10 @@ class SchedulerManager:
             )
 
     def reschedule_heartbeat(self) -> None:
-        """Reschedule heartbeat job with current config (called on activity_level change)."""
+        """Reschedule heartbeat job with current root-owned config."""
         if not self.scheduler:
             return
+        self._last_schedule_level = load_config().activity_level
         job_id = f"{self._anima_name}_heartbeat"
         try:
             self.scheduler.remove_job(job_id)
@@ -285,17 +283,6 @@ class SchedulerManager:
         logger.info("Heartbeat rescheduled for %s", self._anima_name)
 
     # ── Activity Schedule ─────────────────────────────────────
-
-    @staticmethod
-    def resolve_scheduled_level(
-        schedule: list[ActivityScheduleEntry],
-        now_hhmm: str,
-    ) -> int | None:
-        """Return the activity level for *now_hhmm* (``"HH:MM"``), or None."""
-        for entry in schedule:
-            if _time_in_range(entry.start, entry.end, now_hhmm):
-                return entry.level
-        return None
 
     def _setup_background_review_drain(self) -> None:
         """Drain review requests recorded by disposable task runners."""
@@ -321,80 +308,49 @@ class SchedulerManager:
             request_background_review(self._anima_dir, "")
 
     def _setup_activity_schedule(self) -> None:
-        """Register a 1-minute job that checks activity_schedule boundaries."""
+        """Register a 1-minute safety poll for root-owned activity settings."""
         if not self.scheduler:
             return
         app_config = load_config()
-        if not app_config.activity_schedule:
-            return
-
         self.scheduler.add_job(
             self._activity_schedule_tick,
             CronTrigger(minute="*"),
             id=f"{self._anima_name}_activity_schedule",
-            name=f"{self._anima_name} activity schedule",
+            name=f"{self._anima_name} activity-level sync",
             replace_existing=True,
             misfire_grace_time=120,
             max_instances=1,
         )
         logger.info(
-            "Activity schedule registered for %s: %d entries",
+            "Activity-level safety poll registered for %s (schedule entries=%d)",
             self._anima_name,
             len(app_config.activity_schedule),
         )
 
-    def _apply_current_schedule_level(self) -> None:
-        """Apply the correct activity level for the current time at startup."""
-        now_hhmm = now_local().strftime("%H:%M")
-        target_level: int | None = None
-        level_changed = False
-
-        def apply_schedule(config) -> None:
-            nonlocal target_level, level_changed
-            if not config.activity_schedule:
-                return
-            target_level = self.resolve_scheduled_level(config.activity_schedule, now_hhmm)
-            if target_level is not None:
-                level_changed = target_level != config.activity_level
-                config.activity_level = target_level
-
-        app_config = update_config(apply_schedule)
-        if target_level is not None and level_changed:
-            self._last_schedule_level = target_level
-            self.reschedule_heartbeat()
-            logger.info(
-                "Activity schedule startup: %s set level to %d%% (time=%s)",
-                self._anima_name,
-                target_level,
-                now_hhmm,
-            )
-        else:
-            self._last_schedule_level = app_config.activity_level
+    def _sync_activity_level(self) -> None:
+        """Rebuild this Anima's heartbeat from the latest root-owned level."""
+        current_level = load_config().activity_level
+        if self._last_schedule_level is None:
+            self._last_schedule_level = current_level
+            return
+        if current_level == self._last_schedule_level:
+            return
+        previous = self._last_schedule_level
+        self._last_schedule_level = current_level
+        self.reschedule_heartbeat()
+        logger.info(
+            "Activity level sync: %s %d%% → %d%%",
+            self._anima_name,
+            previous,
+            current_level,
+        )
 
     async def _activity_schedule_tick(self) -> None:
-        """Check current time against activity_schedule and switch level if needed."""
-        now_hhmm = now_local().strftime("%H:%M")
-        target_level: int | None = None
-
-        def apply_schedule(config) -> None:
-            nonlocal target_level
-            target_level = self.resolve_scheduled_level(config.activity_schedule, now_hhmm)
-            if target_level is not None:
-                config.activity_level = target_level
-
-        update_config(apply_schedule)
-        if target_level is not None and target_level != self._last_schedule_level:
-            self._last_schedule_level = target_level
-            self.reschedule_heartbeat()
-            logger.info(
-                "Activity schedule switch: %s → %d%% (time=%s)",
-                self._anima_name,
-                target_level,
-                now_hhmm,
-            )
+        """Reconcile heartbeat timing if a root IPC notification was missed."""
+        self._sync_activity_level()
 
     def reload_activity_schedule(self) -> None:
-        """Reload the activity schedule job (called after schedule config change)."""
+        """Refresh the safety poll after root-owned activity schedule changes."""
         if not self.scheduler:
             return
         job_id = f"{self._anima_name}_activity_schedule"
@@ -403,7 +359,7 @@ class SchedulerManager:
         except KeyError:
             pass
         self._setup_activity_schedule()
-        self._apply_current_schedule_level()
+        self._sync_activity_level()
 
     def _setup_cron_tasks(self) -> None:
         """Register cron jobs from cron.md."""
@@ -869,17 +825,3 @@ class SchedulerManager:
                     "Scheduler shutdown failed for %s (may not have been started)", self._anima_name, exc_info=True
                 )
             logger.info("Scheduler stopped for %s", self._anima_name)
-
-
-# ── Module helpers ────────────────────────────────────────────────────────
-
-
-def _time_in_range(start: str, end: str, now: str) -> bool:
-    """Check whether *now* (``HH:MM``) falls within [*start*, *end*).
-
-    Handles midnight-crossing ranges (e.g. ``22:00``–``08:00``).
-    """
-    if start <= end:
-        return start <= now < end
-    # Wraps past midnight
-    return now >= start or now < end

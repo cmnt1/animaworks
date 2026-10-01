@@ -137,12 +137,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Changing {target_name}'s background_model to {model}",
     },
     "handler.bg_model_changed": {
-        "ja": "{target_name}のbackground_modelを'{model}'に変更しました。反映にはrestart_subordinateが必要です。",
-        "en": ("Changed {target_name}'s background_model to '{model}'. Call restart_subordinate to apply."),
+        "ja": "{target_name}のbackground_modelを'{model}'に変更し、稼働中プロセスへ root から再読み込みを依頼しました。停止中の場合は次回起動時に反映されます。",
+        "en": "Changed {target_name}'s background_model to '{model}' and asked root to reload the running process. Stopped Animas will use it on next start.",
     },
     "handler.bg_model_cleared": {
-        "ja": "{target_name}のbackground_modelをクリアしました（メインモデルを使用）。",
-        "en": "Cleared {target_name}'s background_model (will use main model).",
+        "ja": "{target_name}のbackground_modelをクリアしました（メインモデルを使用）。稼働中プロセスへ root から再読み込みを依頼しました。",
+        "en": "Cleared {target_name}'s background_model (will use main model) and asked root to reload the running process.",
     },
     "handler.bg_not_enabled": {
         "ja": "Error: バックグラウンドタスク機能が無効です",

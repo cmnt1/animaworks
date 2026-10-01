@@ -225,7 +225,7 @@ class TestBoundaryCheck:
             "to_display_name": "Beta Corporation",
         }
         monkeypatch.setattr(Path, "read_text", denied_read)
-        monkeypatch.setattr("httpx.get", MagicMock(return_value=response))
+        monkeypatch.setattr("core.host_api.host_api.get", MagicMock(return_value=response))
 
         result = check_company_boundary("alice", "bob", data_dir=tmp_path)
 
@@ -255,7 +255,7 @@ class TestBoundaryCheck:
             "cross_company": cross_company,
             "to_display_name": "Target Company",
         }
-        monkeypatch.setattr("httpx.get", MagicMock(return_value=response))
+        monkeypatch.setattr("core.host_api.host_api.get", MagicMock(return_value=response))
 
         result = check_company_boundary("alice", "missing", data_dir=tmp_path)
 
@@ -268,7 +268,7 @@ class TestBoundaryCheck:
     ) -> None:
         """(e) An unreadable target plus API failure -> fail closed."""
         _make_anima(tmp_path, "alice", company="alpha")
-        monkeypatch.setattr("httpx.get", MagicMock(side_effect=OSError("connection refused")))
+        monkeypatch.setattr("core.host_api.host_api.get", MagicMock(side_effect=OSError("connection refused")))
 
         result = check_company_boundary("alice", "missing", data_dir=tmp_path)
 
@@ -421,7 +421,7 @@ def test_send_message_unverifiable_boundary_fails_closed_with_stable_error(
         return original_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", denied_read)
-    monkeypatch.setattr("httpx.get", MagicMock(side_effect=OSError("connection refused")))
+    monkeypatch.setattr("core.host_api.host_api.get", MagicMock(side_effect=OSError("connection refused")))
 
     result = handler._handle_send_message({"to": "worker", "content": "hello", "intent": "report"})
 

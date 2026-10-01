@@ -278,6 +278,18 @@ def persist_anima_icon_path_template() -> None:
     if os.environ.get(_ICON_URL_TEMPLATE_ENV_KEY, "").strip():
         return
 
+    from core.paths import get_data_dir
+    from core.platform.pid import is_server_running
+    from core.platform.process_role import get_process_role
+
+    role = get_process_role()
+    if role in {"anima", "task_runner", "mcp"} or (role == "cli" and is_server_running(get_data_dir())):
+        from core.internal_api import host_api
+
+        response = host_api.post("/api/internal/settings/anima-icon-template", json={}, timeout=15.0)
+        response.raise_for_status()
+        return
+
     from core.config import update_config
 
     changed = False

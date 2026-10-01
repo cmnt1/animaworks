@@ -60,6 +60,7 @@ class _SchedulerMixinHost(Protocol):
     """Structural host members used by SchedulerMixin."""
 
     _CATCHUP_DELAY_SEC: Any
+    _apply_activity_schedule_tick: Any
     _broadcast_event: Any
     _catchup_missed_jobs: Any
     _consolidating: Any

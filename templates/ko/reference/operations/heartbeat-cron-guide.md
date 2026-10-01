@@ -189,7 +189,7 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 
 ### status.json에서의 설정
 
-각 Anima의 `status.json`에 `heartbeat_interval_minutes`를 설정하면 Anima 개별의 하트비트 간격을 지정할 수 있다.
+root 관리자는 root CLI/API로 Anima별 `heartbeat_interval_minutes`를 설정할 수 있다. 값은 root 소유 `status.json`에 저장되며 Anima 프로세스는 편집하지 않는다.
 
 ```json
 {
@@ -199,7 +199,7 @@ Chat(인간과의 대화)과 TaskExec(실작업)는 메인 모델을 유지한�
 
 - 설정 가능 범위: 1~1440분(1일)
 - 미설정 시: `config.json`의 `heartbeat.interval_minutes`(기본 30분)로 폴백
-- Anima 자신이 `write_memory_file`로 `status.json`을 업데이트하여 자체 조정 가능
+- `status.json`은 root 소유입니다. 관리자는 서버 중지 중 `animaworks config set animas.<name>.heartbeat_interval_minutes <minutes>`로 개별 오버라이드를 설정할 수 있습니다. 서버 실행 중에는 CLI가 root API를 통해 반영합니다. Anima 프로세스는 이 파일을 편집하지 않습니다.
 
 ### 권장 가이드라인
 
@@ -257,7 +257,7 @@ Activity Level을 시간대에 따라 자동으로 전환하는 메커니즘.
 
 - **Settings UI**: 나이트 모드 체크박스 + 시간대·레벨 설정
 - **API**: `PUT /api/settings/activity-schedule`에 위 JSON을 전송
-- **설정 파일 직접 편집**: `config.json`의 `activity_schedule`를 편집 후 서버 재시작
+- **root 설정 API**: Settings UI를 사용하거나 위 JSON을 `PUT /api/settings/activity-schedule`로 전송한다. Anima 프로세스에서 `config.json`을 직접 편집하지 않는다
 
 #### 주의점
 
@@ -540,7 +540,7 @@ type: llm
 
 cron.md를 업데이트하면 heartbeat.md과 동일하게 스케줄이 자동 리로드된다.
 Anima 자신이 cron.md을 다시 쓴 경우에도 즉시 반영된다(self-modify 패턴).
-산하 Anima의 `cron.md` / `heartbeat.md` / `injection.md` / `status.json`을 상급자가 편집하는 경우에도 write memory 도구로 `../{anima_name}/cron.md`처럼 지정한다. Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트 등의 직접 파일 조작은 사용하지 않는다.
+상급자는 부하의 `cron.md` / `heartbeat.md`를 write memory 도구로 편집할 수 있다. 권한이 있는 상급자의 `injection.md` 변경 요청도 root로 전달되어 승인된다. `status.json` 변경에는 해당 상급자 도구 또는 root CLI/API를 사용한다. root 소유 파일을 Read / Write / Edit / apply_patch / `Path.write_text` / 셸 리다이렉트로 직접 쓰지 않는다.
 
 리로드 시 동작:
 1. 해당 Anima의 기존 cron 작업을 모두 삭제

@@ -39,8 +39,6 @@ class _CommsToolsHost(Protocol):
 class _CreateAnimaHost(Protocol):
     """Structural host members used by CreateAnimaMixin."""
 
-    _create_anima_via_server: Any
-    _finalize_create_anima: Any
     _tool_context: ToolContext
 
 

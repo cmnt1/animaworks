@@ -1133,11 +1133,11 @@ class TestActivityScheduleAPI:
         with (
             patch("core.config.models.load_config", return_value=mock_config),
             patch(
-                "core.config.models.update_config",
+                "core.config.io.update_config",
                 side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
             ) as update_mock,
             patch(
-                "core.runtime.scheduler_manager.SchedulerManager.resolve_scheduled_level",
+                "server.supervisor.activity_schedule.resolve_scheduled_level",
                 return_value=100,
             ),
         ):
@@ -1176,7 +1176,7 @@ class TestActivityScheduleAPI:
         with (
             patch("core.config.models.load_config", return_value=mock_config),
             patch(
-                "core.config.models.update_config",
+                "core.config.io.update_config",
                 side_effect=lambda fn, *args, **kwargs: fn(mock_config) or mock_config,
             ) as update_mock,
         ):

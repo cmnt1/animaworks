@@ -74,7 +74,7 @@ class TestDelegateTaskErofsFallback:
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=error),
-            patch("httpx.post", return_value=response) as post,
+            patch("core.host_api.host_api.post", return_value=response) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert not result.strip().startswith("{")
@@ -96,7 +96,7 @@ class TestDelegateTaskErofsFallback:
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskStore, "alias", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", return_value=response) as post,
+            patch("core.host_api.host_api.post", return_value=response) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert "PersistenceFailed" not in result
@@ -115,7 +115,7 @@ class TestDelegateTaskErofsFallback:
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=OSError(30, "Read-only file system")),
             patch(
-                "httpx.post",
+                "core.host_api.host_api.post",
                 side_effect=httpx.ConnectError("down") if failure == "transport" else None,
                 return_value=response,
             ) as post,
@@ -133,7 +133,7 @@ class TestDelegateTaskErofsFallback:
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch.object(TaskQueueManager, "submit", side_effect=OSError(30, "Read-only file system")),
-            patch("httpx.post", side_effect=[httpx.ReadTimeout("response lost"), response]) as post,
+            patch("core.host_api.host_api.post", side_effect=[httpx.ReadTimeout("response lost"), response]) as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert "PersistenceFailed" not in result
@@ -146,7 +146,7 @@ class TestDelegateTaskErofsFallback:
         with (
             patch.object(handler, "_check_subordinate", return_value=None),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-            patch("httpx.post") as post,
+            patch("core.host_api.host_api.post") as post,
         ):
             result = handler.handle("delegate_task", _delegate_args())
         assert "PersistenceFailed" not in result

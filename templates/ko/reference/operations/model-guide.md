@@ -388,7 +388,7 @@ Sonnet 이하의 역할은 이미 비용 효율이 좋으므로, `background_mod
 
 ### 모델을 변경했는데 반영되지 않음
 
-`set-model`은 `status.json`만 업데이트한다. 서버 시작 중에는 `anima restart {名前}` 또는 `anima reload {名前}`이 필요하다.
+`set-model`은 root API를 통해 root 소유 `status.json`을 갱신하고 실행 중인 Anima의 모델 설정을 reload한다. 중지된 Anima는 다음 시작 때 새 설정을 읽는다. Anima 프로세스에서 이 파일을 직접 편집하지 않는다.
 
 ### models.json을 편집했는데 반영되지 않음
 

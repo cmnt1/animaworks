@@ -19,6 +19,7 @@ from core.config.ops import (
     save_config_wizard,
     set_config_value,
 )
+from core.i18n import t
 from core.paths import get_animas_dir
 from core.platform.status_store import read_status
 
@@ -30,7 +31,7 @@ def cmd_config_dispatch(args: argparse.Namespace) -> None:
     ensure_runtime_dir()
 
     if getattr(args, "interactive", False):
-        _interactive_setup()
+        _interactive_setup(args)
         return
 
     if not getattr(args, "config_command", None):
@@ -66,13 +67,36 @@ def cmd_config_set(args: argparse.Namespace) -> None:
     target = legacy_model_status_target(key)
     if target is not None:
         anima_name, status_field = target
-        print(
-            f"Warning: 'animas.{anima_name}.{status_field}' は非推奨です。\n"
-            f"  status.json に書き込みます。今後は 'animaworks anima set-model' を使用してください。",
-            file=sys.stderr,
-        )
+        if status_field == "heartbeat_interval_minutes":
+            print(t("config.status_heartbeat_override", anima=anima_name, field=status_field), file=sys.stderr)
+        elif status_field in {"supervisor", "speciality"}:
+            print(t("config.status_org_setting", anima=anima_name, field=status_field), file=sys.stderr)
+        else:
+            print(
+                t("config.status_field_deprecated", path=f"animas.{anima_name}.{status_field}"),
+                file=sys.stderr,
+            )
 
-    set_config_value(key, value)
+    from core.paths import get_data_dir
+
+    if (get_data_dir() / "server.pid").exists():
+        try:
+            from cli._gateway import gateway_request
+
+            response = gateway_request(
+                args,
+                "PUT",
+                "/api/system/config/value",
+                json={"key": key, "value": value},
+                timeout=30.0,
+                raw_response=True,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            print(f"Error: Failed to update config through running server: {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        set_config_value(key, value)
     if target is not None:
         anima_name, status_field = target
         print(f"Set {anima_name}/status.json {status_field} = {_mask_secret(key, value)}")
@@ -93,7 +117,7 @@ def cmd_config_list(args: argparse.Namespace) -> None:
         print(f"{key} = {display}")
 
 
-def _interactive_setup() -> None:
+def _interactive_setup(args: argparse.Namespace | None = None) -> None:
     """Run the interactive configuration wizard."""
     from core.infra.runtime_init import ensure_runtime_dir
 
@@ -185,5 +209,30 @@ def _interactive_setup() -> None:
 
     # Step 4: Save
     print()
-    save_config_wizard(credential_updates, detected_animas, status_updates, animas_dir)
+    from core.paths import get_data_dir
+
+    if (get_data_dir() / "server.pid").exists():
+        try:
+            from cli._gateway import gateway_request
+
+            response = gateway_request(
+                args or argparse.Namespace(),
+                "PUT",
+                "/api/system/config/wizard",
+                json={
+                    "credentials": {
+                        name: credential.model_dump(mode="json") for name, credential in credential_updates.items()
+                    },
+                    "anima_names": detected_animas,
+                    "status_updates": status_updates,
+                },
+                timeout=30.0,
+                raw_response=True,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            print(f"Error: Failed to save config through running server: {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        save_config_wizard(credential_updates, detected_animas, status_updates, animas_dir)
     print(f"Configuration saved to {get_config_path()}")

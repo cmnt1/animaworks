@@ -388,7 +388,7 @@ Roles at or below Sonnet are already cost-efficient, so `background_model` is no
 
 ### Model changes are not being reflected
 
-`set-model` only updates `status.json`. While the server is running, `anima restart {名前}` or `anima reload {名前}` is required.
+`set-model` asks the root API to update the root-owned `status.json` and reloads the running Anima's model configuration. A stopped Anima reads the new setting on its next start; do not edit the file from an Anima process.
 
 ### Changes to models.json are not being reflected
 

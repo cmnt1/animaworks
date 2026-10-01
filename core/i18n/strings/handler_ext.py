@@ -112,8 +112,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Changing {target_name}'s model to {model}",
     },
     "handler.model_changed": {
-        "ja": "'{target_name}' のモデルを '{model}' に変更しました。反映するには restart_subordinate を呼び出してください。",
-        "en": "Changed {target_name}'s model to '{model}'. Call restart_subordinate to apply.",
+        "ja": "'{target_name}' のモデルを '{model}' に変更し、稼働中プロセスへ root から再読み込みを依頼しました。停止中の場合は次回起動時に反映されます。",
+        "en": "Changed {target_name}'s model and asked root to reload the running process. Stopped Animas will use it on next start.",
     },
     "handler.model_warning": {
         "ja": "警告: '{model}' は既知のモデルカタログに含まれていません。正しいモデル名か確認してください。",
