@@ -18,6 +18,7 @@ from pathlib import Path
 from core.exceptions import ToolConfigError
 from core.integrations._cache import BaseMessageCache, CacheTable
 from core.integrations._chatwork_client import JST, ChatworkClient
+from core.paths import get_data_dir
 from core.platform.atomic_io import atomic_write_json
 from core.platform.env import get_env
 
@@ -29,14 +30,20 @@ logger = logging.getLogger("animaworks.tools.chatwork.cache")
 # Can be overridden via ANIMAWORKS_CHATWORK_CACHE_DIR environment variable.
 # This allows TaskExec/Codex sandbox environments to redirect cache writes
 # to a writable location (e.g. /tmp/animaworks-cache/chatwork).
-_DEFAULT_CACHE_DIR = Path.home() / ".animaworks" / "cache" / "chatwork"
+_DEFAULT_CACHE_DIR = get_data_dir() / "cache" / "chatwork"
 DEFAULT_CACHE_DIR = _DEFAULT_CACHE_DIR
 
 
 def get_cache_dir() -> Path:
-    """Resolve the cache directory from the current environment."""
+    """Resolve the cache directory from explicit config or the current data dir."""
     configured = get_env("ANIMAWORKS_CHATWORK_CACHE_DIR")
-    return Path(configured) if configured else DEFAULT_CACHE_DIR
+    if configured:
+        return Path(configured)
+    # Retain the module constant as a test/integration override while tracking
+    # ANIMAWORKS_DATA_DIR changes in normal runtime use.
+    if DEFAULT_CACHE_DIR != _DEFAULT_CACHE_DIR:
+        return DEFAULT_CACHE_DIR
+    return get_data_dir() / "cache" / "chatwork"
 
 
 _CHATWORK_SCHEMA_SQL = """\

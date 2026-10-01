@@ -9,6 +9,7 @@ from collections import deque
 from datetime import timedelta
 
 from core.paths import get_shared_dir
+from core.platform.atomic_io import append_jsonl_locked
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.memory")
@@ -23,14 +24,12 @@ class ResolutionTracker:
         """Append resolution info to shared/resolutions.jsonl."""
         shared_dir = get_shared_dir()
         path = shared_dir / "resolutions.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "ts": now_iso(),
             "issue": issue,
             "resolver": resolver,
         }
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        append_jsonl_locked(path, entry)
 
     def read_resolutions(self, days: int = 7) -> list[dict[str, str]]:
         """Read recent resolutions from shared/resolutions.jsonl."""

@@ -564,8 +564,9 @@ class MessagingMixin:
                 "content": content,
                 "thread_id": thread_id,
             }
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            from core.platform.atomic_io import append_jsonl_locked
+
+            append_jsonl_locked(log_file, record)
         except Exception:
             logger.warning(
                 "[%s] Failed to log human conversation",

@@ -122,7 +122,7 @@ class DashboardMixin(OrgHelpersMixin):
             try:
                 from core.tasks.queue import TaskQueueManager
 
-                tqm = TaskQueueManager(desc_dir)
+                tqm = TaskQueueManager(desc_dir, read_only=True)
                 active = tqm.get_all_active()
                 entry["active_tasks"] = len(active)
             except Exception:

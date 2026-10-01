@@ -38,6 +38,16 @@ def test_slack_cache_dir_reads_environment_each_time(tmp_path: Path, monkeypatch
     assert _slack_cache.get_cache_dir() == second
 
 
+def test_default_cache_dirs_follow_current_data_dir(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ANIMAWORKS_CHATWORK_CACHE_DIR", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_SLACK_CACHE_DIR", raising=False)
+    data_dir = tmp_path / "isolated-data"
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+
+    assert _chatwork_cache.get_cache_dir() == data_dir / "cache" / "chatwork"
+    assert _slack_cache.get_cache_dir() == data_dir / "cache" / "slack"
+
+
 def test_resolve_cache_db_path_registers_identity(tmp_path: Path, monkeypatch, client) -> None:
     cache_dir = tmp_path / "chatwork"
     monkeypatch.setattr(_chatwork_cache, "DEFAULT_CACHE_DIR", cache_dir)

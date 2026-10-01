@@ -731,7 +731,7 @@ class TaskRunnerSupervisor:
             from core.tasks.queue import TaskQueueManager
 
             entry = await asyncio.to_thread(
-                TaskQueueManager(self.anima_dir).get_task_by_id,
+                TaskQueueManager(self.anima_dir, read_only=True).get_task_by_id,
                 task_id,
             )
             return entry is not None and entry.status == "cancelled"

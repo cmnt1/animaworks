@@ -686,13 +686,15 @@ def step_taskboard_metadata_retire(data_dir: Path, dry_run: bool, verbose: bool)
     import os
     import sqlite3
 
+    from core.tasks.board.tasks import connect_task_store_for_migration
+
     db_path = data_dir / "shared" / "taskboard.sqlite3"
     details: list[str] = []
     if not db_path.is_file():
         return StepResult(changed=0, skipped=1, details=["shared/taskboard.sqlite3 not found; skip"])
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = connect_task_store_for_migration(db_path)
         try:
             if not conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='taskboard_metadata'"

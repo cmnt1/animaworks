@@ -54,7 +54,7 @@ def cmd_task(args: argparse.Namespace) -> None:
 
     from core.tasks.queue import TaskQueueManager
 
-    manager = TaskQueueManager(anima_dir)
+    manager = TaskQueueManager(anima_dir, read_only=(sub == "list"))
 
     if sub == "add":
         _cmd_add(args, manager)
@@ -72,10 +72,10 @@ def cmd_task(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _get_task_store():
+def _get_task_store(*, read_only: bool = False):
     from core.tasks.board.board_actions import get_task_store
 
-    return get_task_store()
+    return get_task_store(read_only=read_only)
 
 
 def _find_task_matches(store, task_id: str, owner: str | None = None) -> list[dict]:
@@ -162,7 +162,7 @@ def _remaining_lease(expires_at: str, now: datetime | None = None) -> str:
 def _cmd_board(args: argparse.Namespace) -> None:
     from core.paths import get_animas_dir
 
-    store = _get_task_store()
+    store = _get_task_store(read_only=True)
     actor_dir = anima_dir_env() or ""
     if actor_dir and not Path(actor_dir).is_dir():
         print(f"Error: anima_dir not found: {actor_dir}", file=sys.stderr)
@@ -237,7 +237,7 @@ def _cmd_board(args: argparse.Namespace) -> None:
 
 
 def _cmd_show(args: argparse.Namespace) -> None:
-    store = _get_task_store()
+    store = _get_task_store(read_only=True)
     task_id = args.task_id
     owner_filter = getattr(args, "anima", None)
     matches = _find_task_matches(store, task_id, owner_filter)

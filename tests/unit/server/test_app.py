@@ -173,6 +173,7 @@ class TestLifespan:
             await app.state.supervisor.start_all(app.state.anima_names)
 
         with (
+            patch("core.tasks.board.tasks.ensure_task_store_schema"),
             patch("core.org.org_sync.sync_org_structure"),
             patch("core.org.org_sync.detect_orphan_animas"),
             patch("server.app._reconcile_assets_at_startup", new_callable=AsyncMock),

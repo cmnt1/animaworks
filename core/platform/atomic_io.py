@@ -16,6 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from core.platform.locks import locked_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +60,39 @@ def atomic_write_json(
     if trailing_newline:
         text += "\n"
     atomic_write_text(path, text, mode=mode, fsync_dir=fsync_dir)
+
+
+def append_jsonl_locked(
+    path: Path,
+    record: Any,
+    *,
+    raw_line: bool = False,
+    fsync: bool = False,
+) -> None:
+    """Append one JSONL record while holding the adjacent persistent lock.
+
+    Writers serialize the complete encoded record before opening the target,
+    then hold a ``flock`` on ``<name>.lock`` for the full append so concurrent
+    processes cannot interleave large lines. ``raw_line`` accepts an existing
+    single-line JSON representation when an operation must preserve its bytes.
+    Durability is opt-in to preserve each caller's existing fsync policy.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if raw_line:
+        if not isinstance(record, str):
+            raise TypeError("raw_line requires a pre-serialized string")
+        line = record.rstrip("\r\n")
+        if "\n" in line or "\r" in line:
+            raise ValueError("raw JSONL records must contain exactly one line")
+        line += "\n"
+    else:
+        line = json.dumps(record, ensure_ascii=False) + "\n"
+    lock_path = path.with_name(f"{path.name}.lock")
+    with locked_path(lock_path, exclusive=True, thread_lock=True), path.open("a", encoding="utf-8") as stream:
+        stream.write(line)
+        if fsync:
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 def update_json(

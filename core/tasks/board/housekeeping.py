@@ -148,7 +148,7 @@ def _has_active_visible_task(anima_dir: Path, now: Any) -> bool:
     try:
         from core.tasks.queue import TaskQueueManager
 
-        return bool(TaskQueueManager(anima_dir).load_active_tasks())
+        return bool(TaskQueueManager(anima_dir, read_only=True).load_active_tasks())
     except Exception:
         logger.debug("Failed to read canonical tasks for %s", anima_dir.name, exc_info=True)
         return True
@@ -164,6 +164,7 @@ def _archive_current_state_for_housekeeping(
     try:
         from core.memory.state_lock import StateFileLock
         from core.platform.atomic_io import atomic_write_text
+        from core.platform.locks import locked_path
 
         with StateFileLock(anima_dir):
             if expected_mtime is not None and state_path.stat().st_mtime != expected_mtime:
@@ -171,13 +172,15 @@ def _archive_current_state_for_housekeeping(
             episodes_dir = anima_dir / "episodes"
             episodes_dir.mkdir(parents=True, exist_ok=True)
             episode_path = episodes_dir / f"{today_local().isoformat()}.md"
-            existing = (
-                episode_path.read_text(encoding="utf-8")
-                if episode_path.exists()
-                else f"# {today_local().isoformat()}\n"
-            )
-            entry = f"\n## Working notes archived by TaskBoard housekeeping\n\n{content.rstrip()}\n"
-            atomic_write_text(episode_path, existing.rstrip() + "\n\n" + entry.lstrip())
+            lock_path = episode_path.with_name(f"{episode_path.name}.lock")
+            with locked_path(lock_path, exclusive=True, thread_lock=True):
+                existing = (
+                    episode_path.read_text(encoding="utf-8")
+                    if episode_path.exists()
+                    else f"# {today_local().isoformat()}\n"
+                )
+                entry = f"\n## Working notes archived by TaskBoard housekeeping\n\n{content.rstrip()}\n"
+                atomic_write_text(episode_path, existing.rstrip() + "\n\n" + entry.lstrip())
             atomic_write_text(state_path, "status: idle\n")
         return "archived"
     except Exception:

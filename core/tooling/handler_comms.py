@@ -626,6 +626,7 @@ class CommsToolsMixin:
             is_channel_member,
             load_channel_meta,
             save_channel_meta,
+            update_channel_meta,
         )
 
         try:
@@ -657,7 +658,7 @@ class CommsToolsMixin:
             )
             channels_dir = shared_dir / "channels"
             channels_dir.mkdir(parents=True, exist_ok=True)
-            channel_file.write_text("", encoding="utf-8")
+            channel_file.touch(exist_ok=True)
             save_channel_meta(shared_dir, channel, meta)
             members_str = ", ".join(members) if members else "open"
             logger.info("manage_channel create: #%s by %s", channel, self._anima_name)
@@ -680,10 +681,16 @@ class CommsToolsMixin:
             company_error = self._cross_company_communication_error(new_members)
             if company_error is not None:
                 return company_error
-            for m in new_members:
-                if m not in meta.members:
-                    meta.members.append(m)
-            save_channel_meta(shared_dir, channel, meta)
+
+            def _add_members(current: ChannelMeta | None) -> ChannelMeta | None:
+                if current is None:
+                    return None
+                current.members.extend(member for member in new_members if member not in current.members)
+                return current
+
+            updated_meta = update_channel_meta(shared_dir, channel, _add_members)
+            if updated_meta is None:
+                return t("handler.channel_not_found", channel=channel)
             logger.info("manage_channel add_member: #%s += %s", channel, new_members)
             return t("handler.channel_members_added", channel=channel, members=", ".join(new_members))
 
@@ -700,8 +707,16 @@ class CommsToolsMixin:
             remove_members = args.get("members", [])
             if not remove_members:
                 return _error_result("InvalidArguments", "members list is required for remove_member")
-            meta.members = [m for m in meta.members if m not in remove_members]
-            save_channel_meta(shared_dir, channel, meta)
+
+            def _remove_members(current: ChannelMeta | None) -> ChannelMeta | None:
+                if current is None:
+                    return None
+                current.members = [member for member in current.members if member not in remove_members]
+                return current
+
+            updated_meta = update_channel_meta(shared_dir, channel, _remove_members)
+            if updated_meta is None:
+                return t("handler.channel_not_found", channel=channel)
             logger.info("manage_channel remove_member: #%s -= %s", channel, remove_members)
             return t("handler.channel_members_removed", channel=channel, members=", ".join(remove_members))
 

@@ -36,6 +36,20 @@ def _queue(app: FastAPI, anima_name: str) -> TaskQueueManager:
 
 
 class TestTaskBoardList:
+    async def test_get_endpoints_do_not_create_a_missing_taskboard(self, tmp_path: Path, monkeypatch) -> None:
+        app = _make_app(tmp_path, ["alice"], monkeypatch)
+        db_path = app.state.shared_dir / "taskboard.sqlite3"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            list_response = await client.get("/api/task-board", params={"include_archived": "true"})
+            summary_response = await client.get("/api/task-board/summary")
+
+        assert list_response.status_code == 200
+        assert list_response.json()["tasks"] == []
+        assert summary_response.status_code == 200
+        assert summary_response.json() == {"pending": 0, "in_progress": 0, "delegated": 0, "total_active": 0}
+        assert not db_path.exists()
+
     async def test_lists_canonical_tasks_with_filters_and_corrupt_warning(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         queue = _queue(app, "alice")

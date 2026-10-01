@@ -219,7 +219,7 @@ def _check_task_state(anima_dir: Path, task_id: str) -> str:
     """Inspect canonical status; result files are artifacts, not completion proof."""
     from core.tasks.queue import TaskQueueManager
 
-    entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
+    entry = TaskQueueManager(anima_dir, read_only=True).get_task_by_id(task_id)
     if entry is None:
         return "missing"
     return {"done": "completed", "cancelled": "terminal", "in_progress": "processing"}.get(entry.status, "pending")

@@ -15,20 +15,25 @@ from pathlib import Path
 from core.integrations._cache import BaseMessageCache, CacheTable
 from core.integrations._slack_client import JST
 from core.integrations._slack_markdown import format_slack_ts
+from core.paths import get_data_dir
 from core.platform.env import get_env
 
 # Cache directory for Slack message cache.
 # Can be overridden via ANIMAWORKS_SLACK_CACHE_DIR environment variable.
 # This allows TaskExec/Codex sandbox environments to redirect cache writes
 # to a writable location (e.g. /tmp/animaworks-cache/slack).
-_DEFAULT_CACHE_DIR = Path.home() / ".animaworks" / "cache" / "slack"
+_DEFAULT_CACHE_DIR = get_data_dir() / "cache" / "slack"
 DEFAULT_CACHE_DIR = _DEFAULT_CACHE_DIR
 
 
 def get_cache_dir() -> Path:
-    """Resolve the cache directory from the current environment."""
+    """Resolve the cache directory from explicit config or the current data dir."""
     configured = get_env("ANIMAWORKS_SLACK_CACHE_DIR")
-    return Path(configured) if configured else DEFAULT_CACHE_DIR
+    if configured:
+        return Path(configured)
+    if DEFAULT_CACHE_DIR != _DEFAULT_CACHE_DIR:
+        return DEFAULT_CACHE_DIR
+    return get_data_dir() / "cache" / "slack"
 
 
 _SLACK_SCHEMA_SQL = """\

@@ -350,6 +350,291 @@ def test_streaming_documentation_is_kept_in_python_ast() -> None:
     assert "NOT handled" not in executor_docstring
 
 
+_TASKBOARD_CONNECT_ALLOWLIST = {
+    "core/tasks/board/tasks.py",
+    "core/tasks/board/readiness.py",
+}
+
+
+def _call_target_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _assigned_target_names(target: ast.expr) -> set[str]:
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return set().union(*(_assigned_target_names(item) for item in target.elts))
+    return set()
+
+
+def _assignment_targets(node: ast.Assign | ast.AnnAssign) -> set[str]:
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    return set().union(*(_assigned_target_names(target) for target in targets))
+
+
+def _taskboard_path_names(tree: ast.Module) -> set[str]:
+    names: set[str] = set()
+
+    def looks_like_taskboard_path(expression: ast.AST) -> bool:
+        for child in ast.walk(expression):
+            if isinstance(child, ast.Constant) and isinstance(child.value, str) and "taskboard.sqlite3" in child.value:
+                return True
+            if isinstance(child, ast.Name) and child.id in names | {"task_database_path", "get_taskboard_db_path"}:
+                return True
+            if isinstance(child, ast.Call) and _call_target_name(child.func) in {
+                "task_database_path",
+                "get_taskboard_db_path",
+            }:
+                return True
+        return False
+
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, (ast.Assign, ast.AnnAssign))
+                and node.value is not None
+                and looks_like_taskboard_path(node.value)
+            ):
+                continue
+            new_names = _assignment_targets(node) - names
+            if new_names:
+                names.update(new_names)
+                changed = True
+    return names
+
+
+def _sqlite_connect_aliases(tree: ast.Module) -> tuple[set[str], set[str]]:
+    module_aliases: set[str] = set()
+    connect_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            module_aliases.update(
+                alias.asname or alias.name.split(".", 1)[0] for alias in node.names if alias.name == "sqlite3"
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module == "sqlite3":
+            connect_names.update(alias.asname or alias.name for alias in node.names if alias.name == "connect")
+    return module_aliases, connect_names
+
+
+def _is_sqlite_connect_call(call: ast.Call, module_aliases: set[str], connect_names: set[str]) -> bool:
+    function = call.func
+    if isinstance(function, ast.Attribute) and function.attr == "connect":
+        return isinstance(function.value, ast.Name) and function.value.id in module_aliases
+    return isinstance(function, ast.Name) and function.id in connect_names
+
+
+def _task_store_aliases(tree: ast.Module) -> set[str]:
+    names = {"TaskStore"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(alias.asname or alias.name for alias in node.names if alias.name == "TaskStore")
+    return names
+
+
+def _is_task_store_creation(call: ast.Call, aliases: set[str]) -> bool:
+    function = call.func
+    if isinstance(function, ast.Name) and function.id in aliases:
+        return True
+    if isinstance(function, ast.Attribute) and function.attr == "TaskStore":
+        return True
+    return (
+        isinstance(function, ast.Attribute)
+        and function.attr == "open"
+        and (
+            isinstance(function.value, ast.Name)
+            and function.value.id in aliases
+            or isinstance(function.value, ast.Attribute)
+            and function.value.attr == "TaskStore"
+        )
+    )
+
+
+def _taskboard_ownership_violations() -> list[str]:
+    violations: list[str] = []
+    for path, tree in _parsed_python_files():
+        relative_path = path.relative_to(ROOT).as_posix()
+        task_store_creation_allowed = (
+            relative_path.startswith(("core/tasks/", "core/migrations/"))
+            or relative_path == "cli/commands/task_store_cmd.py"
+        )
+        store_aliases = _task_store_aliases(tree)
+        path_names = _taskboard_path_names(tree)
+        module_aliases, connect_names = _sqlite_connect_aliases(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _is_task_store_creation(node, store_aliases) and not task_store_creation_allowed:
+                violations.append(f"{relative_path}:{node.lineno}: TaskStore opened outside its API boundary")
+                continue
+            if relative_path in _TASKBOARD_CONNECT_ALLOWLIST:
+                continue
+            if not _is_sqlite_connect_call(node, module_aliases, connect_names):
+                continue
+            arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
+            if any(_taskboard_path_names_in_expr(argument, path_names) for argument in arguments):
+                violations.append(f"{relative_path}:{node.lineno}: direct SQLite connection to taskboard")
+    return violations
+
+
+def _taskboard_path_names_in_expr(expression: ast.AST, path_names: set[str]) -> bool:
+    for child in ast.walk(expression):
+        if isinstance(child, ast.Constant) and isinstance(child.value, str) and "taskboard.sqlite3" in child.value:
+            return True
+        if isinstance(child, ast.Name) and child.id in path_names:
+            return True
+        if isinstance(child, ast.Call) and _call_target_name(child.func) in {
+            "task_database_path",
+            "get_taskboard_db_path",
+        }:
+            return True
+    return False
+
+
+def _shared_path_names(tree: ast.Module) -> set[str]:
+    names = {"shared_dir", "shared_path", "company_shared"}
+
+    def mentions_shared_path(expression: ast.AST) -> bool:
+        if _is_shared_parent_escape(expression):
+            return False
+        for child in ast.walk(expression):
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                normalized = child.value.replace("\\", "/")
+                if "shared/" in normalized or normalized.strip("/") == "shared":
+                    return True
+            if isinstance(child, ast.Name) and (child.id in names or "shared" in child.id.lower()):
+                return True
+            if isinstance(child, ast.Attribute) and "shared" in child.attr.lower():
+                return True
+            if isinstance(child, ast.Call) and _call_target_name(child.func) == "get_shared_dir":
+                return True
+        return False
+
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, (ast.Assign, ast.AnnAssign))
+                and node.value is not None
+                and mentions_shared_path(node.value)
+            ):
+                continue
+            new_names = _assignment_targets(node) - names
+            if new_names:
+                names.update(new_names)
+                changed = True
+    return names
+
+
+def _append_open_path_and_mode(call: ast.Call) -> tuple[ast.expr | None, ast.expr | None]:
+    function = call.func
+    if isinstance(function, ast.Attribute) and function.attr == "open":
+        path = function.value
+        mode = call.args[0] if call.args else next((item.value for item in call.keywords if item.arg == "mode"), None)
+        return path, mode
+    if isinstance(function, ast.Name) and function.id == "open":
+        path = call.args[0] if call.args else next((item.value for item in call.keywords if item.arg == "file"), None)
+        mode = (
+            call.args[1]
+            if len(call.args) > 1
+            else next((item.value for item in call.keywords if item.arg == "mode"), None)
+        )
+        return path, mode
+    return None, None
+
+
+def _shared_append_violations() -> list[str]:
+    violations: list[str] = []
+    for path, tree in _parsed_python_files():
+        relative_path = path.relative_to(ROOT).as_posix()
+        if not relative_path.startswith(("core/", "server/")):
+            continue
+        shared_names = _shared_path_names(tree)
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            path_expr, mode_expr = _append_open_path_and_mode(node)
+            if path_expr is None or not isinstance(mode_expr, ast.Constant) or mode_expr.value not in {"a", "ab"}:
+                continue
+            if not _shared_path_names_in_expr(path_expr, shared_names):
+                continue
+            owner = parents.get(node)
+            while owner is not None and not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                owner = parents.get(owner)
+            if (
+                relative_path == "core/platform/atomic_io.py"
+                and owner is not None
+                and owner.name == "append_jsonl_locked"
+            ):
+                continue
+            violations.append(f"{relative_path}:{node.lineno}: shared append must use append_jsonl_locked")
+    return violations
+
+
+def _is_shared_parent_escape(expression: ast.AST) -> bool:
+    for child in ast.walk(expression):
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            normalized = child.value.replace("\\", "/")
+            if "shared/" in normalized or normalized.strip("/") == "shared":
+                return False
+    for child in ast.walk(expression):
+        if not (
+            isinstance(child, ast.BinOp)
+            and isinstance(child.op, ast.Div)
+            and isinstance(child.left, ast.Attribute)
+            and child.left.attr == "parent"
+        ):
+            continue
+        if any(
+            isinstance(anchor, ast.Name)
+            and "shared" in anchor.id.lower()
+            or isinstance(anchor, ast.Attribute)
+            and "shared" in anchor.attr.lower()
+            or isinstance(anchor, ast.Call)
+            and _call_target_name(anchor.func) == "get_shared_dir"
+            for anchor in ast.walk(child.left.value)
+        ):
+            return True
+    return False
+
+
+def _shared_path_names_in_expr(expression: ast.AST, names: set[str]) -> bool:
+    if _is_shared_parent_escape(expression):
+        return False
+    for child in ast.walk(expression):
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            normalized = child.value.replace("\\", "/")
+            if "shared/" in normalized or normalized.strip("/") == "shared":
+                return True
+        if isinstance(child, ast.Name) and (child.id in names or "shared" in child.id.lower()):
+            return True
+        if isinstance(child, ast.Attribute) and "shared" in child.attr.lower():
+            return True
+        if isinstance(child, ast.Call) and _call_target_name(child.func) == "get_shared_dir":
+            return True
+    return False
+
+
+def test_taskboard_sqlite_and_store_ownership_gate() -> None:
+    """Taskboard connections and direct stores stay behind core/tasks APIs."""
+    violations = _taskboard_ownership_violations()
+    assert not violations, "Taskboard ownership violations:\n" + "\n".join(violations)
+
+
+def test_shared_jsonl_appends_use_the_locked_helper() -> None:
+    """Core/server shared JSONL append handles use the single flock helper."""
+    violations = _shared_append_violations()
+    assert not violations, "Shared JSONL append violations:\n" + "\n".join(violations)
+
+
 def _current_baseline() -> dict[str, object]:
     return {
         "write_text_json_dumps": collect_write_text_json_dumps(),

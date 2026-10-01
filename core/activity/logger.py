@@ -58,6 +58,7 @@ from core.activity.timeline import TimelineMixin
 from core.exceptions import MemoryWriteError
 from core.paths import get_data_dir
 from core.platform.atomic_io import atomic_write_json
+from core.platform.locks import locked_path
 from core.time_utils import ensure_aware, now_iso, now_local  # noqa: F401
 
 logger = logging.getLogger("animaworks.activity")
@@ -283,17 +284,19 @@ class ActivityLogger(
             date_str = entry.ts[:10]
             path = self._log_dir / f"{date_str}.jsonl"
             payload = (json.dumps(entry.to_dict(), ensure_ascii=False) + "\n").encode("utf-8")
-            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-            try:
-                offset = 0
-                while offset < len(payload):
-                    written = os.write(fd, payload[offset:])
-                    if written <= 0:
-                        raise OSError("activity log append made no progress")
-                    offset += written
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            lock_path = path.with_name(f"{path.name}.lock")
+            with locked_path(lock_path, exclusive=True, thread_lock=True):
+                fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+                try:
+                    offset = 0
+                    while offset < len(payload):
+                        written = os.write(fd, payload[offset:])
+                        if written <= 0:
+                            raise OSError("activity log append made no progress")
+                        offset += written
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
             return True
         except OSError as exc:
             logger.exception("Failed to append activity log")

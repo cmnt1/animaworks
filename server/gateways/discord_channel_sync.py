@@ -32,7 +32,7 @@ from typing import Any
 from core.config.models import load_config
 from core.credentials import get_credential
 from core.integrations._discord_client import DiscordAPIError, DiscordClient
-from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta
+from core.messaging.messenger import ChannelMeta, update_channel_meta
 from core.paths import get_shared_dir
 
 logger = logging.getLogger("animaworks.discord_channel_sync")
@@ -136,12 +136,15 @@ class DiscordChannelSync:
                 forward_created += 1
                 logger.info("Created board '%s' from Discord channel #%s", board_name, ch_name)
 
-            meta = load_channel_meta(shared_dir, board_name)
-            if meta is None:
-                meta = ChannelMeta(members=[])
-            if not meta.description and ch.get("topic"):
-                meta.description = ch["topic"]
-            save_channel_meta(shared_dir, board_name, meta)
+            topic = ch.get("topic")
+
+            def update_description(meta: ChannelMeta | None, topic: str | None = topic) -> ChannelMeta:
+                meta = meta or ChannelMeta(members=[])
+                if not meta.description and topic:
+                    meta.description = topic
+                return meta
+
+            update_channel_meta(shared_dir, board_name, update_description, create_if_missing=True)
 
         # ── Phase 2: Reverse sync (AnimaWorks boards -> Discord) ──
         reverse_created = 0

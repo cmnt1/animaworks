@@ -735,7 +735,7 @@ class SkillsToolsMixin:
     def _handle_list_tasks(self: _SkillsToolsHost, args: dict[str, Any]) -> str:
         from core.tasks.queue import TaskQueueManager, mark_executability
 
-        manager = TaskQueueManager(self._anima_dir)
+        manager = TaskQueueManager(self._anima_dir, read_only=True)
         status_filter = args.get("status")
         detail = args.get("detail", False)
         tasks = manager.list_tasks(status=status_filter)
