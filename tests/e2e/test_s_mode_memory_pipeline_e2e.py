@@ -24,6 +24,7 @@ import pytest
 from core.activity.logger import ActivityLogger
 from core.memory.conversation.memory import ConversationMemory, ConversationTurn
 from core.memory.maintenance.consolidation import ConsolidationEngine
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.schemas import ModelConfig
 from tests.helpers.mocks import (
     make_litellm_response,
@@ -298,7 +299,7 @@ class TestCompressedSummaryToRAGSearchPipeline:
         from core.memory.rag.indexer import MemoryIndexer
         from core.memory.rag.store import ChromaVectorStore
 
-        vector_store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=True)
+        vector_store = ChromaVectorStore(persist_dir=anima_dir / "vectordb", allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(vector_store, "test-rag-vec", anima_dir)
 
         # Index the conversation summary

@@ -38,7 +38,6 @@ from core.platform.cursor import (
 from core.platform.cursor import (
     is_cursor_agent_available,
 )
-from core.platform.env import server_url_env
 from core.platform.subprocess_entries import SubprocessEntry, module_args
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -105,23 +104,12 @@ class CursorAgentExecutor(CLIStreamExecutor):
         """Write .cursor/mcp.json with AnimaWorks MCP server config."""
         import sys
 
-        from core.paths import PROJECT_DIR
+        from core.execution.mcp_env import build_mcp_env
 
         mcp_dir = self._workspace / ".cursor"
         mcp_dir.mkdir(parents=True, exist_ok=True)
         mcp_path = mcp_dir / "mcp.json"
-        mcp_env = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        }
-        mcp_env.update(server_url_env())
-        from core.execution.session.session_context import current_runtime_session
-
-        runtime_ctx = current_runtime_session()
-        if runtime_ctx is not None:
-            mcp_env.update(runtime_ctx.to_env())
+        mcp_env = build_mcp_env(self._anima_dir)
         config = {
             "mcpServers": {
                 "aw": {

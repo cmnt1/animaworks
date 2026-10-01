@@ -184,6 +184,84 @@ class TestCmdAnimaDelete:
         assert "kotoha" in captured.out
 
 
+def test_delete_with_live_server_delegates_to_api(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_delete
+
+    data_dir = TestCmdAnimaDelete()._make_anima_dir(tmp_path, "alice")
+    animas_dir = data_dir / "animas"
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    response = MagicMock()
+    response.json.return_value = {
+        "status": "deleted",
+        "name": "alice",
+        "archive_path": str(data_dir / "archive" / "alice.zip"),
+        "supervisor_warnings": [],
+    }
+    args = argparse.Namespace(anima="alice", force=True, no_archive=False, gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("core.platform.process.is_process_alive", return_value=True),
+        patch("cli.commands.anima_mgmt.gateway_request", return_value=response) as mock_gateway,
+    ):
+        cmd_anima_delete(args)
+
+    mock_gateway.assert_called_once_with(
+        args,
+        "DELETE",
+        "/api/animas/alice?archive=true",
+        timeout=30.0,
+        raw_response=True,
+    )
+    assert (animas_dir / "alice").is_dir()
+    assert "Archived to:" in capsys.readouterr().out
+
+
+def test_delete_with_stale_server_pid_uses_local_service(tmp_path):
+    from cli.commands.anima_mgmt import cmd_anima_delete
+
+    data_dir = TestCmdAnimaDelete()._make_anima_dir(tmp_path, "alice")
+    animas_dir = data_dir / "animas"
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    args = argparse.Namespace(anima="alice", force=True, no_archive=True, gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("core.platform.process.is_process_alive", return_value=False),
+        patch("cli.commands.anima_mgmt.gateway_request") as mock_gateway,
+    ):
+        cmd_anima_delete(args)
+
+    mock_gateway.assert_not_called()
+    assert not (animas_dir / "alice").exists()
+    config = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+    assert "alice" not in config["animas"]
+
+
+def test_delete_refuses_local_changes_if_live_server_api_is_unreachable(tmp_path, capsys):
+    from cli.commands.anima_mgmt import cmd_anima_delete
+
+    data_dir = TestCmdAnimaDelete()._make_anima_dir(tmp_path, "alice")
+    animas_dir = data_dir / "animas"
+    (data_dir / "server.pid").write_text("1234", encoding="utf-8")
+    args = argparse.Namespace(anima="alice", force=True, no_archive=False, gateway_url=None)
+
+    with (
+        patch("core.paths.get_data_dir", return_value=data_dir),
+        patch("core.paths.get_animas_dir", return_value=animas_dir),
+        patch("core.platform.process.is_process_alive", return_value=True),
+        patch("cli.commands.anima_mgmt.gateway_request", side_effect=RuntimeError("gateway unavailable")),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        cmd_anima_delete(args)
+
+    assert exc_info.value.code == 1
+    assert (animas_dir / "alice").is_dir()
+    assert "gateway unavailable" in capsys.readouterr().out
+
+
 class TestCmdAnimaDisable:
     """Tests for cmd_anima_disable."""
 

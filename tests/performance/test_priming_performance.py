@@ -27,6 +27,7 @@ from unittest.mock import patch
 import pytest
 
 from core.memory.priming import PrimingEngine
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.time_utils import now_jst
 
 # Try to import optional dependencies
@@ -197,7 +198,7 @@ def test_indexing_throughput(large_knowledge_base):
     chroma_dir.mkdir(exist_ok=True)
 
     # Create vector store
-    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=True)
+    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=OWNER_CAPABILITY)
 
     indexer = MemoryIndexer(
         vector_store=vector_store,
@@ -256,7 +257,7 @@ def test_search_latency_comparison(large_knowledge_base):
     chroma_dir.mkdir(exist_ok=True)
 
     # Create vector store
-    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=True)
+    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=OWNER_CAPABILITY)
 
     # Index all files
     indexer = MemoryIndexer(
@@ -449,7 +450,7 @@ def test_large_dataset_scalability(tmp_path):
     chroma_dir.mkdir(exist_ok=True)
 
     # Create vector store
-    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=True)
+    vector_store = ChromaVectorStore(persist_dir=chroma_dir, allow_direct=OWNER_CAPABILITY)
 
     indexer = MemoryIndexer(
         vector_store=vector_store,

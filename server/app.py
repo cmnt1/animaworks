@@ -686,11 +686,14 @@ async def _run_model_warmup() -> None:
     20-30s cold-load penalty."""
 
     def _warm_native() -> None:
+        from core.config import load_config
         from core.memory.rag.embedding import thread_safe_encode
         from core.memory.retrieval.reranker import get_reranker
 
         thread_safe_encode(["ウォームアップ"], purpose="query")
-        get_reranker().score_sync("ウォームアップ", ["テスト"])
+        model_name = load_config().rag.cross_encoder_model
+        reranker = get_reranker(model_name) if model_name else get_reranker()
+        reranker.score_sync("ウォームアップ", ["テスト"])
 
     try:
         await asyncio.to_thread(_warm_native)

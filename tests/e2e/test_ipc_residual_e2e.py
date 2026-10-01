@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 # ── Problem A: setting_sources verified in source ──────────────────
 
 
@@ -82,10 +84,10 @@ class TestPerAnimaChromaDBIsolation:
         # Only the owning root opens native Chroma; open each store directly
         # the way a root does.
         store_a = create_chroma_vector_store(
-            persist_dir=get_anima_vectordb_dir("alice"), anima_name="alice", allow_direct=True
+            persist_dir=get_anima_vectordb_dir("alice"), anima_name="alice", allow_direct=OWNER_CAPABILITY
         )
         store_b = create_chroma_vector_store(
-            persist_dir=get_anima_vectordb_dir("bob"), anima_name="bob", allow_direct=True
+            persist_dir=get_anima_vectordb_dir("bob"), anima_name="bob", allow_direct=OWNER_CAPABILITY
         )
 
         # Verify different persist directories

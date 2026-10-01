@@ -4,6 +4,7 @@
     "cli/commands/anima_mgmt.py",
     "core/activity/audit.py",
     "core/agent/agent_core.py",
+    "core/anima/admin.py",
     "core/anima/bootstrap_state.py",
     "core/anima/factory.py",
     "core/config/anima_registry.py",

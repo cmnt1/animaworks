@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.memory.rag import sqlite_health
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 
 
 def _assert_closed(connections):
@@ -94,9 +95,9 @@ def test_preflight_connections_close_before_native_client_starts(tmp_path, monke
     try:
         if native_failure:
             with pytest.raises(RuntimeError, match="injected native startup failure"):
-                ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture", allow_direct=True)
+                ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture", allow_direct=OWNER_CAPABILITY)
         else:
-            store = ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture", allow_direct=True)
+            store = ChromaVectorStore(persist_dir=tmp_path, anima_name="fixture", allow_direct=OWNER_CAPABILITY)
             store.close()
         assert events == ["native_started_after_preflight_closed"]
         _assert_closed(connections)

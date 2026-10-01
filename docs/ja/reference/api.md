@@ -29,7 +29,7 @@ FastAPI の OpenAPI 定義、WebSocket、`server/app.py` の直書きルート�
 
 | GET | `/api/animas` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | 利用可能な anima の一覧を取得します。 | `server/routes/animas.py:list_animas` |
 | POST | `/api/animas/reload-all` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Hot-reload ModelConfig for all running animas. | `server/routes/animas.py:reload_all_anima_configs` |
-| DELETE | `/api/animas/{name}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Stop and delete an anima entirely (process + files). | `server/routes/animas.py:delete_anima` |
+| DELETE | `/api/animas/{name}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | 停止を確認してから削除します（`archive=true` が既定。停止を確認できない場合は 409）。アーカイブ先と上司参照の警告を返します。 | `server/routes/animas.py:delete_anima` |
 | GET | `/api/animas/{name}` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | — | `server/routes/animas.py:get_anima_detail` |
 | GET | `/api/animas/{name}/aliases` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Return aliases for an anima from config.json. | `server/routes/animas.py:get_anima_aliases` |
 | PUT | `/api/animas/{name}/aliases` | セッション必須（local_trust モード、または localhost 信頼が有効なら省略可） | Update aliases for an anima in config.json. | `server/routes/animas.py:update_anima_aliases` |

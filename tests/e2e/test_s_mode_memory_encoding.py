@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.conversation.memory import ConversationMemory, ToolRecord
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 
 # =====================================================================
 # Fix 1: S mode append_turn
@@ -159,7 +160,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
 
         indexer = MemoryIndexer(store, "test-chunk", anima_dir)
 
@@ -227,7 +228,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(store, "test-empty", anima_dir)
 
         result = indexer.index_conversation_summary(state_dir, "test-empty")
@@ -268,7 +269,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(store, "test-short", anima_dir)
 
         result = indexer.index_conversation_summary(state_dir, "test-short")
@@ -295,7 +296,7 @@ class TestConversationSummaryChunking:
 
         vectordb_dir = tmpdir / "vectordb"
         vectordb_dir.mkdir()
-        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+        store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
         indexer = MemoryIndexer(store, "test-fallback", anima_dir)
 
         # Plain text without ### headings
@@ -463,9 +464,7 @@ def test_consolidation_uses_2phase_pipeline() -> None:
     phase_a_source = inspect.getsource(
         anima_module.DigitalAnima._run_daily_episode_summaries,
     )
-    assert "collect_activity_chunks" in phase_a_source, (
-        "Phase A episode extraction should use collect_activity_chunks"
-    )
+    assert "collect_activity_chunks" in phase_a_source, "Phase A episode extraction should use collect_activity_chunks"
     assert "_complete_episode_prompt" in phase_a_source, (
         "Phase A episode extraction should complete prompts via _complete_episode_prompt"
     )

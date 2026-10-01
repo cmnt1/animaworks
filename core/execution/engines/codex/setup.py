@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.platform.env import get_env, server_url_env
+from core.platform.env import get_env
 
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -480,27 +480,11 @@ class CodexSetupMixin:
 
     def _build_mcp_env(self) -> dict[str, str]:
         """Build env dict for the MCP server subprocess."""
-        from core.execution.session.session_context import current_runtime_session
-        from core.paths import PROJECT_DIR
+        from core.execution.mcp_env import build_mcp_env
 
-        env = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": default_path_env(),
-        }
-        env.update(server_url_env())
-        for name in (
-            "ANIMAWORKS_EMBED_URL",
-            "ANIMAWORKS_VECTOR_URL",
-            "ANIMAWORKS_RERANK_URL",
-            "ANIMAWORKS_INTERNAL_AUTH",
-        ):
-            if value := get_env(name):
-                env[name] = value
-        ctx = current_runtime_session()
-        if ctx is not None:
-            env.update(ctx.to_env())
+        env = build_mcp_env(self._anima_dir)
+        # Codex's MCP server needs the embedded CLI and launcher Python on PATH.
+        env["PATH"] = default_path_env()
         return env
 
     def _propagate_auth(self) -> None:

@@ -367,11 +367,13 @@ def create_internal_router() -> APIRouter:
 
         from functools import partial
 
+        from core.config import load_config
         from core.memory.retrieval.reranker import get_reranker
 
         started = perf_counter()
         init_started = perf_counter()
-        reranker = get_reranker()
+        model_name = load_config().rag.cross_encoder_model
+        reranker = get_reranker(model_name) if model_name else get_reranker()
         init_elapsed = perf_counter() - init_started
         loop = asyncio.get_running_loop()
         score_started = perf_counter()

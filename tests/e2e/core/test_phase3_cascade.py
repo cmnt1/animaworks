@@ -424,8 +424,13 @@ def test_direct_chroma_construction_stays_inside_approved_boundaries() -> None:
                     factory_callers.add(relative)
                     assert any(
                         keyword.arg == "allow_direct"
-                        and isinstance(keyword.value, ast.Constant)
-                        and keyword.value.value is True
+                        and isinstance(keyword.value, ast.Name)
+                        and keyword.value.id == "OWNER_CAPABILITY"
+                        for keyword in node.keywords
+                    )
+                    assert any(
+                        keyword.arg == "persist_dir"
+                        and not (isinstance(keyword.value, ast.Constant) and keyword.value.value is None)
                         for keyword in node.keywords
                     )
             elif (

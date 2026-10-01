@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -325,74 +324,84 @@ def cmd_anima_permissions(args: argparse.Namespace) -> None:
 
 
 def cmd_anima_delete(args: argparse.Namespace) -> None:
-    """Delete an anima with optional archive."""
-    from core.config.models import unregister_anima_from_config
+    """Delete an anima through the running server or shared local service."""
+    from core.anima.admin import delete_anima_files
     from core.paths import get_animas_dir, get_data_dir
-    from core.time_utils import now_jst
+    from core.platform.pid import read_server_pid
+    from core.platform.process import is_process_alive
 
     name = args.anima
+    if not name or ".." in name or "/" in name or "\\" in name:
+        print("Error: Invalid anima name")
+        sys.exit(1)
+
     data_dir = get_data_dir()
     animas_dir = get_animas_dir()
     anima_dir = animas_dir / name
-
-    # Validate anima exists
     if not anima_dir.exists() or not (anima_dir / "identity.md").exists():
         print(f"Error: Anima '{name}' not found (missing identity.md)")
         sys.exit(1)
 
-    # Confirmation prompt
-    if not args.force:
+    if not getattr(args, "force", False):
         answer = input(f"Are you sure you want to delete anima '{name}'? [y/N] ")
         if answer.strip().lower() != "y":
             print("Aborted.")
             return
 
-    # Try to disable via server if running
+    archive = not getattr(args, "no_archive", False)
     pid_file = data_dir / "server.pid"
-    server_running = pid_file.exists()
+    server_pid = read_server_pid(data_dir)
+    if pid_file.exists() and server_pid is None:
+        print("Error: Server PID file is invalid; refusing to delete while server status is unknown")
+        sys.exit(1)
+    server_running = server_pid is not None and is_process_alive(server_pid)
+
+    def report_success(archive_path: str | Path | None, supervisor_warnings: list[str]) -> None:
+        if archive_path:
+            print(f"Archived to: {archive_path}")
+        for warning in supervisor_warnings:
+            print(f"Warning: {warning}")
+        print(f"Anima '{name}' deleted successfully.")
 
     if server_running:
         try:
-            gateway_request(args, "POST", f"/api/animas/{name}/disable", timeout=10, raw_response=True)
-        except Exception as e:
-            logger.warning("Failed to disable anima via API: %s", e)
+            response = gateway_request(
+                args,
+                "DELETE",
+                f"/api/animas/{name}?archive={str(archive).lower()}",
+                timeout=30.0,
+                raw_response=True,
+            )
+            response.raise_for_status()
+            api_result = response.json()
+            if not isinstance(api_result, dict) or api_result.get("status") != "deleted":
+                detail = api_result.get("detail") if isinstance(api_result, dict) else None
+                raise RuntimeError(str(detail or "server did not confirm anima deletion"))
+            archive_path = api_result.get("archive_path")
+            warnings = api_result.get("supervisor_warnings") or []
+            report_success(
+                archive_path if isinstance(archive_path, str) else None,
+                [str(warning) for warning in warnings] if isinstance(warnings, list) else [],
+            )
+            return
+        except Exception as exc:
+            print(f"Error: Failed to delete anima: {exc}")
+            sys.exit(1)
 
-    # Archive before deletion
-    if not args.no_archive:
-        archive_dir = data_dir / "archive"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = now_jst().strftime("%Y%m%d_%H%M%S")
-        zip_path = archive_dir / f"{name}_{timestamp}.zip"
-        shutil.make_archive(str(zip_path.with_suffix("")), "zip", str(anima_dir))
-        print(f"Archived to: {zip_path}")
+    result = delete_anima_files(data_dir, name, archive=archive)
+    if result.archive_path is not None:
+        print(f"Archived to: {result.archive_path}")
+    if result.error:
+        print(f"Error: Failed to delete anima: {result.error}")
+        sys.exit(1)
+    if not result.deleted:
+        print("Error: Anima deletion did not complete")
+        sys.exit(1)
 
-    # Delete directory
-    shutil.rmtree(anima_dir)
-
-    # Unregister from config
-    unregister_anima_from_config(data_dir, name)
-
-    # Check for orphaned supervisor references
-    for other_dir in animas_dir.iterdir():
-        if not other_dir.is_dir():
-            continue
-        status_file = other_dir / "status.json"
-        if status_file.exists():
-            try:
-                status_data = json.loads(status_file.read_text(encoding="utf-8"))
-                if status_data.get("supervisor") == name:
-                    print(f"Warning: Anima '{other_dir.name}' has deleted anima '{name}' as supervisor")
-            except Exception:
-                logger.debug("Best-effort operation failed", exc_info=True)
-
-    # Reload server config if running
-    if server_running:
-        try:
-            gateway_request(args, "POST", "/api/system/reload", timeout=10, raw_response=True)
-        except Exception:
-            logger.debug("Best-effort operation failed", exc_info=True)
-
-    print(f"Anima '{name}' deleted successfully.")
+    warnings = [
+        f"Anima '{other_name}' has deleted anima '{name}' as supervisor" for other_name in result.supervisor_references
+    ]
+    report_success(None, warnings)
 
 
 def cmd_anima_disable(args: argparse.Namespace) -> None:

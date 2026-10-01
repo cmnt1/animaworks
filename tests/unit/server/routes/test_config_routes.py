@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
@@ -97,7 +96,7 @@ class TestMaskSecrets:
 
 class TestGetConfig:
     async def test_404_when_config_missing(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         app = _make_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -106,9 +105,8 @@ class TestGetConfig:
         assert resp.json()["detail"] == "Config file not found"
 
     async def test_returns_masked_config(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        config_dir = tmp_path / ".animaworks"
-        config_dir.mkdir()
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        config_dir = tmp_path
         config = {
             "model": "claude-sonnet-4-6",
             "providers": {"anthropic": {"api_key": "sk-ant-1234567890"}},
@@ -127,10 +125,8 @@ class TestGetConfig:
         assert "..." in data["providers"]["anthropic"]["api_key"]
 
     async def test_500_on_invalid_json(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        config_dir = tmp_path / ".animaworks"
-        config_dir.mkdir()
-        (config_dir / "config.json").write_text("not valid json {{{", encoding="utf-8")
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        (tmp_path / "config.json").write_text("not valid json {{{", encoding="utf-8")
 
         app = _make_test_app()
         transport = ASGITransport(app=app)

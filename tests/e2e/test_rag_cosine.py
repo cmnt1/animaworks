@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 chromadb = pytest.importorskip("chromadb", reason="ChromaDB not installed. Install with: pip install 'animaworks[rag]'")
 
 
@@ -32,7 +34,7 @@ def temp_vectordb():
 
     from core.memory.rag.store import ChromaVectorStore
 
-    store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=True)
+    store = ChromaVectorStore(persist_dir=vectordb_dir, allow_direct=OWNER_CAPABILITY)
     yield store
     shutil.rmtree(tmpdir)
 

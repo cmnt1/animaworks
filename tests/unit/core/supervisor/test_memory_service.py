@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.memory.rag.vector_client import VectorClient, VectorStoreRetryableError
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
+from core.memory.rag.vector_client import VectorClient, VectorStoreRetryableError
 from core.memory.rag.vector_ops import bridge_transport
 from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
 
@@ -468,6 +468,10 @@ async def test_root_repair_builds_staging_in_subprocess(tmp_path: Path, monkeypa
         return FakeProc()
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create_subprocess)
+    from core.memory.rag.endpoints import RagEndpoints, configure_endpoints
+
+    endpoints = RagEndpoints.for_server(18500)
+    configure_endpoints(endpoints)
     service = MemoryService("sakura", anima_dir, opener=_store)
 
     staging, chunks, hashes = await service._build_staging_subprocess(True)
@@ -476,11 +480,16 @@ async def test_root_repair_builds_staging_in_subprocess(tmp_path: Path, monkeypa
     assert isinstance(cmd, tuple)
     assert cmd[1:3] == ("-m", "core.memory.rag.repair.rebuild")
     assert "--shared" in cmd
+    child_env = captured["kwargs"]["env"]
+    assert child_env["ANIMAWORKS_EMBED_URL"] == endpoints.embed_url
+    assert child_env["ANIMAWORKS_VECTOR_URL"] == endpoints.vector_url
+    assert child_env["ANIMAWORKS_RERANK_URL"] == endpoints.rerank_url
     assert staging.name.startswith("vectordb.staging-root-")
     assert chunks == 2
     assert hashes == {}
     shutil.rmtree(staging)
     await service.close()
+    configure_endpoints(None)
 
 
 @pytest.mark.asyncio

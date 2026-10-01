@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from core.platform.env import get_env, server_url_env
-
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -249,29 +247,10 @@ class SDKOptionsMixin:
         The MCP server needs ANIMAWORKS_ANIMA_DIR and ANIMAWORKS_PROJECT_DIR
         to initialize ToolHandler, plus PYTHONPATH so it can import core modules.
         """
+        from core.execution.mcp_env import build_mcp_env
         from core.execution.session.session_context import current_runtime_session
-        from core.paths import PROJECT_DIR
 
-        env = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        }
-        env.update(server_url_env())
-        # Without the embed/vector/rerank URLs the MCP server cannot delegate
-        # to the animaworks server and silently loads SentenceTransformer /
-        # CrossEncoder models in-process (2026-07-17 OOM / 2026-08-07 rerank
-        # load storms).
-        for key in (
-            "ANIMAWORKS_EMBED_URL",
-            "ANIMAWORKS_VECTOR_URL",
-            "ANIMAWORKS_RERANK_URL",
-            "ANIMAWORKS_INTERNAL_AUTH",
-        ):
-            value = get_env(key)
-            if value:
-                env[key] = value
+        env = build_mcp_env(self._anima_dir)
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())

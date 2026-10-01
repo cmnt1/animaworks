@@ -161,6 +161,9 @@ class TaskRunnerSupervisor:
         }
         if "ANIMAWORKS_EMBED_URL" not in values:
             raise TaskRunnerError("required task runner URL is missing: ANIMAWORKS_EMBED_URL")
+        for name in ("ANIMAWORKS_VECTOR_URL", "ANIMAWORKS_RERANK_URL"):
+            if name not in values:
+                raise TaskRunnerError(f"required task runner URL is missing: {name}")
         return values
 
     def _build_child_environment(

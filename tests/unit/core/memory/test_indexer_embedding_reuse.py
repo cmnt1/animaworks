@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
 from core.memory.rag.indexer import MemoryIndexer
 from core.memory.rag.store import Document, SearchResult
 
@@ -212,7 +213,7 @@ def test_real_owner_metadata_update_keeps_embedding_and_refreshes_hash(tmp_path,
     from core.memory.rag.store import ChromaVectorStore
 
     idx, _, path, kind = make_indexer(tmp_path, monkeypatch)
-    store = ChromaVectorStore(persist_dir=tmp_path / "test-vectors", allow_direct=True)
+    store = ChromaVectorStore(persist_dir=tmp_path / "test-vectors", allow_direct=OWNER_CAPABILITY)
     idx.vector_store = store
     try:
         path.write_text(body(2))

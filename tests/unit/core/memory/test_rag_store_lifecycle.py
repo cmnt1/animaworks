@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.direct_access import OWNER_CAPABILITY
+
 
 def test_chroma_vector_store_close_is_idempotent(tmp_path: Path) -> None:
     from core.memory.rag.store import ChromaVectorStore
@@ -47,7 +49,7 @@ def test_chroma_vector_store_startup_quick_check_blocks_corrupt_db(
     monkeypatch.setattr("core.memory.rag.sqlite_health.request_repair_for_sqlite_health", repair)
 
     with pytest.raises(RuntimeError, match="Chroma SQLite database corrupt"):
-        ChromaVectorStore(persist_dir=tmp_path, anima_name="sora", allow_direct=True)
+        ChromaVectorStore(persist_dir=tmp_path, anima_name="sora", allow_direct=OWNER_CAPABILITY)
 
     repair.assert_called_once()
     fake_chromadb.PersistentClient.assert_not_called()  # type: ignore[attr-defined]
@@ -71,7 +73,7 @@ def test_chroma_vector_store_configures_sqlite_pragmas(
     configure = MagicMock(return_value=SQLiteHealthResult(db_path=tmp_path / "chroma.sqlite3", ok=True, status="ok"))
     monkeypatch.setattr("core.memory.rag.sqlite_health.configure_chroma_sqlite_pragmas", configure)
 
-    ChromaVectorStore(persist_dir=tmp_path, anima_name="sora", allow_direct=True)
+    ChromaVectorStore(persist_dir=tmp_path, anima_name="sora", allow_direct=OWNER_CAPABILITY)
 
     # prepare_chroma_sqlite_for_startup applies pragmas once before client init;
     # post-init configure was removed to avoid WAL cascade storms.
@@ -100,7 +102,7 @@ def test_chroma_vector_store_tolerates_post_init_pragma_failure(
         ),
     )
 
-    store = ChromaVectorStore(persist_dir=tmp_path, anima_name="sora", allow_direct=True)
+    store = ChromaVectorStore(persist_dir=tmp_path, anima_name="sora", allow_direct=OWNER_CAPABILITY)
 
     assert store.client is not None
 
@@ -150,7 +152,7 @@ def test_persistent_client_initialization_is_serialized_process_wide(
 
     def initialize(path: Path) -> None:
         try:
-            ChromaVectorStore(persist_dir=path, anima_name=path.name, allow_direct=True)
+            ChromaVectorStore(persist_dir=path, anima_name=path.name, allow_direct=OWNER_CAPABILITY)
         except BaseException as error:  # pragma: no cover - asserted below
             errors.append(error)
 

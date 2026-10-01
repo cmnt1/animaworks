@@ -163,6 +163,7 @@ def build_staging_vectordb(
     """Build from private inputs without publishing live DB or metadata."""
     import gc
 
+    from core.memory.rag.direct_access import OWNER_CAPABILITY
     from core.memory.rag.store import create_chroma_vector_store
 
     anima_dir = anima_dir.resolve()
@@ -174,7 +175,11 @@ def build_staging_vectordb(
     staging.mkdir(parents=True, exist_ok=True)
     try:
         with snapshot_inputs(anima_dir, include_shared=include_shared) as inputs:
-            store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name, allow_direct=True)
+            store = create_chroma_vector_store(
+                persist_dir=staging,
+                anima_name=anima_name,
+                allow_direct=OWNER_CAPABILITY,
+            )
             try:
                 chunks, shared_hashes = _reindex_into_store(
                     store,

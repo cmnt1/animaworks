@@ -47,12 +47,14 @@ def test_phase3_child_env_reaches_vector_store_over_http(tmp_path: Path, monkeyp
         {
             "ANIMAWORKS_EMBED_URL": "http://embed.test",
             "ANIMAWORKS_VECTOR_URL": "http://vector.test/internal/vector",
+            "ANIMAWORKS_RERANK_URL": "http://rerank.test/internal/rerank",
         },
         attempt=1,
         display_lane="background",
     )
     assert env["ANIMAWORKS_VECTOR_URL"] == "http://vector.test/internal/vector"
     assert env["ANIMAWORKS_EMBED_URL"] == "http://embed.test"
+    assert env["ANIMAWORKS_RERANK_URL"] == "http://rerank.test/internal/rerank"
 
 
 # ── Task 1: received result is kept even when the child exits nonzero ───
@@ -87,7 +89,11 @@ async def _spawn_with_nonzero_exit(
             attempt=1,
             display_lane="background",
             on_spawned=None,
-            url_env={"ANIMAWORKS_EMBED_URL": "http://localhost:0"},
+            url_env={
+                "ANIMAWORKS_EMBED_URL": "http://localhost:0",
+                "ANIMAWORKS_VECTOR_URL": "http://localhost:0/vector",
+                "ANIMAWORKS_RERANK_URL": "http://localhost:0/rerank",
+            },
         )
     )
     while not supervisor.jobs:
