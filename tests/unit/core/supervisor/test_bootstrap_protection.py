@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ class TestBootstrapProcessStateWarning:
         mock_handle.send_request = AsyncMock(side_effect=_send_request_and_remove)
         sup.processes["kotoha"] = mock_handle
 
-        with patch("core.supervisor.manager.logger") as mock_logger:
+        with patch("server.supervisor.manager.logger") as mock_logger:
             await sup._run_bootstrap("kotoha")
 
             # Check that warning was logged
@@ -215,7 +215,7 @@ class TestBootstrapProcessStateWarning:
         mock_handle.send_request = AsyncMock(return_value=mock_response)
         sup.processes["kotoha"] = mock_handle
 
-        with patch("core.supervisor.manager.logger") as mock_logger:
+        with patch("server.supervisor.manager.logger") as mock_logger:
             await sup._run_bootstrap("kotoha")
 
             warning_calls = [call for call in mock_logger.warning.call_args_list if "process not running" in str(call)]

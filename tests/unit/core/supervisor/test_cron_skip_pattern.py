@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.schemas import CronTask
-from core.supervisor.cron_followup import command_followup_output
-from core.supervisor.scheduler_manager import SchedulerManager
+from core.runtime.cron_followup import command_followup_output
+from core.runtime.scheduler_manager import SchedulerManager
 
 # ── Helpers ──────────────────────────────────────────────────
 

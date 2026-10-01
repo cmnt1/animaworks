@@ -183,13 +183,20 @@ def process_group_exists(pgid: int | None, fallback_alive: bool) -> bool:
     return True
 
 
+_TASK_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.TASK_RUNNER.value,
+    "core.supervisor.task_runner",  # legacy name until 2026-11 (S3a)
+)
+
+
 def task_runner_subtree_pids(
     root: psutil.Process,
     job_pids: set[int],
-    cmd_marker: str = SubprocessEntry.TASK_RUNNER.value,
+    cmd_marker: str | tuple[str, ...] = _TASK_RUNNER_CMDLINE_MARKERS,
 ) -> set[int]:
     """Return task-runner roots and all descendants for orphan-cleanup exclusion."""
     excluded: set[int] = set()
+    cmd_markers = (cmd_marker,) if isinstance(cmd_marker, str) else cmd_marker
 
     def _add_subtree(pid: int) -> None:
         if pid in excluded:
@@ -208,7 +215,7 @@ def task_runner_subtree_pids(
         return excluded
     for proc in descendants:
         try:
-            if any(cmd_marker in token for token in proc.cmdline()):
+            if any(marker in token for marker in cmd_markers for token in proc.cmdline()):
                 _add_subtree(proc.pid)
         except (psutil.Error, TypeError, AttributeError):
             continue

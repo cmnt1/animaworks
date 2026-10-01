@@ -28,7 +28,7 @@ from core.time_utils import now_iso
 
 if TYPE_CHECKING:
     from core.anima.digital_anima import BackgroundWorkerSlot, DigitalAnima
-    from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+    from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
 
@@ -1361,7 +1361,7 @@ class PendingTaskExecutor:
 
     async def _execute_command_task_isolated(self, task_desc: dict[str, Any]) -> dict[str, Any]:
         """Run a command-type task inside a background-lane child."""
-        from core.supervisor.task_runner_supervisor import TaskRunnerError
+        from core.runtime.task_runner_supervisor import TaskRunnerError
 
         assert self._task_runner_supervisor is not None
         task_id = str(task_desc.get("task_id") or "unknown")
@@ -1486,7 +1486,7 @@ class PendingTaskExecutor:
 
         Caller is responsible for exclusion locks and worker-slot leasing.
         """
-        from core.supervisor.task_runner_supervisor import TaskRunnerCancelled, TaskRunnerError
+        from core.runtime.task_runner_supervisor import TaskRunnerCancelled, TaskRunnerError
 
         assert self._task_runner_supervisor is not None
         task_id = str(task_desc.get("task_id") or "unknown")

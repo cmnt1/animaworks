@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/memory/consolidation.md -->
-<!-- i18n: source-sha256=a37f02007d7805fe953c270b8af001c64b43c90d4e8873ce436a204a197977f9 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=a05463694132540a497b99625f9dc933a6b34890c941860e8c6bc5269d5e45a0 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > 확인된 커밋: 193a5e72
 
@@ -9,14 +9,14 @@
 
 ## 일일 처리
 
-`core/supervisor/_mgr_scheduler.py`이 일일 job을 등록하고, `core/lifecycle/system_consolidation.py`의 `_handle_daily_consolidation`가 대상 Anima를 선택한다. 비활동 기간이나 최근 24시간의 기록 수에 따라 실행을 보류할 수 있다.
+`server/supervisor/_mgr_scheduler.py`이 일일 job을 등록하고, `core/lifecycle/system_consolidation.py`의 `_handle_daily_consolidation`가 대상 Anima를 선택한다. 비활동 기간이나 최근 24시간의 기록 수에 따라 실행을 건너뛸 수 있다.
 
-Anima의 `run_consolidation`은 전날의 활동 로그를 날짜가 붙은 에피소드로 요약하고, 요약에서 atomic facts를 추출한다. 이후의 framework post-processing은 다음 순서로 진행된다.
+Anima의 `run_consolidation`는 전날의 활동 로그를 날짜가 포함된 에피소드로 요약하고, 요약에서 atomic facts를 추출한다. 이후 framework post-processing은 다음 순서로 진행된다.
 
-1. `ForgettingEngine.synaptic_downscaling`가 저활성 후보를 색인 위에서 표시한다.
-2. `knowledge_self_correction`가 대상이 되는 지식·절차를 LLM으로 재검토하고, 해결된 과제에서 절차를 작성한다.
+1. `ForgettingEngine.synaptic_downscaling`가 저활성 후보를 인덱스에서 표시한다.
+2. `knowledge_self_correction`가 대상이 되는 지식·절차를 LLM으로 검토하고, 해결된 과제에서 절차를 작성한다.
 
-이 보정은 `core/lifecycle/knowledge_correction.py`이 상한을 관리하면서 실행한다. 상세한 재고정 조건은 후술한다.
+이 보정은 `core/lifecycle/knowledge_correction.py`이 상한을 관리하면서 실행한다. 자세한 재고정 조건은 후술한다.
 
 ## 주간 처리
 
@@ -36,6 +36,6 @@ Anima의 `run_consolidation`은 전날의 활동 로그를 날짜가 붙은 에�
 
 `core/memory/maintenance/reconsolidation.py`는 절차의 `failure_count >= 1` **또는** `confidence < 0.6`을 충족하는 경우 재고정 후보로 한다. LLM이 개정한 경우에는 구버전을 보관하고, `version`을 진행하며 성공·실패 카운터와 신뢰도를 초기값으로 되돌린다.
 
-## RAG 색인의 정기 업데이트
+## RAG 인덱스 정기 업데이트
 
-RAG 색인 업데이트는 주간 통합과는 별개의 단일 스케줄이다. `core/supervisor/_mgr_scheduler.py`의 일일 indexing job이 기본 04:00에 기억 파일, facts, 공유 데이터를 반영하고, BM25와 entity 색인도 업데이트한다. 주간 post-processing이 별도로 RAG 전체를 재구축하는 경로는 없다. 색인과 복구 경로는 [의도적 회상과 검색](retrieval.md)을 참조한다.
+RAG 인덱스 업데이트는 주간 통합과는 별개의 단일 스케줄이다. `server/supervisor/_mgr_scheduler.py`의 일일 indexing job이 기본 04:00에 메모리 파일, facts, 공유 데이터를 반영하고, BM25와 entity 인덱스도 업데이트한다. 주간 post-processing이 별도로 RAG 전체를 재구축하는 경로는 없다. 인덱스와 복구 경로는 [의도적 회상과 검색](retrieval.md)을 참조한다.

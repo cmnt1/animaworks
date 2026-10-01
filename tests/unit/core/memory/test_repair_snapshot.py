@@ -11,7 +11,7 @@ import pytest
 from core.i18n import t
 from core.memory.rag.indexer import MemoryIndexer
 from core.memory.rag.repair import rebuild as repair_rebuild
-from core.supervisor.memory_service import MemoryService
+from core.runtime.memory_service import MemoryService
 from core.time_utils import ensure_aware
 
 

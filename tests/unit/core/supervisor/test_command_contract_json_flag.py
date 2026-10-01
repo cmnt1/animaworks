@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.supervisor.task_runner import execute_background_contract
+from core.runtime.task_runner import execute_background_contract
 
 
 def _completed(

@@ -15,9 +15,9 @@ flowchart LR
 
 ## 起動と IPC
 
-`core/supervisor/manager.py` が root process を起動し、`core/supervisor/runner.py` が Anima の実行時オブジェクトと各サービスを初期化する。`core/supervisor/task_runner_supervisor.py` は依頼ごとに独立した task runner を起動し、heartbeat、cron、inbox、チャット、greet、background task などを分離して実行する。
+`server/supervisor/manager.py` が root process を起動し、`core/runtime/runner.py` が Anima の実行時オブジェクトと各サービスを初期化する。`core/runtime/task_runner_supervisor.py` は依頼ごとに独立した task runner を起動し、heartbeat、cron、inbox、チャット、greet、background task などを分離して実行する。
 
-root と server の制御通信は `core/supervisor/ipc.py` を通る。`core/supervisor/ipc_v2.py` は root と task runner の要求・応答を扱い、`core/supervisor/transport.py` が接続方式を選ぶ。通常は Unix domain socket を使い、Windows では loopback TCP を使う。Unix socket のパスが OS の長さ上限を超える場合も loopback TCP に切り替える。
+root と server の制御通信は `core/runtime/ipc.py` を通る。`core/runtime/ipc_v2.py` は root と task runner の要求・応答を扱い、`core/runtime/transport.py` が接続方式を選ぶ。通常は Unix domain socket を使い、Windows では loopback TCP を使う。Unix socket のパスが OS の長さ上限を超える場合も loopback TCP に切り替える。
 
 ベクトル検索に必要な接続先は server が起動時に URL として用意し、task runner に渡す。root が記憶データへのアクセスを管理し、子プロセスからはサービス経由で検索する。検索経路の詳細は `docs/ja/memory/retrieval.md` を参照する。
 
@@ -27,6 +27,6 @@ server は起動直後に全 API を利用可能とはせず、RAG の preflight
 
 ## 異常終了と再起動
 
-`core/supervisor/restart_state.py` の状態機械が Anima ごとの連続失敗回数、次回再起動時刻、最終エラーを一元管理する。規定回数の失敗後は UI に FAILED を表示するが、自動復旧は継続する。再起動間隔は指数バックオフで延長され、上限は 30 分である。安定稼働が続けば失敗回数をリセットする。
+`server/supervisor/restart_state.py` の状態機械が Anima ごとの連続失敗回数、次回再起動時刻、最終エラーを一元管理する。規定回数の失敗後は UI に FAILED を表示するが、自動復旧は継続する。再起動間隔は指数バックオフで延長され、上限は 30 分である。安定稼働が続けば失敗回数をリセットする。
 
 エンジンのイベント idle timeout は engine event が 1200 秒間届かない場合に適用される。これは会話全体の実行時間上限ではない。task runner の停止・応答監視は root 側の supervisor が担う。

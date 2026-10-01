@@ -44,8 +44,9 @@ flowchart TD
 | `core.org` | 会社、組織、workspace の解決 |
 | `core.platform` | OS・プロセス・ロック・ファイル操作の差異吸収 |
 | `core.prompt` | system prompt と tool guide の組み立て |
+| `core.runtime` | anima メインの実行時コンポーネント、プロセス間通信、タスク実行 |
 | `core.skills` | スキルの索引、選択、ライフサイクル |
-| `core.supervisor` | Anima と task runner のプロセス管理、IPC、scheduler |
+| `server.supervisor` | サーバー側での anima プロセス監督、復旧、スケジューリング |
 | `core.tasks` | 永続タスク、実行キュー、委任、外部タスク収集 |
 | `core.tooling` | 内部ツールの定義、実行ハンドラー、権限検査 |
 | `core.usage` | 利用量とコストの集計 |

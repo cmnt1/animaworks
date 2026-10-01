@@ -8,9 +8,9 @@ description: >-
 
 ## 프레임워크 측 구현 (참조용)
 
-### cron (정기 작업)
+### cron（정기 작업）
 
-cron의 **파싱**은 `core/supervisor/schedule_parser.py`(`parse_cron_md` / `parse_schedule`), **등록·실행·리로드**는 `core/supervisor/scheduler_manager.py`(APScheduler, `AsyncIOScheduler(timezone=get_app_timezone())`)이 담당한다.
+cron의 **파싱**은 `core/runtime/schedule_parser.py`（`parse_cron_md` / `parse_schedule`), **등록·실행·리로드**는 `core/runtime/scheduler_manager.py`（APScheduler, `AsyncIOScheduler(timezone=get_app_timezone())`)이 담당한다.
 
 ### `core/tasks/background.py` (cron과는 다른 계열)
 
@@ -361,12 +361,12 @@ cron.md을 업데이트하기 전에 다음을 **반드시** 확인할 것:
 
 ### 검증 방법
 
-쓰기 후, 다음 명령으로 올바르게 파싱되는지 확인할 수 있다:
+작성 후, 아래 명령어로 올바르게 파싱되는지 확인할 수 있다:
 
 ```bash
 # プロジェクトルートで実行。ANIMAWORKS_ANIMA_DIR 未設定時は ~/.animaworks/animas/default を使用
 python -c "
-from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
+from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 import os
 from pathlib import Path
 
@@ -380,7 +380,7 @@ for t in tasks:
 "
 ```
 
-모든 작업에 ✅가 표시되면 정상. ❌가 나온 경우 스케줄식을 수정할 것.
+모든 작업에 ✅가 표시되면 정상이다. ❌가 나온 경우에는 스케줄 식을 수정할 것.
 
 ---
 

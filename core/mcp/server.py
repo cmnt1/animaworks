@@ -688,6 +688,10 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
 
 async def main() -> None:
     """Run the MCP stdio server."""
+    # core.mcp is below core.runtime in the layer graph, so use the platform env helper.
+    from core.platform.process_role import set_process_role_env
+
+    set_process_role_env("mcp")
     # The parent task runner owns its IPC connection; this MCP process keeps
     # the server URLs and routes via the host proxy, which forwards phase3
     # requests to that owner.

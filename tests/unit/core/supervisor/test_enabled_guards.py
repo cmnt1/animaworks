@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ class TestStartAnimaEnabledGuard:
         """Disabled anima: no ProcessHandle spawn, processes stays empty."""
         _write_status(supervisor.animas_dir, "test-anima", enabled=False)
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             MockHandle.return_value = mock_handle
 
@@ -71,7 +71,7 @@ class TestStartAnimaEnabledGuard:
         """Enabled anima: process is spawned as before."""
         _write_status(supervisor.animas_dir, "test-anima", enabled=True)
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=12345)
             mock_handle.send_request = AsyncMock(
@@ -91,7 +91,7 @@ class TestStartAnimaEnabledGuard:
         supervisor: ProcessSupervisor,
     ) -> None:
         """Missing status.json is treated as enabled (backward compatible)."""
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.get_pid = MagicMock(return_value=12345)
             mock_handle.send_request = AsyncMock(
@@ -154,7 +154,7 @@ class TestHealthRespawnEnabledGuard:
         supervisor.stop_anima = AsyncMock(side_effect=mock_stop)
         supervisor._ensure_restart_worker = MagicMock()
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             MockHandle.return_value = mock_handle
 

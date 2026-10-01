@@ -20,7 +20,7 @@ Modified files under test:
   - core/memory/maintenance/reconsolidation.py
   - core/prompt/context.py
   - core/lifecycle.py
-  - core/supervisor/manager.py
+  - server/supervisor/manager.py
 """
 
 import re
@@ -116,7 +116,7 @@ class TestNoHardcodedModelDefaults:
         "core/memory/maintenance/forgetting.py",
         "core/memory/maintenance/reconsolidation.py",
         "core/prompt/context.py",
-        "core/supervisor/manager.py",
+        "server/supervisor/manager.py",
     ]
 
     @staticmethod

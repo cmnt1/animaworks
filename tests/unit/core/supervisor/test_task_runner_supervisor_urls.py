@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerSupervisor
+from core.runtime.task_runner_supervisor import TaskRunnerError, TaskRunnerSupervisor
 
 _URLS = {
     "ANIMAWORKS_EMBED_URL": "http://rag.test/api/internal/embed",

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import psutil
 import pytest
 
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 def _job_for(proc: subprocess.Popen) -> TaskRunnerJob:

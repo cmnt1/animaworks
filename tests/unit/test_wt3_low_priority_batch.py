@@ -187,7 +187,7 @@ class TestClaudeMdModeBExclusion:
 @pytest.fixture
 def process_handle(tmp_path: Path):
     """Create a ProcessHandle with mock paths."""
-    from core.supervisor.process_handle import ProcessHandle
+    from server.supervisor.process_handle import ProcessHandle
 
     socket_path = tmp_path / "test.sock"
     return ProcessHandle(

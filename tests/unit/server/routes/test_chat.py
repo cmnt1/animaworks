@@ -56,7 +56,7 @@ def _make_test_app(animas: dict | None = None, supervisor: MagicMock | None = No
             p = animas[anima_name]
             import json as _json
 
-            from core.supervisor.ipc import IPCResponse
+            from core.runtime.ipc import IPCResponse
 
             async for chunk in p.process_message_stream(
                 params.get("message", ""),
@@ -286,7 +286,7 @@ class TestChatStream:
         captured_kwargs = {}
 
         async def _stream(*args, **kwargs):
-            from core.supervisor.ipc import IPCResponse
+            from core.runtime.ipc import IPCResponse
 
             captured_kwargs.update(kwargs)
             yield IPCResponse(

@@ -162,13 +162,20 @@ class TestProcessTreeHelpers:
         survivor.kill.assert_called_once_with()
         assert alive == [survivor]
 
-    def test_task_runner_subtree_pids_includes_job_and_marker_subtrees(self):
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            "core.runtime.task_runner",
+            "core.supervisor.task_runner",  # legacy name until 2026-11 (S3a)
+        ],
+    )
+    def test_task_runner_subtree_pids_includes_job_and_marker_subtrees(self, module_name: str):
         job_descendant = MagicMock(pid=11)
         marker_descendant = MagicMock(pid=21)
         job_root = MagicMock()
         job_root.children.return_value = [job_descendant]
         marker_root = MagicMock(pid=20)
-        marker_root.cmdline.return_value = ["python", "-m", "core.supervisor.task_runner"]
+        marker_root.cmdline.return_value = ["python", "-m", module_name]
         marker_root.children.return_value = [marker_descendant]
         unrelated = MagicMock(pid=30)
         unrelated.cmdline.return_value = ["python", "-m", "other"]

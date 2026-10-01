@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.supervisor.ipc_v2 import (
+from core.runtime.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
     IPCV2Connection,
     IPCV2ConnectionError,

@@ -30,7 +30,15 @@ logger = logging.getLogger(__name__)
 
 LeaseLiveness = Literal["live", "dead", "unknown"]
 
-_RUNNER_CMDLINE_MARKERS = (SubprocessEntry.SUPERVISOR_RUNNER.value, SubprocessEntry.TASK_RUNNER.value)
+_SUPERVISOR_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.SUPERVISOR_RUNNER.value,
+    "core.supervisor.runner",  # legacy name until 2026-11 (S3a)
+)
+_TASK_RUNNER_CMDLINE_MARKERS = (
+    SubprocessEntry.TASK_RUNNER.value,
+    "core.supervisor.task_runner",  # legacy name until 2026-11 (S3a)
+)
+_RUNNER_CMDLINE_MARKERS = _SUPERVISOR_RUNNER_CMDLINE_MARKERS + _TASK_RUNNER_CMDLINE_MARKERS
 
 
 def processing_lease_path(descriptor_path: Path) -> Path:
@@ -191,7 +199,7 @@ def _pid_exists(pid: int) -> bool | None:
 
 
 def _cmdline_matches_v1(cmdline: str, anima: str) -> bool:
-    return SubprocessEntry.SUPERVISOR_RUNNER.value in cmdline and anima in cmdline
+    return any(marker in cmdline for marker in _SUPERVISOR_RUNNER_CMDLINE_MARKERS) and anima in cmdline
 
 
 def _cmdline_matches_v2(cmdline: str, anima: str, job_id: str) -> bool:

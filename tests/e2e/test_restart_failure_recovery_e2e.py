@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor, RestartPolicy
-from core.supervisor.process_handle import ProcessState
+from server.supervisor.manager import ProcessSupervisor, RestartPolicy
+from server.supervisor.process_handle import ProcessState
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def _patch_sleep(ft: _FakeTime):
     async def _fast_sleep(duration: float) -> None:
         ft.t += duration
 
-    return patch("core.supervisor._mgr_health.asyncio.sleep", _fast_sleep)
+    return patch("server.supervisor._mgr_health.asyncio.sleep", _fast_sleep)
 
 
 class TestFailureToRestartFlow:

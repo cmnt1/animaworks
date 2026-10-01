@@ -10,7 +10,7 @@ import pytest
 
 from core.skills.cron_context import build_cron_skill_context
 from core.skills.usage import SkillUsageTracker
-from core.supervisor.schedule_parser import parse_cron_md
+from core.runtime.schedule_parser import parse_cron_md
 
 
 def _write_skill(path: Path, name: str, body: str, extra: str = "") -> None:

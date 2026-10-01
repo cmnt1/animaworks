@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 
 # ── Protocol Tests ────────────────────────────────────────────────
 
@@ -242,6 +242,6 @@ async def test_ipc_large_message():
 
 def test_ipc_buffer_limit_constant():
     """Test that IPC_BUFFER_LIMIT is set to 16MB."""
-    from core.supervisor.ipc import IPC_BUFFER_LIMIT
+    from core.runtime.ipc import IPC_BUFFER_LIMIT
 
     assert IPC_BUFFER_LIMIT == 16 * 1024 * 1024

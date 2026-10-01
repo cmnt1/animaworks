@@ -1,6 +1,6 @@
 """Disposable task runner entry point.
 
-Usage: ``python -m core.supervisor.task_runner --anima X --lane cron|heartbeat|task|background --job ID``
+Usage: ``python -m core.runtime.task_runner --anima X --lane cron|heartbeat|task|background --job ID``
 """
 
 from __future__ import annotations
@@ -20,9 +20,8 @@ from core.paths import get_animas_dir, get_data_dir, get_shared_dir
 from core.platform.env import get_env
 from core.platform.process import snapshot_descendants, terminate_tree
 from core.platform.tasks import spawn
-from core.schemas import CronTask
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.ipc_v2 import (
+from core.runtime.ipc import IPCRequest
+from core.runtime.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
     IPCV2BackpressureTimeout,
     IPCV2Connection,
@@ -33,8 +32,9 @@ from core.supervisor.ipc_v2 import (
     IPCV2PayloadTooLarge,
     ipc_v2_error,
 )
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.transport import open_ipc_connection
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.transport import open_ipc_connection
+from core.schemas import CronTask
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
     )
     success = result.get("exit_code", 1) == 0
     usage: dict[str, int] | None = None
-    from core.supervisor.cron_followup import command_followup_output
+    from core.runtime.cron_followup import command_followup_output
 
     command_output = command_followup_output(task, result)
     followup: dict[str, Any] | None = None
@@ -134,7 +134,7 @@ async def execute_cron_followup_contract(
     task: CronTask,
     command_output: str,
 ) -> dict[str, Any]:
-    """Run only a command cron's LLM follow-up after root-side execution."""
+    """Run only a command cron's LLM follow-up after Anima-main-side execution."""
     if task.type != "command":
         raise ValueError("command follow-up requires a command cron task")
     result = await anima.run_cron_task(
@@ -168,7 +168,7 @@ async def execute_inbox_contract(anima: DigitalAnima) -> dict[str, Any]:
 
     Mirrors :func:`execute_heartbeat_contract` but runs
     ``DigitalAnima.process_inbox_message`` which is the same function the
-    root previously invoked inline.
+    the Anima main previously invoked inline.
     """
     result = await anima.process_inbox_message()
     result_dict = result.model_dump(mode="json")
@@ -184,8 +184,8 @@ async def execute_inbox_contract(anima: DigitalAnima) -> dict[str, Any]:
 async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) -> dict[str, Any]:
     """Execute a TaskExec LLM task inside the child process.
 
-    Claim / lease / queue sync stay on the anima root; this contract only
-    produces the result string (and related metadata) for the root to apply.
+    Claim / lease / queue sync stay on the Anima main; this contract only
+    produces the result string (and related metadata) for the Anima main to apply.
     """
     from core.tasks.pending_executor import (
         _NON_COMPLETING_SENTINELS,
@@ -399,15 +399,15 @@ async def _connect(
                 if envelope.kind == "request" and envelope.body["method"] == "run":
                     return connection, envelope
         except (OSError, IPCV2ConnectionError, IPCV2BackpressureTimeout) as exc:
-            # BackpressureTimeout: hello ack >5s under root load spikes — retry
+            # BackpressureTimeout: hello ack >5s under Anima-main load spikes — retry
             # within the connect deadline instead of failing the whole startup.
             last_error = exc
             await asyncio.sleep(0.1)
-    raise IPCV2ConnectionError(f"could not connect to anima root: {last_error}")
+    raise IPCV2ConnectionError(f"could not connect to Anima main: {last_error}")
 
 
 class _RootLink:
-    """Owns the connection to the anima root and re-dials it when it breaks.
+    """Owns the connection to the Anima main and re-dials it when it breaks.
 
     The hang watchdog kills any runner whose progress stops for
     runner_liveness_timeout seconds, so a broken control socket must never
@@ -432,20 +432,20 @@ class _RootLink:
         return await self.connection.send_event(event, data)
 
     async def reconnect(self, broken: IPCV2Connection) -> IPCV2Connection:
-        """Re-dial the anima root after *broken* died; returns the live connection."""
+        """Re-dial the Anima main after *broken* died; returns the live connection."""
         async with self._lock:
             if self.connection is not broken:
                 return self.connection  # another consumer already healed it
             try:
                 await broken.close()
             except Exception:
-                logger.debug("Failed to close broken root connection", exc_info=True)
+                logger.debug("Failed to close broken Anima main connection", exc_info=True)
             connection, replayed_run = await _connect(self._socket_path, self._state)
             if replayed_run.body["request_id"] != self._request_id:
                 await connection.close()
                 raise IPCV2ConnectionError("reconnect returned a different run contract")
             self.connection = connection
-            logger.info("Task runner IPC reconnected to anima root")
+            logger.info("Task runner IPC reconnected to Anima main")
             return connection
 
 
@@ -474,19 +474,19 @@ async def _progress_loop(link: _RootLink, identity: IPCV2Identity) -> None:
             try:
                 await link.reconnect(connection)
             except Exception as reconnect_exc:
-                logger.warning("Task runner reconnect to anima root failed; will retry: %s", reconnect_exc)
+                logger.warning("Task runner reconnect to Anima main failed; will retry: %s", reconnect_exc)
                 await asyncio.sleep(_RECONNECT_RETRY_SECONDS)
             continue
         await asyncio.sleep(_PROGRESS_INTERVAL_SECONDS)
 
 
 async def _receive_after_reconnect(link: _RootLink, broken: IPCV2Connection) -> IPCV2Envelope:
-    """Heal the root connection, then behave like ``connection.receive()``."""
+    """Heal the Anima main connection, then behave like ``connection.receive()``."""
     while True:
         try:
             connection = await link.reconnect(broken)
         except Exception as exc:
-            logger.warning("Task runner reconnect to anima root failed; retrying: %s", exc)
+            logger.warning("Task runner reconnect to Anima main failed; retrying: %s", exc)
             broken = link.connection
             await asyncio.sleep(_RECONNECT_RETRY_SECONDS)
             continue
@@ -494,7 +494,7 @@ async def _receive_after_reconnect(link: _RootLink, broken: IPCV2Connection) -> 
 
 
 async def _parent_monitor(expected_parent_pid: int) -> None:
-    """Return when the spawning anima root is no longer our parent."""
+    """Return when the spawning Anima main is no longer our parent."""
     while os.getppid() == expected_parent_pid:  # noqa: ASYNC110 — polls the OS parent PID, which has no asyncio.Event
         await asyncio.sleep(1.0)
 
@@ -562,9 +562,9 @@ async def _send_terminal(
         receiver.cancel()
         await asyncio.gather(receiver, return_exceptions=True)
 
-    # Wait for the ack with backpressure retries.  A stalled root event loop
+    # Wait for the ack with backpressure retries.  A stalled Anima main event loop
     # (e.g. disk saturation) can push ack delivery past the fixed backpressure
-    # timeout; retrying instead of dying lets the root catch up.  Ack progress
+    # timeout; retrying instead of dying lets the Anima main catch up.  Ack progress
     # is tracked on the shared connection state, so re-waiting is safe.  A
     # lost socket is recovered the same way as the main send path above.
     deadline = asyncio.get_running_loop().time() + _TERMINAL_ACK_TIMEOUT
@@ -683,7 +683,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
 
     link = _RootLink(connection, socket_path, state, request_id)
 
-    # Route child-process task submissions back to the root so the root's
+    # Route child-process task submissions back to the Anima main so its
     # PendingTaskExecutor does not wait a full poll interval after a submit.
     _loop = asyncio.get_running_loop()
 
@@ -767,7 +767,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     # The only request this runner sends is the run contract, which
                     # is consumed during connect; any other response is unexpected.
                     execution.cancel()
-                    raise IPCV2ConnectionError("unexpected response from anima root")
+                    raise IPCV2ConnectionError("unexpected response from Anima main")
                 if control.kind == "event" and control.body["event"] == "grace":
                     # A-07: stop work (finally flushes journals) → grace_ack → exit.
                     grace_seq = 0
@@ -928,6 +928,9 @@ def _cleanup_descendants() -> None:
 
 
 async def main() -> int:
+    from core.runtime.process_role import set_process_role
+
+    set_process_role("task_runner")
     args = parse_args()
     socket_path, identity = _required_environment(args)
     _setup_logging(args.anima)

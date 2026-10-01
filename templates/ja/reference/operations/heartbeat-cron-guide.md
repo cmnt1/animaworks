@@ -175,7 +175,7 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 
 #### rotate_dm_logs（システム Cron）
 
-- **実行タイミング**: ライフサイクル（`core/lifecycle/system_crons.py` 等）のシステム Cron で **毎日 04:30**（サーバー設定タイムゾーン）。`core/supervisor/_mgr_scheduler.py` 側でも同一 ID のジョブが登録される構成。
+- **実行タイミング**: ライフサイクル（`core/lifecycle/system_crons.py` 等）のシステム Cron で **毎日 04:30**（サーバー設定タイムゾーン）。`server/supervisor/_mgr_scheduler.py` 側でも同一 ID のジョブが登録される構成。
 - **対象**: `shared/dm_logs/*.jsonl`（ファイル名に `.archive.` を含むものはスキップ）。
 - **動作**: `core.time_utils` のローカル現在時刻基準で、各行 JSON の `ts`（ISO 形式）をパースし、**デフォルト 7 日**より古いエントリを `{stem}.{YYYYMMDD}.archive.jsonl` に追記アーカイブしたうえで、現行ファイルから除去する。`ts` の解釈に失敗した行は **現行ファイルに残す**（データ損失防止）。
 - **その他のサーバー定時ジョブ**: Anima 単位の `cron.md` とは別に、ライフサイクルがメモリ保守・RAG 等のシステム Cron を登録する（例: 日次コンソリデーション 02:00、日次インデックス 04:00）。時刻は設定タイムゾーン基準。DM ローテーションは上記 04:30。

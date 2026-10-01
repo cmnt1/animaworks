@@ -71,7 +71,7 @@ class _MemoryStore(VectorStore):
 
 def test_open_vector_access_uses_temporary_owner_when_lock_is_free(tmp_path: Path, monkeypatch) -> None:
     import core.memory.rag.cli_access as cli_access
-    from core.supervisor.memory_service import MemoryService
+    from core.runtime.memory_service import MemoryService
 
     anima_dir = tmp_path / "animas" / "sora"
     store = _MemoryStore()

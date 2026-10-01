@@ -18,7 +18,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.e2e]
 

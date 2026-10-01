@@ -27,7 +27,8 @@ STRICT_DIRECTION_ALLOWLIST: Counter[tuple[str, str]] = Counter()
 # Specific rules take precedence over parent rules. Modules not covered by the
 # table use DEFAULT_CORE_LAYER (L4), as allowed by the audit plan.
 LAYER_RULES: tuple[tuple[str, int], ...] = (
-    ("core.supervisor", 6),
+    ("core.runtime", 6),
+    ("server.supervisor", 7),
     ("core.migrations", 6),
     ("core.infra.runtime_init", 6),
     ("core.tooling.handler", 5),
@@ -298,6 +299,69 @@ def test_strict_app_directions_have_no_new_edges() -> None:
         "TODO-listed legacy edges are temporarily grandfathered.\n"
         f"Unexpected: {_format_edges(unexpected)}"
     )
+
+
+def _core_to_server_dynamic_imports() -> list[str]:
+    """Find dynamic imports from core modules into the server package."""
+    violations = []
+    for path in sorted((ROOT / "core").rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        importlib_modules = set()
+        importlib_callables = set()
+        builtins_modules = {"builtins"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "importlib" or alias.name.startswith("importlib."):
+                        importlib_modules.add(alias.asname or alias.name.split(".", maxsplit=1)[0])
+                    elif alias.name == "builtins":
+                        builtins_modules.add(alias.asname or alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("importlib"):
+                importlib_callables.update(
+                    alias.asname or alias.name
+                    for alias in node.names
+                    if alias.name in {"import_module", "find_spec", "resolve_name"}
+                )
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            function = node.func
+            is_dynamic_import = isinstance(function, ast.Name) and (
+                function.id == "__import__" or function.id in importlib_callables
+            )
+            if isinstance(function, ast.Attribute):
+                owner = function.value
+                is_importlib_call = function.attr in {"import_module", "find_spec", "resolve_name"} and (
+                    isinstance(owner, ast.Name)
+                    and owner.id in importlib_modules
+                    or isinstance(owner, ast.Attribute)
+                    and owner.attr == "util"
+                    and isinstance(owner.value, ast.Name)
+                    and owner.value.id in importlib_modules
+                )
+                is_builtin_call = (
+                    function.attr == "__import__" and isinstance(owner, ast.Name) and owner.id in builtins_modules
+                )
+                is_dynamic_import = is_dynamic_import or is_importlib_call or is_builtin_call
+            if not is_dynamic_import:
+                continue
+            argument = node.args[0]
+            if not isinstance(argument, ast.Constant) or not isinstance(argument.value, str):
+                continue
+            module = argument.value.split(":", maxsplit=1)[0].strip()
+            if module == "server" or module.startswith("server."):
+                relative = path.relative_to(ROOT).as_posix()
+                violations.append(f"{relative}:{node.lineno} -> {argument.value}")
+    return violations
+
+
+def test_core_has_no_dynamic_imports_of_server_modules() -> None:
+    """Keep importlib and __import__ references within the same layer boundary."""
+    violations = _core_to_server_dynamic_imports()
+    assert not violations, "core -> server dynamic imports are forbidden:\n" + "\n".join(violations)
 
 
 def main() -> None:

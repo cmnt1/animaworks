@@ -9,7 +9,7 @@ from __future__ import annotations
 
 """Lifecycle helpers.
 
-Production system crons are owned by ``core.supervisor``.  This package
+Production system crons are owned by ``server.supervisor``.  This package
 retains the shared lifecycle sub-modules used there:
 
 - ``system_consolidation``: daily/weekly consolidation pipeline helpers

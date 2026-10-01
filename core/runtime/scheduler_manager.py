@@ -27,11 +27,11 @@ from core.config.models import ActivityScheduleEntry, load_config
 from core.i18n import t
 from core.platform.atomic_io import atomic_write_json
 from core.platform.tasks import spawn
+from core.runtime.cron_followup import command_followup_output
+from core.runtime.memory_service import MemoryService
+from core.runtime.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
+from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 from core.schemas import CronTask
-from core.supervisor.cron_followup import command_followup_output
-from core.supervisor.memory_service import MemoryService
-from core.supervisor.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
-from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 from core.time_utils import get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
@@ -735,7 +735,7 @@ class SchedulerManager:
                 self._direct_cron_tasks.discard(current)
 
     async def _run_cron_task(self, task: CronTask) -> None:
-        """Run one cron task; shell commands stay in the root, LLM work is isolated."""
+        """Run one cron task; shell commands stay in the Anima main, LLM work is isolated."""
         if not self._anima:
             return
         self._cron_running.add(task.name)
@@ -773,7 +773,7 @@ class SchedulerManager:
             self._cron_running.discard(task.name)
 
     async def shutdown_task_runners(self) -> None:
-        """Cancel root-side cron commands and reap isolated task processes."""
+        """Cancel Anima-main-side cron commands and reap isolated task processes."""
         current = asyncio.current_task()
         direct_tasks = [task for task in self._direct_cron_tasks if task is not current and not task.done()]
         for task in direct_tasks:

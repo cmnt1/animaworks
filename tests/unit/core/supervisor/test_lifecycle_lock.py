@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ class TestStartStopLifecycleLock:
             start_entered.set()
             await allow_start_finish.wait()
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.start = AsyncMock(side_effect=slow_start)
             mock_handle.stop = AsyncMock()
@@ -131,7 +131,7 @@ class TestStopHandleIdentityGuard:
         old_handle.stop = AsyncMock(side_effect=slow_stop)
         supervisor.processes[name] = old_handle
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             new_handle = AsyncMock()
             new_handle.start = AsyncMock()
             new_handle.stop = AsyncMock()
@@ -172,7 +172,7 @@ class TestStartDuringShutdown:
         _write_status(supervisor.animas_dir, name, enabled=True)
         supervisor._shutdown = True
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             await supervisor.start_anima(name)
 
         MockHandle.assert_not_called()
@@ -193,7 +193,7 @@ class TestRespawnDisabledCleanSkip:
         supervisor._ensure_restart_worker = MagicMock()
         supervisor._restart_ctl.record_failure(name, "e1")
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             await supervisor._handle_process_failure(name, MagicMock())
 
         MockHandle.assert_not_called()
@@ -206,7 +206,7 @@ class TestRespawnDisabledCleanSkip:
         self,
         supervisor: ProcessSupervisor,
     ) -> None:
-        from core.supervisor.process_handle import ProcessState
+        from server.supervisor.process_handle import ProcessState
 
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=False)
@@ -235,7 +235,7 @@ class TestRespawnDisabledCleanSkip:
         supervisor: ProcessSupervisor,
     ) -> None:
         """Disabled + already at max retries must not enter a FAILED state."""
-        from core.supervisor.process_handle import ProcessState
+        from server.supervisor.process_handle import ProcessState
 
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=False)
@@ -283,7 +283,7 @@ class TestShutdownDuringInFlightStart:
             start_entered.set()
             await allow_start_finish.wait()
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.start = AsyncMock(side_effect=slow_start)
             mock_handle.stop = AsyncMock()
@@ -312,7 +312,7 @@ class TestDisableMidRespawnCountRollback:
         supervisor: ProcessSupervisor,
     ) -> None:
         """A disabled anima gets a clean forget of its restart record."""
-        from core.supervisor.process_handle import ProcessState
+        from server.supervisor.process_handle import ProcessState
 
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=False)
@@ -358,7 +358,7 @@ class TestShutdownBarrier:
             start_entered.set()
             await allow_start_finish.wait()
 
-        with patch("core.supervisor.manager.ProcessHandle") as MockHandle:
+        with patch("server.supervisor.manager.ProcessHandle") as MockHandle:
             mock_handle = AsyncMock()
             mock_handle.start = AsyncMock(side_effect=slow_start)
             mock_handle.stop = AsyncMock()
@@ -396,7 +396,7 @@ class TestRespawnDuringShutdown:
         ctl = supervisor._restart_ctl
         ctl.record_failure(name, "e1")
 
-        from core.supervisor.process_handle import ProcessState
+        from server.supervisor.process_handle import ProcessState
 
         handle = MagicMock()
         await supervisor._handle_process_failure(name, handle)
@@ -416,7 +416,7 @@ class TestFailureMachineryNoOpDuringShutdown:
         supervisor: ProcessSupervisor,
     ) -> None:
         """Entrance guard blocks the whole failure/restart machinery too."""
-        from core.supervisor.process_handle import ProcessState
+        from server.supervisor.process_handle import ProcessState
 
         name = "test-anima"
         _write_status(supervisor.animas_dir, name, enabled=True)

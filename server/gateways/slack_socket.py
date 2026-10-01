@@ -229,7 +229,7 @@ def _known_anima_names() -> frozenset[str]:
         return cached
     try:
         from core.paths import get_animas_dir
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor import ProcessSupervisor
 
         names = frozenset(
             p.name.lower()

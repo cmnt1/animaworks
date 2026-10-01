@@ -12,9 +12,8 @@ import asyncio
 import logging
 from typing import Any, Protocol
 
+from core.memory.rag.repair import state as repair_state
 from core.platform.tasks import spawn
-
-from . import state as repair_state
 
 logger = logging.getLogger(__name__)
 

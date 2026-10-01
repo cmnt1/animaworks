@@ -1,4 +1,4 @@
-"""Unit tests for core.supervisor.schedule_parser with standard cron expression format."""
+"""Unit tests for core.runtime.schedule_parser with standard cron expression format."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from apscheduler.triggers.cron import CronTrigger
 
-from core.supervisor.schedule_parser import (
+from core.runtime.schedule_parser import (
     _posix_dow_to_apsched,
     parse_cron_md,
     parse_heartbeat_config,

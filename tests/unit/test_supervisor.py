@@ -17,12 +17,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.manager import (
+from server.supervisor.manager import (
     HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
 )
-from core.supervisor.process_handle import ProcessHandle, ProcessState
+from server.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import now_jst
 
 

@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.memory.conversation.streaming_journal import StreamingJournal
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.task_runner_supervisor import (
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.task_runner_supervisor import (
     TaskRunnerError,
     TaskRunnerJob,
     TaskRunnerSupervisor,
@@ -204,7 +204,7 @@ async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_queue_cancelled_child_is_reported_as_cancel_not_crash(tmp_path: Path, caplog) -> None:
-    from core.supervisor.task_runner_supervisor import TaskRunnerCancelled
+    from core.runtime.task_runner_supervisor import TaskRunnerCancelled
 
     executor, anima, _anima_dir = _executor(tmp_path, with_supervisor=True)
     assert executor._task_runner_supervisor is not None

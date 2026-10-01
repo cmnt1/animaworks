@@ -17,6 +17,7 @@ import importlib.util as _ilu
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -35,6 +36,11 @@ if _spec and _spec.loader:
     _mod.install()
 
 logger = logging.getLogger(__name__)
+
+_RUNNER_CMD_MARKERS = (
+    "core.runtime.runner",
+    "core.supervisor.runner",  # legacy name until 2026-11 (S3a)
+)
 
 from tests.helpers.filesystem import (
     DEFAULT_TEST_CONFIG,
@@ -306,8 +312,9 @@ def _kill_orphan_runners(data_dir_str: str) -> None:
 def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
     """Use pgrep + kill for matching runner processes."""
     try:
+        marker_pattern = "|".join(re.escape(marker) for marker in _RUNNER_CMD_MARKERS)
         result = subprocess.run(
-            ["pgrep", "-f", "core.supervisor.runner"],
+            ["pgrep", "-f", marker_pattern],
             capture_output=True,
             text=True,
             timeout=5,

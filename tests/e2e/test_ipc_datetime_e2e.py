@@ -19,7 +19,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from core.schemas import CycleResult
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 from core.time_utils import now_jst
 
 

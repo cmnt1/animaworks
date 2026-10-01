@@ -18,11 +18,11 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 
-from core.supervisor.ipc import IPCRequest, IPCResponse
+from core.runtime.ipc import IPCRequest, IPCResponse
 
 if TYPE_CHECKING:
     from core.anima.digital_anima import DigitalAnima
-    from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+    from core.runtime.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,7 @@ class StreamingIPCHandler:
     ``task_runner_supervisor`` is optional.  When provided, streaming is
     delegated to the task runner child via ``run_chat_stream``.  When omitted
     (``None``) the non-isolated path streams directly from ``anima``; this is
-    used by the task runner child's own chat lane (see core/supervisor/
-    task_runner.py), so it must be preserved.
+    used by the task runner child's own chat lane (see core/runtime/task_runner.py), so it must be preserved.
     """
 
     def __init__(

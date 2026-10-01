@@ -15,12 +15,12 @@ from core.execution.base import BaseExecutor, ExecutionResult
 from core.execution.engines.claude.executor import AgentSDKExecutor
 from core.memory.conversation.memory import ConversationMemory
 from core.schemas import ModelConfig
-from core.supervisor import task_runner
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner
+from core.runtime.ipc import IPCRequest
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.runner import AnimaRunner
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 class _UnsupportedExecutor(BaseExecutor):

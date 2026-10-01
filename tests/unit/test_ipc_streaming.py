@@ -18,7 +18,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from core.supervisor.ipc import (
+from core.runtime.ipc import (
     IPCClient,
     IPCRequest,
     IPCResponse,

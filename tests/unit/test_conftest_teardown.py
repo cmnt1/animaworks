@@ -19,7 +19,7 @@ class TestKillOrphanRunners:
 
         data_dir = str(tmp_path / ".animaworks")
         fake_pid = "99999"
-        fake_cmdline = f"python\x00-m\x00core.supervisor.runner\x00--animas-dir\x00{data_dir}/animas"
+        fake_cmdline = f"python\x00-m\x00core.runtime.runner\x00--animas-dir\x00{data_dir}/animas"
 
         with (
             patch("tests.conftest.subprocess.run", return_value=MagicMock(stdout=fake_pid)),
@@ -55,7 +55,7 @@ class TestKillOrphanRunners:
 
         with (
             patch("tests.conftest.subprocess.run", return_value=MagicMock(stdout="99999")),
-            patch.object(Path, "read_text", return_value=f"core.supervisor.runner {tmp_path}"),
+            patch.object(Path, "read_text", return_value=f"core.runtime.runner {tmp_path}"),
             patch("tests.conftest.os.kill", side_effect=ProcessLookupError) as kill,
         ):
             _kill_orphan_runners(str(tmp_path))

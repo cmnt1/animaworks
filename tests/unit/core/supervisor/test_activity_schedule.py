@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from core.config.models import ActivityScheduleEntry
-from core.supervisor.scheduler_manager import (
+from core.runtime.scheduler_manager import (
     SchedulerManager,
     _time_in_range,
 )

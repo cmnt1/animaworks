@@ -151,7 +151,7 @@ class TestIPCReloadHandler:
 
     @pytest.mark.asyncio
     async def test_handler_calls_anima_reload(self):
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = MagicMock(spec=AnimaRunner)
         runner.anima = MagicMock()
@@ -165,7 +165,7 @@ class TestIPCReloadHandler:
 
     @pytest.mark.asyncio
     async def test_handler_raises_when_no_anima(self):
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         runner = MagicMock(spec=AnimaRunner)
         runner.anima = None

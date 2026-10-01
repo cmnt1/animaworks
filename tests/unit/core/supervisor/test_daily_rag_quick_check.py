@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor._mgr_scheduler import SchedulerMixin
+from server.supervisor._mgr_scheduler import SchedulerMixin
 
 
 class _DailyIndexingHarness(SchedulerMixin):

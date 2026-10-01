@@ -28,12 +28,15 @@ class TestPidLifecycle:
         from cli.commands.server import cmd_start
         from core.platform.env import SERVER_URL_ENV
         from core.platform.pid import read_server_pid
+        from core.runtime.process_role import get_process_role
 
+        monkeypatch.delenv("ANIMAWORKS_PROCESS_ROLE", raising=False)
         monkeypatch.setenv(SERVER_URL_ENV, "http://127.0.0.1:18500")
         args = argparse.Namespace(host="127.0.0.1", port=18500, foreground=True)
         app = MagicMock()
 
         def assert_pid_written(*_args, **_kwargs):
+            assert get_process_role() == "root"
             assert read_server_pid() == os.getpid()
 
         with (

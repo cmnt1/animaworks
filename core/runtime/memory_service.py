@@ -1,4 +1,4 @@
-"""Root-owned vector memory service."""
+"""Anima-main-owned vector memory service."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ _T = TypeVar("_T")
 
 
 class MemoryServiceUnavailable(RuntimeError):
-    """The root memory service cannot safely answer a request."""
+    """The Anima main memory service cannot safely answer a request."""
 
 
 class MemoryService:
@@ -63,7 +63,7 @@ class MemoryService:
         self._repair_lock = asyncio.Lock()
 
     async def start(self) -> None:
-        """Open Chroma off the root event loop; failure leaves root available."""
+        """Open Chroma off the Anima main event loop; failure leaves the Anima main available."""
         if self._started:
             return
         self._started = True
@@ -81,7 +81,7 @@ class MemoryService:
             self._open_error = None
         except Exception as exc:
             self._open_error = exc
-            logger.warning("Root memory store open failed for %s: %s", self.anima_name, exc)
+            logger.warning("Anima main memory store open failed for %s: %s", self.anima_name, exc)
             try:
                 self._request_startup_repair(exc)
             except Exception:
@@ -146,7 +146,7 @@ class MemoryService:
         except ValueError:
             raise
         except Exception as exc:
-            logger.warning("Root memory operation failed for %s: %s", self.anima_name, exc)
+            logger.warning("Anima main memory operation failed for %s: %s", self.anima_name, exc)
             raise MemoryServiceUnavailable(f"memory operation failed: {exc}") from exc
         finally:
             self._pending -= 1
@@ -156,7 +156,7 @@ class MemoryService:
         try:
             future.result()
         except Exception:
-            logger.warning("Deferred root memory operation failed for %s", self.anima_name, exc_info=True)
+            logger.warning("Deferred Anima main memory operation failed for %s", self.anima_name, exc_info=True)
 
     def _dispatch_timed(self, method: str, params: dict[str, Any], queued_at: float) -> dict[str, Any]:
         started = perf_counter()
@@ -165,7 +165,7 @@ class MemoryService:
         finally:
             if method in {"memory.query", "memory.apply_access_updates"}:
                 logger.info(
-                    "Root memory operation: anima=%s method=%s queue_wait=%.3fs execute=%.3fs",
+                    "Anima main memory operation: anima=%s method=%s queue_wait=%.3fs execute=%.3fs",
                     self.anima_name,
                     method,
                     started - queued_at,
@@ -173,7 +173,7 @@ class MemoryService:
                 )
 
     async def repair(self, *, include_shared: bool) -> dict[str, Any]:
-        """Rebuild, swap, reopen, and verify this root's sole vector store."""
+        """Rebuild, swap, reopen, and verify this Anima main's sole vector store."""
         if not include_shared:
             from core.i18n import t
 
@@ -228,7 +228,7 @@ class MemoryService:
             except TimeoutError:
                 proc.kill()
                 await proc.communicate()
-                raise RuntimeError(f"root RAG staging rebuild timed out after {timeout}s") from None
+                raise RuntimeError(f"Anima main RAG staging rebuild timed out after {timeout}s") from None
             if proc.returncode != 0:
                 detail = stderr[-4000:].decode(errors="replace").strip()
                 raise RuntimeError(detail or f"staging rebuild exited with code {proc.returncode}")
@@ -413,10 +413,10 @@ class MemoryService:
     def _verify_store_sync(store: ChromaVectorStore, expected_chunks: int) -> dict[str, int]:
         verify = getattr(store, "verify_rebuilt_data", None)
         if not callable(verify):
-            raise RuntimeError("reopened root vector store cannot verify rebuilt data")
+            raise RuntimeError("reopened Anima main vector store cannot verify rebuilt data")
         result = verify(expected_chunks=expected_chunks)
         if not isinstance(result, dict):
-            raise RuntimeError("reopened root vector store returned invalid verification")
+            raise RuntimeError("reopened Anima main vector store returned invalid verification")
         return result
 
     def _write_shared_hashes_sync(self, shared_hashes: dict[str, str]) -> None:
@@ -443,7 +443,7 @@ class MemoryService:
             include_shared=True,
             animas_dir=self.anima_dir.parent,
         )
-        logger.warning("Marked phase3 root RAG for background repair after open failure: %s", error)
+        logger.warning("Marked phase3 Anima main RAG for background repair after open failure: %s", error)
 
     @staticmethod
     def _read_or_empty(collection: str, read: Callable[[], list[Any]]) -> list[Any]:
@@ -765,7 +765,7 @@ class MemoryService:
             try:
                 await loop.run_in_executor(self._executor, store.close)
             except Exception:
-                logger.warning("Failed to close root memory store for %s", self.anima_name, exc_info=True)
+                logger.warning("Failed to close Anima main memory store for %s", self.anima_name, exc_info=True)
         self._store = None
         try:
             await loop.run_in_executor(self._executor, self._owner_lock.release)

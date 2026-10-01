@@ -34,9 +34,9 @@ If a message cannot be sent, check the actual delivery errors for destination re
 
 | Role | Module |
 |------|------------|
-| Destination resolution and external delivery to Slack / Chatwork | `core/messaging/outbound.py` |
+| Recipient resolution and external delivery to Slack / Chatwork | `core/messaging/outbound.py` |
 | Internal DM delivery, activity log recording, and depth diagnostic logging | `core/messaging/messenger.py` |
-| DM duplicate prevention and Board duplicate prevention within a run | `core/tooling/handler_comms.py` |
-| Inbox file wake, single execution, and provider backoff | `core/supervisor/inbox_rate_limiter.py` |
-| Inbox capacity protection overflow | `core/anima/inbox_overflow.py` |
-| Prompt injection of recent sends | `core/memory/priming/outbound.py` |
+| DM deduplication and deduplication within Board runs | `core/tooling/handler_comms.py` |
+| Inbox file wake, single execution, and provider backoff | `core/runtime/inbox_rate_limiter.py` |
+| Inbox capacity protection via overflow | `core/anima/inbox_overflow.py` |
+| Prompt injection for recent sends | `core/memory/priming/outbound.py` |

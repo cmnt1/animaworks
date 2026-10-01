@@ -29,7 +29,7 @@ import pytest
 from core.memory.conversation.streaming_journal import JournalRecovery, StreamingJournal
 
 if TYPE_CHECKING:
-    from core.supervisor.runner import AnimaRunner
+    from core.runtime.runner import AnimaRunner
 
 
 # ── Fixtures ────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ def _make_runner(anima_dir: Path) -> AnimaRunner:
     reads: ``anima_name``, ``_anima_dir``, and ``anima`` (with
     ``model_config``).
     """
-    from core.supervisor.runner import AnimaRunner
+    from core.runtime.runner import AnimaRunner
 
     # AnimaRunner.__init__ requires socket_path / animas_dir / shared_dir,
     # but _recover_streaming_journal only uses self._anima_dir and

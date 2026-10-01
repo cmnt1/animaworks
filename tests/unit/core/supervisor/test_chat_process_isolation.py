@@ -15,12 +15,12 @@ from core.execution.session.session_ids import EngineSessionIds
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
-from core.supervisor import task_runner
-from core.supervisor.ipc import IPCRequest
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.streaming_handler import StreamingIPCHandler
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner
+from core.runtime.ipc import IPCRequest
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.runner import AnimaRunner
+from core.runtime.streaming_handler import StreamingIPCHandler
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 class _StreamSupervisor:
@@ -267,7 +267,7 @@ def test_chat_exit_fsyncs_conversation_and_engine_resume_files(tmp_path: Path) -
     _save_session_id(anima_dir, "claude-session", "chat")
     codex_session_ids.save(anima_dir, "codex-thread", "chat")
 
-    with patch("core.supervisor.task_runner.os.fsync") as fsync:
+    with patch("core.runtime.task_runner.os.fsync") as fsync:
         task_runner._fsync_chat_state(anima_dir)
 
     assert fsync.call_count == 3

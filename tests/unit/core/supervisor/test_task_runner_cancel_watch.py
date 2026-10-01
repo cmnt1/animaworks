@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor import task_runner_supervisor
-from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
+from core.runtime import task_runner_supervisor
+from core.runtime.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
+from core.runtime.task_runner_supervisor import TaskRunnerJob, TaskRunnerSupervisor
 
 
 def _make_supervisor() -> TaskRunnerSupervisor:

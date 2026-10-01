@@ -1,4 +1,4 @@
-"""Root-side lifecycle manager for disposable task runner processes."""
+"""Anima-main-side lifecycle manager for disposable task runner processes."""
 
 from __future__ import annotations
 
@@ -20,8 +20,7 @@ from core.i18n import t
 from core.platform.env import ANIMAWORKS_ENV_PREFIX, env_items_with_prefix
 from core.platform.process import process_group_exists, signal_tree, snapshot_descendants, subprocess_session_kwargs
 from core.platform.subprocess_entries import SubprocessEntry, module_args
-from core.schemas import CronTask
-from core.supervisor.ipc_v2 import (
+from core.runtime.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
     IPCV2Connection,
     IPCV2ConnectionError,
@@ -31,8 +30,9 @@ from core.supervisor.ipc_v2 import (
     ipc_v2_error,
     read_ipc_v2_envelope,
 )
-from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
-from core.supervisor.transport import cleanup_ipc_endpoint, start_ipc_server
+from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
+from core.runtime.transport import cleanup_ipc_endpoint, start_ipc_server
+from core.schemas import CronTask
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class TaskRunnerCancelled(TaskRunnerError):
 
 @dataclass
 class TaskRunnerJob:
-    """Root registry entry created before a task runner is spawned."""
+    """Anima-main registry entry created before a task runner is spawned."""
 
     identity: IPCV2Identity
     request_id: str
@@ -134,7 +134,7 @@ class TaskRunnerSupervisor:
         return self._jobs
 
     async def start(self) -> None:
-        """Start the root IPC endpoint and its optional memory service."""
+        """Start the Anima main IPC endpoint and its optional memory service."""
         await self._ensure_started()
 
     async def _ensure_started(self) -> None:
@@ -177,7 +177,7 @@ class TaskRunnerSupervisor:
 
         Phase3 children reach the vector store owner over HTTP via
         ``ANIMAWORKS_VECTOR_URL`` (propagated through ``url_env``); only the
-        root itself uses its in-process owner transport.
+        the Anima main itself uses its in-process owner transport.
         """
         env = os.environ.copy()
         for name in tuple(env):
@@ -443,7 +443,7 @@ class TaskRunnerSupervisor:
             return
 
     async def interrupt_chat(self, thread_id: str | None = None) -> dict[str, Any]:
-        """Forward an explicit root interrupt to active chat children."""
+        """Forward an explicit Anima-main interrupt to active chat children."""
         interrupted = False
         for job in self._jobs.values():
             if job.identity.lane != "chat":
@@ -795,7 +795,7 @@ class TaskRunnerSupervisor:
         """Best-effort orphan StreamingJournal recovery after a child exits.
 
         All disk work runs in a thread so a saturated disk can never stall the
-        root event loop (which would delay every child's ack).
+        Anima main event loop (which would delay every child's ack).
         """
         # Snapshot event-loop-owned inputs before handing disk work to a thread.
         owner = self._busy_status_owner
@@ -823,7 +823,7 @@ class TaskRunnerSupervisor:
                             continue
                         if session_type == "chat" and recovery.recovered_text:
                             if model_config is None:
-                                logger.error("Cannot persist recovered chat journal without root model config")
+                                logger.error("Cannot persist recovered chat journal without Anima main model config")
                             else:
                                 conversation = ConversationMemory(
                                     self.anima_dir,
@@ -941,7 +941,7 @@ class TaskRunnerSupervisor:
                     # A quiet interval is not an error: runner liveness is judged
                     # by the liveness watchdog (runner_liveness_timeout), not this socket.
                     # Severing here used to permanently mute healthy runners and
-                    # produce mass false hang-kills after root event-loop stalls.
+                    # produce mass false hang-kills after Anima-main event-loop stalls.
                     current = self._jobs.get(job.identity.job_id)
                     if current is None or current.connection is not connection:
                         break  # superseded by a reconnect, or the job is gone
@@ -977,7 +977,7 @@ class TaskRunnerSupervisor:
                     job.capabilities["steer"] = envelope.body["data"].get("steer") is True
                     continue
                 if envelope.kind == "event" and envelope.body["event"] == "tasks_submitted":
-                    # A child task runner published tasks; wake the root's
+                    # A child task runner published tasks; wake the Anima main's
                     # PendingTaskExecutor so it does not wait a poll interval.
                     from core.tasks.wake import request_wake
 
@@ -1015,15 +1015,15 @@ class TaskRunnerSupervisor:
                 await writer.wait_closed()
 
     async def handle_memory(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        """Serve root-local and IPC callers through the same memory queue."""
+        """Serve Anima-main-local and IPC callers through the same memory queue."""
         if self._memory_service is None:
-            raise MemoryServiceUnavailable("root memory service is disabled")
+            raise MemoryServiceUnavailable("Anima main memory service is disabled")
         return await self._memory_service.handle(method, params)
 
     async def repair_memory(self, *, include_shared: bool) -> dict[str, Any]:
-        """Run phase3 repair inside the root-owned memory service."""
+        """Run phase3 repair inside the Anima-main-owned memory service."""
         if self._memory_service is None:
-            raise MemoryServiceUnavailable("root memory service is disabled")
+            raise MemoryServiceUnavailable("Anima main memory service is disabled")
         return await self._memory_service.repair(include_shared=include_shared)
 
     async def close(self) -> None:

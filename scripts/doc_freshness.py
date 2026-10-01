@@ -105,7 +105,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "reference/operations/heartbeat-cron-guide.md": [
         "core/tasks/background.py",
-        "core/supervisor/schedule_parser.py",
+        "core/runtime/schedule_parser.py",
         "core/anima/heartbeat.py",
     ],
     "common_knowledge/operations/background-tasks.md": [
@@ -141,7 +141,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/anima/factory.py",
         "core/infra/runtime_init.py",
         "core/prompt/builder.py",
-        "core/supervisor/schedule_parser.py",
+        "core/runtime/schedule_parser.py",
     ],
     "reference/anatomy/memory-system.md": [
         "core/memory/",
@@ -182,7 +182,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/memory/",
     ],
     "common_skills/cron-management/SKILL.md": [
-        "core/supervisor/schedule_parser.py",
+        "core/runtime/schedule_parser.py",
         "core/tasks/background.py",
     ],
     "common_skills/image-posting/SKILL.md": [

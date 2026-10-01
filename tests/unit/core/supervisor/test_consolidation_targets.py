@@ -24,9 +24,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.ipc import IPCResponse
-from core.supervisor.manager import ProcessSupervisor
-from core.supervisor.process_handle import ProcessState
+from core.runtime.ipc import IPCResponse
+from server.supervisor.manager import ProcessSupervisor
+from server.supervisor.process_handle import ProcessState
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -338,7 +338,7 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     )
     monkeypatch.setattr("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", lambda *_args: False)
 
-    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+    with caplog.at_level(logging.WARNING, logger="server.supervisor._mgr_scheduler"):
         await sup._run_daily_consolidation()
 
     assert handle.calls == ["run_consolidation", "interrupt"]
@@ -364,7 +364,7 @@ async def test_weekly_consolidation_timeout_logs_once_and_continues(
     monkeypatch.setattr("core.lifecycle.system_consolidation.run_weekly_integration_post_processing", postprocess)
     monkeypatch.setattr("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", lambda *_args: False)
 
-    with caplog.at_level(logging.WARNING, logger="core.supervisor._mgr_scheduler"):
+    with caplog.at_level(logging.WARNING, logger="server.supervisor._mgr_scheduler"):
         await sup._run_weekly_integration()
 
     assert handle.calls == ["run_consolidation", "interrupt"]

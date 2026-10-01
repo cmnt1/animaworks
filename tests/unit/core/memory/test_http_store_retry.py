@@ -15,7 +15,7 @@ import pytest
 
 from core.memory.rag.vector_client import VectorClient
 from core.memory.rag.vector_ops import bridge_transport
-from core.supervisor.memory_service import MemoryServiceUnavailable
+from core.runtime.memory_service import MemoryServiceUnavailable
 
 
 class _FakeResp:

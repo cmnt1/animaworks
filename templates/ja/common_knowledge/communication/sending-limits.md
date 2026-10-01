@@ -38,6 +38,6 @@ Inbox の新しい JSON ファイルをファイル変更通知で検知し、�
 | 宛先解決・Slack / Chatwork への外部配信 | `core/messaging/outbound.py` |
 | 内部 DM の配送・activity log 記録・深度の診断ログ | `core/messaging/messenger.py` |
 | DM の重複防止・Board の run 内重複防止 | `core/tooling/handler_comms.py` |
-| Inbox のファイル wake・単一実行・provider backoff | `core/supervisor/inbox_rate_limiter.py` |
+| Inbox のファイル wake・単一実行・provider backoff | `core/runtime/inbox_rate_limiter.py` |
 | Inbox 容量保護の overflow | `core/anima/inbox_overflow.py` |
 | 直近送信のプロンプト注入 | `core/memory/priming/outbound.py` |

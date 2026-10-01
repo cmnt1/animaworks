@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from core.supervisor import task_runner_supervisor as trs
-from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerSupervisor
+from core.runtime import task_runner_supervisor as trs
+from core.runtime.task_runner_supervisor import TaskRunnerError, TaskRunnerSupervisor
 
 
 def _supervisor(tmp_path: Path) -> TaskRunnerSupervisor:

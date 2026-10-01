@@ -152,7 +152,7 @@ class TestProcessHandleChildEnv:
     async def test_internal_auth_env_goes_to_child(self, tmp_path: Path, monkeypatch):
         import subprocess
 
-        from core.supervisor.process_handle import IPCClient, ProcessHandle
+        from server.supervisor.process_handle import IPCClient, ProcessHandle
 
         captured = {}
 

@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -223,7 +223,7 @@ class TestConfigFreshness:
 
             new_mtime = config_path.stat().st_mtime + 10
             os.utime(config_path, (new_mtime, new_mtime))
-            with caplog.at_level(logging.INFO, logger="core.supervisor._mgr_reconcile"):
+            with caplog.at_level(logging.INFO, logger="server.supervisor._mgr_reconcile"):
                 sup._check_config_freshness()
 
             load_config.assert_not_called()
@@ -231,7 +231,7 @@ class TestConfigFreshness:
 
             caplog.clear()
             config_path.write_text('{"setting": 2}\n', encoding="utf-8")
-            with caplog.at_level(logging.INFO, logger="core.supervisor._mgr_reconcile"):
+            with caplog.at_level(logging.INFO, logger="server.supervisor._mgr_reconcile"):
                 sup._check_config_freshness()
 
         load_config.assert_called_once()

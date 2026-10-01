@@ -12,7 +12,7 @@ Anima 間のメッセージは `send_message` で宛先へ届ける。`intent` �
 
 `send_message` は `report` / `question` intent を使い、同一 run では同じ宛先への2通目を拒否する。宛先数の上限はない。`post_channel` は同一 run で同じチャネルへ1回まで投稿できるが、run 間 cooldown はない。時間・日単位の送信予算や会話深度による送信拒否もない。`Messenger.send` はメッセージを activity log に記録し、深度を診断ログに記録する場合も配送を拒否しない。
 
-受信側では `core/supervisor/inbox_rate_limiter.py` が Inbox JSON のファイル変更通知を監視し、未読があれば Inbox lane を起動する。同時実行は1本で、実行中に届いたメッセージは次の1回にまとめる。通知を取りこぼした場合に備え45秒ごとに再確認し、Provider エラー時は `rate_guard` の回復時間を待ちながら未読を保持する。`overflow_inbox` は容量保護として残る。
+受信側では `core/runtime/inbox_rate_limiter.py` が Inbox JSON のファイル変更通知を監視し、未読があれば Inbox lane を起動する。同時実行は1本で、実行中に届いたメッセージは次の1回にまとめる。通知を取りこぼした場合に備え45秒ごとに再確認し、Provider エラー時は `rate_guard` の回復時間を待ちながら未読を保持する。`overflow_inbox` は容量保護として残る。
 
 ## 人間への通知と外部連携
 

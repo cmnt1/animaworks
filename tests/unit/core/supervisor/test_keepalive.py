@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse
-from core.supervisor.streaming_handler import (
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse
+from core.runtime.streaming_handler import (
     StreamingIPCHandler,
 )
 
@@ -255,7 +255,7 @@ class TestIPCPerChunkTimeout:
         # Per-chunk timeout of 0.8s — total time ~1.2s would fail with a
         # single-shot timeout of 0.8s, but per-chunk should succeed.
         collected: list[IPCResponse] = []
-        with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
+        with patch("core.runtime.ipc.open_ipc_connection", side_effect=mock_open_unix):
             async for resp in client.send_request_stream(request, timeout=0.8):
                 collected.append(resp)
 
@@ -298,7 +298,7 @@ class TestIPCPerChunkTimeout:
 
         request = IPCRequest(id="req_2", method="test", params={})
 
-        with patch("core.supervisor.ipc.open_ipc_connection", side_effect=mock_open_unix):
+        with patch("core.runtime.ipc.open_ipc_connection", side_effect=mock_open_unix):
             with pytest.raises(TimeoutError):
                 async for _ in client.send_request_stream(request, timeout=0.5):
                     pass

@@ -80,7 +80,7 @@ class TestRecoverStreamingJournalRecoveryNote:
     """Test that _recover_streaming_journal writes recovery_note.md for heartbeat."""
 
     def _make_runner(self, tmp_path: Path):
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
@@ -303,7 +303,7 @@ class TestCrashRecoveryE2EFlow:
 
     def test_heartbeat_crash_recovery_creates_note_with_correct_content(self, tmp_path: Path):
         """Simulate full crash recovery for heartbeat and verify note content."""
-        from core.supervisor.runner import AnimaRunner
+        from core.runtime.runner import AnimaRunner
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()

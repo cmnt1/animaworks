@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
+from core.runtime.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.routes.system")
@@ -366,7 +366,7 @@ def create_system_router() -> APIRouter:
             busy_snapshot[name] = await _busy_state(name)
 
         # Discover current animas on disk
-        from core.supervisor.manager import ProcessSupervisor
+        from server.supervisor import ProcessSupervisor
 
         on_disk: set[str] = set()
         if animas_dir.exists():
@@ -886,7 +886,7 @@ def create_system_router() -> APIRouter:
         from core.config.models import update_config
 
         # When night mode is active, also update the matching schedule entry.
-        from core.supervisor.scheduler_manager import _time_in_range
+        from core.runtime.scheduler_manager import _time_in_range
 
         now_hhmm = now_local().strftime("%H:%M")
 
@@ -961,7 +961,7 @@ def create_system_router() -> APIRouter:
         def set_activity_schedule(config):
             config.activity_schedule = entries
             if entries:
-                from core.supervisor.scheduler_manager import SchedulerManager
+                from core.runtime.scheduler_manager import SchedulerManager
 
                 target: int | None = SchedulerManager.resolve_scheduled_level(entries, now_hhmm)
                 if target is not None:

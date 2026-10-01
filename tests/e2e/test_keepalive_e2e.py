@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.models import ServerConfig
-from core.supervisor.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
+from core.runtime.ipc import IPCClient, IPCRequest, IPCResponse, IPCServer
 
 pytestmark = pytest.mark.e2e
 

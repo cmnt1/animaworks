@@ -1,5 +1,5 @@
 <!-- 自動翻訳ファイル・編集禁止 (AUTO-TRANSLATED, DO NOT EDIT). 正本: docs/ja/architecture/index.md -->
-<!-- i18n: source-sha256=d5f5c722e32a0301241507fea380830cb22ca5f7f0e766c2095ee93ab74f9881 generated=2026-09-30 engine=local model=deepseek-v4-flash translator=2 -->
+<!-- i18n: source-sha256=18da910af6fa2d8159875d19dec5df901e0d3af2207b6c79d7b4b968ac8a1571 generated=2026-10-01 engine=local model=deepseek-v4-flash translator=2 -->
 
 > Confirmed commit: b304b7dc
 
@@ -26,35 +26,36 @@ flowchart TD
 
 ## Repository Structure
 
-The main packages in `core/` are as follows. For a module-by-module list, see the [Module Reference](../reference/modules.md).
+The main packages of `core/` are as follows. For a module-level list, see the [Module Reference](../reference/modules.md).
 
 | Package | Role |
 |---|---|
-| `core.agent` | Agent conversation cycle, executor, and pre-context construction |
-| `core.anima` | Anima runtime objects, messages, heartbeat, and lifecycle |
+| `core.agent` | Agent conversation cycle, executor, pre-context construction |
+| `core.anima` | Anima runtime objects, messages, heartbeat, lifecycle |
 | `core.auth` | User authentication and sessions |
-| `core.config` | Configuration schemas, loading, resolution, and migration |
-| `core.execution` | Engine-wide events, sessions, processes, watchdog, and tool evidence |
+| `core.config` | Configuration schema, loading, resolution, migration |
+| `core.execution` | Engine common events, sessions, processes, watchdog, tool evidence |
 | `core.i18n` | Localized strings and translation functions |
-| `core.infra` | Startup preparation, logs, and runtime infrastructure |
-| `core.integrations` | External service integrations and animaworks-tool implementations |
+| `core.infra` | Startup preparation, logging, runtime foundation |
+| `core.integrations` | External service integration and animaworks-tool implementation |
 | `core.lifecycle` | Common lifecycle processing and Anima integration |
 | `core.mcp` | Server that exposes AnimaWorks tools via MCP |
-| `core.memory` | Conversation records, long-term memory, search, and memory maintenance |
-| `core.messaging` | Internal messages, shared channels, and outbound messages |
+| `core.memory` | Conversation records, long-term memory, search, memory maintenance |
+| `core.messaging` | Internal messages, shared channels, sending to external destinations |
 | `core.migrations` | Incremental migration of runtime data |
-| `core.notification` | Human-facing notifications and interactive confirmations |
-| `core.org` | Resolution of company, organization, and workspace |
+| `core.notification` | Human-facing notifications and interactive confirmation |
+| `core.org` | Company, organization, and workspace resolution |
 | `core.platform` | Abstraction of OS, process, lock, and file operation differences |
 | `core.prompt` | Assembly of system prompts and tool guides |
-| `core.skills` | Skill indexing, selection, and lifecycle |
-| `core.supervisor` | Process management, IPC, and scheduler for Anima and the task runner |
-| `core.tasks` | Persistent tasks, execution queue, delegation, and external task collection |
-| `core.tooling` | Internal tool definitions, execution handlers, and permission checks |
+| `core.runtime` | Anima main runtime components, inter-process communication, task execution |
+| `core.skills` | Skill indexing, selection, lifecycle |
+| `server.supervisor` | Server-side supervision, recovery, and scheduling of anima processes |
+| `core.tasks` | Persistent tasks, execution queues, delegation, external task collection |
+| `core.tooling` | Internal tool definitions, execution handlers, permission checks |
 | `core.usage` | Usage and cost aggregation |
-| `core.voice` | Audio input and output, and voice conversations |
+| `core.voice` | Voice input/output and voice conversation |
 
-`server/` contains the FastAPI application, routes, gateway, and the Web UI it serves. `cli/` contains the `animaworks` command and terminal UI. `templates/` contains locale-specific prompts, Anima templates, and shared configuration templates.
+`server/` contains the FastAPI application, routes, gateway, and the Web UI it serves. `cli/` contains the `animaworks` command and terminal UI. `templates/` holds locale-specific prompts, Anima templates, and shared configuration templates.
 
 ## Runtime Data
 

@@ -26,9 +26,7 @@
     "core/org/org_sync.py",
     "core/platform/status_store.py",
     "core/prompt/org_context.py",
-    "core/supervisor/_mgr_reconcile.py",
-    "core/supervisor/_mgr_scheduler.py",
-    "core/supervisor/scheduler_manager.py",
+    "core/runtime/scheduler_manager.py",
     "core/tooling/handler.py",
     "core/tooling/handler_create_anima.py",
     "core/tooling/handler_delegation.py",
@@ -38,6 +36,8 @@
     "server/gateways/discord_channel_sync.py",
     "server/routes/animas.py",
     "server/routes/internal.py",
-    "server/routes/voice.py"
+    "server/routes/voice.py",
+    "server/supervisor/_mgr_reconcile.py",
+    "server/supervisor/_mgr_scheduler.py"
   ]
 }

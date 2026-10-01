@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor
+from server.supervisor.manager import ProcessSupervisor
 
 # ── Sample character sheets ──────────────────────────────────
 

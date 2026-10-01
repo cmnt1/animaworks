@@ -13,7 +13,7 @@ import json
 import logging
 import time
 
-from core.supervisor._manager_protocols import _ReconcileMixinHost
+from server.supervisor._manager_protocols import _ReconcileMixinHost
 
 logger = logging.getLogger(__name__)
 

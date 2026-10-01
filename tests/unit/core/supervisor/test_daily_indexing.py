@@ -15,7 +15,7 @@ from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path, write_shared_hash
 from core.memory.rag.store import CollectionExistence
 from core.memory.retrieval.rag_search import _compute_dir_hash
-from core.supervisor._mgr_scheduler import _marker_dir
+from server.supervisor._mgr_scheduler import _marker_dir
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def _runtime_data_dir(data_dir_at_tmp_path: Path) -> None:
 
 
 def _make_supervisor(tmp_path: Path):
-    from core.supervisor.manager import ProcessSupervisor
+    from server.supervisor.manager import ProcessSupervisor
 
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir(parents=True, exist_ok=True)

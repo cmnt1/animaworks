@@ -20,7 +20,7 @@ core.org: 会社、部署、役割などの組織モデル。
 core.platform: 実行エンジンや OS ごとの差異を吸収する連携層。
 core.prompt: システムプロンプトとコンテキストの構築。
 core.skills: スキルの発見、読み込み、実行支援。
-core.supervisor: anima の監督、委任、実行調整。
+core.runtime: anima メインの実行時コンポーネント、プロセス間通信、タスク実行。
 core.tasks: タスクの登録、状態管理、実行制御。
 core.text: テキストのトークン見積もりと予算内切り詰め。
 core.tooling: ツールのスキーマ、権限、実行基盤。

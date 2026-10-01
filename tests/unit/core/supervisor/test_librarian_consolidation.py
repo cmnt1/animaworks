@@ -10,8 +10,8 @@ import pytest
 from core.anima.factory import TEMPLATES_DIR, create_from_template
 from core.memory.maintenance.consolidation import ConsolidationEngine, list_project_archives
 from core.schemas import CycleResult
-from core.supervisor.runner import AnimaRunner
-from core.supervisor.task_runner import execute_background_contract
+from core.runtime.runner import AnimaRunner
+from core.runtime.task_runner import execute_background_contract
 
 
 def test_project_engine_paths_and_default_compatibility(tmp_path: Path) -> None:
