@@ -33,7 +33,7 @@ def test_cli_prints_action_rules_to_stderr_and_executes(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from core.integrations import cli_dispatch
+    from cli.tool_dispatch import cli_dispatch
     from core.tooling.policy import action_gate
 
     anima_dir = tmp_path / "animas" / "mei"
@@ -62,7 +62,7 @@ def test_cli_without_rules_still_executes(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from core.integrations import cli_dispatch
+    from cli.tool_dispatch import cli_dispatch
     from core.tooling.policy import action_gate
 
     anima_dir = tmp_path / "animas" / "mei"

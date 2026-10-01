@@ -23,6 +23,7 @@ from core.i18n import t
 from core.voice.sentence_splitter import StreamingSentenceSplitter
 from core.voice.stt import VoiceSTT
 from core.voice.stt_stream import StreamingTranscriber
+from core.voice.transport import VoiceTransport
 from core.voice.tts_base import BaseTTSProvider, TTSConfig, TTSSynthesisError
 
 logger = logging.getLogger(__name__)
@@ -618,7 +619,7 @@ class VoiceSession:
     def __init__(
         self,
         anima_name: str,
-        ws: Any,
+        transport: VoiceTransport,
         stt: VoiceSTT,
         tts: BaseTTSProvider,
         tts_config: TTSConfig,
@@ -631,7 +632,7 @@ class VoiceSession:
 
         Args:
             anima_name: Target Anima name.
-            ws: WebSocket (send_json, send_bytes).
+            transport: Outbound event and audio transport.
             stt: STT engine.
             tts: TTS provider.
             tts_config: Per-session TTS config.
@@ -643,7 +644,7 @@ class VoiceSession:
                 lane. Falls back to ``front_api_base`` on *voice_config*.
         """
         self._anima_name = anima_name
-        self._ws = ws
+        self._transport = transport
         self._stt = stt
         self._tts = tts
         self._tts_config = tts_config
@@ -765,7 +766,7 @@ class VoiceSession:
                 if self._probe_active:
                     await self._judge_probe(committed, final=False)
                 else:
-                    await self._ws.send_json({"type": "transcript_partial", "text": committed})
+                    await self._transport.send_event({"type": "transcript_partial", "text": committed})
             if not self._streamer.ready():
                 break
 
@@ -817,7 +818,7 @@ class VoiceSession:
                 self._anima_name,
                 self._tts_config.provider,
             )
-            await self._ws.send_json({"type": "error", "message": "TTS unavailable"})
+            await self._transport.send_event({"type": "error", "message": "TTS unavailable"})
         return ok
 
     def invalidate_tts_health(self) -> None:
@@ -895,13 +896,13 @@ class VoiceSession:
                 logger.warning("STT refine failed, using raw: %s", e)
 
         # 3. Send transcript to client
-        await self._ws.send_json({"type": "transcript", "text": text})
+        await self._transport.send_event({"type": "transcript", "text": text})
 
         # 4. Check TTS health before entering IPC loop
         tts_ok = await self._check_tts_health()
 
         # 5. Send to Anima via IPC (streaming)
-        await self._ws.send_json({"type": "response_start"})
+        await self._transport.send_event({"type": "response_start"})
         self._tts_playing = True
         self._interrupted = False
 
@@ -977,7 +978,7 @@ class VoiceSession:
                     if chunk_data.get("type") == "text_delta":
                         delta = chunk_data.get("text", "")
                         if delta:
-                            await self._ws.send_json(
+                            await self._transport.send_event(
                                 {
                                     "type": "response_text",
                                     "text": delta,
@@ -992,13 +993,13 @@ class VoiceSession:
                                     await self._enqueue_tts(sentence)
 
                     elif chunk_data.get("type") == "thinking_start":
-                        await self._ws.send_json({"type": "thinking_status", "thinking": True})
+                        await self._transport.send_event({"type": "thinking_status", "thinking": True})
                     elif chunk_data.get("type") == "thinking_end":
-                        await self._ws.send_json({"type": "thinking_status", "thinking": False})
+                        await self._transport.send_event({"type": "thinking_status", "thinking": False})
                     elif chunk_data.get("type") == "thinking_delta":
                         delta = chunk_data.get("text", "")
                         if delta:
-                            await self._ws.send_json(
+                            await self._transport.send_event(
                                 {
                                     "type": "thinking_delta",
                                     "text": delta,
@@ -1025,13 +1026,13 @@ class VoiceSession:
                     # unless barge-in already discarded the queue.
                     if tts_ok and not self._interrupted:
                         await self._drain_tts_queue()
-                    await self._ws.send_json(
+                    await self._transport.send_event(
                         {
                             "type": "emotion",
                             "emotion": "neutral",
                         }
                     )
-                    await self._ws.send_json(
+                    await self._transport.send_event(
                         {
                             "type": "response_done",
                             "emotion": "neutral",
@@ -1127,8 +1128,8 @@ class VoiceSession:
         """Drain TTS then emit emotion + response_done in that order."""
         if not self._interrupted:
             await self._drain_tts_queue()
-        await self._ws.send_json({"type": "emotion", "emotion": emotion})
-        await self._ws.send_json({"type": "response_done", "emotion": emotion})
+        await self._transport.send_event({"type": "emotion", "emotion": emotion})
+        await self._transport.send_event({"type": "response_done", "emotion": emotion})
 
     # ── voice front lane ───────────────────────────────────────────
 
@@ -1284,7 +1285,7 @@ class VoiceSession:
 
     async def _emit_text_delta(self, delta: str, tts_ok: bool) -> None:
         """Send a text delta to the client and feed the TTS sentence splitter."""
-        await self._ws.send_json({"type": "response_text", "text": delta, "done": False})
+        await self._transport.send_event({"type": "response_text", "text": delta, "done": False})
         if tts_ok:
             sentences = self._splitter.feed(delta)
             for sentence in sentences:
@@ -1374,7 +1375,7 @@ class VoiceSession:
         # user turns keep the worker (and frames) _do_speech_end started.
         owns_tts_worker = tts_ok and self._tts_queue is None
         if owns_tts_worker:
-            await self._ws.send_json({"type": "response_start"})
+            await self._transport.send_event({"type": "response_start"})
             self._interrupted = False
             await self._start_tts_worker()
             self._tts_playing = True
@@ -1436,8 +1437,8 @@ class VoiceSession:
                     # hangs on a half-spoken turn.
                     self._splitter.flush()
                     try:
-                        await self._ws.send_json({"type": "emotion", "emotion": "neutral"})
-                        await self._ws.send_json({"type": "response_done", "emotion": "neutral"})
+                        await self._transport.send_event({"type": "emotion", "emotion": "neutral"})
+                        await self._transport.send_event({"type": "response_done", "emotion": "neutral"})
                     except Exception:
                         logger.debug("Best-effort operation failed", exc_info=True)
                 await self._stop_tts_worker()
@@ -1646,16 +1647,16 @@ class VoiceSession:
         try:
             # text rides along so the client can show a playback-synced subtitle
             self._recent_tts_text.append(text)
-            await self._ws.send_json({"type": "tts_start", "text": text})
+            await self._transport.send_event({"type": "tts_start", "text": text})
             secs = 0.0
             async for audio_chunk in self._tts.synthesize(spoken, self._tts_config):
                 if self._interrupted:
                     break
-                await self._ws.send_bytes(audio_chunk)
+                await self._transport.send_audio(audio_chunk)
                 secs += _wav_seconds(audio_chunk) or 0.0
             # ponytail: non-WAV (mp3 stream) falls back to ~6 chars/sec
             self._note_playback(secs or len(text) / 6.0)
-            await self._ws.send_json({"type": "tts_done"})
+            await self._transport.send_event({"type": "tts_done"})
             self._consecutive_tts_failures = 0
         except TTSSynthesisError as e:
             self._consecutive_tts_failures += 1
@@ -1663,14 +1664,14 @@ class VoiceSession:
             if self._consecutive_tts_failures >= 3:
                 self.invalidate_tts_health()
             try:
-                await self._ws.send_json({"type": "tts_error", "message": "TTS synthesis failed"})
-                await self._ws.send_json({"type": "tts_done"})
+                await self._transport.send_event({"type": "tts_error", "message": "TTS synthesis failed"})
+                await self._transport.send_event({"type": "tts_done"})
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
         except Exception as e:
             logger.warning("TTS send error: %s", e)
             try:
-                await self._ws.send_json({"type": "tts_done"})
+                await self._transport.send_event({"type": "tts_done"})
             except Exception:
                 logger.debug("Best-effort operation failed", exc_info=True)
 
@@ -1696,9 +1697,9 @@ class VoiceSession:
         tts_ok = await self._check_tts_health()
         self._interrupted = False
         try:
-            await self._ws.send_json({"type": "response_start"})
-            await self._ws.send_json({"type": "response_text", "text": text})
-            await self._ws.send_json({"type": "emotion", "emotion": emotion})
+            await self._transport.send_event({"type": "response_start"})
+            await self._transport.send_event({"type": "response_text", "text": text})
+            await self._transport.send_event({"type": "emotion", "emotion": emotion})
             if tts_ok:
                 self._tts_playing = True
                 # Same prefetch worker as speech replies — first audio still
@@ -1712,7 +1713,7 @@ class VoiceSession:
                     await self._enqueue_tts(sentence)
                 if not self._interrupted and not self._processing:
                     await self._drain_tts_queue()
-            await self._ws.send_json({"type": "response_done", "emotion": emotion})
+            await self._transport.send_event({"type": "response_done", "emotion": emotion})
         except Exception as e:
             logger.debug("Voice greet delivery failed (%s): %s", self._anima_name, e)
         finally:
@@ -1811,14 +1812,14 @@ class VoiceSession:
         if len(normalized) < PROBE_MIN_CHARS or _is_self_echo(text, self._recent_tts_text):
             self._audio_buffer.clear()
             self._streamer.reset()
-            await self._ws.send_json({"type": "barge_verdict", "interrupt": False})
+            await self._transport.send_event({"type": "barge_verdict", "interrupt": False})
             return False
 
         preserved_audio = bytes(self._audio_buffer)
         await self.handle_interrupt()
         self._audio_buffer.extend(preserved_audio)
         self._probe_followup_pending = True
-        await self._ws.send_json({"type": "barge_verdict", "interrupt": True})
+        await self._transport.send_event({"type": "barge_verdict", "interrupt": True})
         return True
 
     async def handle_discard_audio(self) -> None:
@@ -1834,6 +1835,6 @@ class VoiceSession:
     async def _send_error(self, message: str) -> None:
         """Send error message to client."""
         try:
-            await self._ws.send_json({"type": "error", "message": message})
+            await self._transport.send_event({"type": "error", "message": message})
         except Exception:
             logger.debug("Failed to send error to client", exc_info=True)

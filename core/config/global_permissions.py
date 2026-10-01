@@ -18,7 +18,7 @@ import hashlib
 import json
 import logging
 import re
-import sys
+from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
 
@@ -122,18 +122,27 @@ class GlobalPermissionsCache:
 
     # ── Load ─────────────────────────────────────────────────
 
-    def load(self, path: Path, *, interactive: bool = True) -> None:
+    def load(
+        self,
+        path: Path,
+        *,
+        interactive: bool = True,
+        confirm_change: Callable[[str], bool] | None = None,
+    ) -> None:
         """Load, validate, cache, and optionally check startup hash.
 
         Args:
             path: Absolute path to ``permissions.global.json``.
             interactive: When *True* (default) and the file hash differs
-                from the previous run, prompt via stdin (requires TTY).
+                from the previous run, invoke *confirm_change*.
+            confirm_change: Interface-layer callback that confirms a changed
+                file. It receives the confirmation prompt and returns whether
+                the change was accepted.
 
         Raises:
             FileNotFoundError: If the file does not exist.
-            SystemExit: If the user rejects hash-mismatch confirmation
-                or a non-interactive session encounters a mismatch.
+            SystemExit: If no confirmation callback is provided or the user
+                rejects hash-mismatch confirmation.
             json.JSONDecodeError / ValidationError: On parse failure.
         """
         if not path.is_file():
@@ -154,19 +163,18 @@ class GlobalPermissionsCache:
                     previous_hash[:12],
                     current_hash[:12],
                 )
-                if sys.stdin.isatty():
-                    answer = input(
-                        "permissions.global.json was modified outside of normal "
-                        "server lifecycle. Accept changes? [yes/no]: "
-                    )
-                    if answer.strip().lower() != "yes":
-                        raise SystemExit("Aborted: permissions.global.json changes rejected")
-                    logger.info("User accepted modified permissions.global.json")
-                else:
+                if confirm_change is None:
                     raise SystemExit(
                         "permissions.global.json was modified and non-interactive "
                         "session cannot confirm. Start server from an interactive terminal."
                     )
+                prompt = (
+                    "permissions.global.json was modified outside of normal "
+                    "server lifecycle. Accept changes? [yes/no]: "
+                )
+                if not confirm_change(prompt):
+                    raise SystemExit("Aborted: permissions.global.json changes rejected")
+                logger.info("User accepted modified permissions.global.json")
 
         config = GlobalPermissionsConfig.model_validate(json.loads(content))
 

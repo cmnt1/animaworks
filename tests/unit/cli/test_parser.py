@@ -46,10 +46,10 @@ class TestParserCommands:
             patch("cli.parser.load_dotenv", create=True),
             patch("core.infra.logging_config.setup_logging", create=True),
             patch("core.paths.get_data_dir", return_value=MagicMock()),
-            patch("core.config.cli.cmd_config_dispatch"),
-            patch("core.config.cli.cmd_config_get"),
-            patch("core.config.cli.cmd_config_set"),
-            patch("core.config.cli.cmd_config_list"),
+            patch("cli.commands.config_cmd.cmd_config_dispatch"),
+            patch("cli.commands.config_cmd.cmd_config_get"),
+            patch("cli.commands.config_cmd.cmd_config_set"),
+            patch("cli.commands.config_cmd.cmd_config_list"),
         ):
             # Build the parser by importing and parsing
             import importlib
@@ -534,7 +534,7 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "slack", "send", "#general", "hello"]),
-            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
             patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
@@ -549,7 +549,7 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "submit", "image_gen", "pipeline"]),
-            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
             patch("core.integrations.TOOL_MODULES", {"image_gen": "core.integrations.image_gen"}),
         ):
             from cli.parser import cli_main
@@ -565,7 +565,7 @@ class TestCliMainToolFallback:
         mock_func = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "anima", "list"]),
-            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
             patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
@@ -581,7 +581,7 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "--help"]),
-            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("cli.tool_dispatch.cli_dispatch", mock_dispatch),
             patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main

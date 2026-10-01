@@ -674,7 +674,7 @@ class TestConfigWriting:
         hooks = json.loads((anima_dir / ".codex_home" / "hooks.json").read_text(encoding="utf-8"))
         (entry,) = hooks["hooks"]["PreToolUse"]
         assert entry["matcher"] == "Bash"
-        assert "core.tooling.codex_command_hook" in entry["hooks"][0]["command"]
+        assert "cli.codex_command_hook" in entry["hooks"][0]["command"]
         assert str(anima_dir.resolve()) in entry["hooks"][0]["command"]
 
         permissions = SimpleNamespace(file_roots=["/"], file_roots_denied=[])

@@ -28,6 +28,7 @@ from core.config.schemas import VoiceConfig
 from core.voice.front import READ_MEMORY_TOOL
 from core.voice.session import VoiceSession, build_proactive_prompt
 from core.voice.tts_base import TTSConfig
+from tests.unit.voice_transport_test_utils import MockVoiceTransport
 
 INITIAL_DELAY = VoiceConfig().proactive_initial_delay_sec
 PROACTIVE_PROMPT = build_proactive_prompt(0)
@@ -55,7 +56,7 @@ def _make_session(*, proactive: bool = True, ticks: float = 0.0) -> VoiceSession
     )
     sess = VoiceSession(
         "test",
-        ws,
+        MockVoiceTransport(ws),
         stt,
         tts,
         TTSConfig(provider="voicevox"),
@@ -533,7 +534,7 @@ class TestProactiveConcurrency:
                 drain_results=False,
             )
         assert ok is True
-        types = [c.args[0]["type"] for c in sess._ws.send_json.call_args_list]
+        types = [c.args[0]["type"] for c in sess._transport.websocket.send_json.call_args_list]
         assert types.count("response_start") == 1
         assert "response_done" in types
 
@@ -574,7 +575,7 @@ class TestProactiveConcurrency:
             entered.set()
             ok = await task
         assert ok is False
-        types = [c.args[0]["type"] for c in sess._ws.send_json.call_args_list]
+        types = [c.args[0]["type"] for c in sess._transport.websocket.send_json.call_args_list]
         assert types.count("response_start") == 1
         assert "response_done" in types
 

@@ -1,4 +1,4 @@
-"""Tests for core/integrations/__init__.py — tool registry and CLI dispatch."""
+"""Tests for core integration discovery and CLI tool dispatch."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,15 +11,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cli.tool_dispatch import cli_dispatch as cli_tool_dispatch
-
+from cli.tool_dispatch import cli_dispatch
 from core.integrations import (
     TOOL_MODULES,
-    cli_dispatch,
     discover_common_tools,
     discover_core_tools,
     discover_personal_tools,
 )
+
+cli_tool_dispatch = cli_dispatch
 
 # ── TOOL_MODULES registry ─────────────────────────────────────────
 

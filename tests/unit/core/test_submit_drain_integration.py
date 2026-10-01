@@ -25,7 +25,7 @@ class TestSubmitTaskStoreIntegration:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from core.integrations import _handle_submit
+        from cli.tool_dispatch import _handle_submit
 
         anima_dir = tmp_path / "animas" / "test-anima"
         anima_dir.mkdir(parents=True)

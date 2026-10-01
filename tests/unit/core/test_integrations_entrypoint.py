@@ -10,7 +10,9 @@ def test_animaworks_tool_entrypoint_uses_cli_dispatcher() -> None:
     assert project["project"]["scripts"]["animaworks-tool"] == "cli.tool_dispatch:cli_dispatch"
 
 
-def test_core_integrations_dispatcher_is_available() -> None:
-    from core.integrations import cli_dispatch
+def test_animaworks_tool_dispatcher_is_in_cli_layer() -> None:
+    import core.integrations
+    from cli.tool_dispatch import cli_dispatch
 
     assert callable(cli_dispatch)
+    assert not hasattr(core.integrations, "cli_dispatch")

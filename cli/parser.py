@@ -268,7 +268,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_company_command(sub)
 
     # ── Config ────────────────────────────────────────────
-    from core.config.cli import (
+    from cli.commands.config_cmd import (
         cmd_config_dispatch,
         cmd_config_get,
         cmd_config_list,
@@ -642,7 +642,7 @@ def cli_main() -> None:
 
         if _first_arg in TOOL_MODULES or _first_arg == "submit":
             _sys.argv[0] = "animaworks-tool"
-            from core.integrations import cli_dispatch
+            from cli.tool_dispatch import cli_dispatch
 
             cli_dispatch()
             return

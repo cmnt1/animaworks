@@ -19,7 +19,7 @@ import pytest
 
 def _submit(anima_dir: Path, args: list[str], monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
-    from core.integrations import _handle_submit
+    from cli.tool_dispatch import _handle_submit
 
     captured = io.StringIO()
     with patch("builtins.print", side_effect=lambda value, **_kwargs: captured.write(str(value) + "\n")):
@@ -112,7 +112,7 @@ class TestHandleSubmit:
 
     def test_no_args_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", "/tmp/fake")
-        from core.integrations import _handle_submit
+        from cli.tool_dispatch import _handle_submit
 
         with pytest.raises(SystemExit) as exc_info:
             _handle_submit([])
@@ -120,7 +120,7 @@ class TestHandleSubmit:
 
     def test_no_anima_dir_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
-        from core.integrations import _handle_submit
+        from cli.tool_dispatch import _handle_submit
 
         with pytest.raises(SystemExit) as exc_info:
             _handle_submit(["image_gen", "3d"])

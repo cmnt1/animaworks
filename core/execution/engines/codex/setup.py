@@ -808,7 +808,7 @@ class CodexSetupMixin:
         self._write_hooks()
 
     def _write_hooks(self) -> None:
-        """Point Codex's PreToolUse hook at ``core.tooling.codex_command_hook``.
+        """Point Codex's PreToolUse hook at ``cli.codex_command_hook``.
 
         The hook runs on the host (outside the sandbox) and denies commands by the
         global/per-anima deny lists plus the recursive-search guard.  ``-m`` works

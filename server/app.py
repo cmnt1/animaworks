@@ -11,6 +11,7 @@ import html
 import json
 import logging
 import re
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -41,6 +42,17 @@ from server.stream_registry import StreamRegistry
 from server.websocket import WebSocketManager
 
 logger = logging.getLogger("animaworks.server")
+
+
+def _confirm_global_permissions_change(prompt: str) -> bool:
+    """Ask the server operator to accept changed global permission rules."""
+    if not sys.stdin.isatty():
+        raise SystemExit(
+            "permissions.global.json was modified and non-interactive "
+            "session cannot confirm. Start server from an interactive terminal."
+        )
+    return input(prompt).strip().lower() == "yes"
+
 
 # Public embeddable avatars (e.g. Slack) — no session cookie required
 _PUBLIC_ICON_ASSET_PATH = re.compile(r"^/api/animas/[^/]+/assets/icon(?:_realistic)?\.png$")
@@ -732,7 +744,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     gp_cache = GlobalPermissionsCache.get()
     gp_path = get_global_permissions_path()
     try:
-        gp_cache.load(gp_path)
+        gp_cache.load(gp_path, confirm_change=_confirm_global_permissions_change)
     except SystemExit:
         raise
     except FileNotFoundError:
