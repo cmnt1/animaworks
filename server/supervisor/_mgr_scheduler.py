@@ -509,6 +509,11 @@ class SchedulerMixin:
                 backfill_days=backfill_days,
                 model=model,
                 max_input_bytes=max_input_bytes,
+                exclude_noop_cron=getattr(
+                    consolidation_cfg,
+                    "episode_summary_exclude_noop_cron",
+                    defaults.episode_summary_exclude_noop_cron,
+                ),
             )
             if not gate.should_run:
                 logger.info(

@@ -272,6 +272,11 @@ def test_daily_gate_runs_for_pending_episode_backfill(
             self.visited.append(day)
             return ["missed episode"] if day == date(2026, 9, 25) else []
 
+        def collect_pending_activity_chunks(self, target_date, **_kwargs):
+            day = target_date
+            self.visited.append(day)
+            return (["missed episode"] if day == date(2026, 9, 25) else []), False
+
         @staticmethod
         def unprocessed_activity_chunks(_day, chunks):
             return chunks
