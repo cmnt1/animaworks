@@ -149,6 +149,16 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
             )
 
         @staticmethod
+        def collect_pending_activity_chunks(target_date, **_kwargs):
+            day = target_date
+            chunks = (
+                [f"activity for {day}"]
+                if day in {target, target - timedelta(days=2), target - timedelta(days=3)}
+                else []
+            )
+            return chunks, False
+
+        @staticmethod
         def unprocessed_activity_chunks(_day, chunks):
             return chunks
 
@@ -170,7 +180,7 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
             self.written.append(day)
             return Path(f"{day}.md")
 
-        def record_consolidated_chunks(self, day, _chunks):
+        def record_consolidated_chunks(self, day, _chunks, *, noop_cron_filtered=False):
             self.recorded.append(day)
 
         extract_facts_from_text_outcome = AsyncMock(return_value=SimpleNamespace(facts_extracted=0, facts_failed=0))
@@ -233,6 +243,10 @@ async def test_daily_episode_failure_logs_date_and_reason() -> None:
         @staticmethod
         def collect_activity_chunks(**_kwargs):
             return ["activity"]
+
+        @staticmethod
+        def collect_pending_activity_chunks(target_date, **_kwargs):
+            return ["activity"], False
 
         @staticmethod
         def unprocessed_activity_chunks(_day, chunks):

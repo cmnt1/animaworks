@@ -332,6 +332,10 @@ class ConsolidationConfig(BaseModel):
         ge=0,
         description="Maximum older days to backfill during one daily consolidation (yesterday is separate).",
     )
+    episode_summary_exclude_noop_cron: bool = Field(
+        default=True,
+        description="Exclude 'did nothing' cron executions from daily episode-summary input.",
+    )
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)

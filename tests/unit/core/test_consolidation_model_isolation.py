@@ -66,10 +66,25 @@ class _FakeEngine:
         )
         return self.chunks if since is None or since.date() == self.target_date else []
 
+    def collect_pending_activity_chunks(
+        self,
+        target_date: date,
+        *,
+        model: str,
+        max_input_bytes: int = 200 * 1024,
+        exclude_noop_cron: bool = False,
+    ):
+        start, end = self.local_day_window(target_date)
+        chunks = self.collect_activity_chunks(
+            hours=24, model=model, since=start, until=end, max_input_bytes=max_input_bytes
+        )
+        pending = self.unprocessed_activity_chunks(target_date, chunks)
+        return pending, False
+
     def unprocessed_activity_chunks(self, target_date, chunks):
         return chunks
 
-    def record_consolidated_chunks(self, target_date, chunks):
+    def record_consolidated_chunks(self, target_date, chunks, *, noop_cron_filtered=False):
         pass
 
     def read_episode_for_date(self, target_date):

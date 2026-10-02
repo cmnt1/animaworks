@@ -111,6 +111,7 @@ def evaluate_daily_consolidation_gate(
     backfill_days: int = 1,
     model: str | None = None,
     max_input_bytes: int = 200 * 1024,
+    exclude_noop_cron: bool = False,
 ) -> DailyConsolidationGate:
     """Return whether daily consolidation should run for one anima.
 
@@ -142,15 +143,13 @@ def evaluate_daily_consolidation_gate(
         try:
             for offset in range(max(1, backfill_days)):
                 candidate_date = target_date - timedelta(days=offset)
-                start, end = engine.local_day_window(candidate_date)
-                chunks = engine.collect_activity_chunks(
-                    hours=24,
+                pending, _filter_applied = engine.collect_pending_activity_chunks(
+                    candidate_date,
                     model=model,
-                    since=start,
-                    until=end,
                     max_input_bytes=max_input_bytes,
+                    exclude_noop_cron=exclude_noop_cron,
                 )
-                if engine.unprocessed_activity_chunks(candidate_date, chunks):
+                if pending:
                     pending_backfill_days += 1
         except Exception:
             logger.debug("Failed to inspect episode backfill window for %s", anima_name, exc_info=True)

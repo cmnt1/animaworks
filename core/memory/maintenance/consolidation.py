@@ -33,6 +33,13 @@ from core.time_utils import ensure_aware, get_app_timezone, now_local
 
 logger = logging.getLogger("animaworks.consolidation")
 
+# Special per-anima checkpoint key listing dates whose episodes were summarised
+# with the Phase A noop-cron filter applied.  Dates present here (or with no
+# recorded hashes) are aggregated with the filter; dates already partially or
+# fully processed under the old format are re-aggregated without it so they do
+# not get re-summarised into duplicate episodes.
+_NOOP_FILTER_KEY = "_noop_cron_filtered"
+
 
 def list_project_archives(anima_dir: Path) -> list[str]:
     """List project archive names found below episodes/projects/."""
@@ -95,6 +102,59 @@ class ConsolidationEngine:
         processed = set(checkpoint.get(target_date.isoformat(), []))
         return [chunk for chunk in chunks if hashlib.sha256(chunk.encode()).hexdigest() not in processed]
 
+    def collect_pending_activity_chunks(
+        self,
+        target_date: date,
+        *,
+        model: str | None = None,
+        max_input_bytes: int = 200 * 1024,
+        exclude_noop_cron: bool = False,
+    ) -> tuple[list[str], bool]:
+        """Return unprocessed activity chunks for *target_date* with Phase A filtering.
+
+        Encapsulates the checkpoint-compatible decision for whether to apply the
+        noop-cron filter to a date so that both callers (the daily episode
+        summariser and the consolidation gate) compute the same result.
+
+        Phase A changes the input (by dropping noop crons), so dates that were
+        already processed under the old format must not be re-aggregated with a
+        different set of chunks (that would re-write duplicate episodes).  The
+        rule is:
+
+        - if the date is listed in ``_noop_cron_filtered`` **or** has no
+          recorded checkpoint hashes, collect with the filter;
+        - otherwise (partially/fully processed under the old format), collect
+          without the filter, matching prior behaviour exactly.
+
+        Args:
+            target_date: The local day to collect.
+            model: Optional model used to compute the input budget.
+            max_input_bytes: Episode-summary input byte budget.
+            exclude_noop_cron: Master switch for the Phase A filter.  When
+                ``False`` behaviour is identical to the pre-Phase-A path.
+
+        Returns:
+            ``(pending_chunks, filter_applied)`` where ``filter_applied`` is
+            whether the noop-cron filter was actually used for this date.
+        """
+        checkpoint = self._load_episode_checkpoint()
+        iso = target_date.isoformat()
+        noop_filtered_dates = set(checkpoint.get(_NOOP_FILTER_KEY, []))
+        has_hashes = bool(checkpoint.get(iso, []))
+        apply_filter = bool(exclude_noop_cron) and (iso in noop_filtered_dates or not has_hashes)
+
+        window_start, window_end = self.local_day_window(target_date)
+        chunks = self.collect_activity_chunks(
+            hours=24,
+            model=model,
+            since=window_start,
+            until=window_end,
+            max_input_bytes=max_input_bytes,
+            exclude_noop_cron=apply_filter,
+        )
+        pending = self.unprocessed_activity_chunks(target_date, chunks)
+        return pending, apply_filter
+
     def _load_episode_checkpoint(self) -> dict[str, list[str]]:
         path = self.anima_dir / "state" / "consolidation_episode_checkpoint.json"
         try:
@@ -111,8 +171,20 @@ class ConsolidationEngine:
         except (OSError, ValueError):
             return {}
 
-    def record_consolidated_chunks(self, target_date: date, chunks: list[str]) -> None:
-        """Advance only after the episode write succeeds; raw inputs stay intact."""
+    def record_consolidated_chunks(
+        self, target_date: date, chunks: list[str], *, noop_cron_filtered: bool = False
+    ) -> None:
+        """Advance only after the episode write succeeds; raw inputs stay intact.
+
+        Args:
+            target_date: The local day the chunks came from.
+            chunks: The successfully summarised input chunks.
+            noop_cron_filtered: Whether the chunks were collected with the
+                Phase A noop-cron filter applied.  When ``True`` the date is
+                added to the ``_noop_cron_filtered`` checkpoint list so later
+                runs keep applying the filter for this date (and keep the
+                output reproducibly aligned with the stored hashes).
+        """
         from core.memory.io import atomic_write_text
 
         checkpoint = self._load_episode_checkpoint()
@@ -120,6 +192,10 @@ class ConsolidationEngine:
         checkpoint[key] = sorted(
             set(checkpoint.get(key, [])) | {hashlib.sha256(chunk.encode()).hexdigest() for chunk in chunks}
         )
+        if noop_cron_filtered:
+            filtered = set(checkpoint.get(_NOOP_FILTER_KEY, []))
+            filtered.add(key)
+            checkpoint[_NOOP_FILTER_KEY] = sorted(filtered)
         atomic_write_text(
             self.anima_dir / "state" / "consolidation_episode_checkpoint.json",
             json.dumps(checkpoint, ensure_ascii=False),
@@ -472,6 +548,7 @@ class ConsolidationEngine:
         since: datetime | None = None,
         until: datetime | None = None,
         max_input_bytes: int = 200 * 1024,
+        exclude_noop_cron: bool = False,
     ) -> list[str]:
         """Collect activity entries and split into budget-sized chunks.
 
@@ -486,6 +563,9 @@ class ConsolidationEngine:
                 it takes precedence over ``hours`` for entry filtering.
             until: Optional exclusive upper timestamp bound, used with
                 ``since`` for fixed date windows.
+            exclude_noop_cron: When ``True``, drop "did nothing" cron
+                executions (and their in-window tool entries) from the input
+                before formatting.  See ``cron_noop.filter_noop_cron_entries``.
 
         Returns:
             List of formatted activity text chunks. Empty list if no entries.
@@ -541,6 +621,21 @@ class ConsolidationEngine:
 
         if not filtered:
             return []
+
+        # Apply Phase A noop-cron filter (right after the date-window filter,
+        # before the exclusion list) to shrink episode-summary input.
+        if exclude_noop_cron:
+            from core.memory.maintenance.cron_noop import filter_noop_cron_entries
+
+            filtered, noop_stats = filter_noop_cron_entries(filtered)
+            if noop_stats.llm_excluded or noop_stats.command_excluded or noop_stats.tool_entries_excluded:
+                logger.info(
+                    "Phase A input filter anima=%s excluded_noop_cron llm=%d command=%d entries=%d",
+                    self.anima_name,
+                    noop_stats.llm_excluded,
+                    noop_stats.command_excluded,
+                    len(filtered),
+                )
 
         # Apply exclusion list
         included: list = []

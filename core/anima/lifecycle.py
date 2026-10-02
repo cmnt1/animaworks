@@ -631,24 +631,29 @@ class LifecycleMixin:
                 )
             ),
         )
+        exclude_noop_cron = bool(
+            getattr(
+                consolidation_cfg,
+                "episode_summary_exclude_noop_cron",
+                defaults.episode_summary_exclude_noop_cron,
+            )
+        )
 
         target_date, _, _ = engine.previous_local_day_window(now_local())
-        reference = now_local()
         dates = [target_date]
         dates.extend(target_date - timedelta(days=offset) for offset in range(lookback_days - 1, 0, -1))
         pending_by_date: dict[date, list[str]] = {}
+        filtered_by_date: dict[date, bool] = {}
         for candidate_date in dates:
-            window_start, window_end = engine.local_day_window(candidate_date, reference)
-            chunks = engine.collect_activity_chunks(
-                hours=24,
+            pending, filter_applied = engine.collect_pending_activity_chunks(
+                candidate_date,
                 model=model,
-                since=window_start,
-                until=window_end,
                 max_input_bytes=max_input_bytes,
+                exclude_noop_cron=exclude_noop_cron,
             )
-            pending = engine.unprocessed_activity_chunks(candidate_date, chunks)
             if pending:
                 pending_by_date[candidate_date] = pending
+                filtered_by_date[candidate_date] = filter_applied
 
         selected_dates: list[date] = []
         if target_date in pending_by_date:
@@ -742,7 +747,11 @@ class LifecycleMixin:
             if episode_parts:
                 merged_episodes = engine.merge_timeline_parts(episode_parts)
                 episode_path = engine.write_consolidated_episode(summary_date, merged_episodes)
-                engine.record_consolidated_chunks(summary_date, completed_chunks)
+                engine.record_consolidated_chunks(
+                    summary_date,
+                    completed_chunks,
+                    noop_cron_filtered=filtered_by_date.get(summary_date, False),
+                )
                 facts_extracted = 0
                 facts_failed = 0
                 try:
