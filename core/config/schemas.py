@@ -337,6 +337,10 @@ class ConsolidationConfig(BaseModel):
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)
     ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
+    max_concurrent_animas: int = Field(
+        default=3,
+        description="Maximum number of Anima daily/weekly consolidations to run concurrently.",
+    )
     weekly_enabled: bool = False
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     indexing_enabled: bool = True  # Daily RAG indexing toggle

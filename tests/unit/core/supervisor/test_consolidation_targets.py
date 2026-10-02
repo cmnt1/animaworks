@@ -7,15 +7,15 @@ Verifies that ``_iter_consolidation_targets()`` scans ``self.animas_dir``
 on disk rather than relying on ``self.processes`` (live process dict),
 so that stopped / crashed animas still receive memory consolidation.
 
-Note: Tests for ``_run_daily_consolidation()`` and ``_run_weekly_integration()``
-were removed because those methods call ``daily_consolidate``/``weekly_integrate``
-which were removed from ConsolidationEngine in the consolidation refactor.
+The daily and weekly scheduler methods are also tested here for timeout handling,
+bounded concurrency, and per-Anima failure isolation.
 
 Issue: docs/issues/20260217_consolidation-run-for-all-animas.md
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -424,3 +424,164 @@ async def test_project_archives_bypass_inactivity_and_skip_empty_archive(
             {"consolidation_type": consolidation_type, "project": "active"},
         )
     ]
+
+
+def _prepare_consolidation_scheduler(
+    sup: ProcessSupervisor,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    concurrency: int,
+) -> tuple[AsyncMock, AsyncMock]:
+    from core.lifecycle import system_consolidation
+
+    monkeypatch.setattr(
+        "core.config.load_config",
+        lambda: SimpleNamespace(consolidation=SimpleNamespace(max_concurrent_animas=concurrency)),
+    )
+    monkeypatch.setattr(
+        system_consolidation,
+        "should_skip_inactive_consolidation",
+        lambda *_args: False,
+    )
+    monkeypatch.setattr(
+        system_consolidation,
+        "evaluate_daily_consolidation_gate",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            should_run=True,
+            activity_count=1,
+            episode_count=1,
+            threshold=1,
+            pending_backfill_days=0,
+        ),
+    )
+    daily_postprocess = AsyncMock()
+    weekly_postprocess = AsyncMock()
+    monkeypatch.setattr(system_consolidation, "run_daily_consolidation_post_processing", daily_postprocess)
+    monkeypatch.setattr(system_consolidation, "run_weekly_integration_post_processing", weekly_postprocess)
+    monkeypatch.setattr(sup, "_broadcast_event", AsyncMock())
+    monkeypatch.setattr(sup, "_run_project_archive_consolidations", AsyncMock())
+    return daily_postprocess, weekly_postprocess
+
+
+def _install_running_handles(sup: ProcessSupervisor, names: list[str], request):  # noqa: ANN001
+    for name in names:
+
+        async def send_request(method: str, params: dict, timeout: float = 60.0, *, _name: str = name):
+            return await request(_name, method, params, timeout)
+
+        sup.processes[name] = SimpleNamespace(state=ProcessState.RUNNING, send_request=send_request)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "consolidation_type"),
+    [
+        ("_run_daily_consolidation", "daily"),
+        ("_run_weekly_integration", "weekly"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("configured_limit", "expected_max"),
+    [(3, 3), (1, 1), (0, 1)],
+)
+@pytest.mark.asyncio
+async def test_consolidation_scheduler_limits_concurrency_and_starts_in_name_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+    consolidation_type: str,
+    configured_limit: int,
+    expected_max: int,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    _prepare_consolidation_scheduler(sup, monkeypatch, concurrency=configured_limit)
+    names = ["zeta", "alpha", "echo", "bravo", "charlie"]
+    for name in names:
+        _create_anima_dir(sup.animas_dir, name)
+
+    active = 0
+    max_active = 0
+    started: list[str] = []
+
+    async def send_request(anima_name: str, method: str, _params: dict, _timeout: float) -> IPCResponse:
+        nonlocal active, max_active
+        assert method == "run_consolidation"
+        started.append(anima_name)
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            await asyncio.sleep(0.02)
+        finally:
+            active -= 1
+        return IPCResponse(id="fake", result={"duration_ms": 1})
+
+    _install_running_handles(sup, names, send_request)
+
+    await getattr(sup, method_name)()
+
+    assert max_active == expected_max
+    assert started == sorted(names)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "consolidation_type", "label"),
+    [
+        ("_run_daily_consolidation", "daily", "Daily consolidation"),
+        ("_run_weekly_integration", "weekly", "Weekly integration"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_consolidation_failures_are_isolated_and_summarized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    method_name: str,
+    consolidation_type: str,
+    label: str,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    daily_postprocess, weekly_postprocess = _prepare_consolidation_scheduler(sup, monkeypatch, concurrency=3)
+    names = ["alpha", "bravo", "charlie", "delta", "echo"]
+    for name in names:
+        _create_anima_dir(sup.animas_dir, name)
+    from core.lifecycle import system_consolidation
+
+    monkeypatch.setattr(
+        system_consolidation,
+        "should_skip_inactive_consolidation",
+        lambda _anima_dir, anima_name, _config: anima_name == "bravo",
+    )
+    calls: dict[str, list[str]] = {name: [] for name in names}
+
+    async def send_request(anima_name: str, method: str, _params: dict, _timeout: float) -> IPCResponse:
+        calls[anima_name].append(method)
+        if method == "run_consolidation":
+            if anima_name == "charlie":
+                raise RuntimeError("synthetic IPC failure")
+            if anima_name == "delta":
+                raise TimeoutError("synthetic IPC timeout")
+            return IPCResponse(id="fake", result={"duration_ms": 1})
+        return IPCResponse(id="fake", result={})
+
+    _install_running_handles(sup, names, send_request)
+    with caplog.at_level(logging.INFO, logger="server.supervisor._mgr_scheduler"):
+        await getattr(sup, method_name)()
+
+    postprocess = daily_postprocess if consolidation_type == "daily" else weekly_postprocess
+    postprocessed_names = {call.args[0] for call in postprocess.await_args_list}
+    assert postprocessed_names == {"alpha", "charlie", "delta", "echo"}
+    assert calls["bravo"] == []
+    assert calls["charlie"] == ["run_consolidation"]
+    assert calls["delta"] == ["run_consolidation", "interrupt"]
+    assert "charlie" in caplog.text
+    assert "consolidation_timeout anima=delta" in caplog.text
+    assert (
+        f"System-wide {label.lower()} finished targets=5 ran=2 skipped=1 timed_out=1 failed=1 elapsed_s=" in caplog.text
+    )
+    assert f"Starting system-wide {label.lower()} targets=5 concurrency=3" in caplog.text
+
+
+def test_consolidation_config_defaults_to_three_concurrent_animas() -> None:
+    from core.config.models import ConsolidationConfig
+
+    assert ConsolidationConfig().max_concurrent_animas == 3
+    assert ConsolidationConfig(max_concurrent_animas=0).max_concurrent_animas == 0
