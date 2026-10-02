@@ -428,6 +428,20 @@ class TestOneShotCompletion:
         mock_try_codex_sdk.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_codex_sdk_one_shot_patches_reasoning_effort_enum(self) -> None:
+        """The shared codex config may echo effort=max; the SDK enum must accept it."""
+        with (
+            patch("core.execution.engines.codex.setup._patch_reasoning_effort_enum") as mock_patch,
+            patch("openai_codex.AsyncCodex", side_effect=RuntimeError("stop")),
+        ):
+            result = await llm_utils._try_codex_sdk(
+                "Hi", system_prompt="", model="codex/gpt-6-luna", max_tokens=10, llm_kwargs={}
+            )
+
+        assert result is None
+        mock_patch.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_memory_kwargs_temperature_and_timeout_are_forwarded(self) -> None:
         memory_kwargs = {
             "model": "openai/custom-model",

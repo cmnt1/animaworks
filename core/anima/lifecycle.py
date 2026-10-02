@@ -262,6 +262,10 @@ def _split_episode_prompt_to_limit(
     return prompts, ""
 
 
+# Execution modes that one_shot_completion can serve (LiteLLM, Agent SDK, Codex SDK).
+_ONE_SHOT_MODES = frozenset({"a", "s", "c"})
+
+
 def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any) -> list[Any]:
     """Build ordered one-shot model configs from existing anima fallback settings."""
     from core.config.model_config import build_model_override_config
@@ -284,6 +288,9 @@ def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any)
         if parsed is None:
             continue
         mode, fallback_model = parsed
+        if mode not in _ONE_SHOT_MODES:
+            # CLI-only engines (grok/cursor/gemini) have no one-shot backend.
+            continue
         candidate = build_model_override_config(
             primary,
             mode,

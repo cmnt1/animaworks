@@ -66,6 +66,27 @@ def test_episode_summary_candidates_use_configured_fallbacks() -> None:
     ]
 
 
+def test_episode_summary_candidates_skip_cli_only_fallbacks() -> None:
+    config = AnimaWorksConfig(
+        credentials={
+            "anthropic": CredentialConfig(api_key="primary"),
+            "openai": CredentialConfig(api_key="fallback"),
+        },
+        consolidation=ConsolidationConfig(
+            llm_model="anthropic/claude-sonnet-4-6",
+            llm_credential="anthropic",
+        ),
+    )
+    base = ModelConfig(
+        model="chat-model",
+        fallback_models=["x:grok/grok-4.7", "d:cursor/composer-2", "g:gemini/gemini-3-pro", "a:openai/gpt-4.1"],
+    )
+
+    candidates = _episode_summary_model_configs(base, config.consolidation.llm_model, config)
+
+    assert [candidate.model for candidate in candidates] == ["anthropic/claude-sonnet-4-6", "openai/gpt-4.1"]
+
+
 def test_episode_prompt_is_split_to_exact_utf8_byte_limit() -> None:
     activity = ("出来事と詳細\n" * 1000).strip()
     prompts, error = _split_episode_prompt_to_limit(activity, lambda part: f"instructions\n{part}", 1024)
@@ -168,9 +189,7 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
             side_effect=lambda _name, **kw: f"{kw['time_range']}\n{kw['activity_chunk']}",
         ),
         patch("core.config.load_config", return_value=config),
-        patch(
-            "core.llm.oneshot.one_shot_completion", new=AsyncMock(return_value="## 09:00 — Summary\n- recovered")
-        ),
+        patch("core.llm.oneshot.one_shot_completion", new=AsyncMock(return_value="## 09:00 — Summary\n- recovered")),
     ):
         result = await LifecycleMixin._run_daily_episode_summaries(
             owner,
