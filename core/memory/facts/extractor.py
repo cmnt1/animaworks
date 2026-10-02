@@ -233,6 +233,13 @@ class FactExtractor:
 
         if last_exc is None:
             raise RuntimeError("LLM call configured with no attempts")
+        logger.warning(
+            "Fact extraction LLM call failed after %d attempts model=%s error=%s: %s",
+            self._max_retries,
+            self._model,
+            type(last_exc).__name__,
+            str(last_exc),
+        )
         raise last_exc
 
     # ── JSON parsing ───────────────────────────────────────

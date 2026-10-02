@@ -638,22 +638,95 @@ class ConsolidationEngine:
         source_episode: str,
         source_session_id: str = "consolidation:daily",
     ):
-        """Extract/store atomic facts and return operational counters."""
-        try:
-            from core.memory.facts.extraction import FactExtractionOutcome, extract_and_store_facts_with_outcome
+        """Extract/store atomic facts and return operational counters.
 
-            outcome = await extract_and_store_facts_with_outcome(
-                self.anima_dir,
-                text,
-                source_episode=source_episode,
-                source_session_id=source_session_id,
-                origin="consolidation",
+        Long text is split into chunks of at most ``fact_extraction_chunk_chars``
+        characters (set ``0`` to disable) and each chunk is processed
+        sequentially. A failing chunk does not stop the rest; the number of
+        failed chunks is surfaced via ``failed_chunks`` (and ``facts_failed``).
+        """
+        try:
+            from core.config import load_config
+            from core.memory.facts.chunking import split_text_for_fact_extraction
+            from core.memory.facts.extraction import (
+                FactExtractionOutcome,
+                extract_and_store_facts_with_outcome,
             )
+
+            cfg = load_config()
+            max_chars = int(getattr(cfg.consolidation, "fact_extraction_chunk_chars", 12000) or 0)
+            chunks = split_text_for_fact_extraction(text, max_chars)
+            total_chunks = len(chunks)
+
+            all_records: list = []
+            failed = False
+            failure_stage = ""
+            failure_reason = ""
+            failed_chunks = 0
+
+            for i, chunk in enumerate(chunks, start=1):
+                try:
+                    outcome = await extract_and_store_facts_with_outcome(
+                        self.anima_dir,
+                        chunk,
+                        source_episode=source_episode,
+                        source_session_id=source_session_id,
+                        origin="consolidation",
+                    )
+                except Exception as exc:  # noqa: BLE001 - keep processing other chunks
+                    failed = True
+                    failed_chunks += 1
+                    reason = f"{type(exc).__name__}: {exc}"
+                    if not failure_stage:
+                        failure_stage = "chunk"
+                    if not failure_reason:
+                        failure_reason = f"chunk {i}/{total_chunks}: {reason}"
+                    logger.warning(
+                        "Fact extraction chunk failed anima=%s chunk=%d/%d stage=%s reason=%s",
+                        self.anima_name,
+                        i,
+                        total_chunks,
+                        "chunk",
+                        reason[:300],
+                    )
+                    continue
+
+                all_records.extend(outcome.records)
+                if outcome.failed:
+                    failed = True
+                    failed_chunks += 1
+                    if not failure_stage:
+                        failure_stage = outcome.failure_stage or "chunk"
+                    if not failure_reason:
+                        failure_reason = f"chunk {i}/{total_chunks}: {outcome.failure_reason or 'failed'}"
+                    logger.warning(
+                        "Fact extraction chunk failed anima=%s chunk=%d/%d stage=%s reason=%s",
+                        self.anima_name,
+                        i,
+                        total_chunks,
+                        outcome.failure_stage or "chunk",
+                        (outcome.failure_reason or "failed")[:300],
+                    )
+
+            outcome = FactExtractionOutcome(
+                records=all_records,
+                failed=failed,
+                failure_stage=failure_stage,
+                failure_reason=failure_reason,
+                failed_chunks=failed_chunks,
+                total_chunks=total_chunks,
+            )
+            first_failure = f" first_failure={failure_reason[:300].replace(chr(10), ' ')}" if failed else ""
             logger.info(
-                ("Consolidation atomic fact extraction complete for anima=%s: facts_extracted=%d facts_failed=%d"),
+                (
+                    "Consolidation atomic fact extraction complete for anima=%s: "
+                    "facts_extracted=%d facts_failed=%d chunks=%d%s"
+                ),
                 self.anima_name,
                 outcome.facts_extracted,
                 outcome.facts_failed,
+                outcome.total_chunks,
+                first_failure,
             )
             return outcome
         except Exception as exc:
@@ -667,11 +740,16 @@ class ConsolidationEngine:
                 self.anima_name,
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
+            reason = f"{type(exc).__name__}: {exc}"
             logger.info(
-                ("Consolidation atomic fact extraction complete for anima=%s: facts_extracted=0 facts_failed=1"),
+                (
+                    "Consolidation atomic fact extraction complete for anima=%s: "
+                    "facts_extracted=0 facts_failed=1 chunks=1 first_failure=%s"
+                ),
                 self.anima_name,
+                reason[:300].replace(chr(10), " "),
             )
-            return FactExtractionOutcome([], True, "consolidation", f"{type(exc).__name__}: {exc}")
+            return FactExtractionOutcome([], True, "consolidation", reason, failed_chunks=1, total_chunks=1)
 
     @staticmethod
     def merge_timeline_parts(parts: list[str]) -> str:
