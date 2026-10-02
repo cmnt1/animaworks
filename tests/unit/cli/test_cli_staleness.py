@@ -297,6 +297,7 @@ class TestResolveGatewayUrl:
 
         env = {"ANIMAWORKS_GATEWAY_URL": "http://legacy:18501"}
         with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("ANIMAWORKS_SERVER_URL", None)
             args = argparse.Namespace(gateway_url=None)
             result = resolve_gateway_url(args)
         assert result == "http://legacy:18501"
