@@ -344,6 +344,12 @@ class ConsolidationConfig(BaseModel):
     knowledge_self_correction_enabled: bool = True
     knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
+    fact_extraction_chunk_chars: int = Field(
+        default=12000,
+        ge=0,
+        description="Maximum characters per atomic-fact-extraction chunk during "
+        "consolidation. 0 (or negative) disables splitting.",
+    )
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
     inactivity_skip_enabled: bool = True
     inactivity_days: int = Field(default=7, ge=1)

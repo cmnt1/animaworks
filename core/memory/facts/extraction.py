@@ -32,6 +32,8 @@ class FactExtractionOutcome:
     failed: bool = False
     failure_stage: str = ""
     failure_reason: str = ""
+    failed_chunks: int = 0
+    total_chunks: int = 1
 
     @property
     def facts_extracted(self) -> int:
@@ -39,6 +41,10 @@ class FactExtractionOutcome:
 
     @property
     def facts_failed(self) -> int:
+        # When chunking was used (failed_chunks set), surface the number of
+        # failed chunks; otherwise preserve the legacy single-call semantics.
+        if self.failed_chunks:
+            return self.failed_chunks
         return int(self.failed)
 
 
