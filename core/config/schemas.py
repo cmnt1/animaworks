@@ -196,6 +196,11 @@ class RAGConfig(BaseModel):
             "per-Anima status.json extraction_timeout overrides this value."
         ),
     )
+    fact_extraction_max_tokens: int = Field(
+        default=8192,
+        ge=1024,
+        description="Maximum output tokens for legacy atomic fact extraction LLM calls.",
+    )
     facts_reconcile_enabled: bool = Field(
         default=True,
         description="Enable legacy atomic fact reconciliation before append; failures fall back to ADD.",
@@ -317,6 +322,12 @@ class ConsolidationConfig(BaseModel):
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
+    weekly_llm_model: str | None = None
+    weekly_llm_credential: str | None = None
+    llm_fallback_model: str | None = None
+    llm_fallback_credential: str | None = None
+    fact_reconcile_model: str | None = None
+    fact_reconcile_credential: str | None = None
     episode_summary_max_input_bytes: int = Field(
         default=200 * 1024,
         ge=1024,

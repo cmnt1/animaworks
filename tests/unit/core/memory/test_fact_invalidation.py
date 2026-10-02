@@ -446,14 +446,16 @@ def test_reconcile_config_and_vector_candidate_search(
 
 
 @pytest.mark.unit
-def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
+def test_reconcile_uses_consolidation_model_and_credential_not_status_background_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir()
+    # A status.json background_model with no credential must not become the
+    # independent first choice for fact reconciliation (T3).
     (anima_dir / "status.json").write_text(
-        '{"background_model": "status-model", "extraction_timeout": 7}',
+        '{"background_model": "claude-opus-5-5"}',
         encoding="utf-8",
     )
     old = FactRecord(text="Alice's LoCoMo score is 70.", recorded_at="2026-06-03T09:00:00+09:00")
@@ -465,6 +467,20 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
         captured["prompt"] = prompt
         return "CONTRADICT"
 
+    consolidation = SimpleNamespace(
+        llm_model="openai/deepseek-v4-flash",
+        llm_credential="gpu40-direct",
+        fact_reconcile_model=None,
+        fact_reconcile_credential=None,
+    )
+    rag = SimpleNamespace(fact_extraction_timeout_seconds=11, fact_extraction_max_tokens=8192)
+    defs = SimpleNamespace(
+        consolidation=consolidation,
+        rag=rag,
+        anima_defaults=SimpleNamespace(background_model="", model="", background_credential="", credential=""),
+        locale="ja",
+    )
+    monkeypatch.setattr("core.config.load_config", lambda: defs)
     monkeypatch.setattr("core.llm.oneshot.one_shot_completion_sync", fake_completion)
 
     label = fact_invalidation_llm.classify_fact_relation(
@@ -474,10 +490,12 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
     )
 
     assert label == "CONTRADICT"
-    assert captured["model"] == "status-model"
-    assert captured["timeout"] == 7
+    assert captured["model"] == "openai/deepseek-v4-flash"
+    assert captured["credential"] == "gpu40-direct"
+    assert captured["timeout"] == 11
     assert captured["max_tokens"] == 16
     assert captured["temperature"] == 0.0
+    assert captured["allow_agent_sdk_fallback"] is False
     assert "Return exactly one label" in captured["system_prompt"]
     assert "DUPLICATE" in captured["prompt"]
     assert old.fact_id in captured["prompt"]
@@ -485,20 +503,30 @@ def test_llm_helper_builds_strict_label_prompt_and_resolves_status_model(
 
 @pytest.mark.unit
 def test_llm_helper_config_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    defaults = SimpleNamespace(anima_defaults=SimpleNamespace(background_model="", model="config-model"))
-    monkeypatch.setattr("core.config.models.load_config", lambda: defaults)
-    assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
-        "config-model",
-        {},
-        DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
+    consolidation = SimpleNamespace(
+        llm_model="",
+        llm_credential="",
+        fact_reconcile_model=None,
+        fact_reconcile_credential=None,
     )
+    rag = SimpleNamespace(fact_extraction_timeout_seconds=5, fact_extraction_max_tokens=8192)
+    defs = SimpleNamespace(
+        consolidation=consolidation,
+        rag=rag,
+        anima_defaults=SimpleNamespace(
+            background_model="", model="config-model", background_credential="", credential=""
+        ),
+        locale="ja",
+    )
+    monkeypatch.setattr("core.config.load_config", lambda: defs)
+    resolved = fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice")
+    assert resolved[0] == "config-model"
+    assert resolved[-1] == ""
 
-    monkeypatch.setattr(
-        "core.config.models.load_config",
-        lambda: (_ for _ in ()).throw(RuntimeError("config failed")),
-    )
+    monkeypatch.setattr("core.config.load_config", lambda: (_ for _ in ()).throw(RuntimeError("config failed")))
     assert fact_invalidation_llm._resolve_reconcile_llm_config(tmp_path / "alice") == (
         "claude-sonnet-4-6",
         {},
         DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS,
+        "",
     )

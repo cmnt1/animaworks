@@ -173,7 +173,11 @@ _PROVIDER_ENV_MAP: dict[str, str] = {
 }
 
 
-def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dict[str, Any]:
+def _resolve_consolidation_credential(
+    consolidation_model: str,
+    cfg: Any,
+    credential: str = "",
+) -> dict[str, Any]:
     """Resolve credential fields for the given consolidation model.
 
     Returns a dict with keys: api_key, api_base_url, api_key_env, extra_keys.
@@ -181,11 +185,16 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     that consolidation LLM calls reach the correct provider endpoint.
 
     Resolution order:
-      1. ``config.consolidation.llm_credential`` (explicit credential name)
-      2. Model name prefix (e.g. ``openai/...`` → ``openai`` credential)
+      1. ``credential`` argument (explicit per-call credential name)
+      2. ``config.consolidation.llm_credential`` (explicit credential name)
+      3. Model name prefix (e.g. ``openai/...`` → ``openai`` credential)
     """
-    _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
-    explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
+    if credential:
+        explicit_cred = credential
+    else:
+        _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
+        explicit_cred = _llm_cred if isinstance(_llm_cred, str) and _llm_cred else ""
+    explicit_cred = explicit_cred or ""
     parts = consolidation_model.split("/", 1)
     provider = parts[0].lower() if len(parts) > 1 else ""
 
@@ -209,7 +218,12 @@ def _resolve_consolidation_credential(consolidation_model: str, cfg: Any) -> dic
     }
 
 
-def _consolidation_model_config(base_model_config: Any, consolidation_model: str, cfg: Any) -> Any:
+def _consolidation_model_config(
+    base_model_config: Any,
+    consolidation_model: str,
+    cfg: Any,
+    credential: str = "",
+) -> Any:
     """Return a ModelConfig override for consolidation-only LLM calls.
 
     Consolidation must not inherit a per-Anima chat model/credential mismatch
@@ -219,7 +233,7 @@ def _consolidation_model_config(base_model_config: Any, consolidation_model: str
     """
     from core.config import resolve_execution_mode
 
-    resolved = _resolve_consolidation_credential(consolidation_model, cfg)
+    resolved = _resolve_consolidation_credential(consolidation_model, cfg, credential=credential)
     updates = {
         "model": consolidation_model,
         "credential": resolved["credential"] or getattr(base_model_config, "credential", None),
@@ -274,6 +288,11 @@ def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any)
     primary = _consolidation_model_config(base_model_config, model, cfg)
     candidates = [primary]
     entries: list[tuple[str, str | None]] = []
+    # Explicit consolidation fallback (e.g. a local GPU model) is tried right
+    # after the primary and before any per-Anima fallback (background model).
+    fallback_model = getattr(getattr(cfg, "consolidation", None), "llm_fallback_model", None)
+    if fallback_model:
+        entries.append((fallback_model, getattr(getattr(cfg, "consolidation", None), "llm_fallback_credential", None)))
     entries.extend((entry, None) for entry in getattr(base_model_config, "fallback_models", []) or [])
     legacy_fallback = getattr(base_model_config, "fallback_model", None)
     if legacy_fallback:
@@ -495,6 +514,7 @@ class LifecycleMixin:
         self: _LifecycleHost,
         consolidation_type: str = "daily",
         project: str | None = None,
+        deadline_s: float | None = None,
     ) -> CycleResult:
         """Run daily episode extraction or project/weekly knowledge consolidation.
 
@@ -555,9 +575,22 @@ class LifecycleMixin:
                     )
 
                     if consolidation_type == "daily":
-                        result = await self._run_daily_consolidation(engine)
+                        coro = self._run_daily_consolidation(engine)
                     else:
-                        result = await self._run_weekly_consolidation(engine)
+                        coro = self._run_weekly_consolidation(engine)
+                    if deadline_s:
+                        try:
+                            result = await asyncio.wait_for(coro, timeout=deadline_s)
+                        except TimeoutError:
+                            logger.warning(
+                                "consolidation_deadline_exceeded anima=%s type=%s deadline_s=%s",
+                                self.name,
+                                consolidation_type,
+                                deadline_s,
+                            )
+                            raise TimeoutError(f"consolidation exceeded deadline of {deadline_s}s") from None
+                    else:
+                        result = await coro
 
                     self._last_activity = now_local()
                     await self._activity.alog(
@@ -922,9 +955,15 @@ class LifecycleMixin:
         from core.config import load_config
 
         cfg = load_config()
-        consolidation_model = cfg.consolidation.llm_model
         start_mono = _time.monotonic()
         project = getattr(engine, "project", None)
+        weekly_model = getattr(cfg.consolidation, "weekly_llm_model", None)
+        weekly_credential = getattr(cfg.consolidation, "weekly_llm_credential", None) or ""
+        if weekly_model:
+            consolidation_model = str(weekly_model)
+        else:
+            consolidation_model = str(cfg.consolidation.llm_model)
+            weekly_credential = ""
 
         try:
             merge_candidates = await asyncio.to_thread(engine._find_merge_candidates, max_pairs=30)
@@ -983,6 +1022,7 @@ class LifecycleMixin:
             base_model_config,
             consolidation_model,
             cfg,
+            credential=weekly_credential,
         )
         logger.info(
             "[%s] Weekly consolidation: knowledge extraction with consolidation model=%s",

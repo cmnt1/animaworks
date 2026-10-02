@@ -346,7 +346,7 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     with caplog.at_level(logging.WARNING, logger="server.supervisor._mgr_scheduler"):
         await sup._run_daily_consolidation()
 
-    assert handle.calls == ["run_consolidation", "interrupt"]
+    assert handle.calls == ["run_consolidation", "cancel_consolidation", "interrupt"]
     assert "consolidation_timeout anima=mio phase=phase_a type=daily" in caplog.text
     assert "Daily consolidation failed for mio" not in caplog.text
     # synaptic_downscaling_enabled defaults to True (harness diet PR-6),
@@ -372,7 +372,7 @@ async def test_weekly_consolidation_timeout_logs_once_and_continues(
     with caplog.at_level(logging.WARNING, logger="server.supervisor._mgr_scheduler"):
         await sup._run_weekly_integration()
 
-    assert handle.calls == ["run_consolidation", "interrupt"]
+    assert handle.calls == ["run_consolidation", "cancel_consolidation", "interrupt"]
     assert "consolidation_timeout anima=mio phase=phase_b type=weekly" in caplog.text
     assert "Weekly integration failed for mio" not in caplog.text
     postprocess.assert_awaited_once()
@@ -423,12 +423,12 @@ async def test_project_archives_bypass_inactivity_and_skip_empty_archive(
 
     await getattr(sup, method_name)()
 
-    assert handle.calls == [
-        (
-            "run_consolidation",
-            {"consolidation_type": consolidation_type, "project": "active"},
-        )
-    ]
+    assert len(handle.calls) == 1
+    method, params = handle.calls[0]
+    assert method == "run_consolidation"
+    assert params["consolidation_type"] == consolidation_type
+    assert params["project"] == "active"
+    assert isinstance(params["deadline_s"], float) and params["deadline_s"] >= 60
 
 
 def _prepare_consolidation_scheduler(
@@ -576,7 +576,7 @@ async def test_consolidation_failures_are_isolated_and_summarized(
     assert postprocessed_names == {"alpha", "charlie", "delta", "echo"}
     assert calls["bravo"] == []
     assert calls["charlie"] == ["run_consolidation"]
-    assert calls["delta"] == ["run_consolidation", "interrupt"]
+    assert calls["delta"] == ["run_consolidation", "cancel_consolidation", "interrupt"]
     assert "charlie" in caplog.text
     assert "consolidation_timeout anima=delta" in caplog.text
     assert (

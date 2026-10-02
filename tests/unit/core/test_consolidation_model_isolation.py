@@ -785,3 +785,46 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     assert agent.streaming_config.thinking_effort == expected_effort
     assert (agent.streaming_config is status_config) is not voice_mode
     assert anima.model_config.model == "openai/deepseek-v4-flash"
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_uses_weekly_model_when_configured():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    config = _mock_config()
+    config.consolidation.weekly_llm_model = "openai/deepseek-v4-flash"
+    config.consolidation.weekly_llm_credential = "vllm-lb"
+
+    with (
+        patch("core.config.load_config", return_value=config),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.anima.lifecycle.load_prompt", return_value="weekly prompt"),
+    ):
+        result = await anima._run_weekly_consolidation(_FakeEngine())
+
+    assert result.trigger == "consolidation:weekly"
+    assert len(anima.agent.calls) == 1
+    call = anima.agent.calls[0]
+    assert call["trigger"] == "consolidation:weekly"
+    override = call["model_config_override"]
+    assert override.model == "openai/deepseek-v4-flash"
+    assert override.credential == "vllm-lb"
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_defaults_to_llm_model_when_weekly_unset():
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    config = _mock_config()  # weekly_llm_model is unset
+
+    with (
+        patch("core.config.load_config", return_value=config),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.anima.lifecycle.load_prompt", return_value="weekly prompt"),
+    ):
+        result = await anima._run_weekly_consolidation(_FakeEngine())
+
+    assert result.trigger == "consolidation:weekly"
+    call = anima.agent.calls[0]
+    override = call["model_config_override"]
+    assert override.model == "openai/deepseek-v4-flash"  # falls back to llm_model

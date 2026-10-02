@@ -55,6 +55,7 @@ class FactExtractor:
         llm_extra: dict[str, object] | None = None,
         anima_dir: Path | None = None,
         credential: str = "",
+        max_tokens: int = 8192,
     ) -> None:
         self._model = model
         self._locale = locale
@@ -63,6 +64,7 @@ class FactExtractor:
         self._llm_extra = llm_extra or {}
         self._anima_dir = Path(anima_dir) if anima_dir is not None else None
         self._credential = credential
+        self._max_tokens = max_tokens
         self.last_failure_stage = ""
         self.last_failure_reason = ""
 
@@ -210,11 +212,12 @@ class FactExtractor:
                     system_prompt=system_prompt,
                     model=self._model,
                     credential=self._credential,
-                    max_tokens=2048,
+                    max_tokens=self._max_tokens,
                     structured_output=True,
                     temperature=0.0,
                     timeout=self._timeout,
                     llm_extra=self._llm_extra,
+                    allow_agent_sdk_fallback=False,
                 )
                 if text is None:
                     raise RuntimeError("LLM returned no content")
@@ -295,9 +298,11 @@ class FactExtractor:
         self._record_failure(
             f"{stage}_parse",
             f"{type(first_exc).__name__}: {first_exc}" if first_exc else "invalid_json",
-            "Failed to parse %s extraction LLM JSON response: %.200s",
+            "Failed to parse %s extraction LLM JSON response (len=%d): %.200s ... %.200s",
             stage,
+            len(text),
             text,
+            text[-200:],
             exc_info=(type(first_exc), first_exc, first_exc.__traceback__) if first_exc else False,
         )
         return model_cls()
