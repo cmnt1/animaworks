@@ -431,7 +431,7 @@ class TestOneShotCompletion:
     async def test_codex_sdk_one_shot_patches_reasoning_effort_enum(self) -> None:
         """The shared codex config may echo effort=max; the SDK enum must accept it."""
         with (
-            patch("core.execution.engines.codex.setup._patch_reasoning_effort_enum") as mock_patch,
+            patch("core.platform.codex.patch_reasoning_effort_enum") as mock_patch,
             patch("openai_codex.AsyncCodex", side_effect=RuntimeError("stop")),
         ):
             result = await llm_utils._try_codex_sdk(

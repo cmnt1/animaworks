@@ -479,17 +479,13 @@ async def _try_codex_sdk(
         logger.debug("Codex SDK not available for one-shot fallback")
         return None
 
-    from core.execution.engines.codex.setup import (
-        _patch_reasoning_effort_enum,
-        default_path_env,
-        resolve_codex_model,
-    )
-    from core.platform.codex import default_home_dir, get_codex_executable
+    from core.execution.engines.codex.setup import default_path_env, resolve_codex_model
+    from core.platform.codex import default_home_dir, get_codex_executable, patch_reasoning_effort_enum
 
     # The shared ~/.codex config may set an effort (e.g. ``max``) that the
     # SDK enum does not know yet; without this every response fails pydantic
     # validation and the one-shot silently returns None.
-    _patch_reasoning_effort_enum()
+    patch_reasoning_effort_enum()
 
     env: dict[str, str] = {
         "PATH": default_path_env(),

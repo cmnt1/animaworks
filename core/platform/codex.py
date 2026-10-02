@@ -214,3 +214,32 @@ __all__ = [
     "is_codex_cli_available",
     "is_codex_login_available",
 ]
+
+
+def patch_reasoning_effort_enum() -> None:
+    """openai_codex SDKのReasoningEffort enumに未知値を動的追加する。
+
+    Codex CLI (0.144.x+) はgpt-5.6系の新effort値 ``ultra`` をレスポンスに
+    エコーするが、SDK 0.1.0b3のenumは ``xhigh`` までしか定義しておらず
+    pydantic検証（ThreadStartResponse等）で落ちる。``_missing_`` フックで
+    未知の文字列値をメンバーとして遅延生成し、後方互換を保つ。
+    SDK側がenumを更新したら不要になる。
+    """
+    try:
+        from openai_codex.generated.v2_all import ReasoningEffort
+    except Exception:
+        return
+    if getattr(ReasoningEffort, "_animaworks_dynamic_members", False):
+        return
+
+    def _missing_(cls: type, value: object) -> object | None:
+        if not isinstance(value, str):
+            return None
+        member = object.__new__(cls)
+        member._name_ = value
+        member._value_ = value
+        cls._value2member_map_[value] = member
+        return member
+
+    ReasoningEffort._missing_ = classmethod(_missing_)  # type: ignore[method-assign]
+    ReasoningEffort._animaworks_dynamic_members = True  # type: ignore[attr-defined]
