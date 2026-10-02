@@ -101,6 +101,23 @@ def _resolve_extraction_config(anima_dir: Path) -> tuple[str, dict[str, object],
         return "claude-sonnet-4-6", llm_extra, "ja", timeout, ""
 
 
+def _resolve_extraction_max_tokens() -> int:
+    """Resolve the maximum output tokens for atomic fact extraction.
+
+    Uses ``config.rag.fact_extraction_max_tokens`` when configured (must be
+    >= 1024), otherwise the default 8192.
+    """
+    try:
+        from core.config import load_config
+
+        value = getattr(getattr(load_config(), "rag", None), "fact_extraction_max_tokens", None)
+        if isinstance(value, int) and value >= 1024:
+            return value
+    except Exception:
+        logger.debug("Failed to resolve fact extraction max_tokens from config", exc_info=True)
+    return 8192
+
+
 def _resolve_locale() -> str:
     try:
         from core.config.models import load_config

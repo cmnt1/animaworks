@@ -659,6 +659,40 @@ async def _litellm_stage_with_guard(
     return "fallback", None
 
 
+def _sanitize_temperature_for_model(model: str, llm_kwargs: dict[str, Any]) -> None:
+    """Drop a temperature argument the provider does not accept.
+
+    Anthropic's opus-class models only accept ``temperature=1``; passing e.g.
+    ``0.0`` makes LiteLLM fail with ``UnsupportedParamsError`` before the body is
+    even sent (falling back to the Agent SDK every time).  Drop the argument
+    (or mark ``drop_params``) instead so the LiteLLM stage runs normally.  In
+    place this mutates ``llm_kwargs`` in line with the existing caller.
+    """
+    if "temperature" not in llm_kwargs:
+        return
+    temperature = llm_kwargs["temperature"]
+    if temperature == 1:
+        return
+    # Anthropic opus-class models only accept temperature=1; LiteLLM raises
+    # UnsupportedParamsError otherwise (each call then spuriously falls back to
+    # the Agent SDK / Max plan).  Drop the argument for claude non-1 and for
+    # any model that reports temperature as unsupported.
+    is_anthropic = "claude" in model.lower() or model.lower().startswith("anthropic")
+    if is_anthropic:
+        del llm_kwargs["temperature"]
+        llm_kwargs.setdefault("drop_params", True)
+        return
+    try:
+        import litellm
+
+        supports = litellm.get_supported_openai_params(model)
+    except Exception:
+        supports = None
+    if supports is not None and "temperature" not in supports:
+        del llm_kwargs["temperature"]
+        llm_kwargs.setdefault("drop_params", True)
+
+
 def _sdk_stage_guarded(guard: Any, stage_key: str, log_prefix: str, backend: str) -> bool:
     """Return True when the SDK *backend* should be skipped (realm guarded).
 
@@ -685,6 +719,7 @@ async def one_shot_completion(
     temperature: float | None = None,
     timeout: float | None = None,  # noqa: ASYNC109 -- timeout bounds awaited work and is part of this async API
     llm_extra: dict[str, object] | None = None,
+    allow_agent_sdk_fallback: bool = True,
 ) -> str | None:
     """Execute a one-shot LLM completion with automatic backend selection.
 
@@ -720,6 +755,7 @@ async def one_shot_completion(
     if timeout is not None:
         llm_kwargs["timeout"] = timeout
     resolved_model = llm_kwargs["model"]
+    _sanitize_temperature_for_model(resolved_model, llm_kwargs)
 
     if structured_output and supports_structured_output(resolved_model):
         llm_kwargs.setdefault("response_format", {"type": "json_object"})
@@ -765,7 +801,12 @@ async def one_shot_completion(
         return None
 
     # 2. Try Agent SDK (Anthropic models only), unless the Mode-S realm is guarded.
-    if _is_anthropic_model(resolved_model) and not _sdk_stage_guarded(
+    if not allow_agent_sdk_fallback:
+        logger.warning(
+            "one-shot Agent SDK fallback disabled for %s after LiteLLM failure",
+            resolved_model,
+        )
+    elif _is_anthropic_model(resolved_model) and not _sdk_stage_guarded(
         guard, guard_key(family, _mode_s_realm()), "one-shot", "Agent SDK"
     ):
         try:
@@ -792,6 +833,7 @@ def one_shot_completion_sync(
     temperature: float | None = None,
     timeout: float | None = None,
     llm_extra: dict[str, object] | None = None,
+    allow_agent_sdk_fallback: bool = True,
 ) -> str | None:
     """Run :func:`one_shot_completion` from a thread without an event loop."""
     try:
@@ -812,6 +854,7 @@ def one_shot_completion_sync(
             temperature=temperature,
             timeout=timeout,
             llm_extra=llm_extra,
+            allow_agent_sdk_fallback=allow_agent_sdk_fallback,
         )
     )
 

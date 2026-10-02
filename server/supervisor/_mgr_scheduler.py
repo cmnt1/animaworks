@@ -367,6 +367,20 @@ class SchedulerMixin:
         )
         return min(max_seconds, max(base, estimate))
 
+    async def _cancel_consolidation(
+        self: _SchedulerMixinHost,
+        handle: object,
+        anima_name: str,
+    ) -> None:
+        """Best-effort cancel a still-running anima consolidation after a root timeout."""
+        try:
+            await handle.send_request("cancel_consolidation", {}, timeout=10.0)
+            logger.debug("Cancel request sent for anima=%s consolidation", anima_name)
+        except TimeoutError:
+            logger.debug("Cancel consolidation timed out for %s", anima_name)
+        except Exception:
+            logger.debug("Cancel consolidation request failed for %s", anima_name, exc_info=True)
+
     async def _run_project_archive_consolidations(
         self: _SchedulerMixinHost,
         handle: object,
@@ -401,7 +415,11 @@ class SchedulerMixin:
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
-                        {"consolidation_type": consolidation_type, "project": project},
+                        {
+                            "consolidation_type": consolidation_type,
+                            "project": project,
+                            "deadline_s": max(60.0, timeout_s - 60),
+                        },
                         timeout=timeout_s,
                     )
                 except TimeoutError:
@@ -413,6 +431,7 @@ class SchedulerMixin:
                         consolidation_type,
                         timeout_s,
                     )
+                    await self._cancel_consolidation(handle, anima_name)
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:
@@ -549,7 +568,7 @@ class SchedulerMixin:
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
-                        {"consolidation_type": "daily"},
+                        {"consolidation_type": "daily", "deadline_s": max(60.0, timeout_s - 60)},
                         timeout=timeout_s,
                     )
                 except TimeoutError:
@@ -559,6 +578,7 @@ class SchedulerMixin:
                         anima_name,
                         timeout_s,
                     )
+                    await self._cancel_consolidation(handle, anima_name)
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:
@@ -719,7 +739,7 @@ class SchedulerMixin:
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
-                        {"consolidation_type": "weekly"},
+                        {"consolidation_type": "weekly", "deadline_s": max(60.0, timeout_s - 60)},
                         timeout=timeout_s,
                     )
                 except TimeoutError:
@@ -729,6 +749,7 @@ class SchedulerMixin:
                         anima_name,
                         timeout_s,
                     )
+                    await self._cancel_consolidation(handle, anima_name)
                     try:
                         await handle.send_request("interrupt", {}, timeout=10.0)
                     except Exception:

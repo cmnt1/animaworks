@@ -232,9 +232,12 @@ async def execute_background_contract(
     if kind == "consolidation":
         consolidation_type = str(payload.get("consolidation_type") or "daily")
         project = payload.get("project")
+        deadline_s = payload.get("deadline_s")
         kwargs = {"consolidation_type": consolidation_type}
         if project is not None:
             kwargs["project"] = project
+        if isinstance(deadline_s, (int, float)):
+            kwargs["deadline_s"] = float(deadline_s)
         result = await anima.run_consolidation(**kwargs)
         result_dict = result.model_dump(mode="json") if result is not None else {}
         return {

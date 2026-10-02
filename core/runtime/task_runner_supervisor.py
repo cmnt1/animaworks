@@ -103,6 +103,7 @@ class TaskRunnerJob:
     stream_events: list[asyncio.Queue[dict[str, Any] | None]] = field(default_factory=list)
     inject_waiters: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
     interrupt_thread_id: str | None = None
+    pending_cancel: bool = False
     state_write_count: int = 0
     state_write_duration_sec: float = 0.0
     state_write_pending: set[str] = field(default_factory=set)
@@ -463,6 +464,32 @@ class TaskRunnerSupervisor:
             else:
                 await job.connection.send_event("interrupt", {"thread_id": thread_id})
             return
+
+    async def cancel_consolidation(self) -> dict[str, Any]:
+        """Best-effort cancel any running consolidation (background) job.
+
+        Sends a ``cancel`` event to the live child; if no job is running (or
+        it already finished) this is a no-op.
+        """
+        for job in list(self._jobs.values()):
+            if job.identity.lane != "background":
+                continue
+            if job.result.done():
+                continue
+            if job.connection is None:
+                job.pending_cancel = True
+            else:
+                try:
+                    await job.connection.send_event("cancel", {})
+                except Exception:
+                    logger.debug(
+                        "Cancel event send failed anima=%s job=%s",
+                        self.anima_name,
+                        job.identity.job_id,
+                        exc_info=True,
+                    )
+            return {"status": "cancel_requested", "job": job.identity.job_id}
+        return {"status": "noop"}
 
     async def interrupt_chat(self, thread_id: str | None = None) -> dict[str, Any]:
         """Forward an explicit Anima-main interrupt to active chat children."""
@@ -1127,6 +1154,9 @@ class TaskRunnerSupervisor:
             await connection.send_request(job.request_id, "run", job.params)
             if job.interrupt_thread_id is not None:
                 await connection.send_event("interrupt", {"thread_id": job.interrupt_thread_id})
+            if job.pending_cancel:
+                await connection.send_event("cancel", {})
+                job.pending_cancel = False
 
             while True:
                 try:

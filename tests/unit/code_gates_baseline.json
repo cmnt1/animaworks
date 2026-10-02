@@ -18,7 +18,6 @@
     "core/integrations/_anima_icon_url.py",
     "core/lifecycle/system_consolidation.py",
     "core/memory/facts/config.py",
-    "core/memory/facts/invalidation_llm.py",
     "core/memory/facts/ontology.py",
     "core/memory/rag/repair/detect.py",
     "core/memory/rag/repair/rebuild.py",

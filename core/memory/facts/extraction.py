@@ -143,9 +143,11 @@ async def extract_fact_records_with_outcome(
 
     try:
         if extractor is None:
+            from core.memory.facts.config import _resolve_extraction_max_tokens
             from core.memory.facts.extractor import FactExtractor
 
             resolved_model, resolved_extra, resolved_locale, timeout, credential = _resolve_extraction_config(anima_dir)
+            max_tokens = _resolve_extraction_max_tokens()
             extractor = FactExtractor(
                 model=model or resolved_model,
                 locale=locale or resolved_locale,
@@ -153,6 +155,7 @@ async def extract_fact_records_with_outcome(
                 llm_extra=llm_extra or resolved_extra,
                 anima_dir=anima_dir,
                 credential="" if model else credential,
+                max_tokens=max_tokens,
             )
         entities = await extractor.extract_entities(text)
         failure_stage = str(getattr(extractor, "last_failure_stage", "") or "")

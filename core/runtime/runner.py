@@ -956,6 +956,7 @@ class AnimaRunner:
             "reload_activity_schedule": self._handle_reload_activity_schedule,
             "shutdown": self._handle_shutdown,
             "interrupt": self._handle_interrupt,
+            "cancel_consolidation": self._handle_cancel_consolidation,
             "compact_session": self._handle_compact_session,
         }
         return handlers.get(method)
@@ -1065,12 +1066,15 @@ class AnimaRunner:
 
         consolidation_type = params.get("consolidation_type", "daily")
         project = params.get("project")
+        deadline_s = params.get("deadline_s")
         if self._scheduler_mgr is None:
             raise AnimaNotRunningError("Consolidation task runner supervisor is unavailable")
 
         payload = {"consolidation_type": consolidation_type}
         if project is not None:
             payload["project"] = project
+        if isinstance(deadline_s, (int, float)):
+            payload["deadline_s"] = float(deadline_s)
         isolated = await self._scheduler_mgr._task_runner_supervisor.run_background(
             kind="consolidation",
             payload=payload,
@@ -1173,6 +1177,12 @@ class AnimaRunner:
             raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
         thread_id = params.get("thread_id")
         return await self._scheduler_mgr._task_runner_supervisor.interrupt_chat(thread_id=thread_id)
+
+    async def _handle_cancel_consolidation(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle cancel_consolidation request — stop a still-running consolidation."""
+        if self._scheduler_mgr is None:
+            raise AnimaNotRunningError("Consolidation task runner supervisor is unavailable")
+        return await self._scheduler_mgr._task_runner_supervisor.cancel_consolidation()
 
     async def _handle_compact_session(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle a manual compaction request for the given thread.

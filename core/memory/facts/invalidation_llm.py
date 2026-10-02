@@ -18,17 +18,19 @@ logger = logging.getLogger("animaworks.memory.fact_invalidation_llm")
 
 
 def classify_fact_relation(new_fact: FactRecord, candidates: list[Any], anima_dir: Path) -> str:
-    model, llm_extra, timeout = _resolve_reconcile_llm_config(anima_dir)
+    model, llm_extra, timeout, credential = _resolve_reconcile_llm_config(anima_dir)
     from core.llm.oneshot import one_shot_completion_sync
 
     text = one_shot_completion_sync(
         _user_prompt(new_fact, candidates),
         system_prompt=_SYSTEM_PROMPT,
         model=model,
+        credential=credential,
         max_tokens=16,
         temperature=0.0,
         timeout=timeout,
         llm_extra=llm_extra,
+        allow_agent_sdk_fallback=False,
     )
     if text is None:
         raise RuntimeError("Fact relation LLM returned no content")
@@ -67,7 +69,16 @@ def _user_prompt(new_fact: FactRecord, candidates: list[Any]) -> str:
     )
 
 
-def _resolve_reconcile_llm_config(anima_dir: Path) -> tuple[str, dict[str, object], int]:
+def _resolve_reconcile_llm_config(anima_dir: Path) -> tuple[str, dict[str, object], int, str]:
+    """Resolve the model, llm_extra, timeout, and credential for fact reconciliation.
+
+    Resolution order:
+      1. ``config.consolidation.fact_reconcile_model`` (explicit model) +
+         ``fact_reconcile_credential``.
+      2. Otherwise the same result as :func:`core.memory.facts.config._resolve_extraction_config`
+         (model, llm_extra, timeout, and credential). status.json's
+         background_model is not used as an independent first choice here.
+    """
     timeout = DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
     llm_extra: dict[str, object] = {}
     try:
@@ -78,29 +89,18 @@ def _resolve_reconcile_llm_config(anima_dir: Path) -> tuple[str, dict[str, objec
             getattr(getattr(cfg, "rag", None), "fact_extraction_timeout_seconds", None),
             timeout,
         )
+        consolidation = getattr(cfg, "consolidation", None)
+        fact_model = getattr(consolidation, "fact_reconcile_model", None)
+        if fact_model:
+            fact_credential = getattr(consolidation, "fact_reconcile_credential", None) or ""
+            return str(fact_model), llm_extra, timeout, str(fact_credential)
     except Exception:
-        logger.debug("Failed to load fact reconciliation timeout from config", exc_info=True)
+        logger.debug("Failed to load fact reconciliation model from config", exc_info=True)
 
-    try:
-        status_path = anima_dir / "status.json"
-        if status_path.is_file():
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-            if data.get("extraction_timeout"):
-                timeout = _coerce_timeout_seconds(data["extraction_timeout"], timeout)
-            if data.get("background_model"):
-                return str(data["background_model"]), llm_extra, timeout
-            if data.get("extraction_model"):
-                return str(data["extraction_model"]), llm_extra, timeout
-    except Exception:
-        logger.debug("Failed to resolve reconcile LLM config from status.json", exc_info=True)
+    from core.memory.facts.config import _resolve_extraction_config
 
-    try:
-        from core.config.models import load_config
-
-        cfg = load_config()
-        return cfg.anima_defaults.background_model or cfg.anima_defaults.model, llm_extra, timeout
-    except Exception:
-        return "claude-sonnet-4-6", llm_extra, timeout
+    model, resolved_extra, _locale, extraction_timeout, credential = _resolve_extraction_config(anima_dir)
+    return model, resolved_extra, extraction_timeout or timeout, credential
 
 
 _SYSTEM_PROMPT = (
