@@ -37,6 +37,7 @@ from core.runtime.memory_service import MemoryService, MemoryServiceUnavailable
 from core.runtime.state_writer import LocalStateWriter, get_state_writer
 from core.runtime.transport import cleanup_ipc_endpoint, start_ipc_server
 from core.schemas import CronTask
+from core.time_utils import now_local
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,10 @@ class TaskRunnerJob:
     state_write_results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
+def _now_iso() -> str:
+    return now_local().isoformat()
+
+
 class TaskRunnerSupervisor:
     """Expose one IPC v2 endpoint and run jobs in isolated process groups."""
 
@@ -150,6 +155,23 @@ class TaskRunnerSupervisor:
         self._max_concurrent = pool
         self._spawn_semaphore = asyncio.Semaphore(pool) if pool is not None else None
         self._chat_lock = asyncio.Lock()
+
+    def _queue_live_facts(self, trigger: str, started_at: str) -> None:
+        """Schedule live fact extraction in this long-lived process.
+
+        Session hooks inside a disposable task-runner child die with the child
+        before the debounce fires, so the parent schedules after the job ends.
+        """
+        try:
+            from core.memory.facts.live import schedule_live_fact_extraction
+
+            schedule_live_fact_extraction(self.anima_dir, trigger=trigger, session_started_at=started_at)
+        except Exception as exc:  # noqa: BLE001 - never affect the finished job
+            logger.warning(
+                "[%s] Live fact extraction was not scheduled: %s",
+                self.anima_name,
+                f"{type(exc).__name__}: {exc}".replace("\n", " ")[:240],
+            )
 
     @property
     def jobs(self) -> dict[str, TaskRunnerJob]:
@@ -271,13 +293,16 @@ class TaskRunnerSupervisor:
         that journal recovery (lane name == session type) picks up the inbox
         journal (``session_type="inbox"``).
         """
-        return await self._run_isolated_job(
+        started_at = _now_iso()
+        result = await self._run_isolated_job(
             lane="inbox",
             job_prefix="inbox",
             params_builder=lambda url_env: {"environment": {"urls": url_env}},
             log_context="inbox",
             display_lane="inbox",
         )
+        self._queue_live_facts("inbox", started_at)
+        return result
 
     async def run_task(
         self,
@@ -289,7 +314,8 @@ class TaskRunnerSupervisor:
     ) -> dict[str, Any]:
         """Spawn one TaskExec (lane=task) runner and return its terminal result."""
         task_id = str(task_desc.get("task_id") or "unknown")
-        return await self._run_isolated_job(
+        started_at = _now_iso()
+        result = await self._run_isolated_job(
             lane="task",
             job_prefix="task",
             params_builder=lambda url_env: {
@@ -302,6 +328,8 @@ class TaskRunnerSupervisor:
             on_spawned=on_spawned,
             use_pool_limit=True,
         )
+        self._queue_live_facts("task", started_at)
+        return result
 
     async def run_background(
         self,
@@ -339,6 +367,7 @@ class TaskRunnerSupervisor:
                 await self._interrupt_active_chat(str(payload.get("thread_id") or "default"))
 
         async with self._chat_lock:
+            started_at = _now_iso()
             result = await self._run_isolated_job(
                 lane="chat",
                 job_prefix=f"chat-{kind}",
@@ -350,6 +379,7 @@ class TaskRunnerSupervisor:
                 log_context=f"kind={kind}",
                 display_lane="chat",
             )
+            self._queue_live_facts("chat", started_at)
             return result
 
     async def run_chat_stream(self, payload: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
@@ -388,11 +418,14 @@ class TaskRunnerSupervisor:
                 finally:
                     await queue.put(None)
 
+            started_at = _now_iso()
             producer = asyncio.create_task(_produce())
             try:
                 while (event := await queue.get()) is not None:
                     yield event
-                yield {"done": True, "result": await producer}
+                result = await producer
+                self._queue_live_facts("chat", started_at)
+                yield {"done": True, "result": result}
             finally:
                 if not producer.done():
                     producer.cancel()
