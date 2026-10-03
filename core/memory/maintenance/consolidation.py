@@ -25,10 +25,16 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.memory.maintenance.activity_compaction import (
+    ActivityCompactionSettings,
+    ActivityCompactionStats,
+    compact_activity_entries,
+)
 from core.time_utils import ensure_aware, get_app_timezone, now_local
 
 logger = logging.getLogger("animaworks.consolidation")
@@ -39,6 +45,7 @@ logger = logging.getLogger("animaworks.consolidation")
 # fully processed under the old format are re-aggregated without it so they do
 # not get re-summarised into duplicate episodes.
 _NOOP_FILTER_KEY = "_noop_cron_filtered"
+_INPUT_PROFILE_KEY = "_input_profile_by_date"
 
 
 def list_project_archives(anima_dir: Path) -> list[str]:
@@ -109,34 +116,30 @@ class ConsolidationEngine:
         model: str | None = None,
         max_input_bytes: int = 200 * 1024,
         exclude_noop_cron: bool = False,
+        compaction_settings: ActivityCompactionSettings | None = None,
     ) -> tuple[list[str], bool]:
-        """Return unprocessed activity chunks for *target_date* with Phase A filtering.
+        """Return unprocessed activity chunks using checkpoint-compatible filters.
 
-        Encapsulates the checkpoint-compatible decision for whether to apply the
-        noop-cron filter to a date so that both callers (the daily episode
-        summariser and the consolidation gate) compute the same result.
-
-        Phase A changes the input (by dropping noop crons), so dates that were
-        already processed under the old format must not be re-aggregated with a
-        different set of chunks (that would re-write duplicate episodes).  The
-        rule is:
-
-        - if the date is listed in ``_noop_cron_filtered`` **or** has no
-          recorded checkpoint hashes, collect with the filter;
-        - otherwise (partially/fully processed under the old format), collect
-          without the filter, matching prior behaviour exactly.
-
-        Args:
-            target_date: The local day to collect.
-            model: Optional model used to compute the input budget.
-            max_input_bytes: Episode-summary input byte budget.
-            exclude_noop_cron: Master switch for the Phase A filter.  When
-                ``False`` behaviour is identical to the pre-Phase-A path.
-
-        Returns:
-            ``(pending_chunks, filter_applied)`` where ``filter_applied`` is
-            whether the noop-cron filter was actually used for this date.
+        Both the daily summariser and the scheduler gate use this method so
+        that no-op-cron filtering and the input profile stay aligned. Dates
+        with existing hashes keep the profile that produced those hashes;
+        legacy dates with no profile entry use ``full`` to avoid duplicate
+        episodes after the compact formatter was introduced.
         """
+        settings = compaction_settings
+        if settings is None:
+            try:
+                from core.config import load_config
+
+                cfg = load_config()
+            except Exception:
+                settings = ActivityCompactionSettings()
+            else:
+                settings = ActivityCompactionSettings.from_config(getattr(cfg, "consolidation", None))
+        settings = replace(
+            settings,
+            profile=self.resolve_input_profile_for_date(target_date, settings.profile),
+        )
         checkpoint = self._load_episode_checkpoint()
         iso = target_date.isoformat()
         noop_filtered_dates = set(checkpoint.get(_NOOP_FILTER_KEY, []))
@@ -151,28 +154,54 @@ class ConsolidationEngine:
             until=window_end,
             max_input_bytes=max_input_bytes,
             exclude_noop_cron=apply_filter,
+            compaction_settings=settings,
         )
         pending = self.unprocessed_activity_chunks(target_date, chunks)
         return pending, apply_filter
 
-    def _load_episode_checkpoint(self) -> dict[str, list[str]]:
+    def resolve_input_profile_for_date(self, target_date: date, requested_profile: str) -> str:
+        """Resolve the profile to use for a date without changing its checkpoint."""
+        checkpoint = self._load_episode_checkpoint()
+        iso = target_date.isoformat()
+        if not checkpoint.get(iso, []):
+            return requested_profile if requested_profile in ("full", "compact") else "compact"
+        recorded_by_date = checkpoint.get(_INPUT_PROFILE_KEY, {})
+        if isinstance(recorded_by_date, dict):
+            recorded = recorded_by_date.get(iso)
+            if recorded in ("full", "compact"):
+                return recorded
+        return "full"
+
+    def _load_episode_checkpoint(self) -> dict[str, Any]:
         path = self.anima_dir / "state" / "consolidation_episode_checkpoint.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return (
-                {
-                    key: values
-                    for key, values in data.items()
-                    if isinstance(values, list) and all(isinstance(value, str) for value in values)
-                }
-                if isinstance(data, dict)
-                else {}
-            )
         except (OSError, ValueError):
             return {}
+        if not isinstance(data, dict):
+            return {}
+
+        checkpoint: dict[str, Any] = {}
+        for key, value in data.items():
+            if key == _INPUT_PROFILE_KEY and isinstance(value, dict):
+                profiles = {
+                    day: profile
+                    for day, profile in value.items()
+                    if isinstance(day, str) and profile in ("full", "compact")
+                }
+                if profiles:
+                    checkpoint[key] = profiles
+            elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+                checkpoint[key] = value
+        return checkpoint
 
     def record_consolidated_chunks(
-        self, target_date: date, chunks: list[str], *, noop_cron_filtered: bool = False
+        self,
+        target_date: date,
+        chunks: list[str],
+        *,
+        noop_cron_filtered: bool = False,
+        input_profile: str | None = None,
     ) -> None:
         """Advance only after the episode write succeeds; raw inputs stay intact.
 
@@ -180,10 +209,9 @@ class ConsolidationEngine:
             target_date: The local day the chunks came from.
             chunks: The successfully summarised input chunks.
             noop_cron_filtered: Whether the chunks were collected with the
-                Phase A noop-cron filter applied.  When ``True`` the date is
-                added to the ``_noop_cron_filtered`` checkpoint list so later
-                runs keep applying the filter for this date (and keep the
-                output reproducibly aligned with the stored hashes).
+                Phase A noop-cron filter applied.
+            input_profile: Profile used to collect the chunks. When supplied,
+                it is persisted by date so later runs reproduce the same input.
         """
         from core.memory.io import atomic_write_text
 
@@ -196,6 +224,12 @@ class ConsolidationEngine:
             filtered = set(checkpoint.get(_NOOP_FILTER_KEY, []))
             filtered.add(key)
             checkpoint[_NOOP_FILTER_KEY] = sorted(filtered)
+        if input_profile in ("full", "compact"):
+            profiles = checkpoint.get(_INPUT_PROFILE_KEY, {})
+            if not isinstance(profiles, dict):
+                profiles = {}
+            profiles[key] = input_profile
+            checkpoint[_INPUT_PROFILE_KEY] = profiles
         atomic_write_text(
             self.anima_dir / "state" / "consolidation_episode_checkpoint.json",
             json.dumps(checkpoint, ensure_ascii=False),
@@ -549,32 +583,33 @@ class ConsolidationEngine:
         until: datetime | None = None,
         max_input_bytes: int = 200 * 1024,
         exclude_noop_cron: bool = False,
+        compaction_settings: ActivityCompactionSettings | None = None,
     ) -> list[str]:
-        """Collect activity entries and split into budget-sized chunks.
+        """Collect activity entries, apply the selected input profile, and chunk them.
 
-        Returns a list of formatted text chunks, each within the model's
-        budget. Chunks are split at natural hour boundaries when possible.
-
-        Args:
-            hours: Number of hours to look back.
-            model: Model name for budget calculation. Uses consolidation
-                model from config if not provided.
-            since: Optional inclusive lower timestamp bound. When provided,
-                it takes precedence over ``hours`` for entry filtering.
-            until: Optional exclusive upper timestamp bound, used with
-                ``since`` for fixed date windows.
-            exclude_noop_cron: When ``True``, drop "did nothing" cron
-                executions (and their in-window tool entries) from the input
-                before formatting.  See ``cron_noop.filter_noop_cron_entries``.
-
-        Returns:
-            List of formatted activity text chunks. Empty list if no entries.
+        Returns formatted text chunks within the model's context budget. Chunks
+        are split at natural hour boundaries when possible.
         """
-        if model is None:
+        settings = compaction_settings
+        cfg = None
+        if model is None or settings is None:
             from core.config import load_config
 
-            cfg = load_config()
+            try:
+                cfg = load_config()
+            except Exception:
+                if model is None:
+                    raise
+        if model is None:
             model = cfg.consolidation.llm_model
+        if settings is None:
+            settings = (
+                ActivityCompactionSettings.from_config(getattr(cfg, "consolidation", None))
+                if cfg is not None
+                else ActivityCompactionSettings()
+            )
+        if settings.profile not in ("full", "compact"):
+            raise ValueError(f"Unknown activity input profile: {settings.profile!r}")
 
         # Keep chunk boundaries stable so existing checkpoint hashes remain valid;
         # oversized rendered prompts are split immediately before the LLM call.
@@ -622,20 +657,18 @@ class ConsolidationEngine:
         if not filtered:
             return []
 
+        noop_llm_excluded = 0
+        noop_command_excluded = 0
+        noop_tool_entries_excluded = 0
         # Apply Phase A noop-cron filter (right after the date-window filter,
         # before the exclusion list) to shrink episode-summary input.
         if exclude_noop_cron:
             from core.memory.maintenance.cron_noop import filter_noop_cron_entries
 
             filtered, noop_stats = filter_noop_cron_entries(filtered)
-            if noop_stats.llm_excluded or noop_stats.command_excluded or noop_stats.tool_entries_excluded:
-                logger.info(
-                    "Phase A input filter anima=%s excluded_noop_cron llm=%d command=%d entries=%d",
-                    self.anima_name,
-                    noop_stats.llm_excluded,
-                    noop_stats.command_excluded,
-                    len(filtered),
-                )
+            noop_llm_excluded = noop_stats.llm_excluded
+            noop_command_excluded = noop_stats.command_excluded
+            noop_tool_entries_excluded = noop_stats.tool_entries_excluded
 
         # Apply exclusion list
         included: list = []
@@ -653,15 +686,44 @@ class ConsolidationEngine:
                 continue
             included.append(e)
 
-        if not included:
-            return []
+        if settings.profile == "compact":
+            formatted_entries, compaction_stats = compact_activity_entries(
+                included,
+                settings=settings,
+                format_full=lambda entry: self._format_entry_full(entry, max_content_bytes=entry_content_bytes),
+                format_tool_use=lambda entry: self._format_entry_full(
+                    entry,
+                    max_content_bytes=settings.tool_use_max_bytes,
+                ),
+            )
+        else:
+            # The explicit full profile intentionally uses the legacy formatter
+            # and ordering without any content changes, preserving old hashes.
+            formatted_entries = []
+            for entry in included:
+                text = self._format_entry_full(entry, max_content_bytes=entry_content_bytes)
+                date_hour = entry.ts[:13] if len(entry.ts) >= 13 else "0000-00-00T00"
+                formatted_entries.append((date_hour, text))
+            input_bytes = sum(len(text.encode("utf-8")) + 1 for _, text in formatted_entries)
+            compaction_stats = ActivityCompactionStats(bytes_before=input_bytes, bytes_after=input_bytes)
 
-        # Format all entries — use date+hour key for cross-day correctness
-        formatted_entries: list[tuple[str, str]] = []  # (date_hour_key, formatted_text)
-        for e in included:
-            text = self._format_entry_full(e, max_content_bytes=entry_content_bytes)
-            date_hour = e.ts[:13] if len(e.ts) >= 13 else "0000-00-00T00"
-            formatted_entries.append((date_hour, text))
+        if settings.profile == "compact" or noop_llm_excluded or noop_command_excluded or noop_tool_entries_excluded:
+            logger.info(
+                "Phase A input filter anima=%s excluded_noop_cron llm=%d command=%d entries=%d "
+                "profile=%s bytes_before=%d bytes_after=%d cron_digests=%d cron_runs_folded=%d "
+                "tool_result_one_lined=%d duplicate_commands_folded=%d",
+                self.anima_name,
+                noop_llm_excluded,
+                noop_command_excluded,
+                len(filtered),
+                settings.profile,
+                compaction_stats.bytes_before,
+                compaction_stats.bytes_after,
+                compaction_stats.cron_digests,
+                compaction_stats.cron_runs_folded,
+                compaction_stats.tool_results_one_lined,
+                compaction_stats.duplicate_commands_folded,
+            )
 
         # Split into budget-sized chunks at hour boundaries
         return self._split_into_chunks(formatted_entries, budget)

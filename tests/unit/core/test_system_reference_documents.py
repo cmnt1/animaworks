@@ -190,7 +190,7 @@ class TestCopyInfrastructure:
         content = (data_dir / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
         assert content == "# Japanese Fallback"
 
-    def test_ko_runtime_prompts_include_only_direct_read_files_with_fallback(self, tmp_path: Path):
+    def test_ko_runtime_prompts_include_selected_files_with_fallback(self, tmp_path: Path):
         from core.infra.runtime_init import _copy_infrastructure
 
         templates = tmp_path / "templates"
@@ -201,6 +201,9 @@ class TestCopyInfrastructure:
         (ko_prompts / "character_design_guide.md").write_text("ko guide", encoding="utf-8")
         (ko_prompts / "environment.md").write_text("do not copy", encoding="utf-8")
         (en_prompts / "face_types.md").write_text("en face types", encoding="utf-8")
+        prompt_copy = ko_prompts / "memory" / "episode_extraction.md"
+        prompt_copy.parent.mkdir(parents=True)
+        prompt_copy.write_text("ko episode prompt", encoding="utf-8")
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
@@ -212,6 +215,7 @@ class TestCopyInfrastructure:
 
         assert (data_dir / "prompts/character_design_guide.md").read_text(encoding="utf-8") == "ko guide"
         assert (data_dir / "prompts/face_types.md").read_text(encoding="utf-8") == "en face types"
+        assert (data_dir / "prompts/memory/episode_extraction.md").read_text(encoding="utf-8") == "ko episode prompt"
         assert not (data_dir / "prompts/environment.md").exists()
 
 
@@ -253,6 +257,9 @@ class TestMergeTemplates:
         (templates / "en/prompts").mkdir(parents=True)
         (templates / "ko/prompts/character_design_guide.md").write_text("ko guide", encoding="utf-8")
         (templates / "en/prompts/face_types.md").write_text("en face types", encoding="utf-8")
+        episode_prompt = templates / "en/prompts/memory/episode_extraction.md"
+        episode_prompt.parent.mkdir(parents=True)
+        episode_prompt.write_text("synced episode prompt", encoding="utf-8")
         (templates / "ko/prompts/environment.md").write_text("not used", encoding="utf-8")
         data_dir = tmp_path / "data"
         (data_dir / "prompts").mkdir(parents=True)
@@ -267,8 +274,12 @@ class TestMergeTemplates:
 
         assert "prompts/character_design_guide.md" in added
         assert "prompts/face_types.md" in added
+        assert "prompts/memory/episode_extraction.md" in added
         assert (data_dir / "prompts/character_design_guide.md").read_text(encoding="utf-8") == "ko guide"
         assert (data_dir / "prompts/face_types.md").read_text(encoding="utf-8") == "en face types"
+        assert (data_dir / "prompts/memory/episode_extraction.md").read_text(
+            encoding="utf-8"
+        ) == "synced episode prompt"
         assert (data_dir / "prompts/environment.md").read_text(encoding="utf-8") == "keep existing runtime prompt"
 
     def test_does_not_overwrite_existing_files(self, tmp_path: Path):

@@ -372,6 +372,12 @@ class ConsolidationConfig(BaseModel):
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
     inactivity_skip_enabled: bool = True
     inactivity_days: int = Field(default=7, ge=1)
+    episode_summary_input_profile: Literal["full", "compact"] = "compact"
+    episode_summary_cron_digest_min_runs: int = Field(default=6, ge=1)
+    episode_summary_cron_digest_max_notable_runs: int = Field(default=5, ge=0)
+    episode_summary_tool_use_max_bytes: int = Field(default=300, ge=0)
+    episode_summary_error_tail_bytes: int = Field(default=300, ge=0)
+    episode_summary_max_output_tokens: int = Field(default=4096, ge=1)
 
 
 class ImageGenConfig(BaseModel):

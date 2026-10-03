@@ -180,7 +180,14 @@ async def test_daily_episode_summary_backfills_bounded_older_days() -> None:
             self.written.append(day)
             return Path(f"{day}.md")
 
-        def record_consolidated_chunks(self, day, _chunks, *, noop_cron_filtered=False):
+        def record_consolidated_chunks(
+            self,
+            day,
+            _chunks,
+            *,
+            noop_cron_filtered=False,
+            input_profile=None,
+        ):
             self.recorded.append(day)
 
         extract_facts_from_text_outcome = AsyncMock(return_value=SimpleNamespace(facts_extracted=0, facts_failed=0))

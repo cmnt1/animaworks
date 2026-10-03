@@ -360,10 +360,12 @@ class SchedulerMixin:
         max_seconds = float(getattr(consolidation_cfg, "ipc_timeout_max_seconds", defaults.ipc_timeout_max_seconds))
         if gate is None:
             return min(max_seconds, base)
+        summary_input_entries = getattr(gate, "summary_input_entries", None)
+        activity_entries = (
+            getattr(gate, "activity_count", 0) if summary_input_entries is None else summary_input_entries
+        )
         estimate = (
-            base
-            + float(getattr(gate, "activity_count", 0)) * per_activity
-            + float(getattr(gate, "episode_count", 0)) * per_episode
+            base + float(activity_entries) * per_activity + float(getattr(gate, "episode_count", 0)) * per_episode
         )
         return min(max_seconds, max(base, estimate))
 
@@ -473,16 +475,23 @@ class SchedulerMixin:
             run_daily_consolidation_post_processing,
             should_skip_inactive_consolidation,
         )
+        from core.memory.maintenance.activity_compaction import ActivityCompactionSettings
 
         defaults = ConsolidationConfig()
         min_entries = defaults.min_episodes_threshold
         model = defaults.llm_model
         backfill_days = defaults.episode_summary_backfill_days
+        max_backfill_days = defaults.episode_summary_backfill_max_days_per_run
         max_input_bytes = defaults.episode_summary_max_input_bytes
         if consolidation_cfg:
             min_entries = getattr(consolidation_cfg, "min_episodes_threshold", min_entries)
             model = getattr(consolidation_cfg, "llm_model", model)
             backfill_days = getattr(consolidation_cfg, "episode_summary_backfill_days", backfill_days)
+            max_backfill_days = getattr(
+                consolidation_cfg,
+                "episode_summary_backfill_max_days_per_run",
+                max_backfill_days,
+            )
             max_input_bytes = getattr(consolidation_cfg, "episode_summary_max_input_bytes", max_input_bytes)
 
         targets = self._iter_consolidation_targets()
@@ -526,8 +535,10 @@ class SchedulerMixin:
                 threshold=min_entries,
                 hours=24,
                 backfill_days=backfill_days,
+                max_backfill_days=max_backfill_days,
                 model=model,
                 max_input_bytes=max_input_bytes,
+                compaction_settings=ActivityCompactionSettings.from_config(consolidation_cfg, defaults),
                 exclude_noop_cron=getattr(
                     consolidation_cfg,
                     "episode_summary_exclude_noop_cron",

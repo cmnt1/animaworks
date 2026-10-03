@@ -39,6 +39,22 @@ def test_resolve_template_sources_uses_file_level_locale_fallback(tmp_path: Path
     assert "common_knowledge/linked.md" not in sources
 
 
+def test_episode_extraction_prompt_is_in_runtime_template_sync(tmp_path: Path, monkeypatch) -> None:
+    import core.migrations.template_sync as template_sync
+
+    templates = tmp_path / "templates"
+    prompt = _write(templates / "ja/prompts/memory/episode_extraction.md", "compact extraction prompt")
+    monkeypatch.setattr(template_sync, "TEMPLATES_DIR", templates)
+    runtime = tmp_path / "runtime"
+
+    sources = template_sync.resolve_template_sources("ja")
+    result = template_sync.sync_runtime_templates(runtime, locale="ja", dry_run=False)
+
+    assert sources["prompts/memory/episode_extraction.md"] == prompt
+    assert result.error is None
+    assert (runtime / "prompts/memory/episode_extraction.md").read_text(encoding="utf-8") == "compact extraction prompt"
+
+
 def test_template_fingerprint_tracks_locale_and_relevant_content_only(tmp_path: Path, monkeypatch) -> None:
     import core.migrations.template_sync as template_sync
 
