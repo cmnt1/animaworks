@@ -378,6 +378,12 @@ class ConsolidationConfig(BaseModel):
     episode_summary_tool_use_max_bytes: int = Field(default=300, ge=0)
     episode_summary_error_tail_bytes: int = Field(default=300, ge=0)
     episode_summary_max_output_tokens: int = Field(default=4096, ge=1)
+    live_fact_extraction_enabled: bool = True
+    live_fact_model: str | None = None
+    live_fact_credential: str | None = None
+    live_fact_min_input_chars: int = Field(default=200, ge=0)
+    live_fact_max_input_chars: int = Field(default=24000, ge=0)
+    live_fact_debounce_seconds: int = Field(default=120, ge=0)
 
 
 class ImageGenConfig(BaseModel):

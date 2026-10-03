@@ -19,6 +19,7 @@ class _MessagingHost(Protocol):
     _mark_busy_start: Any
     _notify_lock_released: Any
     _resolve_chat_external_recipient: Any
+    _schedule_live_fact_extraction: Any
     _send_chat_reply_via_resolved: Any
     _session_compactor: Any
     _status_slots: Any
@@ -50,6 +51,7 @@ class _InboxHost(Protocol):
     _notify_lock_released: Any
     _process_inbox_messages: Any
     _resolve_background_config: Any
+    _schedule_live_fact_extraction: Any
     _status_slots: Any
     _task_slots: Any
     _undo_failed_inbox_presentation: Any

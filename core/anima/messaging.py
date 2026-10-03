@@ -53,6 +53,17 @@ from core.trust import ORIGIN_HUMAN, ORIGIN_SYSTEM
 logger = logging.getLogger("animaworks.anima")
 
 
+def _queue_live_fact_extraction(owner: Any, trigger: str, session_started_at: Any) -> None:
+    scheduler = getattr(owner, "_schedule_live_fact_extraction", None)
+    if not callable(scheduler):
+        return
+    try:
+        scheduler(trigger, session_started_at=session_started_at)
+    except Exception as exc:  # noqa: BLE001 - extraction must not affect a completed response
+        reason = f"{type(exc).__name__}: {exc}".replace("\n", " ")
+        logger.warning("[%s] Live fact extraction hook failed: %s", getattr(owner, "name", "unknown"), reason[:240])
+
+
 async def _persist_conversation(conversation: Any) -> None:
     """Await StateWriter persistence while supporting synchronous test doubles."""
     async_save = getattr(conversation, "asave", None)
@@ -985,7 +996,7 @@ class MessagingMixin:
                 self._log_human_conversation(content, from_person, thread_id)
 
                 # Activity log: message received
-                await self._activity.alog(
+                received_activity = await self._activity.alog(
                     "message_received",
                     content=content,
                     summary=content[:100],
@@ -994,6 +1005,7 @@ class MessagingMixin:
                     meta={"from_type": "human", "thread_id": thread_id},
                     origin=ORIGIN_HUMAN,
                 )
+                live_session_started_at = getattr(received_activity, "ts", None)
                 _record_chat_user_turn(self)
 
                 if source and source in EXTERNAL_PLATFORM_SOURCES:
@@ -1144,6 +1156,7 @@ class MessagingMixin:
                                 summary=display_summary[:200] if display_summary else "",
                                 meta=resp_meta,
                             )
+                            _queue_live_fact_extraction(self, "chat", live_session_started_at)
 
                             if bootstrap_before:
                                 bootstrap_sync = self._sync_interactive_bootstrap_state()
@@ -1264,6 +1277,7 @@ class MessagingMixin:
             Dict with keys: response, emotion, cached.
         """
         is_first_meeting = mode == "first_meeting"
+        live_session_started_at = now_local().isoformat()
 
         logger.info("[%s] process_greet START", self.name)
         from core.tooling.handler import active_session_type
@@ -1346,6 +1360,7 @@ class MessagingMixin:
                             "request_id": getattr(result, "request_id", "") or "",
                         },
                     )
+                    _queue_live_fact_extraction(self, "chat", live_session_started_at)
 
                 logger.info(
                     "[%s] process_greet END duration_ms=%d",

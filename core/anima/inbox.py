@@ -41,6 +41,18 @@ from core.trust import (
 
 logger = logging.getLogger("animaworks.anima")
 
+
+def _queue_live_fact_extraction(owner: Any, session_started_at: Any) -> None:
+    scheduler = getattr(owner, "_schedule_live_fact_extraction", None)
+    if not callable(scheduler):
+        return
+    try:
+        scheduler("inbox", session_started_at=session_started_at)
+    except Exception as exc:  # noqa: BLE001 - extraction must not affect inbox completion
+        reason = f"{type(exc).__name__}: {exc}".replace("\n", " ")
+        logger.warning("[%s] Live fact extraction hook failed: %s", getattr(owner, "name", "unknown"), reason[:240])
+
+
 _SOURCE_TO_ORIGIN: dict[str, str] = {
     "slack": ORIGIN_EXTERNAL_PLATFORM,
     "chatwork": ORIGIN_EXTERNAL_PLATFORM,
@@ -379,11 +391,12 @@ class InboxMixin:
                         if inspect.isawaitable(budget_result):
                             budget_result = await budget_result
 
-                    await self._activity.alog(
+                    inbox_start_activity = await self._activity.alog(
                         "inbox_processing_start",
                         summary=t("anima.inbox_start"),
                         meta={"session_type": "inbox", "thread_id": _INBOX_THREAD_ID},
                     )
+                    live_session_started_at = getattr(inbox_start_activity, "ts", started_at.isoformat())
 
                     inbox_result = await self._process_inbox_messages(track_retries=budget_result is None)
 
@@ -416,6 +429,7 @@ class InboxMixin:
                                 "thread_id": _INBOX_THREAD_ID,
                             },
                         )
+                        _queue_live_fact_extraction(self, live_session_started_at)
                         return budget_result
 
                     messages_text = "\n\n".join(inbox_result.prompt_parts)
@@ -667,6 +681,7 @@ class InboxMixin:
                             "stop_kind": result.stop_kind,
                         },
                     )
+                    _queue_live_fact_extraction(self, live_session_started_at)
 
                     logger.info(
                         "[%s] process_inbox_message END duration_ms=%d unread=%d",

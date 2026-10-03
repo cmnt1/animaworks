@@ -51,6 +51,7 @@ async def test_extract_and_store_facts_with_outcome_duplicate_reconcile_skips_ap
     )
 
     assert outcome.records == []
+    assert outcome.duplicates == 1
 
 
 @pytest.mark.asyncio

@@ -1072,6 +1072,7 @@ class TestProcessMessageStreamConversationSave:
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
+            dp._schedule_live_fact_extraction = MagicMock()
 
             async def mock_stream(prompt, trigger="manual", **kwargs):
                 yield {"type": "text_delta", "text": "Full "}
@@ -1098,6 +1099,9 @@ class TestProcessMessageStreamConversationSave:
             # Human turn pre-saved, assistant turn saved on cycle_done
             assert append_calls[0].args == ("human", "Hi")
             assert append_calls[1].args == ("assistant", "Full response")
+            dp._schedule_live_fact_extraction.assert_called_once()
+            assert dp._schedule_live_fact_extraction.call_args.args == ("chat",)
+            assert dp._schedule_live_fact_extraction.call_args.kwargs["session_started_at"]
 
             # save() called twice: pre-save + cycle_done save
             assert MockConv.return_value.save.call_count == 2

@@ -271,6 +271,15 @@ class PendingTaskExecutor:
         writer = get_state_writer(self._anima_dir)
         run_writer_sync(writer, self._asave_task_result(task_id, summary, token))
 
+    def _schedule_live_fact_extraction(self, session_started_at: str) -> None:
+        schedule = getattr(self._anima, "_schedule_live_fact_extraction", None)
+        if callable(schedule):
+            try:
+                schedule("task", session_started_at=session_started_at)
+            except Exception as exc:  # noqa: BLE001 - do not change task outcome
+                reason = f"{type(exc).__name__}: {exc}".replace("\n", " ")
+                logger.warning("[%s] Live fact extraction was not scheduled: %s", self._anima_name, reason[:240])
+
     def _build_dependency_context(
         self,
         task_desc: dict[str, Any],
@@ -815,6 +824,7 @@ class PendingTaskExecutor:
         }.get(result, "completed")
         await activity.alog(
             "task_exec_end",
+            content=result[:2000],
             summary=t("pending_executor.task_exec_end", title=title, result=result[:200]),
             ctx=trigger,
             meta={**task_meta, "status": status, "result": result[:200]},
@@ -1430,6 +1440,7 @@ class PendingTaskExecutor:
         LLM session runs in a disposable task-runner child.
         """
         task_id = task_desc.get("task_id", "unknown")
+        session_started_at = now_iso()
 
         logger.info(
             "[%s] Executing LLM task: id=%s title=%s",
@@ -1460,6 +1471,8 @@ class PendingTaskExecutor:
                 await asyncio.to_thread(self._save_task_result, task_id, result)
             status, summary = _classify_task_result(result)
             self._sync_task_queue(task_id, status, summary=summary)
+            if status == "done":
+                self._schedule_live_fact_extraction(session_started_at)
         except Exception as exc:
             if self._shutdown_event.is_set():
                 logger.info(

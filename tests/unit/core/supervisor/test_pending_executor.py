@@ -195,6 +195,26 @@ class TestTaskExecLaneIsolation:
         assert end_call.kwargs["meta"]["title"] == "Synthetic task title"
         assert end_call.kwargs["meta"]["status"] == "completed"
         assert end_call.kwargs["meta"]["result"] == "completed"
+        assert end_call.kwargs["content"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_successful_llm_task_schedules_live_fact_extraction_after_result_save(self, tmp_path):
+        executor = _make_executor(tmp_path)
+        events: list[str] = []
+        executor._run_llm_task = AsyncMock(return_value="durable task result")
+        executor._save_task_result = MagicMock(side_effect=lambda *_args: events.append("result_saved"))
+        executor._sync_task_queue = MagicMock(side_effect=lambda *_args, **_kwargs: events.append("queue_updated"))
+        executor._anima._schedule_live_fact_extraction = MagicMock(
+            side_effect=lambda *_args, **_kwargs: events.append("scheduled")
+        )
+        executor._anima._clear_busy_status_sidecar_if_idle = MagicMock()
+
+        await executor._execute_llm_task({"task_id": "task-1", "task_type": "llm"})
+
+        assert events == ["result_saved", "queue_updated", "scheduled"]
+        executor._anima._schedule_live_fact_extraction.assert_called_once()
+        assert executor._anima._schedule_live_fact_extraction.call_args.args == ("task",)
+        assert executor._anima._schedule_live_fact_extraction.call_args.kwargs["session_started_at"]
 
 
 class TestExecutePendingTask:
@@ -234,6 +254,7 @@ class TestExecutePendingTask:
 
         with pytest.raises(RuntimeError, match="BackgroundTaskManager not available"):
             await executor.execute_pending_task({"task_type": "command", "task_id": "test"})
+
 
 class TestStreamErrorSuppression:
     """Test that stream errors are suppressed only after an agent declaration."""

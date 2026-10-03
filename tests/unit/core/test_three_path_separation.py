@@ -727,6 +727,7 @@ class TestProcessInboxMessage:
             from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
+            dp._schedule_live_fact_extraction = MagicMock()
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.reset_posted_channels = MagicMock()
             dp.agent.replied_to = {"sender"}
@@ -748,6 +749,9 @@ class TestProcessInboxMessage:
 
         assert result.action == "responded"
         assert len(list(inbox_dir.glob("*.json"))) == 0
+        dp._schedule_live_fact_extraction.assert_called_once()
+        assert dp._schedule_live_fact_extraction.call_args.args == ("inbox",)
+        assert dp._schedule_live_fact_extraction.call_args.kwargs["session_started_at"]
 
     async def test_uses_inbox_lock(self, data_dir, make_anima):
         """process_inbox_message should acquire _inbox_lock when messages exist."""
