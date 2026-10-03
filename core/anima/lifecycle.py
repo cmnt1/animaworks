@@ -326,7 +326,12 @@ def _episode_summary_model_configs(base_model_config: Any, model: str, cfg: Any)
     return candidates
 
 
-async def _complete_episode_prompt(prompt: str, model_configs: list[Any]) -> tuple[str | None, str]:
+async def _complete_episode_prompt(
+    prompt: str,
+    model_configs: list[Any],
+    *,
+    max_output_tokens: int = 8192,
+) -> tuple[str | None, str]:
     """Try the primary one-shot model followed by configured model fallbacks."""
     from core.llm.oneshot import one_shot_completion
 
@@ -337,7 +342,7 @@ async def _complete_episode_prompt(prompt: str, model_configs: list[Any]) -> tup
                 prompt,
                 model=model_config.model,
                 credential=model_config.credential or "",
-                max_tokens=8192,
+                max_tokens=max_output_tokens,
             )
         except Exception as exc:
             failures.append(f"{model_config.model}:{type(exc).__name__}")
@@ -352,7 +357,7 @@ async def _complete_episode_prompt(prompt: str, model_configs: list[Any]) -> tup
                 prompt,
                 model=model_config.model,
                 credential=model_config.credential or "",
-                max_tokens=8192,
+                max_tokens=max_output_tokens,
             )
         except Exception as exc:
             failures.append(f"{model_config.model}:retry {type(exc).__name__}")
@@ -645,9 +650,14 @@ class LifecycleMixin:
     ) -> CycleResult:
         """Summarize yesterday and a bounded set of recent unprocessed days."""
         from core.config.models import ConsolidationConfig
+        from core.memory.maintenance.activity_compaction import ActivityCompactionSettings
 
         consolidation_cfg = getattr(cfg, "consolidation", None)
         defaults = ConsolidationConfig()
+        compaction_settings = ActivityCompactionSettings.from_config(consolidation_cfg, defaults)
+        max_output_tokens = int(
+            getattr(consolidation_cfg, "episode_summary_max_output_tokens", defaults.episode_summary_max_output_tokens)
+        )
         max_input_bytes = int(
             getattr(consolidation_cfg, "episode_summary_max_input_bytes", defaults.episode_summary_max_input_bytes)
         )
@@ -677,16 +687,24 @@ class LifecycleMixin:
         dates.extend(target_date - timedelta(days=offset) for offset in range(lookback_days - 1, 0, -1))
         pending_by_date: dict[date, list[str]] = {}
         filtered_by_date: dict[date, bool] = {}
+        input_profile_by_date: dict[date, str] = {}
         for candidate_date in dates:
             pending, filter_applied = engine.collect_pending_activity_chunks(
                 candidate_date,
                 model=model,
                 max_input_bytes=max_input_bytes,
                 exclude_noop_cron=exclude_noop_cron,
+                compaction_settings=compaction_settings,
             )
             if pending:
                 pending_by_date[candidate_date] = pending
                 filtered_by_date[candidate_date] = filter_applied
+                profile_resolver = getattr(engine, "resolve_input_profile_for_date", None)
+                input_profile_by_date[candidate_date] = (
+                    profile_resolver(candidate_date, compaction_settings.profile)
+                    if callable(profile_resolver)
+                    else compaction_settings.profile
+                )
 
         selected_dates: list[date] = []
         if target_date in pending_by_date:
@@ -730,6 +748,8 @@ class LifecycleMixin:
             )
             episode_parts: list[str] = []
             completed_chunks: list[str] = []
+            facts_extracted = 0
+            facts_failed = 0
             failed_chunks = 0
             failure_reason = ""
 
@@ -761,7 +781,11 @@ class LifecycleMixin:
 
                 chunk_summaries: list[str] = []
                 for _activity_part, prompt in prompt_parts:
-                    raw, reason = await _complete_episode_prompt(prompt, model_configs)
+                    raw, reason = await _complete_episode_prompt(
+                        prompt,
+                        model_configs,
+                        max_output_tokens=max_output_tokens,
+                    )
                     if not raw:
                         failure_reason = reason
                         break
@@ -776,25 +800,15 @@ class LifecycleMixin:
                     continue
                 episode_parts.extend(chunk_summaries)
                 completed_chunks.append(chunk)
-
-            if episode_parts:
-                merged_episodes = engine.merge_timeline_parts(episode_parts)
-                episode_path = engine.write_consolidated_episode(summary_date, merged_episodes)
-                engine.record_consolidated_chunks(
-                    summary_date,
-                    completed_chunks,
-                    noop_cron_filtered=filtered_by_date.get(summary_date, False),
-                )
-                facts_extracted = 0
-                facts_failed = 0
+                chunk_summary = engine.merge_timeline_parts(chunk_summaries)
                 try:
                     fact_outcome = await engine.extract_facts_from_text_outcome(
-                        merged_episodes,
-                        source_episode=f"episodes/{episode_path.name}",
+                        chunk_summary,
+                        source_episode=f"episodes/{summary_date.isoformat()}.md",
                         source_session_id="consolidation:daily",
                     )
-                    facts_extracted = fact_outcome.facts_extracted
-                    facts_failed = fact_outcome.facts_failed
+                    facts_extracted += int(getattr(fact_outcome, "facts_extracted", 0) or 0)
+                    facts_failed += int(getattr(fact_outcome, "facts_failed", 0) or 0)
                 except Exception as exc:
                     from core.memory.facts.observability import warn_rate_limited
 
@@ -805,7 +819,17 @@ class LifecycleMixin:
                         self.name,
                         exc_info=(type(exc), exc, exc.__traceback__),
                     )
-                    facts_failed = 1
+                    facts_failed += 1
+
+            if episode_parts:
+                merged_episodes = engine.merge_timeline_parts(episode_parts)
+                episode_path = engine.write_consolidated_episode(summary_date, merged_episodes)
+                engine.record_consolidated_chunks(
+                    summary_date,
+                    completed_chunks,
+                    noop_cron_filtered=filtered_by_date.get(summary_date, False),
+                    input_profile=input_profile_by_date.get(summary_date, compaction_settings.profile),
+                )
                 logger.info(
                     "[%s] Phase A complete: date=%s wrote=%d chars to %s facts_extracted=%d facts_failed=%d",
                     self.name,

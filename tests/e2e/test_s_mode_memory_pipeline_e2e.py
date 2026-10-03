@@ -392,11 +392,16 @@ class TestActivityLogToConsolidationPromptPipeline:
             summary="EC2起動完了を報告",
         )
 
+        from core.memory.maintenance.activity_compaction import ActivityCompactionSettings
+
         engine = ConsolidationEngine(anima_dir, "test-prompt-render")
         with patch(
             "core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget", return_value=500_000
         ):
-            chunks = engine.collect_activity_chunks(hours=24)
+            chunks = engine.collect_activity_chunks(
+                hours=24,
+                compaction_settings=ActivityCompactionSettings(profile="full"),
+            )
 
         assert chunks, "Should produce at least one chunk"
         combined = "\n".join(chunks)

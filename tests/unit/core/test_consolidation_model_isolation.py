@@ -60,6 +60,7 @@ class _FakeEngine:
         since=None,
         until=None,
         max_input_bytes: int = 200 * 1024,
+        **_kwargs,
     ):
         self.collect_calls.append(
             {"hours": hours, "model": model, "since": since, "until": until, "max_input_bytes": max_input_bytes}
@@ -73,6 +74,7 @@ class _FakeEngine:
         model: str,
         max_input_bytes: int = 200 * 1024,
         exclude_noop_cron: bool = False,
+        **_kwargs,
     ):
         start, end = self.local_day_window(target_date)
         chunks = self.collect_activity_chunks(
@@ -84,7 +86,7 @@ class _FakeEngine:
     def unprocessed_activity_chunks(self, target_date, chunks):
         return chunks
 
-    def record_consolidated_chunks(self, target_date, chunks, *, noop_cron_filtered=False):
+    def record_consolidated_chunks(self, target_date, chunks, *, noop_cron_filtered=False, input_profile=None):
         pass
 
     def read_episode_for_date(self, target_date):

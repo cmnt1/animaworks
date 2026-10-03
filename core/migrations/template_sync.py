@@ -13,7 +13,11 @@ from core.paths import TEMPLATES_DIR
 logger = logging.getLogger(__name__)
 
 SYNC_TREES: tuple[str, ...] = ("common_knowledge", "common_skills", "reference")
-RUNTIME_PROMPT_FILES: tuple[str, ...] = ("character_design_guide.md", "face_types.md")
+RUNTIME_PROMPT_FILES: tuple[str, ...] = (
+    "character_design_guide.md",
+    "face_types.md",
+    "memory/episode_extraction.md",
+)
 STALE_RUNTIME_FILES: tuple[str, ...] = (
     "prompts/task_delegation_rules.md",
     "prompts/communication_rules_s.md",

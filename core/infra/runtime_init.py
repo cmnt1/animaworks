@@ -162,7 +162,7 @@ def _copy_infrastructure(data_dir: Path) -> None:
                 continue
             shutil.copy2(item, target)
 
-    # Prompt files used through direct Anima Read calls are the only runtime prompts.
+    # Selected Anima-read and framework prompts are kept as runtime copies.
     from core.migrations.template_sync import RUNTIME_PROMPT_FILES
 
     locale_fallbacks = tuple(dict.fromkeys((locale, "en", "ja")))
@@ -229,8 +229,8 @@ def merge_templates(data_dir: Path) -> list[str]:
     """Copy infrastructure template files that don't exist in the runtime directory.
 
     Walks locale templates in fallback order and selects each file from the
-    first locale that provides it. Only the two prompts read directly by Anima
-    are copied and overwritten; other runtime files are copied only when absent.
+    first locale that provides it. Selected runtime prompts are copied and
+    overwritten; other runtime files are copied only when absent.
     anima_templates/ is skipped (animas are managed separately).
 
     Returns a list of newly added file paths (relative to data_dir).
@@ -259,7 +259,7 @@ def merge_templates(data_dir: Path) -> list[str]:
                 continue
             if rel.name == "bootstrap.md" and len(parts) == 1:
                 continue
-            if parts[0] == "prompts" and (len(parts) != 2 or rel.name not in RUNTIME_PROMPT_FILES):
+            if parts[0] == "prompts" and Path(*parts[1:]).as_posix() not in RUNTIME_PROMPT_FILES:
                 continue
             if any(parent.is_symlink() for parent in src.parents if parent != TEMPLATES_DIR):
                 continue

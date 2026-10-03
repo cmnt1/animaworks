@@ -1122,7 +1122,7 @@ def register_all_steps(runner: Any) -> None:
         ),
         MigrationStep(
             template_sync_id,
-            "Sync common_knowledge/common_skills/reference and Anima-read prompts from bundled templates",
+            "Sync shared templates and selected runtime prompts from bundled templates",
             "template_sync",
             step_template_sync,
         ),

@@ -207,6 +207,21 @@ def test_consolidation_ipc_timeout_scales_with_daily_workload(tmp_path: Path) ->
     assert timeout == 3240.0
 
 
+def test_consolidation_ipc_timeout_uses_compacted_input_count_when_available(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    cfg = SimpleNamespace(
+        ipc_timeout_base_seconds=1800,
+        ipc_timeout_per_activity_entry_seconds=4.0,
+        ipc_timeout_per_episode_seconds=120.0,
+        ipc_timeout_max_seconds=7200,
+    )
+    gate = SimpleNamespace(activity_count=300, summary_input_entries=10, episode_count=2)
+
+    timeout = sup._resolve_consolidation_ipc_timeout(cfg, consolidation_type="daily", gate=gate)
+
+    assert timeout == 2080.0
+
+
 @pytest.mark.parametrize(
     ("activity_count", "episode_count", "should_run"),
     [(2, 0, True), (0, 2, True), (1, 1, False)],
@@ -239,6 +254,58 @@ def test_daily_gate_uses_only_activity_and_episode_thresholds(
 
     assert gate.should_run is should_run
     assert not hasattr(gate, "carryover_count")
+
+
+def test_daily_gate_passes_profile_and_counts_compacted_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import date, datetime, timedelta
+
+    from core.lifecycle.system_consolidation import evaluate_daily_consolidation_gate
+    from core.memory.maintenance.activity_compaction import ActivityCompactionSettings
+
+    day = date(2026, 9, 27)
+
+    class _ProfileGateEngine:
+        def __init__(self, *_args) -> None:
+            self.settings = []
+
+        @staticmethod
+        def _collect_recent_episodes(hours: int) -> list[dict]:
+            return []
+
+        @staticmethod
+        def previous_local_day_window():
+            return day, None, None
+
+        @staticmethod
+        def local_day_window(target, _reference=None):
+            return datetime.combine(target, datetime.min.time()), datetime.combine(
+                target + timedelta(days=1), datetime.min.time()
+            )
+
+        @staticmethod
+        def count_recent_activity_entries(**_kwargs) -> int:
+            return 0
+
+        def collect_pending_activity_chunks(self, _target, *, compaction_settings, **_kwargs):
+            self.settings.append(compaction_settings)
+            return ["[08:00] RESPONSE: compacted input"] if _target == day else [], False
+
+    engine = _ProfileGateEngine()
+    monkeypatch.setattr("core.memory.maintenance.consolidation.ConsolidationEngine", lambda *_args: engine)
+
+    gate = evaluate_daily_consolidation_gate(
+        tmp_path,
+        "fixture",
+        threshold=2,
+        backfill_days=1,
+        compaction_settings=ActivityCompactionSettings(profile="full"),
+    )
+
+    assert gate.summary_input_entries == 1
+    assert engine.settings[0].profile == "full"
 
 
 def test_daily_gate_runs_for_pending_episode_backfill(

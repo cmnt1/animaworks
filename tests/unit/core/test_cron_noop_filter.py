@@ -6,8 +6,11 @@ import json
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
+from core.memory.maintenance.activity_compaction import ActivityCompactionSettings
 from core.memory.maintenance.consolidation import (
+    _INPUT_PROFILE_KEY,
     _NOOP_FILTER_KEY,
     ConsolidationEngine,
 )
@@ -373,6 +376,55 @@ def test_checkpoint_config_false_is_legacy(tmp_path: Path) -> None:
     engine.record_consolidated_chunks(day, pending, noop_cron_filtered=applied)
     checkpoint = engine._load_episode_checkpoint()
     assert _NOOP_FILTER_KEY not in checkpoint
+
+
+def test_checkpoint_uses_compact_profile_for_unprocessed_date(tmp_path: Path) -> None:
+    engine = ConsolidationEngine(tmp_path, "test-anima")
+    day = now_local().date()
+    engine.collect_activity_chunks = MagicMock(return_value=["new compact chunk"])
+
+    pending, _applied = engine.collect_pending_activity_chunks(
+        day,
+        model="test-model",
+        compaction_settings=ActivityCompactionSettings(profile="compact"),
+    )
+
+    assert pending == ["new compact chunk"]
+    assert engine.collect_activity_chunks.call_args.kwargs["compaction_settings"].profile == "compact"
+
+
+def test_checkpoint_legacy_hash_uses_full_profile_and_matching_chunk_hash(tmp_path: Path) -> None:
+    engine = ConsolidationEngine(tmp_path, "test-anima")
+    day = now_local().date()
+    engine.record_consolidated_chunks(day, ["legacy full chunk"])
+    engine.collect_activity_chunks = MagicMock(return_value=["legacy full chunk"])
+
+    pending, _applied = engine.collect_pending_activity_chunks(
+        day,
+        model="test-model",
+        compaction_settings=ActivityCompactionSettings(profile="compact"),
+    )
+
+    assert pending == []
+    assert engine.collect_activity_chunks.call_args.kwargs["compaction_settings"].profile == "full"
+    assert _INPUT_PROFILE_KEY not in engine._load_episode_checkpoint()
+
+
+def test_checkpoint_uses_recorded_profile_for_processed_date(tmp_path: Path) -> None:
+    engine = ConsolidationEngine(tmp_path, "test-anima")
+    day = now_local().date()
+    engine.record_consolidated_chunks(day, ["compact chunk"], input_profile="compact")
+    engine.collect_activity_chunks = MagicMock(return_value=["compact chunk"])
+
+    pending, _applied = engine.collect_pending_activity_chunks(
+        day,
+        model="test-model",
+        compaction_settings=ActivityCompactionSettings(profile="full"),
+    )
+
+    assert pending == []
+    assert engine.collect_activity_chunks.call_args.kwargs["compaction_settings"].profile == "compact"
+    assert engine._load_episode_checkpoint()[_INPUT_PROFILE_KEY] == {day.isoformat(): "compact"}
 
 
 def test_load_episode_checkpoint_preserves_special_key(tmp_path: Path) -> None:
