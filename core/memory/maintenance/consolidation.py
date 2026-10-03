@@ -732,6 +732,8 @@ class ConsolidationEngine:
         *,
         source_episode: str,
         source_session_id: str = "consolidation:daily",
+        extractor: Any | None = None,
+        origin: str = "consolidation",
     ):
         """Extract/store atomic facts and return operational counters.
 
@@ -754,6 +756,7 @@ class ConsolidationEngine:
             total_chunks = len(chunks)
 
             all_records: list = []
+            all_duplicates = 0
             failed = False
             failure_stage = ""
             failure_reason = ""
@@ -766,7 +769,8 @@ class ConsolidationEngine:
                         chunk,
                         source_episode=source_episode,
                         source_session_id=source_session_id,
-                        origin="consolidation",
+                        origin=origin,
+                        extractor=extractor,
                     )
                 except Exception as exc:  # noqa: BLE001 - keep processing other chunks
                     failed = True
@@ -787,6 +791,7 @@ class ConsolidationEngine:
                     continue
 
                 all_records.extend(outcome.records)
+                all_duplicates += outcome.duplicates
                 if outcome.failed:
                     failed = True
                     failed_chunks += 1
@@ -810,6 +815,7 @@ class ConsolidationEngine:
                 failure_reason=failure_reason,
                 failed_chunks=failed_chunks,
                 total_chunks=total_chunks,
+                duplicates=all_duplicates,
             )
             first_failure = f" first_failure={failure_reason[:300].replace(chr(10), ' ')}" if failed else ""
             logger.info(

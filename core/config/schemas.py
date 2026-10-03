@@ -372,6 +372,12 @@ class ConsolidationConfig(BaseModel):
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
     inactivity_skip_enabled: bool = True
     inactivity_days: int = Field(default=7, ge=1)
+    live_fact_extraction_enabled: bool = True
+    live_fact_model: str | None = None
+    live_fact_credential: str | None = None
+    live_fact_min_input_chars: int = Field(default=200, ge=0)
+    live_fact_max_input_chars: int = Field(default=24000, ge=0)
+    live_fact_debounce_seconds: int = Field(default=120, ge=0)
 
 
 class ImageGenConfig(BaseModel):

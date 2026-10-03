@@ -528,6 +528,25 @@ class DigitalAnima(
         """Inject a callback invoked when the anima's lock is released."""
         self._on_lock_released = fn
 
+    def _schedule_live_fact_extraction(
+        self,
+        trigger: str,
+        *,
+        session_started_at: datetime | str | None = None,
+    ) -> None:
+        """Queue a best-effort live fact extraction without delaying a session."""
+        try:
+            from core.memory.facts.live import schedule_live_fact_extraction
+
+            schedule_live_fact_extraction(
+                self.anima_dir,
+                trigger=trigger,
+                session_started_at=session_started_at,
+            )
+        except Exception as exc:  # noqa: BLE001 - never fail the completed interaction
+            reason = f"{type(exc).__name__}: {exc}".replace("\n", " ")
+            logger.warning("[%s] Live fact extraction was not scheduled: %s", self.name, reason[:240])
+
     # ── Background task management ──────────────────────────────
 
     async def _on_background_task_complete(self, task: BackgroundTask) -> None:

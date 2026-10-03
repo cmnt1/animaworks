@@ -34,6 +34,7 @@ class FactExtractionOutcome:
     failure_reason: str = ""
     failed_chunks: int = 0
     total_chunks: int = 1
+    duplicates: int = 0
 
     @property
     def facts_extracted(self) -> int:
@@ -236,14 +237,20 @@ async def _store_fact_records(
     if not records:
         return FactExtractionOutcome(records, initial_failed, initial_stage, initial_reason)
 
-    records_to_append, reconciled_stored, affected_paths, updated_records = await asyncio.to_thread(
+    records_to_append, reconciled_stored, affected_paths, updated_records, duplicates = await asyncio.to_thread(
         _reconcile_extracted_facts,
         anima_dir,
         records,
         as_of_time=reference_time,
     )
     if not records_to_append and not affected_paths:
-        return FactExtractionOutcome(reconciled_stored, initial_failed, initial_stage, initial_reason)
+        return FactExtractionOutcome(
+            reconciled_stored,
+            initial_failed,
+            initial_stage,
+            initial_reason,
+            duplicates=duplicates,
+        )
 
     try:
         stored = [*reconciled_stored, *append_fact_records(anima_dir, records_to_append)]
@@ -254,7 +261,7 @@ async def _store_fact_records(
             "Failed to append atomic facts",
             exc_info=(type(exc), exc, exc.__traceback__),
         )
-        return FactExtractionOutcome([], True, "append", f"{type(exc).__name__}: {exc}")
+        return FactExtractionOutcome([], True, "append", f"{type(exc).__name__}: {exc}", duplicates=duplicates)
 
     side_effect_failed = initial_failed
     failure_stage = initial_stage
@@ -284,7 +291,13 @@ async def _store_fact_records(
             side_effect_failed = True
             failure_stage = failure_stage or "index"
             failure_reason = failure_reason or "fact_index_update_failed"
-    return FactExtractionOutcome(stored, side_effect_failed, failure_stage, failure_reason)
+    return FactExtractionOutcome(
+        stored,
+        side_effect_failed,
+        failure_stage,
+        failure_reason,
+        duplicates=duplicates,
+    )
 
 
 def _reconcile_extracted_facts(
@@ -292,14 +305,15 @@ def _reconcile_extracted_facts(
     records: list[FactRecord],
     *,
     as_of_time: str | None,
-) -> tuple[list[FactRecord], list[FactRecord], set[Path], list[FactRecord]]:
+) -> tuple[list[FactRecord], list[FactRecord], set[Path], list[FactRecord], int]:
     if not _facts_reconcile_enabled():
-        return list(records), [], set(), []
+        return list(records), [], set(), [], 0
 
     to_append: list[FactRecord] = []
     stored: list[FactRecord] = []
     affected_paths: set[Path] = set()
     updated_records: list[FactRecord] = []
+    duplicates = 0
 
     for record in records:
         try:
@@ -323,8 +337,10 @@ def _reconcile_extracted_facts(
         stored.extend(result.appended_records)
         if result.should_append:
             to_append.append(record)
+        elif result.label == "DUPLICATE" or result.reason == "duplicate":
+            duplicates += 1
 
-    return to_append, stored, affected_paths, updated_records
+    return to_append, stored, affected_paths, updated_records, duplicates
 
 
 def _upsert_fact_entities(anima_dir: Path, records: list[FactRecord]) -> dict[str, Any] | None:
