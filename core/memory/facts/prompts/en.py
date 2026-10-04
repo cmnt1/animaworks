@@ -19,7 +19,8 @@ ENTITY_USER = """## Text
 {previous_entities}
 
 ## Instructions
-Extract entities from the text above and return them in the following JSON format. Return an empty list if no entities are found.
+Extract the entities that can be the subject or object of facts worth recalling later (people, animas, organizations, projects, issues/PRs, deliverables, decisions, etc.) and return them in the following JSON format. Return an empty list if no entities are found.
+Do not extract file paths, commands, tool names, CI job names, config keys, or bare timestamps as entities unless they are the center of a request, decision, or incident.
 
 ```json
 {{
@@ -51,6 +52,12 @@ For each fact, estimate when that fact became valid in the real world (valid_at)
 - If the text states an explicit date or time, use it
 - Resolve relative phrases like "yesterday" or "last week" using reference_time as the anchor
 - If unclear, use reference_time unchanged (output as ISO 8601)
+
+## What counts as a fact
+Ask: "Will this be useful as knowledge a month from now?" When in doubt, leave it out.
+- Extract: new information about people or projects, decisions, requests and promises with owner and deadline, causes/fixes/conclusions of incidents, changes to settings or operating rules, where deliverables (PRs, issues, documents) live and their gist
+- Do not extract: routine cron/patrol boilerplate (where logs go, followed the procedure, ran at a time, state transitions, nothing changed), component listings (e.g. "CI includes X"), lists of paths or commands, raw numbers from command output, transient states, play-by-play of what was received or checked when, general tool usage
+- Do not split one fact into paraphrased duplicates. Output at most about 15 facts per text, most important first.
 
 Extract relationships (facts) between the entities above and return them in the following JSON format. Return an empty list if no relationships are found.
 
