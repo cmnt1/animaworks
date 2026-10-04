@@ -13,6 +13,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import hashlib
 import inspect
 import logging
 import os
@@ -55,10 +56,20 @@ async def _kill_cron_command_group(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
+_MAX_THREAD_ID_LEN = 36
+
+
 def _cron_thread_id(task_name: str) -> str:
     """Return a safe, task-specific session thread id for cron work."""
     safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", task_name)
-    return f"cron-{safe_name}"[:64]
+    thread_id = f"cron-{safe_name}"
+    if len(thread_id) <= _MAX_THREAD_ID_LEN and task_name.isascii():
+        return thread_id
+    # The state writer accepts at most 36 chars, and non-ASCII names collapse to
+    # underscores, so long or non-ASCII names get a stable hash suffix.
+    digest = hashlib.sha1(task_name.encode("utf-8")).hexdigest()[:10]
+    head = safe_name.strip("_")[: _MAX_THREAD_ID_LEN - len("cron--") - len(digest)].rstrip("_")
+    return f"cron-{head}-{digest}" if head else f"cron-{digest}"
 
 
 def _agent_for_lane(owner: Any, lane: str):
