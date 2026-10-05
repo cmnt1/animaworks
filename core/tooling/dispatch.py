@@ -63,9 +63,11 @@ class ExternalToolDispatcher:
         Returns:
             A JSON error string if blocked, ``None`` if allowed.
         """
+        from core.messaging.reply_grants import reply_grant_ok_for_action
         from core.tooling.permissions import check_tool_access
 
         anima_dir = args.get("anima_dir")
+        anima_path = Path(anima_dir) if anima_dir else None
 
         tool_name, action = self._split_schema_name(name)
         if tool_name is None:
@@ -79,11 +81,12 @@ class ExternalToolDispatcher:
             tool_file = None
 
         decision = check_tool_access(
-            Path(anima_dir) if anima_dir else None,
+            anima_path,
             tool_name,
             action,
             origin=origin,
             tool_file=tool_file,
+            reply_grant_ok=reply_grant_ok_for_action(anima_path, tool_name, action, args),
         )
         if decision.allowed:
             return None

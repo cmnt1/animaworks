@@ -772,6 +772,7 @@ class ToolHandler(
         schema_name = f"{tool_name}_{action}"
 
         # Single permission gate covering tool-level allow/deny and gated actions.
+        from core.messaging.reply_grants import reply_grant_ok_for_action
         from core.tooling.permissions import check_tool_access
 
         origin = "core" if tool_name in TOOL_MODULES else "personal"
@@ -782,6 +783,7 @@ class ToolHandler(
             action,
             origin=origin,  # type: ignore[arg-type]
             tool_file=tool_file,
+            reply_grant_ok=reply_grant_ok_for_action(self._anima_dir, tool_name, action, tool_args),
         )
         if not decision.allowed:
             return _error_result(

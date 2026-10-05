@@ -151,7 +151,7 @@ def _build_reply_instruction(m: Any) -> str:
 
     When Slack ``auto_response`` is enabled, returns an ``[auto_reply: ...]``
     annotation instead, telling the LLM that the reply will be sent
-    automatically and it should NOT call ``slack_channel_post``.
+    automatically and it should NOT run the Slack CLI reply command.
 
     When intent is ``observe``, returns an observation-only annotation
     discouraging the LLM from taking action.
@@ -161,18 +161,14 @@ def _build_reply_instruction(m: Any) -> str:
             return f"  [{t('slack.observe_only_hint')}]"
 
         if _is_auto_response_enabled():
-            return "  [auto_reply: Slack返信は自動送信されます。slack_channel_postを呼ぶ必要はありません]"
+            return "  [auto_reply: Slack返信は自動送信されます。animaworks-tool slack sendを実行する必要はありません]"
 
         mention = f"<@{m.external_user_id}> " if m.external_user_id else ""
         thread_id = m.external_thread_ts or m.source_message_id
-        parts = [
-            "use tool slack_channel_post with",
-            f'channel_id="{m.external_channel_id}"',
-            f'text="{mention}{{返信内容}}"',
-        ]
+        cmd = f"animaworks-tool slack send {m.external_channel_id} '{mention}{{返信内容}}'"
         if thread_id:
-            parts.append(f'thread_ts="{thread_id}"')
-        return f"  [reply_instruction: {', '.join(parts)}]"
+            cmd += f" --thread {thread_id}"
+        return f"  [reply_instruction: {cmd}]"
 
     if m.source == "discord":
         if _is_auto_response_enabled_discord():

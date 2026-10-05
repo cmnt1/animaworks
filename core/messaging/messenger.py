@@ -1038,6 +1038,20 @@ class Messenger:
             msg.thread_id = msg.id
         filepath = self.inbox_dir / f"{msg.id}.json"
         atomic_write_json(filepath, msg.model_dump(mode="json"), indent=2, trailing_newline=False)
+        if source == "slack" and intent != "observe":
+            thread_ts = external_thread_ts or source_message_id
+            if external_channel_id and thread_ts:
+                try:
+                    from core.messaging.reply_grants import record_reply_grant
+
+                    anima_dir = self.shared_dir.parent / "animas" / self.anima_name
+                    record_reply_grant(anima_dir, "slack", external_channel_id, thread_ts)
+                except Exception:
+                    logger.warning(
+                        "Failed to record Slack reply grant for anima=%s",
+                        self.anima_name,
+                        exc_info=True,
+                    )
         logger.info(
             "External message received: %s -> %s (source=%s, id=%s)",
             msg.from_person,

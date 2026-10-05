@@ -21,9 +21,9 @@ fail-closed: any configuration or profile-loading failure results in a
 denied (:data:`ToolAccessDecision`) rather than silently passing.
 
 Supports action-level gating: dangerous sub-actions (e.g. ``gmail_send``)
-require explicit ``external_tools.allow`` entries (``gmail_send``) even when
-``allow_all`` is true — mirroring the legacy ``- all: yes`` behaviour which
-never auto-allowed gated actions.
+require explicit ``external_tools.allow`` entries even when ``allow_all`` is
+true. Callers may separately supply a verified, thread-scoped Slack reply grant;
+that exception does not alter the legacy allow-list behavior.
 """
 
 import importlib.util
@@ -155,6 +155,7 @@ def evaluate_tool_access(
     origin: Literal["core", "common", "personal"],
     profile: Mapping[str, Mapping[str, object]] | None,
     disabled_services: frozenset[str] = frozenset(),
+    reply_grant_ok: bool = False,
 ) -> ToolAccessDecision:
     """Evaluate whether a tool (and optional gated action) is permitted.
 
@@ -169,8 +170,9 @@ def evaluate_tool_access(
          is non-empty and ``tool_name`` not in ``allow`` → ``tool_not_permitted``
       4. ``action`` matches a gated entry in ``profile`` (with ``_`` → ``-``
          leniency): permitted only if ``f"{tool}_{gated_as or profile_action}"``
-         is in ``allow`` and not in ``deny``; otherwise → ``action_gated``
-         (explicit permission is required even when ``allow_all`` is true).
+         is in ``allow`` and not in ``deny``, or a caller-verified reply grant
+         applies to one of the Slack reply actions; otherwise → ``action_gated``.
+         Explicit permission is required even when ``allow_all`` is true.
       5. Otherwise → ``ok``.
     """
     from core.tooling.policy.registry import TOOL_MODULES
@@ -213,6 +215,8 @@ def evaluate_tool_access(
                 action_key = f"{tool_name}_{info.get('gated_as', profile_action)}"
                 if action_key in allow and action_key not in deny:
                     return ToolAccessDecision(True, "ok")
+                if reply_grant_ok and action_key in {"slack_send", "slack_channel_post"} and action_key not in deny:
+                    return ToolAccessDecision(True, "ok")
                 return ToolAccessDecision(
                     False,
                     "action_gated",
@@ -246,6 +250,7 @@ def check_tool_access(
     *,
     origin: Literal["core", "common", "personal"],
     tool_file: Path | None = None,
+    reply_grant_ok: bool = False,
 ) -> ToolAccessDecision:
     """Load configuration/execution-profile and evaluate tool access.
 
@@ -271,6 +276,7 @@ def check_tool_access(
             config=config,
             origin=origin,
             profile=profile,
+            reply_grant_ok=reply_grant_ok,
         )
     except Exception as e:
         logger.warning("Permission check failed for %s %s: %s", tool_name, action, e, exc_info=True)

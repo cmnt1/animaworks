@@ -38,7 +38,7 @@ from core.integrations._slack_markdown import (  # noqa: F401
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "channels": {"expected_seconds": 10, "background_eligible": False},
     "messages": {"expected_seconds": 30, "background_eligible": False},
-    # gated: requires explicit "slack_send" / "slack_channel_post" in permissions.
+    # gated by explicit permission, except replies to a valid Slack reply grant.
     "send": {"expected_seconds": 10, "background_eligible": False, "gated": True},
     "search": {"expected_seconds": 30, "background_eligible": False},
     "unreplied": {"expected_seconds": 30, "background_eligible": False},
@@ -82,9 +82,10 @@ def _resolve_slack_identity(args: dict[str, Any]) -> tuple[str, str]:
 def get_tool_schemas() -> list[dict]:
     """Return Anthropic tool_use schemas for Slack tools.
 
-    ``slack_channel_post`` / ``slack_channel_update`` are gated actions:
-    they require ``slack_channel_post: yes`` / ``slack_channel_update: yes``
-    in permissions.md.
+    ``slack_channel_post`` / ``slack_channel_update`` are gated actions.
+    A matching, unexpired Slack reply grant permits only a thread reply;
+    other posts require ``slack_channel_post`` and updates require
+    ``slack_channel_update`` in permissions.md.
     """
     return [
         {

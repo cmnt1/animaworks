@@ -119,6 +119,43 @@ def _gated_action_candidates(
     return gated
 
 
+def _slack_cli_reply_grant_ok(
+    anima_dir: Path | None,
+    tool_name: str,
+    action: str,
+    argv: list[str],
+) -> bool:
+    """Check the grant for ``animaworks-tool slack send ... --thread``."""
+    if tool_name != "slack" or action != "send" or len(argv) < 2 or argv[0] != "send":
+        return False
+
+    channel_id = argv[1]
+    thread_ts = ""
+    thread_count = 0
+    for index, argument in enumerate(argv[2:], start=2):
+        if argument == "--thread":
+            if index + 1 >= len(argv):
+                return False
+            thread_count += 1
+            thread_ts = argv[index + 1]
+        elif argument.startswith("--thread="):
+            thread_count += 1
+            thread_ts = argument.partition("=")[2]
+        if thread_count > 1:
+            return False
+    if not thread_ts:
+        return False
+
+    from core.messaging.reply_grants import reply_grant_ok_for_action
+
+    return reply_grant_ok_for_action(
+        anima_dir,
+        "slack",
+        "send",
+        {"channel": channel_id, "thread_ts": thread_ts},
+    )
+
+
 def _handle_submit(argv: list[str]) -> None:
     """Handle ``animaworks-tool submit <tool> <args...>``.
 
@@ -322,12 +359,19 @@ def cli_dispatch() -> None:
         action_candidates = [arg for arg in sys.argv[2:] if not arg.startswith("-")]
         gated_candidates = _gated_action_candidates(origin, tool_name, tool_file, action_candidates)
         for candidate in gated_candidates:
+            anima_path = Path(anima_dir_str)
             check = check_tool_access(
-                Path(anima_dir_str),
+                anima_path,
                 tool_name,
                 candidate,
                 origin=origin,
                 tool_file=tool_file,
+                reply_grant_ok=_slack_cli_reply_grant_ok(
+                    anima_path,
+                    tool_name,
+                    candidate,
+                    sys.argv[2:],
+                ),
             )
             if not check.allowed:
                 print(f"Error: {check.message}", file=sys.stderr)

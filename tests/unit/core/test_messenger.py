@@ -268,6 +268,62 @@ class TestReceive:
         assert len(messages) == 0
 
 
+class TestReceiveExternalReplyGrant:
+    def test_slack_message_grants_its_existing_thread(self, shared_dir: Path, messenger: Messenger) -> None:
+        from core.messaging.reply_grants import has_reply_grant
+
+        messenger.receive_external(
+            content="please help",
+            source="slack",
+            source_message_id="reply-ts",
+            external_user_id="U123",
+            external_channel_id="C123",
+            external_thread_ts="parent-ts",
+            intent="question",
+        )
+
+        anima_dir = shared_dir.parent / "animas" / "alice"
+        assert has_reply_grant(anima_dir, "slack", "C123", "parent-ts") is True
+        assert has_reply_grant(anima_dir, "slack", "C123", "reply-ts") is False
+
+    def test_top_level_slack_message_grants_source_message_id(self, shared_dir: Path, messenger: Messenger) -> None:
+        from core.messaging.reply_grants import has_reply_grant
+
+        messenger.receive_external(
+            content="please help",
+            source="slack",
+            source_message_id="top-level-ts",
+            external_channel_id="C123",
+            intent="question",
+        )
+
+        anima_dir = shared_dir.parent / "animas" / "alice"
+        assert has_reply_grant(anima_dir, "slack", "C123", "top-level-ts") is True
+
+    def test_observe_and_non_slack_messages_do_not_grant(self, shared_dir: Path, messenger: Messenger) -> None:
+        from core.messaging.reply_grants import has_reply_grant
+
+        messenger.receive_external(
+            content="FYI",
+            source="slack",
+            source_message_id="observe-ts",
+            external_channel_id="C123",
+            intent="observe",
+        )
+        messenger.receive_external(
+            content="please help",
+            source="chatwork",
+            source_message_id="chatwork-id",
+            external_channel_id="C123",
+            external_thread_ts="chatwork-thread",
+            intent="question",
+        )
+
+        anima_dir = shared_dir.parent / "animas" / "alice"
+        assert has_reply_grant(anima_dir, "slack", "C123", "observe-ts") is False
+        assert has_reply_grant(anima_dir, "slack", "C123", "chatwork-thread") is False
+
+
 # ── receive_and_archive ───────────────────────────────────
 
 

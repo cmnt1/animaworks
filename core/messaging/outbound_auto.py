@@ -9,7 +9,7 @@ from __future__ import annotations
 When an Anima processes an inbox message that originated from Slack,
 this module posts the LLM response back to the originating
 channel/thread automatically — without relying on the LLM to
-explicitly call ``slack_channel_post``.
+explicitly post a Slack reply via tool or CLI.
 """
 
 import logging
